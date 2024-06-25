@@ -5,26 +5,36 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::env;
+use chrono::prelude::*;
 
 const INTERMEDIATE_BUFFER_SIZE: usize = 512;
+const DEFAULT_CHANNELS: &str = "1,2";
+const DEFAULT_DEBUG: &str = "false";
+const DEFAULT_DURATION: &str = "10";
 
 fn main() {
     // Read environment variables
     let channels: Vec<usize> = env::var("AUDIO_CHANNELS")
-        .unwrap_or_else(|_| "1,2".to_string())
+        .unwrap_or_else(|_| DEFAULT_CHANNELS.to_string())
         .split(',')
         .map(|s| s.parse().expect("Invalid channel number"))
         .collect();
 
     let debug: bool = env::var("DEBUG")
-        .unwrap_or_else(|_| "false".to_string())
+        .unwrap_or_else(|_| DEFAULT_DEBUG.to_string())
         .parse()
         .expect("Invalid debug flag");
 
     let record_duration: u64 = env::var("RECORD_DURATION")
-        .unwrap_or_else(|_| "10".to_string())
+        .unwrap_or_else(|_| DEFAULT_DURATION.to_string())
         .parse()
         .expect("Invalid record duration");
+
+    // Generate the output file name
+    let now: DateTime<Local> = Local::now();
+    let file_name = format!("{}-{:02}-{:02}-{:02}-{:02}.wav", 
+                            now.year(), now.month(), now.day(), 
+                            now.hour(), now.minute());
 
     let host = cpal::default_host();
     let device = host.default_input_device().expect("No input device available");
@@ -51,7 +61,7 @@ fn main() {
         sample_format: hound::SampleFormat::Int,
     };
 
-    let writer = Arc::new(Mutex::new(Some(hound::WavWriter::create("recording.wav", spec).unwrap())));
+    let writer = Arc::new(Mutex::new(Some(hound::WavWriter::create(&file_name, spec).unwrap())));
     let intermediate_buffer = Arc::new(Mutex::new(Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE)));
 
     let err_fn = |err| eprintln!("An error occurred on the input audio stream: {}", err);
@@ -183,4 +193,6 @@ fn main() {
     if let Some(writer) = writer_lock.take() {
         writer.finalize().unwrap();
     }
+
+    println!("Recording saved to {}", file_name);
 }
