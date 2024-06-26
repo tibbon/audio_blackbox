@@ -9,3 +9,6 @@ edition = "2021"
 cpal = "0.15.3"
 hound = "3.4"
 chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3.3"

@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 use std::env;
 use chrono::prelude::*;
+use tempfile::tempdir;
 
 const INTERMEDIATE_BUFFER_SIZE: usize = 512;
 const DEFAULT_CHANNELS: &str = "1,2";
@@ -195,4 +196,61 @@ fn main() {
     }
 
     println!("Recording saved to {}", file_name);
+}
+
+// Test modules
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_environment_variable_handling() {
+        env::set_var("AUDIO_CHANNELS", "30,31");
+        env::set_var("DEBUG", "true");
+        env::set_var("RECORD_DURATION", "20");
+
+        let channels: Vec<usize> = env::var("AUDIO_CHANNELS")
+            .unwrap_or_else(|_| DEFAULT_CHANNELS.to_string())
+            .split(',')
+            .map(|s| s.parse().expect("Invalid channel number"))
+            .collect();
+
+        let debug: bool = env::var("DEBUG")
+            .unwrap_or_else(|_| DEFAULT_DEBUG.to_string())
+            .parse()
+            .expect("Invalid debug flag");
+
+        let record_duration: u64 = env::var("RECORD_DURATION")
+            .unwrap_or_else(|_| DEFAULT_DURATION.to_string())
+            .parse()
+            .expect("Invalid record duration");
+
+        assert_eq!(channels, vec![30, 31]);
+        assert_eq!(debug, true);
+        assert_eq!(record_duration, 20);
+    }
+
+    #[test]
+    fn test_file_creation() {
+        let temp_dir = tempdir().unwrap();
+        env::set_current_dir(&temp_dir).unwrap();
+
+        let now: DateTime<Local> = Local::now();
+        let file_name = format!("{}-{:02}-{:02}-{:02}-{:02}.wav", 
+                                now.year(), now.month(), now.day(), 
+                                now.hour(), now.minute());
+
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let writer = hound::WavWriter::create(&file_name, spec).unwrap();
+        writer.finalize().unwrap();
+
+        assert!(fs::metadata(file_name).is_ok());
+    }
 }
