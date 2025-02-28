@@ -13,6 +13,7 @@ A simple Rust application for recording audio from input devices to WAV files. S
   - Standard stereo WAV file (default)
   - Single multichannel WAV file with all selected channels
   - Split mode with separate mono WAV files for each channel
+- Automatic deletion of silent recordings based on configurable threshold
 
 ## Requirements
 
@@ -51,6 +52,10 @@ The application can be configured with the following environment variables:
   - "split": Record each channel to a separate mono WAV file
 - `DEBUG`: Enable debug output ("true" or "false"). Default: "false"
 - `RECORD_DURATION`: Recording duration in seconds. Default: "10"
+- `SILENCE_THRESHOLD`: RMS amplitude threshold for silence detection:
+  - "0": Disable silence detection (default)
+  - Any positive integer: Delete files with RMS amplitude below this threshold
+  - Typical values range from 100-1000 depending on your audio setup
 
 Examples:
 
@@ -63,6 +68,9 @@ AUDIO_CHANNELS="0-7" OUTPUT_MODE="single" RECORD_DURATION="60" cargo run --relea
 
 # Record channels 1, 3, 5, and 7 to individual mono WAV files
 AUDIO_CHANNELS="1,3,5,7" OUTPUT_MODE="split" RECORD_DURATION="120" cargo run --release
+
+# Record audio but delete files if they are mostly silent (RMS amplitude < 500)
+SILENCE_THRESHOLD="500" RECORD_DURATION="30" cargo run --release
 ```
 
 ## Output
@@ -71,6 +79,8 @@ The application creates WAV files in the current directory with names in the for
 
 - Single file mode: `YYYY-MM-DD-HH-MM.wav` or `YYYY-MM-DD-HH-MM-multichannel.wav`
 - Split mode: `YYYY-MM-DD-HH-MM-chX.wav` (where X is the channel number)
+
+If silence detection is enabled, files with RMS amplitude below the specified threshold will be automatically deleted.
 
 ## Architecture
 

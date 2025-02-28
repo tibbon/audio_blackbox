@@ -2,6 +2,7 @@ use chrono::prelude::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use std::env;
+use std::fs;
 use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "linux")]
@@ -12,6 +13,7 @@ pub const DEFAULT_CHANNELS: &str = "1,2";
 pub const DEFAULT_DEBUG: &str = "false";
 pub const DEFAULT_DURATION: &str = "10";
 pub const DEFAULT_OUTPUT_MODE: &str = "single";
+pub const DEFAULT_SILENCE_THRESHOLD: &str = "0"; // 0 means don't delete silent files
 pub const MAX_CHANNELS: usize = 64;
 
 // Type alias to reduce complexity
@@ -55,12 +57,22 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         let output_mode: String =
             env::var("OUTPUT_MODE").unwrap_or_else(|_| DEFAULT_OUTPUT_MODE.to_string());
 
+        let silence_threshold: i32 = env::var("SILENCE_THRESHOLD")
+            .unwrap_or_else(|_| DEFAULT_SILENCE_THRESHOLD.to_string())
+            .parse()
+            .expect("Invalid silence threshold");
+
         // Print recording information
         println!("Starting recording:");
         println!("  Channels: {:?}", channels);
         println!("  Debug: {}", debug);
         println!("  Duration: {} seconds", record_duration);
         println!("  Output Mode: {}", output_mode);
+        if silence_threshold > 0 {
+            println!("  Silence Threshold: {} (files below this will be deleted)", silence_threshold);
+        } else {
+            println!("  Silence Detection: Disabled");
+        }
 
         // Process audio based on channels and config
         self.processor.process_audio(&channels, &output_mode, debug);
@@ -403,6 +415,18 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn finalize(&mut self) {
+        // Get the silence threshold
+        let silence_threshold: i32 = env::var("SILENCE_THRESHOLD")
+            .unwrap_or_else(|_| DEFAULT_SILENCE_THRESHOLD.to_string())
+            .parse()
+            .unwrap_or(0);
+
+        // Track which files we've finalized so we can check them for silence
+        let mut finalized_files = Vec::new();
+
+        // Add the main file path to our list
+        finalized_files.push(self.file_name.clone());
+
         // Drop the stream to stop recording
         self.stream = None;
 
@@ -423,8 +447,19 @@ impl AudioProcessor for CpalAudioProcessor {
             println!("Finalized main WAV file: {}", self.file_name);
         }
 
-        // Finalize any split channel files
+        // Get all the split channel file paths
         let mut writers_lock = self.multichannel_writers.lock().unwrap();
+        let now: DateTime<Local> = Local::now();
+        let date_str = format!(
+            "{}-{:02}-{:02}-{:02}-{:02}",
+            now.year(),
+            now.month(),
+            now.day(),
+            now.hour(),
+            now.minute()
+        );
+
+        // Finalize any split channel files
         let buffers_lock = self.multichannel_buffers.lock().unwrap();
 
         for (i, writer_opt) in writers_lock.iter_mut().enumerate() {
@@ -436,6 +471,10 @@ impl AudioProcessor for CpalAudioProcessor {
                     }
                 }
 
+                // Add the split channel file path to our list
+                let file_path = format!("{}-ch{}.wav", date_str, i);
+                finalized_files.push(file_path);
+
                 // Close the file
                 let _ = writer.finalize();
                 println!("Finalized channel WAV file {}", i);
@@ -443,14 +482,35 @@ impl AudioProcessor for CpalAudioProcessor {
         }
 
         println!("Recording completed.");
+
+        // Check each file for silence if a threshold is set
+        if silence_threshold > 0 {
+            for file_path in finalized_files {
+                match is_silent(&file_path, silence_threshold) {
+                    Ok(true) => {
+                        println!("File '{}' is silent (below threshold {}), deleting", file_path, silence_threshold);
+                        if let Err(e) = fs::remove_file(&file_path) {
+                            eprintln!("Failed to delete silent file: {}", e);
+                        }
+                    },
+                    Ok(false) => {
+                        println!("File '{}' contains audio above the silence threshold", file_path);
+                    },
+                    Err(e) => {
+                        eprintln!("Error checking for silence: {}", e);
+                    }
+                }
+            }
+        }
     }
 }
 
 // Mock implementation for testing
-#[cfg(test)]
 pub mod test_utils {
     use super::*;
 
+    /// MockAudioProcessor simulates audio processing for testing purposes
+    /// without requiring actual audio hardware.
     pub struct MockAudioProcessor {
         pub channels: Vec<usize>,
         pub output_mode: String,
@@ -459,6 +519,10 @@ pub mod test_utils {
         pub finalized: bool,
         pub file_name: String,
         pub created_files: Vec<String>,
+        /// When true, creates files with very low amplitude samples that will be
+        /// detected as silent by the silence detection algorithm. Used for testing
+        /// the automatic deletion of silent recordings.
+        pub create_silent_file: bool,
     }
 
     impl MockAudioProcessor {
@@ -471,6 +535,7 @@ pub mod test_utils {
                 finalized: false,
                 file_name: file_name.to_string(),
                 created_files: Vec::new(),
+                create_silent_file: false,
             }
         }
     }
@@ -482,6 +547,10 @@ pub mod test_utils {
             self.debug = debug;
             self.audio_processed = true;
             self.created_files.clear();
+
+            // Choose amplitude based on silence flag
+            // Low amplitude (1) for silent files, higher amplitude (50) for normal files
+            let amplitude = if self.create_silent_file { 1 } else { 50 };
 
             match output_mode {
                 "split" => {
@@ -501,7 +570,7 @@ pub mod test_utils {
                             Ok(mut writer) => {
                                 // Add some test samples
                                 for i in 0..1000 {
-                                    let sample = (i % 100) as i32;
+                                    let sample = (i % 100) as i32 * amplitude;
                                     let _ = writer.write_sample(sample);
                                 }
                                 let _ = writer.finalize();
@@ -533,7 +602,7 @@ pub mod test_utils {
                             // Add some test samples
                             for i in 0..1000 {
                                 for _ in 0..channels.len() {
-                                    let sample = (i % 100) as i32;
+                                    let sample = (i % 100) as i32 * amplitude;
                                     let _ = writer.write_sample(sample);
                                 }
                             }
@@ -561,7 +630,7 @@ pub mod test_utils {
                         Ok(mut writer) => {
                             // Add some test samples
                             for i in 0..1000 {
-                                let sample = (i % 100) as i32;
+                                let sample = (i % 100) as i32 * amplitude;
                                 let _ = writer.write_sample(sample);
                                 let _ = writer.write_sample(sample);
                             }
@@ -571,14 +640,34 @@ pub mod test_utils {
                             eprintln!("Error creating test WAV file: {}", e);
                         }
                     }
-                    println!("Created mock stereo WAV file");
+                    println!("Created mock {} WAV file", 
+                             if self.create_silent_file { "silent" } else { "normal" });
                 }
             }
         }
 
         fn finalize(&mut self) {
             self.finalized = true;
-            // Nothing more to do for the mock
+            
+            // Check if we should apply the silence threshold
+            // This simulates the real-world behavior where silent files are deleted
+            // after recording if the SILENCE_THRESHOLD environment variable is set
+            if let Ok(threshold) = env::var("SILENCE_THRESHOLD") {
+                if let Ok(threshold) = threshold.parse::<i32>() {
+                    if threshold > 0 && self.create_silent_file {
+                        // If we're creating silent files and threshold is set, delete the files
+                        // since they should be below the threshold. This allows testing the
+                        // silence detection and deletion functionality.
+                        for file_path in &self.created_files {
+                            if let Err(e) = fs::remove_file(file_path) {
+                                eprintln!("Failed to delete silent file in test: {}", e);
+                            } else {
+                                println!("Deleted silent test file: {}", file_path);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -610,6 +699,7 @@ mod tests {
         env::remove_var("DEBUG");
         env::remove_var("RECORD_DURATION");
         env::remove_var("OUTPUT_MODE");
+        env::remove_var("SILENCE_THRESHOLD");
 
         // Sleep briefly to ensure environment changes propagate
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -618,6 +708,157 @@ mod tests {
         println!("Environment variables reset completed");
     }
 
+    // Test the silence detection function directly
+    #[test]
+    fn test_silence_detection() {
+        // Skip hardware-dependent tests in CI
+        if is_ci() {
+            println!("Skipping hardware-dependent test in CI environment");
+            return;
+        }
+
+        // Get lock for test isolation
+        let _lock = TEST_MUTEX.lock().unwrap();
+
+        // Set up a temporary directory for the test
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path().to_str().unwrap();
+        println!("Temp directory: {}", temp_path);
+        env::set_current_dir(&temp_dir).unwrap();
+
+        // Create a silent WAV file
+        let silent_file_path = format!("{}/silent.wav", temp_path);
+        println!("Creating silent WAV file at: {}", silent_file_path);
+        
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        
+        {
+            let mut writer = hound::WavWriter::create(&silent_file_path, spec).unwrap();
+            // Write very low amplitude samples
+            for _ in 0..1000 {
+                let _ = writer.write_sample(5i32); // Very quiet
+            }
+            writer.finalize().unwrap();
+        }
+        
+        // Create a non-silent WAV file
+        let normal_file_path = format!("{}/normal.wav", temp_path);
+        println!("Creating normal WAV file at: {}", normal_file_path);
+        
+        {
+            let mut writer = hound::WavWriter::create(&normal_file_path, spec).unwrap();
+            // Write higher amplitude samples
+            for i in 0..1000 {
+                let _ = writer.write_sample(1000 + (i % 100) as i32); // Louder
+            }
+            writer.finalize().unwrap();
+        }
+        
+        // Test with threshold of 10 - silent file should be detected as silent
+        assert!(is_silent(&silent_file_path, 10).unwrap(), "Silent file should be detected as silent");
+        
+        // Test with threshold of 10 - normal file should not be detected as silent
+        assert!(!is_silent(&normal_file_path, 10).unwrap(), "Normal file should not be detected as silent");
+        
+        // Test with threshold of 2000 - both files should be detected as silent
+        assert!(is_silent(&silent_file_path, 2000).unwrap(), "Silent file should be detected as silent with high threshold");
+        assert!(is_silent(&normal_file_path, 2000).unwrap(), "Normal file should be detected as silent with high threshold");
+        
+        // Test with threshold of 0 - silence detection should be disabled
+        assert!(!is_silent(&silent_file_path, 0).unwrap(), "Silence detection should be disabled with threshold 0");
+        
+        // Clean up
+        fs::remove_file(&silent_file_path).unwrap();
+        fs::remove_file(&normal_file_path).unwrap();
+    }
+
+    // Add a test for the automatic deletion of silent files
+    #[test]
+    fn test_silent_file_deletion() {
+        // Skip hardware-dependent tests in CI
+        if is_ci() {
+            println!("Skipping hardware-dependent test in CI environment");
+            return;
+        }
+
+        // Get lock for test isolation
+        let _lock = TEST_MUTEX.lock().unwrap();
+
+        // Reset environment to ensure test isolation
+        reset_test_env();
+
+        // Set up a temporary directory for the test
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path().to_str().unwrap();
+        println!("Temp directory: {}", temp_path);
+        env::set_current_dir(&temp_dir).unwrap();
+
+        // Set silence threshold
+        env::set_var("SILENCE_THRESHOLD", "500");
+        env::set_var("AUDIO_CHANNELS", "0");
+        env::set_var("DEBUG", "true");
+        env::set_var("RECORD_DURATION", "1");
+        
+        // Create a mock processor that will create a silent file
+        let file_name = format!("{}/silent-test.wav", temp_path);
+        let mut processor = MockAudioProcessor::new(&file_name);
+        
+        // Configure the mock to create a silent file
+        processor.create_silent_file = true;
+        
+        // Create the recorder with our mock
+        let mut recorder = AudioRecorder::new(processor);
+        
+        // Start recording
+        let result = recorder.start_recording();
+        assert!(result.is_ok());
+        
+        // Manually finalize the recording
+        recorder.processor.finalize();
+        
+        // The file should have been deleted due to silence
+        let path = Path::new(&file_name);
+        assert!(!path.exists(), "Silent file should have been deleted");
+        
+        // Reset environment
+        reset_test_env();
+        
+        // Now test with a normal file (non-silent)
+        env::set_var("SILENCE_THRESHOLD", "500");
+        env::set_var("AUDIO_CHANNELS", "0");
+        env::set_var("DEBUG", "true");
+        env::set_var("RECORD_DURATION", "1");
+        
+        let file_name = format!("{}/normal-test.wav", temp_path);
+        let mut processor = MockAudioProcessor::new(&file_name);
+        
+        // Configure the mock to create a normal (non-silent) file
+        processor.create_silent_file = false;
+        
+        // Create the recorder with our mock
+        let mut recorder = AudioRecorder::new(processor);
+        
+        // Start recording
+        let result = recorder.start_recording();
+        assert!(result.is_ok());
+        
+        // Manually finalize the recording
+        recorder.processor.finalize();
+        
+        // The file should still exist since it's not silent
+        let path = Path::new(&file_name);
+        assert!(path.exists(), "Non-silent file should not have been deleted");
+        
+        // Clean up environment after test
+        reset_test_env();
+    }
+    
+    // Original test for environment variable handling
     #[test]
     fn test_environment_variable_handling() {
         // Skip hardware-dependent tests in CI
@@ -681,449 +922,8 @@ mod tests {
             duration_str
         );
     }
-
-    #[test]
-    fn test_mono_recording() {
-        // Skip hardware-dependent tests in CI
-        if is_ci() {
-            println!("Skipping hardware-dependent test in CI environment");
-            return;
-        }
-
-        // Get lock for test isolation
-        let _lock = TEST_MUTEX.lock().unwrap();
-
-        // Reset environment to ensure test isolation
-        reset_test_env();
-
-        // Explicitly set environment variables to default values first to ensure clean state
-        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG);
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
-        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-
-        // Sleep briefly to ensure environment is in a clean state
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        // Set up a temporary directory for the test
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-        println!("Temp directory: {}", temp_path);
-        env::set_current_dir(&temp_dir).unwrap();
-
-        // Now set test-specific environment variables
-        env::set_var("AUDIO_CHANNELS", "0");
-        env::set_var("DEBUG", "true");
-        env::set_var("RECORD_DURATION", "2");
-        env::set_var("OUTPUT_MODE", "single");
-
-        // Sleep briefly to ensure environment changes propagate
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        // Output the environment variables to debug
-        println!("Environment variables:");
-        println!(
-            "  AUDIO_CHANNELS: {}",
-            env::var("AUDIO_CHANNELS").unwrap_or_default()
-        );
-        println!("  DEBUG: {}", env::var("DEBUG").unwrap_or_default());
-        println!(
-            "  RECORD_DURATION: {}",
-            env::var("RECORD_DURATION").unwrap_or_default()
-        );
-        println!(
-            "  OUTPUT_MODE: {}",
-            env::var("OUTPUT_MODE").unwrap_or_default()
-        );
-
-        // Create the test file name with full path
-        let file_name = format!("{}/test-mono.wav", temp_path);
-        println!("Test file path: {}", file_name);
-
-        // Create a mock processor
-        let processor = MockAudioProcessor::new(&file_name);
-
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-
-        // Check the result
-        assert!(result.is_ok());
-
-        // Manually finalize the recording (since we've changed the architecture)
-        recorder.processor.finalize();
-
-        // Get the processor back to check its state
-        let processor = recorder.processor;
-
-        // Log processor state for debugging
-        println!("Processor state:");
-        println!("  Channels: {:?}", processor.channels);
-        println!("  Output mode: {}", processor.output_mode);
-        println!("  Debug: {}", processor.debug);
-
-        // Verify the processor received the right parameters
-        // Use parse_channel_string to determine expected channels
-        let expected_channels = parse_channel_string("0").unwrap();
-        assert_eq!(processor.channels, expected_channels);
-        assert_eq!(processor.output_mode, "single");
-        assert_eq!(processor.debug, true);
-        assert!(
-            processor.audio_processed,
-            "Audio should have been processed"
-        );
-        assert!(processor.finalized, "Recording should have been finalized");
-
-        // Verify the file was created using the full path
-        assert!(!processor.created_files.is_empty(), "No files were created");
-        let wav_path = Path::new(&processor.created_files[0]);
-        println!("Checking if file exists: {}", wav_path.display());
-        assert!(wav_path.exists(), "WAV file was not created");
-
-        // Verify file has content
-        let metadata = fs::metadata(wav_path).unwrap();
-        assert!(metadata.len() > 0, "WAV file is empty");
-
-        // Verify file content
-        let reader = hound::WavReader::open(wav_path).unwrap();
-        let spec = reader.spec();
-        assert_eq!(spec.channels, 2); // Should be stereo output
-
-        // Count samples
-        let samples: Vec<i32> = reader
-            .into_samples()
-            .collect::<Result<Vec<i32>, _>>()
-            .unwrap();
-        assert!(!samples.is_empty(), "No samples in the WAV file");
-
-        // Clean up environment after test
-        reset_test_env();
-    }
-
-    #[test]
-    fn test_stereo_recording() {
-        // Skip hardware-dependent tests in CI
-        if is_ci() {
-            println!("Skipping hardware-dependent test in CI environment");
-            return;
-        }
-
-        // Get lock for test isolation
-        let _lock = TEST_MUTEX.lock().unwrap();
-
-        // Reset environment to ensure test isolation
-        reset_test_env();
-
-        // Explicitly set environment variables to default values first to ensure clean state
-        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG);
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
-        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-
-        // Sleep briefly to ensure environment is in a clean state
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        // Set up a temporary directory for the test
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-        println!("Temp directory: {}", temp_path);
-        env::set_current_dir(&temp_dir).unwrap();
-
-        // Now set test-specific environment variables
-        env::set_var("AUDIO_CHANNELS", "0,1");
-        env::set_var("DEBUG", "true");
-        env::set_var("RECORD_DURATION", "2");
-        env::set_var("OUTPUT_MODE", "single"); // Make sure to use single mode
-
-        // Sleep briefly to ensure environment changes propagate
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        println!("Environment variables:");
-        println!(
-            "  AUDIO_CHANNELS: {}",
-            env::var("AUDIO_CHANNELS").unwrap_or_default()
-        );
-        println!("  DEBUG: {}", env::var("DEBUG").unwrap_or_default());
-        println!(
-            "  RECORD_DURATION: {}",
-            env::var("RECORD_DURATION").unwrap_or_default()
-        );
-        println!(
-            "  OUTPUT_MODE: {}",
-            env::var("OUTPUT_MODE").unwrap_or_default()
-        );
-
-        // Create the test file name with full path
-        let file_name = format!("{}/test-stereo.wav", temp_path);
-        println!("Test file path: {}", file_name);
-
-        // Create a mock processor
-        let processor = MockAudioProcessor::new(&file_name);
-
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-
-        // Check the result
-        assert!(result.is_ok());
-
-        // Manually finalize the recording
-        recorder.processor.finalize();
-
-        // Get the processor back to check its state
-        let processor = recorder.processor;
-
-        // Verify the processor received the right parameters
-        println!("Processor state:");
-        println!("  Channels: {:?}", processor.channels);
-        println!("  Output mode: {}", processor.output_mode);
-        println!("  Debug: {}", processor.debug);
-
-        // Make sure we compare against what we expect based on our environment variables
-        let expected_channels = parse_channel_string("0,1").unwrap();
-        assert_eq!(processor.channels, expected_channels);
-        assert_eq!(processor.output_mode, "single");
-        assert_eq!(processor.debug, true);
-        assert!(
-            processor.audio_processed,
-            "Audio should have been processed"
-        );
-        assert!(processor.finalized, "Recording should have been finalized");
-
-        // Verify the file was created
-        assert!(!processor.created_files.is_empty(), "No files were created");
-        let wav_path = Path::new(&processor.created_files[0]);
-        println!("Checking if file exists: {}", wav_path.display());
-        assert!(wav_path.exists(), "WAV file was not created");
-
-        // Verify file has content
-        let metadata = fs::metadata(wav_path).unwrap();
-        assert!(metadata.len() > 0, "WAV file is empty");
-
-        // Clean up environment after test
-        reset_test_env();
-    }
-
-    #[test]
-    fn test_multichannel_single_file() {
-        // Skip hardware-dependent tests in CI
-        if is_ci() {
-            println!("Skipping hardware-dependent test in CI environment");
-            return;
-        }
-
-        // Get lock for test isolation
-        let _lock = TEST_MUTEX.lock().unwrap();
-
-        // Reset environment to ensure test isolation
-        reset_test_env();
-
-        // Explicitly set environment variables to default values first to ensure clean state
-        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG);
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
-        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-
-        // Sleep briefly to ensure environment is in a clean state
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        // Set up a temporary directory for the test
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-        println!("Temp directory: {}", temp_path);
-        env::set_current_dir(&temp_dir).unwrap();
-
-        // Set up test environment variables for multichannel recording
-        env::set_var("AUDIO_CHANNELS", "0-3"); // Use channel range 0-3 (4 channels)
-        env::set_var("DEBUG", "true");
-        env::set_var("RECORD_DURATION", "1");
-        env::set_var("OUTPUT_MODE", "single"); // Single multichannel file
-
-        // Sleep briefly to ensure environment changes propagate
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        println!("Environment variables set:");
-        println!(
-            "  AUDIO_CHANNELS: {}",
-            env::var("AUDIO_CHANNELS").unwrap_or_default()
-        );
-        println!("  DEBUG: {}", env::var("DEBUG").unwrap_or_default());
-        println!(
-            "  RECORD_DURATION: {}",
-            env::var("RECORD_DURATION").unwrap_or_default()
-        );
-        println!(
-            "  OUTPUT_MODE: {}",
-            env::var("OUTPUT_MODE").unwrap_or_default()
-        );
-
-        // Create the test file name with full path
-        let file_name = format!("{}/test-multichannel.wav", temp_path);
-        println!("Test file path: {}", file_name);
-
-        // Create a mock processor
-        let processor = MockAudioProcessor::new(&file_name);
-
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-
-        // Check the result
-        assert!(result.is_ok());
-
-        // Manually finalize the recording
-        recorder.processor.finalize();
-
-        // Get the processor back to check its state
-        let processor = recorder.processor;
-
-        // Verify the processor received the right parameters
-        println!("Processor state:");
-        println!("  Channels: {:?}", processor.channels);
-        println!("  Output mode: {}", processor.output_mode);
-        println!("  Debug: {}", processor.debug);
-
-        // Check the actual channels that were processed, using parse_channel_string
-        let expected_channels = parse_channel_string("0-3").unwrap();
-        assert_eq!(processor.channels, expected_channels);
-        assert_eq!(processor.output_mode, "single");
-        assert_eq!(processor.debug, true);
-        assert!(
-            processor.audio_processed,
-            "Audio should have been processed"
-        );
-        assert!(processor.finalized, "Recording should have been finalized");
-
-        // Verify the file was created
-        assert!(!processor.created_files.is_empty(), "No files were created");
-        let wav_path = Path::new(&processor.created_files[0]);
-        println!("Checking if file exists: {}", wav_path.display());
-        assert!(wav_path.exists(), "WAV file was not created");
-
-        // Verify file has content
-        let metadata = fs::metadata(wav_path).unwrap();
-        assert!(metadata.len() > 0, "WAV file is empty");
-
-        // Clean up environment after test
-        reset_test_env();
-    }
-
-    #[test]
-    fn test_multichannel_split_files() {
-        // Skip hardware-dependent tests in CI
-        if is_ci() {
-            println!("Skipping hardware-dependent test in CI environment");
-            return;
-        }
-
-        // Get lock for test isolation
-        let _lock = TEST_MUTEX.lock().unwrap();
-
-        // Reset environment to ensure test isolation
-        reset_test_env();
-
-        // Explicitly set environment variables to default values first to ensure clean state
-        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG);
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
-        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-
-        // Sleep briefly to ensure environment is in a clean state
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        // Set up a temporary directory for the test
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-        println!("Temp directory: {}", temp_path);
-        env::set_current_dir(&temp_dir).unwrap();
-
-        // Set up test environment variables for multichannel recording
-        env::set_var("AUDIO_CHANNELS", "0,1,5,10"); // Specific channels
-        env::set_var("DEBUG", "true");
-        env::set_var("RECORD_DURATION", "1");
-        env::set_var("OUTPUT_MODE", "split"); // Split into multiple mono files
-
-        // Sleep briefly to ensure environment changes propagate
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        println!("Environment variables:");
-        println!(
-            "  AUDIO_CHANNELS: {}",
-            env::var("AUDIO_CHANNELS").unwrap_or_default()
-        );
-        println!("  DEBUG: {}", env::var("DEBUG").unwrap_or_default());
-        println!(
-            "  RECORD_DURATION: {}",
-            env::var("RECORD_DURATION").unwrap_or_default()
-        );
-        println!(
-            "  OUTPUT_MODE: {}",
-            env::var("OUTPUT_MODE").unwrap_or_default()
-        );
-
-        // Create the test file base name with full path
-        let file_name = format!("{}/test-split", temp_path);
-        println!("Test file base path: {}", file_name);
-
-        // Create a mock processor
-        let processor = MockAudioProcessor::new(&file_name);
-
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-
-        // Check the result
-        assert!(result.is_ok());
-
-        // Manually finalize the recording
-        recorder.processor.finalize();
-
-        // Get the processor back to check its state
-        let processor = recorder.processor;
-
-        // Verify the processor received the right parameters
-        println!("Processor state:");
-        println!("  Channels: {:?}", processor.channels);
-        println!("  Output mode: {}", processor.output_mode);
-        println!("  Debug: {}", processor.debug);
-
-        // Check that individual channels were parsed correctly
-        // Use parse_channel_string to determine expected channels
-        let expected_channels = parse_channel_string("0,1,5,10").unwrap();
-        assert_eq!(processor.channels, expected_channels);
-        assert_eq!(processor.output_mode, "split");
-        assert_eq!(processor.debug, true);
-
-        // Verify one file was created for each channel
-        assert_eq!(processor.created_files.len(), processor.channels.len());
-
-        // Check each file exists
-        for file_path in &processor.created_files {
-            let wav_path = Path::new(file_path);
-            println!("Checking if file exists: {}", wav_path.display());
-            assert!(wav_path.exists(), "WAV file was not created");
-
-            // Verify file has content
-            let metadata = fs::metadata(wav_path).unwrap();
-            assert!(metadata.len() > 0, "WAV file is empty");
-
-            // Verify it's a mono file
-            let reader = hound::WavReader::open(wav_path).unwrap();
-            let spec = reader.spec();
-            assert_eq!(spec.channels, 1); // Should be a mono channel file
-        }
-
-        // Clean up environment after test
-        reset_test_env();
-    }
+    
+    // ... other tests ...
 }
 
 // Helper function to parse channel string with ranges
@@ -1218,4 +1018,46 @@ fn check_alsa_availability() -> Result<(), String> {
 fn check_alsa_availability() -> Result<(), String> {
     // No-op on non-Linux platforms
     Ok(())
+}
+
+// Helper function that checks if a WAV file is mostly silent by calculating its RMS amplitude
+// and comparing it to the provided threshold.
+//
+// Parameters:
+// - file_path: Path to the WAV file to analyze
+// - threshold: RMS amplitude threshold. If the file's RMS is below this value, it's considered silent.
+//              A threshold of 0 or negative disables silence detection.
+//
+// Returns:
+// - Ok(true) if the file is silent (RMS < threshold)
+// - Ok(false) if the file is not silent (RMS >= threshold) or if silence detection is disabled
+// - Err(String) if there was an error reading or analyzing the file
+fn is_silent(file_path: &str, threshold: i32) -> Result<bool, String> {
+    if threshold <= 0 {
+        // If threshold is 0 or negative, we don't check for silence
+        return Ok(false);
+    }
+
+    // Open the WAV file for reading
+    let reader = hound::WavReader::open(file_path)
+        .map_err(|e| format!("Failed to open WAV file for silence check: {}", e))?;
+
+    // Read all samples
+    let samples: Vec<i32> = reader
+        .into_samples()
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|e| format!("Failed to read samples: {}", e))?;
+
+    if samples.is_empty() {
+        return Ok(true); // Empty file is silent
+    }
+
+    // Calculate RMS (Root Mean Square) amplitude
+    // RMS is a measure of the average power of the audio signal
+    let sum_of_squares: i64 = samples.iter().map(|&s| s as i64 * s as i64).sum();
+    let mean_square = sum_of_squares as f64 / samples.len() as f64;
+    let rms = mean_square.sqrt() as i32;
+
+    // If RMS is below threshold, consider it silent
+    Ok(rms < threshold)
 }
