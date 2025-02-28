@@ -2,13 +2,23 @@
 name = "audio_recorder"
 version = "0.1.0"
 edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A simple audio recording application"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cpal = "0.15.3"
+cpal = "0.15.2"
 hound = "3.5.1"
-chrono = "0.4"
-tempfile = "3.10.1"
+chrono = "0.4.31"
+tempfile = "3.9.0"
+
+[lib]
+name = "audio_recorder"
+path = "src/lib.rs"
+
+[[bin]]
+name = "audio_recorder"
+path = "src/main.rs"
 
 [dev-dependencies]
