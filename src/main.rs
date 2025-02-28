@@ -6,7 +6,6 @@ use std::thread;
 use std::time::Duration;
 use std::env;
 use chrono::prelude::*;
-use tempfile::tempdir;
 
 const INTERMEDIATE_BUFFER_SIZE: usize = 512;
 const DEFAULT_CHANNELS: &str = "1,2";
@@ -56,11 +55,14 @@ fn main() {
     }
 
     let spec = hound::WavSpec {
-        channels: 2,
+        channels: 2,  // Always output stereo WAV
         sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
+
+    // Check if we're recording from a mono source but want stereo output
+    let is_mono_input = channels.len() == 1;
 
     let writer = Arc::new(Mutex::new(Some(hound::WavWriter::create(&file_name, spec).unwrap())));
     let intermediate_buffer = Arc::new(Mutex::new(Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE)));
@@ -83,7 +85,13 @@ fn main() {
                         for frame in data.chunks(total_channels) {
                             if frame.len() >= channels.len() {
                                 let sample_left = (frame[channels[0]] * std::i16::MAX as f32) as i16;
-                                let sample_right = (frame[channels[1]] * std::i16::MAX as f32) as i16;
+                                let sample_right = if is_mono_input {
+                                    // For mono input, duplicate the channel
+                                    sample_left
+                                } else {
+                                    // For stereo input, use the second channel
+                                    (frame[channels[1]] * std::i16::MAX as f32) as i16
+                                };
                                 buffer_lock.push(sample_left as i32);
                                 buffer_lock.push(sample_right as i32);
                                 if buffer_lock.len() >= INTERMEDIATE_BUFFER_SIZE {
@@ -119,7 +127,13 @@ fn main() {
                         for frame in data.chunks(total_channels) {
                             if frame.len() >= channels.len() {
                                 let sample_left = frame[channels[0]] as i32;
-                                let sample_right = frame[channels[1]] as i32;
+                                let sample_right = if is_mono_input {
+                                    // For mono input, duplicate the channel
+                                    sample_left
+                                } else {
+                                    // For stereo input, use the second channel
+                                    frame[channels[1]] as i32
+                                };
                                 buffer_lock.push(sample_left);
                                 buffer_lock.push(sample_right);
                                 if buffer_lock.len() >= INTERMEDIATE_BUFFER_SIZE {
@@ -155,7 +169,13 @@ fn main() {
                         for frame in data.chunks(total_channels) {
                             if frame.len() >= channels.len() {
                                 let sample_left = (frame[channels[0]] as i32) - 32768;
-                                let sample_right = (frame[channels[1]] as i32) - 32768;
+                                let sample_right = if is_mono_input {
+                                    // For mono input, duplicate the channel
+                                    sample_left
+                                } else {
+                                    // For stereo input, use the second channel
+                                    (frame[channels[1]] as i32) - 32768
+                                };
                                 buffer_lock.push(sample_left);
                                 buffer_lock.push(sample_right);
                                 if buffer_lock.len() >= INTERMEDIATE_BUFFER_SIZE {
@@ -203,6 +223,7 @@ fn main() {
 mod tests {
     use super::*;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_environment_variable_handling() {
