@@ -553,8 +553,23 @@ mod tests {
     use tempfile::tempdir;
     use std::path::Path;
 
+    // Helper function to reset environment variables for tests
+    fn reset_test_env() {
+        // Clear existing environment variables to ensure test isolation
+        env::remove_var("AUDIO_CHANNELS");
+        env::remove_var("DEBUG");
+        env::remove_var("RECORD_DURATION");
+        env::remove_var("OUTPUT_MODE");
+        
+        // Sleep briefly to ensure environment changes propagate
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
     #[test]
     fn test_environment_variable_handling() {
+        // Reset environment to ensure test isolation
+        reset_test_env();
+        
         // This test will directly validate the parsing functions without
         // relying on environment variables
         
@@ -588,11 +603,8 @@ mod tests {
 
     #[test]
     fn test_mono_recording() {
-        // Reset environment variables first
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
-        env::remove_var("RECORD_DURATION");
-        env::remove_var("OUTPUT_MODE");
+        // Reset environment to ensure test isolation
+        reset_test_env();
         
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -670,11 +682,8 @@ mod tests {
 
     #[test]
     fn test_stereo_recording() {
-        // Reset environment variables first
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
-        env::remove_var("RECORD_DURATION");
-        env::remove_var("OUTPUT_MODE");
+        // Reset environment to ensure test isolation
+        reset_test_env();
         
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -741,11 +750,8 @@ mod tests {
 
     #[test]
     fn test_multichannel_single_file() {
-        // Reset environment variables first
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
-        env::remove_var("RECORD_DURATION");
-        env::remove_var("OUTPUT_MODE");
+        // Reset environment to ensure test isolation
+        reset_test_env();
         
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -813,11 +819,8 @@ mod tests {
 
     #[test]
     fn test_multichannel_split_files() {
-        // Reset environment variables first
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
-        env::remove_var("RECORD_DURATION");
-        env::remove_var("OUTPUT_MODE");
+        // Reset environment to ensure test isolation
+        reset_test_env();
         
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
