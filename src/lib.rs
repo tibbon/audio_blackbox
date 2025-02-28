@@ -18,6 +18,7 @@ mod constants;
 mod cpal_processor;
 mod mock_processor;
 mod utils;
+mod benchmarking;
 
 // Only include test_utils in test builds
 #[cfg(test)]
@@ -29,6 +30,7 @@ pub use audio_recorder::AudioRecorder;
 pub use constants::*;
 pub use cpal_processor::CpalAudioProcessor;
 pub use utils::*;
+pub use benchmarking::{PerformanceTracker, PerformanceMetrics, measure_execution_time};
 
 // Expose test utilities
 #[cfg(test)]

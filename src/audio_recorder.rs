@@ -30,50 +30,53 @@ impl<P: AudioProcessor> AudioRecorder<P> {
     /// This method reads configuration from environment variables, initializes
     /// the audio processor, and starts recording.
     pub fn start_recording(&mut self) -> Result<String, String> {
-        // Read environment variables
-        let channels_str =
-            env::var("AUDIO_CHANNELS").unwrap_or_else(|_| DEFAULT_CHANNELS.to_string());
-
-        // Parse channels, which can now include ranges
-        let channels = parse_channel_string(&channels_str)?;
-
-        let debug: bool = env::var("DEBUG")
+        let debug = env::var("DEBUG")
             .unwrap_or_else(|_| DEFAULT_DEBUG.to_string())
-            .parse()
-            .expect("Invalid debug flag");
+            .parse::<bool>()
+            .unwrap_or(false);
 
-        let record_duration: u64 = env::var("RECORD_DURATION")
-            .unwrap_or_else(|_| DEFAULT_DURATION.to_string())
-            .parse()
-            .expect("Invalid record duration");
+        // Get the selected channels from environment or default
+        let requested_channels = env::var("AUDIO_CHANNELS")
+            .unwrap_or_else(|_| DEFAULT_CHANNELS.to_string());
 
-        let output_mode: String =
-            env::var("OUTPUT_MODE").unwrap_or_else(|_| DEFAULT_OUTPUT_MODE.to_string());
+        let channels = match parse_channel_string(&requested_channels) {
+            Ok(chs) => chs,
+            Err(e) => return Err(format!("Error parsing channels: {}", e)),
+        };
 
-        let silence_threshold: i32 = env::var("SILENCE_THRESHOLD")
-            .unwrap_or_else(|_| DEFAULT_SILENCE_THRESHOLD.to_string())
-            .parse()
-            .expect("Invalid silence threshold");
+        // Get the selected output mode from environment or default
+        let output_mode = env::var("OUTPUT_MODE")
+            .unwrap_or_else(|_| DEFAULT_OUTPUT_MODE.to_string());
 
-        // Print recording information
+        // Print audio configuration
         println!("Starting recording:");
         println!("  Channels: {:?}", channels);
         println!("  Debug: {}", debug);
-        println!("  Duration: {} seconds", record_duration);
+        
+        // Get the recording duration from environment or default
+        let duration = env::var("RECORD_DURATION")
+            .unwrap_or_else(|_| DEFAULT_DURATION.to_string())
+            .parse::<u64>()
+            .unwrap_or(10);
+        println!("  Duration: {} seconds", duration);
+        
         println!("  Output Mode: {}", output_mode);
+        
+        // Check if silence detection is enabled
+        let silence_threshold = env::var("SILENCE_THRESHOLD")
+            .unwrap_or_else(|_| DEFAULT_SILENCE_THRESHOLD.to_string())
+            .parse::<i32>()
+            .unwrap_or(0);
+        
         if silence_threshold > 0 {
-            println!(
-                "  Silence Threshold: {} (files below this will be deleted)",
-                silence_threshold
-            );
+            println!("  Silence Detection: Enabled (threshold: {})", silence_threshold);
         } else {
             println!("  Silence Detection: Disabled");
         }
 
-        // Process audio based on channels and config
+        // Start the processor with the selected configuration
         self.processor.process_audio(&channels, &output_mode, debug);
 
-        // Return a success message
-        Ok("Recording in progress. Press Ctrl+C to stop.".to_string())
+        Ok(format!("Recording started with channels {:?}", channels))
     }
 }

@@ -1,103 +1,91 @@
 # Audio Recorder
 
-A simple Rust application for recording audio from input devices to WAV files. Supports both mono and stereo inputs, and automatically converts mono inputs to stereo output files. Now with full multichannel support for up to 64 channels!
+An audio recording application built with Rust that supports various recording modes, silence detection, and performance monitoring.
 
 ## Features
 
-- Records from default audio input device
-- Supports multiple sample formats (F32, I16, U16)
-- Handles mono, stereo, and multichannel inputs (up to 64 channels)
-- Configurable through environment variables
-- Flexible channel selection with support for ranges and individual channels
-- Multiple output modes:
-  - Standard stereo WAV file (default)
-  - Single multichannel WAV file with all selected channels
-  - Split mode with separate mono WAV files for each channel
-- Automatic deletion of silent recordings based on configurable threshold
+- **Recording with configurable channel selection** - Record from specific audio channels with automatic adaptation to available hardware
+- **Multiple output formats** - Save to a single multichannel file or individual channel files
+- **Silence detection** - Automatically discard silent recordings
+- **Debug mode** - Track audio processing details
+- **Continuous recording mode with configurable file rotation**
+- **Performance monitoring and benchmarking**
 
 ## Requirements
 
-- Rust and Cargo
-- An audio input device (microphone, line-in, etc.)
+The application uses environment variables for configuration:
 
-## Installation
-
-Clone the repository and build with Cargo:
-
-```bash
-git clone [repository-url]
-cd blackbox
-cargo build --release
-```
+- `AUDIO_CHANNELS` - Zero-indexed channels to record, e.g., "0,1" for first and second channels (default: "0,1"). The application will automatically adapt if requested channels aren't available.
+- `DEBUG` - Enable debug output (default: "false")
+- `DURATION` - Recording duration in seconds (default: "10")
+- `OUTPUT_MODE` - Output mode: "single" or "split" (default: "single")
+- `SILENCE_THRESHOLD` - Threshold for silence detection (default: "0" - disabled)
+- `CONTINUOUS_MODE` - Enable continuous recording (default: "false")
+- `RECORDING_CADENCE` - How often to rotate files in continuous mode (seconds, default: "60")
+- `OUTPUT_DIR` - Directory for saving audio files (default: current directory)
+- `PERFORMANCE_LOGGING` - Enable performance metrics collection (default: "false")
 
 ## Usage
 
-Run the application with:
-
 ```bash
-cargo run --release
-```
+# Record using default settings (channels 0,1, 10 seconds, single file output)
+cargo run
 
-### Environment Variables
+# Record specific channels (zero-indexed)
+AUDIO_CHANNELS=0 cargo run        # Record only first channel
+AUDIO_CHANNELS=0,1,2 cargo run    # Record first three channels
+AUDIO_CHANNELS=0-2 cargo run      # Record channels 0, 1, and 2 (range format)
+AUDIO_CHANNELS=0,2-4 cargo run    # Record channels 0, 2, 3, and 4 (mixed format)
 
-The application can be configured with the following environment variables:
+# Record with silence detection
+SILENCE_THRESHOLD=0.01 cargo run
 
-- `AUDIO_CHANNELS`: Specify which channels to record:
-  - Comma-separated values for individual channels: "0,1,5,10"
-  - Ranges of channels: "1-24"
-  - Mixed format: "0,1,5-10,15"
-  - Default: "1,2"
-- `OUTPUT_MODE`: How to save the recording:
-  - "single": Record all channels into a single WAV file (default)
-  - "split": Record each channel to a separate mono WAV file
-- `DEBUG`: Enable debug output ("true" or "false"). Default: "false"
-- `RECORD_DURATION`: Recording duration in seconds. Default: "10"
-- `SILENCE_THRESHOLD`: RMS amplitude threshold for silence detection:
-  - "0": Disable silence detection (default)
-  - Any positive integer: Delete files with RMS amplitude below this threshold
-  - Typical values range from 100-1000 depending on your audio setup
+# Record for a specific duration
+DURATION=5 cargo run
 
-Examples:
+# Record with split output (one file per channel)
+OUTPUT_MODE=split cargo run
 
-```bash
-# Record channels 0 and 1 to a stereo WAV file for 30 seconds
-AUDIO_CHANNELS="0,1" RECORD_DURATION="30" cargo run --release
+# Enable debug output
+DEBUG=true cargo run
 
-# Record 8 channels (0-7) to a single multichannel WAV file
-AUDIO_CHANNELS="0-7" OUTPUT_MODE="single" RECORD_DURATION="60" cargo run --release
+# Enable continuous recording
+CONTINUOUS_MODE=true RECORDING_CADENCE=30 cargo run
 
-# Record channels 1, 3, 5, and 7 to individual mono WAV files
-AUDIO_CHANNELS="1,3,5,7" OUTPUT_MODE="split" RECORD_DURATION="120" cargo run --release
-
-# Record audio but delete files if they are mostly silent (RMS amplitude < 500)
-SILENCE_THRESHOLD="500" RECORD_DURATION="30" cargo run --release
+# With performance logging
+PERFORMANCE_LOGGING=true cargo run
 ```
 
 ## Output
 
-The application creates WAV files in the current directory with names in the format:
+The application creates WAV files in your current directory (or the directory specified by `OUTPUT_DIR`). 
 
-- Single file mode: `YYYY-MM-DD-HH-MM.wav` or `YYYY-MM-DD-HH-MM-multichannel.wav`
-- Split mode: `YYYY-MM-DD-HH-MM-chX.wav` (where X is the channel number)
+In standard mode, the recording will stop after the specified duration and save the WAV file.
 
-If silence detection is enabled, files with RMS amplitude below the specified threshold will be automatically deleted.
+In continuous mode, files will be created every `RECORDING_CADENCE` seconds. The application will continue recording until interrupted.
 
-## Architecture
+## Hardware Compatibility
 
-The application is structured around a simple abstraction:
+The application is designed to work with various audio hardware setups:
 
-- `AudioProcessor`: Trait that handles the audio processing
-- `AudioRecorder`: Main struct that coordinates the recording process
-- `CpalAudioProcessor`: Implementation of `AudioProcessor` that uses the CPAL library
+- **Single Channel Microphones**: Will automatically detect and work with mono microphones
+- **Multi-Channel Microphones**: Can record from any available channels
+- **Limited Channel Hardware**: Automatically adapts if requested channels aren't available
 
-## Testing
+## Performance Monitoring
 
-The project includes unit tests that use mock objects to test the recording functionality without requiring actual audio hardware:
+When enabled, performance metrics include:
+- CPU usage
+- Memory consumption
+- Disk write speed
+- Audio processing latency
+
+These metrics are logged at regular intervals and can be used for benchmarking and optimization.
+
+## Building
 
 ```bash
-cargo test
+cargo build --release
 ```
 
-## License
-
-[MIT](LICENSE)
+The compiled binary will be available at `target/release/blackbox`.
