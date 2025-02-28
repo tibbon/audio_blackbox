@@ -34,7 +34,10 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev
+        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+        # Verify alsa is installed and pkg-config can find it
+        pkg-config --list-all | grep alsa || echo "ALSA not found in pkg-config"
+        ls -la /usr/lib/pkgconfig/alsa.pc || echo "alsa.pc not found"
 
     - name: Cache dependencies
       uses: actions/cache@v3
@@ -72,6 +75,11 @@ jobs:
         override: true
         components: rustfmt, clippy
     
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+    
     - name: Check formatting
       run: cargo fmt --all -- --check
     
@@ -96,7 +104,7 @@ jobs:
     - name: Install Linux dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev
+        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
     
     - name: Build release
       run: cargo build --release
