@@ -1,6 +1,7 @@
 use crate::audio_processor::AudioProcessor;
-use std::env;
+use crate::config::AppConfig;
 use std::fs;
+use std::path::Path;
 
 #[cfg(test)]
 use crate::constants::DEFAULT_OUTPUT_MODE;
@@ -48,6 +49,16 @@ impl AudioProcessor for MockAudioProcessor {
         // Choose amplitude based on silence flag
         // Very low amplitude (0) for silent files, higher amplitude (50) for normal files
         let amplitude = if self.create_silent_file { 0 } else { 50 };
+
+        // Make sure the output directory exists
+        if let Some(dir) = Path::new(&self.file_name).parent() {
+            if !dir.exists() {
+                if let Err(e) = fs::create_dir_all(dir) {
+                    eprintln!("Error creating directory: {}", e);
+                    return;
+                }
+            }
+        }
 
         match output_mode {
             "split" => {
@@ -152,22 +163,19 @@ impl AudioProcessor for MockAudioProcessor {
     fn finalize(&mut self) {
         self.finalized = true;
 
-        // Check if we should apply the silence threshold
-        // This simulates the real-world behavior where silent files are deleted
-        // after recording if the SILENCE_THRESHOLD environment variable is set
-        if let Ok(threshold) = env::var("SILENCE_THRESHOLD") {
-            if let Ok(threshold) = threshold.parse::<i32>() {
-                if threshold > 0 && self.create_silent_file {
-                    // If we're creating silent files and threshold is set, delete the files
-                    // since they should be below the threshold. This allows testing the
-                    // silence detection and deletion functionality.
-                    for file_path in &self.created_files {
-                        if let Err(e) = fs::remove_file(file_path) {
-                            eprintln!("Failed to delete silent file in test: {}", e);
-                        } else {
-                            println!("Deleted silent test file: {}", file_path);
-                        }
-                    }
+        // Check if we should apply the silence threshold using AppConfig
+        let config = AppConfig::load();
+        let silence_threshold = config.get_silence_threshold();
+
+        if silence_threshold > 0 && self.create_silent_file {
+            // If we're creating silent files and threshold is set, delete the files
+            // since they should be below the threshold. This allows testing the
+            // silence detection and deletion functionality.
+            for file_path in &self.created_files {
+                if let Err(e) = fs::remove_file(file_path) {
+                    eprintln!("Failed to delete silent file in test: {}", e);
+                } else {
+                    println!("Deleted silent test file: {}", file_path);
                 }
             }
         }

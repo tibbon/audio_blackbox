@@ -1,18 +1,19 @@
-use chrono::prelude::*;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat;
-use std::env;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::audio_processor::AudioProcessor;
+use crate::config::AppConfig;
 use crate::constants::{
-    MultiChannelWriters, WavWriterType, DEFAULT_OUTPUT_DIR, DEFAULT_RECORDING_CADENCE,
-    INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS,
+    MultiChannelWriters, WavWriterType, INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS,
 };
 use crate::utils::{check_alsa_availability, is_silent};
+
+use chrono::prelude::*;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat;
+use std::env;
 
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
@@ -44,6 +45,9 @@ impl CpalAudioProcessor {
     /// This sets up the recording environment, including WAV file writers
     /// and audio stream configuration.
     pub fn new() -> Result<Self, String> {
+        // Load configuration
+        let config = AppConfig::load();
+
         // Check if ALSA is available on Linux
         check_alsa_availability()?;
 
@@ -58,23 +62,16 @@ impl CpalAudioProcessor {
             now.minute()
         );
 
-        // Check and create output directory if in continuous mode
-        let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| DEFAULT_OUTPUT_DIR.to_string());
+        // Get configuration values
+        let output_dir = config.get_output_dir();
+        let continuous_mode = config.get_continuous_mode();
+        let recording_cadence = config.get_recording_cadence();
+
+        // Check and create output directory
         if !Path::new(&output_dir).exists() {
             fs::create_dir_all(&output_dir)
                 .map_err(|e| format!("Failed to create output directory: {}", e))?;
         }
-
-        // Read continuous mode configuration
-        let continuous_mode = env::var("CONTINUOUS_MODE")
-            .unwrap_or_else(|_| "false".to_string())
-            .parse::<bool>()
-            .unwrap_or(false);
-
-        let recording_cadence = env::var("RECORDING_CADENCE")
-            .unwrap_or_else(|_| DEFAULT_RECORDING_CADENCE.to_string())
-            .parse::<u64>()
-            .unwrap_or(300); // Default to 5 minutes
 
         let host = cpal::default_host();
         let device = host
@@ -86,13 +83,13 @@ impl CpalAudioProcessor {
             device.name().map_err(|e| e.to_string())?
         );
 
-        let config = device
+        let config_audio = device
             .default_input_config()
             .map_err(|e| format!("Failed to get default input stream config: {}", e))?;
 
-        println!("Default input stream config: {:?}", config);
+        println!("Default input stream config: {:?}", config_audio);
 
-        let sample_rate = config.sample_rate().0;
+        let sample_rate = config_audio.sample_rate().0;
 
         let spec = hound::WavSpec {
             channels: 2, // Default is stereo WAV for backward compatibility
@@ -246,13 +243,13 @@ impl CpalAudioProcessor {
 
         println!("Rotating recording files...");
 
+        // Load configuration
+        let config = AppConfig::load();
+        let silence_threshold = config.get_silence_threshold();
+
         // Get current configuration for recreating files
         let output_mode = self.output_mode.lock().unwrap().clone();
         let channels = self.channels.lock().unwrap().clone();
-        let silence_threshold = env::var("SILENCE_THRESHOLD")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse::<i32>()
-            .unwrap_or(0);
 
         // Store paths of files being finalized to check for silence later
         let mut created_files = Vec::new();
@@ -829,6 +826,10 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn finalize(&mut self) {
+        // Load configuration
+        let config = AppConfig::load();
+        let silence_threshold = config.get_silence_threshold();
+
         // Close the stream to stop recording
         self.stream = None;
 
@@ -844,27 +845,26 @@ impl AudioProcessor for CpalAudioProcessor {
                 println!("Finalized recording to {}", file_path);
 
                 // Check if we should apply silence detection
-                if let Ok(threshold) = env::var("SILENCE_THRESHOLD") {
-                    if let Ok(threshold) = threshold.parse::<i32>() {
-                        if threshold > 0 {
-                            // Check if the file is silent
-                            match is_silent(&file_path, threshold) {
-                                Ok(true) => {
-                                    println!(
-                                        "Recording is silent (below threshold {}), deleting file",
-                                        threshold
-                                    );
-                                    if let Err(e) = fs::remove_file(&file_path) {
-                                        eprintln!("Error deleting silent file: {}", e);
-                                    }
-                                }
-                                Ok(false) => {
-                                    println!("Recording is not silent (above threshold {}), keeping file", threshold);
-                                }
-                                Err(e) => {
-                                    eprintln!("Error checking for silence: {}", e);
-                                }
+                if silence_threshold > 0 {
+                    // Check if the file is silent
+                    match is_silent(&file_path, silence_threshold) {
+                        Ok(true) => {
+                            println!(
+                                "Recording is silent (below threshold {}), deleting file",
+                                silence_threshold
+                            );
+                            if let Err(e) = fs::remove_file(&file_path) {
+                                eprintln!("Error deleting silent file: {}", e);
                             }
+                        }
+                        Ok(false) => {
+                            println!(
+                                "Recording is not silent (above threshold {}), keeping file",
+                                silence_threshold
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Error checking for silence: {}", e);
                         }
                     }
                 }
@@ -894,24 +894,20 @@ impl AudioProcessor for CpalAudioProcessor {
                     println!("Finalized recording to {}", file_path);
 
                     // Check if we should apply silence detection
-                    if let Ok(threshold) = env::var("SILENCE_THRESHOLD") {
-                        if let Ok(threshold) = threshold.parse::<i32>() {
-                            if threshold > 0 {
-                                // Check if the file is silent
-                                match is_silent(&file_path, threshold) {
-                                    Ok(true) => {
-                                        println!("Channel recording is silent (below threshold {}), deleting file", threshold);
-                                        if let Err(e) = fs::remove_file(&file_path) {
-                                            eprintln!("Error deleting silent file: {}", e);
-                                        }
-                                    }
-                                    Ok(false) => {
-                                        println!("Channel recording is not silent (above threshold {}), keeping file", threshold);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Error checking for silence: {}", e);
-                                    }
+                    if silence_threshold > 0 {
+                        // Check if the file is silent
+                        match is_silent(&file_path, silence_threshold) {
+                            Ok(true) => {
+                                println!("Channel recording is silent (below threshold {}), deleting file", silence_threshold);
+                                if let Err(e) = fs::remove_file(&file_path) {
+                                    eprintln!("Error deleting silent file: {}", e);
                                 }
+                            }
+                            Ok(false) => {
+                                println!("Channel recording is not silent (above threshold {}), keeping file", silence_threshold);
+                            }
+                            Err(e) => {
+                                eprintln!("Error checking for silence: {}", e);
                             }
                         }
                     }

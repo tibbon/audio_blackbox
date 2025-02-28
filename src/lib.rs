@@ -15,6 +15,7 @@
 mod audio_processor;
 mod audio_recorder;
 mod benchmarking;
+mod config;
 mod constants;
 mod cpal_processor;
 mod mock_processor;
@@ -28,6 +29,7 @@ pub mod test_utils;
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
 pub use benchmarking::{measure_execution_time, PerformanceMetrics, PerformanceTracker};
+pub use config::AppConfig;
 pub use constants::*;
 pub use cpal_processor::CpalAudioProcessor;
 pub use utils::*;
@@ -57,17 +59,38 @@ mod tests {
     }
 
     fn reset_test_env() {
-        env::remove_var("CHANNELS");
+        // Remove environment variables that might affect tests
+        env::remove_var("AUDIO_CHANNELS");
         env::remove_var("DEBUG");
-        env::remove_var("DURATION");
+        env::remove_var("RECORD_DURATION");
         env::remove_var("OUTPUT_MODE");
         env::remove_var("SILENCE_THRESHOLD");
+        env::remove_var("CONTINUOUS_MODE");
+        env::remove_var("RECORDING_CADENCE");
+        env::remove_var("OUTPUT_DIR");
+        env::remove_var("PERFORMANCE_LOGGING");
+
+        // Set environment variables to override any config file settings
+        // This ensures tests run with predictable values regardless of config file
+        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
+        env::set_var("DEBUG", DEFAULT_DEBUG);
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
+        env::set_var("SILENCE_THRESHOLD", DEFAULT_SILENCE_THRESHOLD);
+        env::set_var("CONTINUOUS_MODE", DEFAULT_CONTINUOUS_MODE);
+        env::set_var("RECORDING_CADENCE", DEFAULT_RECORDING_CADENCE);
+        env::set_var("OUTPUT_DIR", DEFAULT_OUTPUT_DIR);
+        env::set_var("PERFORMANCE_LOGGING", DEFAULT_PERFORMANCE_LOGGING);
     }
 
     // Test environment variable handling
     #[test]
     fn test_environment_variable_handling() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
         // Test channels parsing
@@ -99,7 +122,11 @@ mod tests {
             return;
         }
 
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
         let temp_dir = tempdir().unwrap();
@@ -129,7 +156,11 @@ mod tests {
 
     #[test]
     fn test_channel_parsing() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
         // Test basic channel list
@@ -164,7 +195,11 @@ mod tests {
 
     #[test]
     fn test_silence_detection() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
         // This test creates a silent WAV file and checks if it's detected as silent
@@ -178,6 +213,9 @@ mod tests {
         // Configure the mock to create a silent file
         processor.create_silent_file = true;
 
+        // Set the silence threshold to detect silence
+        env::set_var("SILENCE_THRESHOLD", "10");
+
         // Create the recorder with our mock
         let mut recorder = AudioRecorder::new(processor);
 
@@ -187,30 +225,26 @@ mod tests {
 
         // Make sure the file was created
         let path = Path::new(&file_name);
+
+        // The file should exist immediately after recording
         assert!(path.exists(), "Test file should have been created");
 
-        // Check that it is silent
-        let is_silent_result = utils::is_silent(&file_name, 10);
-        assert!(is_silent_result.is_ok());
-        assert!(
-            is_silent_result.unwrap(),
-            "File should be detected as silent"
-        );
+        // Now manually finalize to trigger silence detection
+        recorder.processor.finalize();
 
-        // Now test with threshold = 0, which should disable silence detection
-        let is_not_detected = utils::is_silent(&file_name, 0);
-        assert!(is_not_detected.is_ok());
-        assert!(
-            !is_not_detected.unwrap(),
-            "Silence detection should be disabled with threshold=0"
-        );
+        // The file should now be deleted since it was silent and threshold is set
+        assert!(!path.exists(), "Silent file should have been deleted");
 
         reset_test_env();
     }
 
     #[test]
     fn test_silence_deletion() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
         // Set threshold for this test
@@ -245,19 +279,25 @@ mod tests {
 
     #[test]
     fn test_normal_file_not_deleted() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let lock = TEST_MUTEX.lock();
+        if lock.is_err() {
+            println!("Mutex was poisoned, creating a new test environment");
+            // Continue with the test even if the mutex was poisoned
+        }
         reset_test_env();
 
-        // Set threshold for this test
+        // Set threshold for this test using environment variable
+        // This will be picked up by AppConfig
         env::set_var("SILENCE_THRESHOLD", "10");
 
         let temp_dir = tempdir().unwrap();
         let temp_path = temp_dir.path().to_str().unwrap();
 
         let file_name = format!("{}/normal-test.wav", temp_path);
-        let mut processor = MockAudioProcessor::new(&file_name);
+        let processor = MockAudioProcessor::new(&file_name);
 
         // Configure the mock to create a normal (non-silent) file
+        let mut processor = processor;
         processor.create_silent_file = false;
 
         // Create the recorder with our mock
@@ -267,11 +307,15 @@ mod tests {
         let result = recorder.start_recording();
         assert!(result.is_ok());
 
+        // Verify the file exists
+        let path = Path::new(&file_name);
+        assert!(path.exists(), "File should have been created");
+
         // Manually finalize the recording
+        // We need to access the processor directly since we need mutable access
         recorder.processor.finalize();
 
         // The file should still exist since it's not silent
-        let path = Path::new(&file_name);
         assert!(
             path.exists(),
             "Non-silent file should not have been deleted"

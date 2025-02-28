@@ -1,0 +1,39 @@
+# Blackbox Audio Recorder Configuration
+# This file configures the behavior of the audio recorder.
+# Values set here can be overridden by environment variables.
+
+# Audio channels to record (comma-separated list or ranges like 0-2)
+# Default: 0,1
+audio_channels = "0"
+
+# Enable debug output (true/false)
+# Default: false
+debug = true
+
+# Recording duration in seconds (0 for unlimited)
+# Default: 10
+duration = 5
+
+# Output mode: "single" (one file), "split" (one file per channel)
+# Default: single
+output_mode = "single"
+
+# Silence threshold (0-100, 0 disables silence detection)
+# Default: 0
+silence_threshold = 20
+
+# Continuous recording mode (true/false)
+# Default: false
+continuous_mode = false
+
+# Recording cadence in seconds (how often to rotate files in continuous mode)
+# Default: 300
+recording_cadence = 300
+
+# Output directory for recordings
+# Default: ./recordings
+output_dir = "./recordings"
+
+# Enable performance logging (true/false)
+# Default: false
+performance_logging = false

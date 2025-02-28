@@ -1,5 +1,4 @@
-use blackbox::{AudioRecorder, CpalAudioProcessor, PerformanceTracker};
-use std::env;
+use blackbox::{AppConfig, AudioRecorder, CpalAudioProcessor, PerformanceTracker};
 use std::path::Path;
 use std::process;
 use std::sync::{
@@ -10,20 +9,24 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    // Check if we're in continuous mode
-    let continuous_mode = env::var("CONTINUOUS_MODE")
-        .unwrap_or_else(|_| String::from("false"))
-        .parse::<bool>()
-        .unwrap_or(false);
+    // Load configuration from file and environment variables
+    let config = AppConfig::load();
 
-    // Check if performance monitoring is enabled
-    let performance_logging = env::var("PERFORMANCE_LOGGING")
-        .unwrap_or_else(|_| String::from("false"))
-        .parse::<bool>()
-        .unwrap_or(false);
+    // Check if this is the first run and create a config file if needed
+    if !Path::new("blackbox.toml").exists() {
+        println!("First run detected. Creating default configuration file.");
+        if let Err(e) = config.create_config_file("blackbox.toml") {
+            eprintln!("Failed to create config file: {}", e);
+        } else {
+            println!("Created default configuration file: blackbox.toml");
+            println!("You can edit this file to customize the recorder's behavior.");
+        }
+    }
 
-    // Get output directory
-    let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| String::from("./recordings"));
+    // Get configuration values
+    let continuous_mode = config.get_continuous_mode();
+    let performance_logging = config.get_performance_logging();
+    let output_dir = config.get_output_dir();
 
     // Create output directory if it doesn't exist
     if !Path::new(&output_dir).exists() {
@@ -70,8 +73,8 @@ fn main() {
         }
     };
 
-    // Create the recorder with our processor
-    let mut recorder = AudioRecorder::new(processor);
+    // Create the recorder with our processor and config
+    let mut recorder = AudioRecorder::with_config(processor, config);
 
     // Start recording
     match recorder.start_recording() {
@@ -111,10 +114,7 @@ fn main() {
         // which will cause the audio processor to be finalized
     } else {
         // In normal mode, the recorder will automatically stop after the specified duration
-        let duration = env::var("RECORD_DURATION")
-            .unwrap_or_else(|_| String::from("10"))
-            .parse::<u64>()
-            .unwrap_or(10);
+        let duration = recorder.config.get_duration();
 
         println!("Recording for {} seconds...", duration);
         thread::sleep(Duration::from_secs(duration));
