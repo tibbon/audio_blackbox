@@ -92,6 +92,7 @@ dependencies = [
  "chrono",
  "cpal",
  "hound",
+ "lazy_static",
  "tempfile",
 ]
 

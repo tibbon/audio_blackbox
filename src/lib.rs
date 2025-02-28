@@ -582,8 +582,15 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+    use std::sync::Mutex;
     use tempfile::tempdir;
     use test_utils::MockAudioProcessor;
+
+    // A static lock to ensure tests run sequentially
+    // This prevents environment variable interference
+    lazy_static::lazy_static! {
+        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
+    }
 
     // Helper function to reset environment variables for tests
     fn reset_test_env() {
@@ -594,11 +601,17 @@ mod tests {
         env::remove_var("OUTPUT_MODE");
 
         // Sleep briefly to ensure environment changes propagate
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Add a debug statement to ensure reset was called
+        println!("Environment variables reset completed");
     }
 
     #[test]
     fn test_environment_variable_handling() {
+        // Acquire the lock to ensure tests run sequentially
+        let _lock = TEST_MUTEX.lock().unwrap();
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -654,8 +667,20 @@ mod tests {
 
     #[test]
     fn test_mono_recording() {
+        // Acquire the lock to ensure tests run sequentially
+        let _lock = TEST_MUTEX.lock().unwrap();
+
         // Reset environment to ensure test isolation
         reset_test_env();
+
+        // Explicitly set environment variables to default values first to ensure clean state
+        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
+        env::set_var("DEBUG", DEFAULT_DEBUG);
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
+
+        // Sleep briefly to ensure environment is in a clean state
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -663,11 +688,14 @@ mod tests {
         println!("Temp directory: {}", temp_path);
         env::set_current_dir(&temp_dir).unwrap();
 
-        // Set up test environment variables matching what the mock processor expects
+        // Now set test-specific environment variables
         env::set_var("AUDIO_CHANNELS", "0");
         env::set_var("DEBUG", "true");
         env::set_var("RECORD_DURATION", "2");
         env::set_var("OUTPUT_MODE", "single");
+
+        // Sleep briefly to ensure environment changes propagate
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Output the environment variables to debug
         println!("Environment variables:");
@@ -714,8 +742,9 @@ mod tests {
         println!("  Debug: {}", processor.debug);
 
         // Verify the processor received the right parameters
-        // Now we're checking against the actual value from the processor
-        assert_eq!(processor.channels, processor.channels);
+        // Use parse_channel_string to determine expected channels
+        let expected_channels = parse_channel_string("0").unwrap();
+        assert_eq!(processor.channels, expected_channels);
         assert_eq!(processor.output_mode, "single");
         assert_eq!(processor.debug, true);
         assert!(
@@ -745,12 +774,27 @@ mod tests {
             .collect::<Result<Vec<i32>, _>>()
             .unwrap();
         assert!(!samples.is_empty(), "No samples in the WAV file");
+
+        // Clean up environment after test
+        reset_test_env();
     }
 
     #[test]
     fn test_stereo_recording() {
+        // Acquire the lock to ensure tests run sequentially
+        let _lock = TEST_MUTEX.lock().unwrap();
+
         // Reset environment to ensure test isolation
         reset_test_env();
+
+        // Explicitly set environment variables to default values first to ensure clean state
+        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
+        env::set_var("DEBUG", DEFAULT_DEBUG);
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
+
+        // Sleep briefly to ensure environment is in a clean state
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -758,11 +802,14 @@ mod tests {
         println!("Temp directory: {}", temp_path);
         env::set_current_dir(&temp_dir).unwrap();
 
-        // Set up test environment variables
+        // Now set test-specific environment variables
         env::set_var("AUDIO_CHANNELS", "0,1");
         env::set_var("DEBUG", "true");
         env::set_var("RECORD_DURATION", "2");
         env::set_var("OUTPUT_MODE", "single"); // Make sure to use single mode
+
+        // Sleep briefly to ensure environment changes propagate
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         println!("Environment variables:");
         println!(
@@ -807,7 +854,9 @@ mod tests {
         println!("  Output mode: {}", processor.output_mode);
         println!("  Debug: {}", processor.debug);
 
-        assert_eq!(processor.channels, vec![0, 1]);
+        // Make sure we compare against what we expect based on our environment variables
+        let expected_channels = parse_channel_string("0,1").unwrap();
+        assert_eq!(processor.channels, expected_channels);
         assert_eq!(processor.output_mode, "single");
         assert_eq!(processor.debug, true);
         assert!(
@@ -825,12 +874,27 @@ mod tests {
         // Verify file has content
         let metadata = fs::metadata(wav_path).unwrap();
         assert!(metadata.len() > 0, "WAV file is empty");
+
+        // Clean up environment after test
+        reset_test_env();
     }
 
     #[test]
     fn test_multichannel_single_file() {
+        // Acquire the lock to ensure tests run sequentially
+        let _lock = TEST_MUTEX.lock().unwrap();
+
         // Reset environment to ensure test isolation
         reset_test_env();
+
+        // Explicitly set environment variables to default values first to ensure clean state
+        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
+        env::set_var("DEBUG", DEFAULT_DEBUG);
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
+
+        // Sleep briefly to ensure environment is in a clean state
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -843,6 +907,9 @@ mod tests {
         env::set_var("DEBUG", "true");
         env::set_var("RECORD_DURATION", "1");
         env::set_var("OUTPUT_MODE", "single"); // Single multichannel file
+
+        // Sleep briefly to ensure environment changes propagate
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         println!("Environment variables set:");
         println!(
@@ -887,9 +954,10 @@ mod tests {
         println!("  Output mode: {}", processor.output_mode);
         println!("  Debug: {}", processor.debug);
 
-        // Check the actual channels that were processed, not our expected ones
-        assert_eq!(processor.channels, processor.channels);
-        assert_eq!(processor.output_mode, processor.output_mode);
+        // Check the actual channels that were processed, using parse_channel_string
+        let expected_channels = parse_channel_string("0-3").unwrap();
+        assert_eq!(processor.channels, expected_channels);
+        assert_eq!(processor.output_mode, "single");
         assert_eq!(processor.debug, true);
         assert!(
             processor.audio_processed,
@@ -906,12 +974,27 @@ mod tests {
         // Verify file has content
         let metadata = fs::metadata(wav_path).unwrap();
         assert!(metadata.len() > 0, "WAV file is empty");
+
+        // Clean up environment after test
+        reset_test_env();
     }
 
     #[test]
     fn test_multichannel_split_files() {
+        // Acquire the lock to ensure tests run sequentially
+        let _lock = TEST_MUTEX.lock().unwrap();
+
         // Reset environment to ensure test isolation
         reset_test_env();
+
+        // Explicitly set environment variables to default values first to ensure clean state
+        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
+        env::set_var("DEBUG", DEFAULT_DEBUG);
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
+
+        // Sleep briefly to ensure environment is in a clean state
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Set up a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -924,6 +1007,24 @@ mod tests {
         env::set_var("DEBUG", "true");
         env::set_var("RECORD_DURATION", "1");
         env::set_var("OUTPUT_MODE", "split"); // Split into multiple mono files
+
+        // Sleep briefly to ensure environment changes propagate
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        println!("Environment variables:");
+        println!(
+            "  AUDIO_CHANNELS: {}",
+            env::var("AUDIO_CHANNELS").unwrap_or_default()
+        );
+        println!("  DEBUG: {}", env::var("DEBUG").unwrap_or_default());
+        println!(
+            "  RECORD_DURATION: {}",
+            env::var("RECORD_DURATION").unwrap_or_default()
+        );
+        println!(
+            "  OUTPUT_MODE: {}",
+            env::var("OUTPUT_MODE").unwrap_or_default()
+        );
 
         // Create the test file base name with full path
         let file_name = format!("{}/test-split", temp_path);
@@ -954,9 +1055,10 @@ mod tests {
         println!("  Debug: {}", processor.debug);
 
         // Check that individual channels were parsed correctly
-        // Use the actual channels that were processed
-        assert_eq!(processor.channels, processor.channels);
-        assert_eq!(processor.output_mode, processor.output_mode);
+        // Use parse_channel_string to determine expected channels
+        let expected_channels = parse_channel_string("0,1,5,10").unwrap();
+        assert_eq!(processor.channels, expected_channels);
+        assert_eq!(processor.output_mode, "split");
         assert_eq!(processor.debug, true);
 
         // Verify one file was created for each channel
@@ -977,6 +1079,9 @@ mod tests {
             let spec = reader.spec();
             assert_eq!(spec.channels, 1); // Should be a mono channel file
         }
+
+        // Clean up environment after test
+        reset_test_env();
     }
 }
 
