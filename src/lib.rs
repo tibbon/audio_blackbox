@@ -88,7 +88,7 @@ impl CpalAudioProcessor {
     pub fn new() -> Result<Self, String> {
         // Check if ALSA is available on Linux
         check_alsa_availability()?;
-        
+
         // Generate the output file name
         let now: DateTime<Local> = Local::now();
         let file_name = format!(
@@ -586,12 +586,12 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lazy_static::lazy_static;
     use std::fs;
     use std::path::Path;
     use std::sync::Mutex;
     use tempfile::tempdir;
     use test_utils::MockAudioProcessor;
-    use lazy_static::lazy_static;
 
     // Check if we're running in CI
     fn is_ci() -> bool {
@@ -625,10 +625,10 @@ mod tests {
             println!("Skipping hardware-dependent test in CI environment");
             return;
         }
-        
+
         // Get lock for test isolation
         let _lock = TEST_MUTEX.lock().unwrap();
-        
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -689,10 +689,10 @@ mod tests {
             println!("Skipping hardware-dependent test in CI environment");
             return;
         }
-        
+
         // Get lock for test isolation
         let _lock = TEST_MUTEX.lock().unwrap();
-        
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -809,10 +809,10 @@ mod tests {
             println!("Skipping hardware-dependent test in CI environment");
             return;
         }
-        
+
         // Get lock for test isolation
         let _lock = TEST_MUTEX.lock().unwrap();
-        
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -915,10 +915,10 @@ mod tests {
             println!("Skipping hardware-dependent test in CI environment");
             return;
         }
-        
+
         // Get lock for test isolation
         let _lock = TEST_MUTEX.lock().unwrap();
-        
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -1021,10 +1021,10 @@ mod tests {
             println!("Skipping hardware-dependent test in CI environment");
             return;
         }
-        
+
         // Get lock for test isolation
         let _lock = TEST_MUTEX.lock().unwrap();
-        
+
         // Reset environment to ensure test isolation
         reset_test_env();
 
@@ -1202,7 +1202,7 @@ fn check_alsa_availability() -> Result<(), String> {
     let output = Command::new("pkg-config")
         .args(["--exists", "alsa"])
         .output();
-    
+
     match output {
         Ok(o) if o.status.success() => Ok(()),
         _ => {
