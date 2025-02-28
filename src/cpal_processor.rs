@@ -306,19 +306,19 @@ impl AudioProcessor for CpalAudioProcessor {
 
                                     for frame in frames {
                                         // For stereo output, use the first two channels or duplicate mono
-                                        
+
                                         if frame.len() >= 2 {
                                             // Convert f32 to i16 range and write to the stereo file
                                             let left_i16 = (frame[0] * 32767.0) as i32;
                                             let right_i16 = (frame[1] * 32767.0) as i32;
-                                            
+
                                             let _ = writer.write_sample(left_i16);
                                             let _ = writer.write_sample(right_i16);
-                                            
+
                                             // Also store in the buffer for later processing
                                             buffer.push(left_i16);
                                             buffer.push(right_i16);
-                                            
+
                                             if buffer.len() >= INTERMEDIATE_BUFFER_SIZE {
                                                 buffer.clear();
                                             }

@@ -1,5 +1,4 @@
 use crate::audio_processor::AudioProcessor;
-use hound;
 use std::env;
 use std::fs;
 
@@ -68,7 +67,7 @@ impl AudioProcessor for MockAudioProcessor {
                         Ok(mut writer) => {
                             // Add some test samples
                             for i in 0..1000 {
-                                let sample = (i % 100) as i32 * amplitude;
+                                let sample = (i % 100) * amplitude;
                                 let _ = writer.write_sample(sample);
                             }
                             let _ = writer.finalize();
@@ -100,7 +99,7 @@ impl AudioProcessor for MockAudioProcessor {
                         // Add some test samples
                         for i in 0..1000 {
                             for _ in 0..channels.len() {
-                                let sample = (i % 100) as i32 * amplitude;
+                                let sample = (i % 100) * amplitude;
                                 let _ = writer.write_sample(sample);
                             }
                         }
@@ -128,7 +127,7 @@ impl AudioProcessor for MockAudioProcessor {
                     Ok(mut writer) => {
                         // Add some test samples
                         for i in 0..1000 {
-                            let sample = (i % 100) as i32 * amplitude;
+                            let sample = (i % 100) * amplitude;
                             let _ = writer.write_sample(sample);
                             let _ = writer.write_sample(sample);
                         }
