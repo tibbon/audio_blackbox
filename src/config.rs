@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::constants::{
     DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
-    DEFAULT_SILENCE_THRESHOLD, ENV_CONTINUOUS_MODE, ENV_DEBUG, ENV_DURATION, ENV_PERFORMANCE_LOGGING, ENV_RECORDING_CADENCE, ENV_SILENCE_THRESHOLD
+    DEFAULT_SILENCE_THRESHOLD, ENV_CONTINUOUS_MODE, ENV_DEBUG, ENV_DURATION,
+    ENV_PERFORMANCE_LOGGING, ENV_RECORDING_CADENCE, ENV_SILENCE_THRESHOLD,
 };
 
 /// The main configuration struct that holds all settings for the audio recorder.
@@ -305,13 +306,21 @@ performance_logging = {}
 
     pub fn get_debug(&self) -> bool {
         self.debug
-            .or_else(|| std::env::var(ENV_DEBUG).ok().map(|s| s.parse().unwrap_or(false)))
+            .or_else(|| {
+                std::env::var(ENV_DEBUG)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(false))
+            })
             .unwrap_or(DEFAULT_DEBUG)
     }
 
     pub fn get_duration(&self) -> u64 {
         self.duration
-            .or_else(|| std::env::var(ENV_DURATION).ok().map(|s| s.parse().unwrap_or(10)))
+            .or_else(|| {
+                std::env::var(ENV_DURATION)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(10))
+            })
             .unwrap_or(DEFAULT_DURATION)
     }
 
@@ -323,19 +332,31 @@ performance_logging = {}
 
     pub fn get_silence_threshold(&self) -> f32 {
         self.silence_threshold
-            .or_else(|| std::env::var(ENV_SILENCE_THRESHOLD).ok().map(|s| s.parse().unwrap_or(0.0)))
+            .or_else(|| {
+                std::env::var(ENV_SILENCE_THRESHOLD)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(0.0))
+            })
             .unwrap_or(DEFAULT_SILENCE_THRESHOLD)
     }
 
     pub fn get_continuous_mode(&self) -> bool {
         self.continuous_mode
-            .or_else(|| std::env::var(ENV_CONTINUOUS_MODE).ok().map(|s| s.parse().unwrap_or(false)))
+            .or_else(|| {
+                std::env::var(ENV_CONTINUOUS_MODE)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(false))
+            })
             .unwrap_or(DEFAULT_CONTINUOUS_MODE)
     }
 
     pub fn get_recording_cadence(&self) -> u64 {
         self.recording_cadence
-            .or_else(|| std::env::var(ENV_RECORDING_CADENCE).ok().map(|s| s.parse().unwrap_or(300)))
+            .or_else(|| {
+                std::env::var(ENV_RECORDING_CADENCE)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(300))
+            })
             .unwrap_or(DEFAULT_RECORDING_CADENCE)
     }
 
@@ -347,7 +368,11 @@ performance_logging = {}
 
     pub fn get_performance_logging(&self) -> bool {
         self.performance_logging
-            .or_else(|| std::env::var(ENV_PERFORMANCE_LOGGING).ok().map(|s| s.parse().unwrap_or(false)))
+            .or_else(|| {
+                std::env::var(ENV_PERFORMANCE_LOGGING)
+                    .ok()
+                    .map(|s| s.parse().unwrap_or(false))
+            })
             .unwrap_or(DEFAULT_PERFORMANCE_LOGGING)
     }
 }
@@ -361,10 +386,7 @@ mod tests {
     fn test_default_config() {
         let config = AppConfig::default();
         assert_eq!(config.audio_channels, Some(DEFAULT_CHANNELS.to_string()));
-        assert_eq!(
-            config.debug,
-            Some(DEFAULT_DEBUG)
-        );
+        assert_eq!(config.debug, Some(DEFAULT_DEBUG));
     }
 
     #[test]

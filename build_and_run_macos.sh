@@ -3,6 +3,9 @@
 # Create images directory if it doesn't exist
 mkdir -p images
 
+# Create recordings directory if it doesn't exist
+mkdir -p recordings
+
 # Check if we have icon files
 if [ ! -f "images/idle_icon.png" ]; then
     echo "Warning: images/idle_icon.png not found. Creating a placeholder."
@@ -31,3 +34,7 @@ cp Info.plist target/BlackBox.app/Contents/
 
 echo "Running BlackBox Audio Recorder..."
 target/BlackBox.app/Contents/MacOS/blackbox 
+
+# Move any WAV files from the root directory to the recordings directory
+echo "Moving WAV files to recordings directory..."
+find . -maxdepth 1 -name "*.wav" -type f -exec mv {} recordings/ \; 

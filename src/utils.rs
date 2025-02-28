@@ -118,7 +118,7 @@ pub fn check_alsa_availability() -> Result<(), String> {
 /// - Err(String) if there was an error reading or analyzing the file
 pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, String> {
     let threshold_i32 = threshold as i32;
-    
+
     if threshold_i32 <= 0 {
         // If threshold is 0 or negative, we don't check for silence
         return Ok(false);
@@ -161,9 +161,8 @@ pub fn is_silent_old(buffer: &[f32], threshold: f32) -> bool {
     if threshold <= 0.0 {
         return false;
     }
-    
-    buffer.iter()
-        .all(|&sample| sample.abs() < threshold)
+
+    buffer.iter().all(|&sample| sample.abs() < threshold)
 }
 
 // Check if ALSA is available on the system (Linux only)
@@ -174,7 +173,7 @@ pub fn check_alsa_availability_old() -> bool {
         .arg("-c")
         .arg("ldconfig -p | grep -q libasound")
         .status();
-    
+
     match alsa_check {
         Ok(status) => status.success(),
         Err(_) => false,

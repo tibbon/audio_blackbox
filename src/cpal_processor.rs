@@ -18,7 +18,7 @@ use std::env;
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 pub struct CpalAudioProcessor {
-    file_name: String,
+    file_name: Arc<Mutex<String>>,
     writer: Arc<Mutex<Option<WavWriterType>>>,
     multichannel_writers: MultiChannelWriters,
     intermediate_buffer: Arc<Mutex<Vec<i32>>>,
@@ -51,17 +51,6 @@ impl CpalAudioProcessor {
         // Check if ALSA is available on Linux
         check_alsa_availability()?;
 
-        // Generate the output file name
-        let now: DateTime<Local> = Local::now();
-        let file_name = format!(
-            "{}-{:02}-{:02}-{:02}-{:02}.wav",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute()
-        );
-
         // Get configuration values
         let output_dir = config.get_output_dir();
         let continuous_mode = config.get_continuous_mode();
@@ -72,6 +61,17 @@ impl CpalAudioProcessor {
             fs::create_dir_all(&output_dir)
                 .map_err(|e| format!("Failed to create output directory: {}", e))?;
         }
+
+        // Generate the output file name
+        let now: DateTime<Local> = Local::now();
+        let file_name = format!(
+            "{}-{:02}-{:02}-{:02}-{:02}.wav",
+            now.year(),
+            now.month(),
+            now.day(),
+            now.hour(),
+            now.minute()
+        );
 
         let host = cpal::default_host();
         let device = host
@@ -99,11 +99,7 @@ impl CpalAudioProcessor {
         };
 
         // In continuous mode, we'll create the first file in the output directory
-        let full_path = if continuous_mode {
-            format!("{}/{}", output_dir, file_name)
-        } else {
-            file_name.clone()
-        };
+        let full_path = format!("{}/{}", output_dir, file_name);
 
         let writer = Arc::new(Mutex::new(Some(
             hound::WavWriter::create(&full_path, spec)
@@ -111,7 +107,7 @@ impl CpalAudioProcessor {
         )));
 
         Ok(CpalAudioProcessor {
-            file_name,
+            file_name: Arc::new(Mutex::new(full_path)),
             writer,
             multichannel_writers: Arc::new(Mutex::new(Vec::new())),
             intermediate_buffer: Arc::new(Mutex::new(Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE))),
@@ -158,11 +154,7 @@ impl CpalAudioProcessor {
 
         // Create a WAV writer for each channel
         for (idx, &channel) in channels.iter().enumerate() {
-            let channel_file_name = if self.continuous_mode {
-                format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel)
-            } else {
-                format!("{}-ch{}.wav", date_str, channel)
-            };
+            let channel_file_name = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
 
             let spec = hound::WavSpec {
                 channels: 1, // Mono for each individual channel
@@ -201,11 +193,7 @@ impl CpalAudioProcessor {
             now.minute()
         );
 
-        let multichannel_file_name = if self.continuous_mode {
-            format!("{}/{}-multichannel.wav", self.output_dir, date_str)
-        } else {
-            format!("{}-multichannel.wav", date_str)
-        };
+        let multichannel_file_name = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
 
         println!(
             "Setting up multichannel mode with {} channels",
@@ -353,8 +341,7 @@ impl CpalAudioProcessor {
                 // Standard stereo mode
                 let now: DateTime<Local> = Local::now();
                 let file_name = format!(
-                    "{}/{}-{:02}-{:02}-{:02}-{:02}.wav",
-                    self.output_dir,
+                    "{}-{:02}-{:02}-{:02}-{:02}.wav",
                     now.year(),
                     now.month(),
                     now.day(),
@@ -362,13 +349,15 @@ impl CpalAudioProcessor {
                     now.minute()
                 );
 
+                let full_path = format!("{}/{}", self.output_dir, file_name);
+
                 if let Some(spec) = &*self.current_spec.lock().unwrap() {
-                    let writer = hound::WavWriter::create(&file_name, *spec).map_err(|e| {
+                    let writer = hound::WavWriter::create(&full_path, *spec).map_err(|e| {
                         format!("Failed to create new WAV file during rotation: {}", e)
                     })?;
 
                     *self.writer.lock().unwrap() = Some(writer);
-                    println!("Created new recording file: {}", file_name);
+                    println!("Created new recording file: {}", full_path);
                 }
             }
         }
@@ -395,6 +384,12 @@ impl CpalAudioProcessor {
         }
 
         Ok(())
+    }
+
+    /// Update the file name with a new path
+    #[allow(dead_code)]
+    fn update_file_name(&self, new_path: String) {
+        *self.file_name.lock().unwrap() = new_path;
     }
 }
 
@@ -678,8 +673,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                         // Standard stereo mode
                                         let now: DateTime<Local> = Local::now();
                                         let file_name = format!(
-                                            "{}/{}-{:02}-{:02}-{:02}-{:02}.wav",
-                                            output_dir,
+                                            "{}-{:02}-{:02}-{:02}-{:02}.wav",
                                             now.year(),
                                             now.month(),
                                             now.day(),
@@ -687,11 +681,14 @@ impl AudioProcessor for CpalAudioProcessor {
                                             now.minute()
                                         );
 
+                                        let full_path = format!("{}/{}", output_dir, file_name);
+
                                         if let Some(spec) = &*current_spec.lock().unwrap() {
-                                            match hound::WavWriter::create(&file_name, *spec) {
+                                            match hound::WavWriter::create(&full_path, *spec) {
                                                 Ok(writer) => {
                                                     *writer_for_rotation.lock().unwrap() = Some(writer);
-                                                    println!("Created new recording file: {}", file_name);
+                                                    // We can't update self.file_name directly in this context
+                                                    println!("Created new recording file: {}", full_path);
                                                 },
                                                 Err(e) => {
                                                     eprintln!("Failed to create new WAV file: {}", e);
@@ -836,14 +833,34 @@ impl AudioProcessor for CpalAudioProcessor {
         // Finalize the WAV file
         if let Some(writer) = self.writer.lock().unwrap().take() {
             // Get the file path before finalizing
-            let file_path = self.file_name.clone();
+            let file_path = self.file_name.lock().unwrap().clone();
 
             // Finalize the writer
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file: {}", e);
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ));
             } else {
                 println!("Finalized recording to {}", file_path);
+
+                // Check if the file is in the output directory
+                let path = Path::new(&file_path);
+                if let Some(file_name) = path.file_name() {
+                    if let Some(file_name_str) = file_name.to_str() {
+                        if let Some(parent_dir) = path.parent() {
+                            if let Some(parent_dir_str) = parent_dir.to_str() {
+                                // If the file is not in the output directory, move it there
+                                if parent_dir_str != self.output_dir {
+                                    let new_path = format!("{}/{}", self.output_dir, file_name_str);
+                                    println!("Moving file from {} to {}", file_path, new_path);
+                                    fs::rename(&file_path, &new_path)?;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Check if we should apply silence detection
                 if silence_threshold > 0.0 {
@@ -856,7 +873,10 @@ impl AudioProcessor for CpalAudioProcessor {
                             );
                             if let Err(e) = fs::remove_file(&file_path) {
                                 eprintln!("Error deleting silent file: {}", e);
-                                return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    e.to_string(),
+                                ));
                             }
                         }
                         Ok(false) => {
@@ -893,7 +913,10 @@ impl AudioProcessor for CpalAudioProcessor {
                 // Finalize the writer
                 if let Err(e) = writer.finalize() {
                     eprintln!("Error finalizing channel WAV file: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ));
                 } else {
                     println!("Finalized recording to {}", file_path);
 
@@ -905,7 +928,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                 println!("Channel recording is silent (below threshold {}), deleting file", silence_threshold);
                                 if let Err(e) = fs::remove_file(&file_path) {
                                     eprintln!("Error deleting silent file: {}", e);
-                                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        e.to_string(),
+                                    ));
                                 }
                             }
                             Ok(false) => {
@@ -920,10 +946,10 @@ impl AudioProcessor for CpalAudioProcessor {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn start_recording(&mut self) -> std::io::Result<()> {
         // Get configuration from the AudioRecorder
         let config = AppConfig::load();
@@ -932,20 +958,20 @@ impl AudioProcessor for CpalAudioProcessor {
             Ok(chs) => chs,
             Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)),
         };
-        
+
         let output_mode = config.get_output_mode();
         let debug = config.get_debug();
-        
+
         // Start the audio processing
         self.process_audio(&channels, &output_mode, debug);
         Ok(())
     }
-    
+
     fn stop_recording(&mut self) -> std::io::Result<()> {
         // Just call finalize to stop the recording
         self.finalize()
     }
-    
+
     fn is_recording(&self) -> bool {
         // If there's an active stream, we're recording
         self.stream.is_some()

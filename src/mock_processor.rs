@@ -167,7 +167,7 @@ impl AudioProcessor for MockAudioProcessor {
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
 
-        // Cast to i32 for comparison - using as i32 > 0 check 
+        // Cast to i32 for comparison - using as i32 > 0 check
         if silence_threshold > 0.0 && self.create_silent_file {
             // If we're creating silent files and threshold is set, delete the files
             // since they should be below the threshold. This allows testing the
@@ -176,33 +176,36 @@ impl AudioProcessor for MockAudioProcessor {
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
                     eprintln!("Failed to delete silent file in test: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ));
                 } else {
                     println!("Deleted silent test file: {}", file_path);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn start_recording(&mut self) -> std::io::Result<()> {
         // Clone the values to avoid borrowing self mutably and immutably
         let channels = self.channels.clone();
         let output_mode = self.output_mode.clone();
         let debug = self.debug;
-        
+
         // In the mock, we'll just simulate this by immediately processing audio
         // with the stored configuration
         self.process_audio(&channels, &output_mode, debug);
         Ok(())
     }
-    
+
     fn stop_recording(&mut self) -> std::io::Result<()> {
         // Just call finalize
         self.finalize()
     }
-    
+
     fn is_recording(&self) -> bool {
         // In the mock, once we've processed audio, consider it "recording"
         self.audio_processed && !self.finalized

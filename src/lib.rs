@@ -80,7 +80,10 @@ mod tests {
         env::set_var("CONTINUOUS_MODE", DEFAULT_CONTINUOUS_MODE.to_string());
         env::set_var("RECORDING_CADENCE", DEFAULT_RECORDING_CADENCE.to_string());
         env::set_var("OUTPUT_DIR", DEFAULT_OUTPUT_DIR);
-        env::set_var("PERFORMANCE_LOGGING", DEFAULT_PERFORMANCE_LOGGING.to_string());
+        env::set_var(
+            "PERFORMANCE_LOGGING",
+            DEFAULT_PERFORMANCE_LOGGING.to_string(),
+        );
     }
 
     // Test environment variable handling
@@ -106,10 +109,7 @@ mod tests {
         assert_eq!("false".parse::<bool>().unwrap_or_else(|_| false), false);
 
         // Test duration parsing
-        assert_eq!(
-            "20".parse::<u64>().unwrap_or(DEFAULT_DURATION),
-            20
-        );
+        assert_eq!("20".parse::<u64>().unwrap_or(DEFAULT_DURATION), 20);
 
         reset_test_env();
     }
@@ -229,7 +229,7 @@ mod tests {
         assert!(path.exists(), "Test file should have been created");
 
         // Now manually finalize to trigger silence detection
-        recorder.processor.finalize();
+        let _ = recorder.processor.finalize();
 
         // The file should now be deleted since it was silent and threshold is set
         assert!(!path.exists(), "Silent file should have been deleted");
@@ -267,7 +267,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Manually finalize the recording
-        recorder.processor.finalize();
+        let _ = recorder.processor.finalize();
 
         // The file should now be deleted since it was silent and threshold is set
         let path = Path::new(&file_name);
@@ -312,7 +312,7 @@ mod tests {
 
         // Manually finalize the recording
         // We need to access the processor directly since we need mutable access
-        recorder.processor.finalize();
+        let _ = recorder.processor.finalize();
 
         // The file should still exist since it's not silent
         assert!(

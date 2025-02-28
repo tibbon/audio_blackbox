@@ -16,4 +16,4 @@ impl MenuBarApp {
     pub fn update_status(&self, is_recording: bool) {
         println!("Status update: recording = {}", is_recording);
     }
-} 
+}
