@@ -1,14 +1,18 @@
 # Audio Recorder
 
-A simple Rust application for recording audio from input devices to WAV files. Supports both mono and stereo inputs, and automatically converts mono inputs to stereo output files.
+A simple Rust application for recording audio from input devices to WAV files. Supports both mono and stereo inputs, and automatically converts mono inputs to stereo output files. Now with full multichannel support for up to 64 channels!
 
 ## Features
 
 - Records from default audio input device
 - Supports multiple sample formats (F32, I16, U16)
-- Handles both mono and stereo input
+- Handles mono, stereo, and multichannel inputs (up to 64 channels)
 - Configurable through environment variables
-- Outputs standard stereo WAV files
+- Flexible channel selection with support for ranges and individual channels
+- Multiple output modes:
+  - Standard stereo WAV file (default)
+  - Single multichannel WAV file with all selected channels
+  - Split mode with separate mono WAV files for each channel
 
 ## Requirements
 
@@ -21,7 +25,7 @@ Clone the repository and build with Cargo:
 
 ```bash
 git clone [repository-url]
-cd audio_recorder
+cd blackbox
 cargo build --release
 ```
 
@@ -37,22 +41,36 @@ cargo run --release
 
 The application can be configured with the following environment variables:
 
-- `AUDIO_CHANNELS`: Comma-separated list of input channels to record from (e.g., "0" for mono, "0,1" for stereo). Default: "1,2"
+- `AUDIO_CHANNELS`: Specify which channels to record:
+  - Comma-separated values for individual channels: "0,1,5,10"
+  - Ranges of channels: "1-24"
+  - Mixed format: "0,1,5-10,15"
+  - Default: "1,2"
+- `OUTPUT_MODE`: How to save the recording:
+  - "single": Record all channels into a single WAV file (default)
+  - "split": Record each channel to a separate mono WAV file
 - `DEBUG`: Enable debug output ("true" or "false"). Default: "false"
 - `RECORD_DURATION`: Recording duration in seconds. Default: "10"
 
-Example:
+Examples:
 
 ```bash
-AUDIO_CHANNELS="0" DEBUG="true" RECORD_DURATION="30" cargo run --release
+# Record channels 0 and 1 to a stereo WAV file for 30 seconds
+AUDIO_CHANNELS="0,1" RECORD_DURATION="30" cargo run --release
+
+# Record 8 channels (0-7) to a single multichannel WAV file
+AUDIO_CHANNELS="0-7" OUTPUT_MODE="single" RECORD_DURATION="60" cargo run --release
+
+# Record channels 1, 3, 5, and 7 to individual mono WAV files
+AUDIO_CHANNELS="1,3,5,7" OUTPUT_MODE="split" RECORD_DURATION="120" cargo run --release
 ```
 
 ## Output
 
 The application creates WAV files in the current directory with names in the format:
-```
-YYYY-MM-DD-HH-MM.wav
-```
+
+- Single file mode: `YYYY-MM-DD-HH-MM.wav` or `YYYY-MM-DD-HH-MM-multichannel.wav`
+- Split mode: `YYYY-MM-DD-HH-MM-chX.wav` (where X is the channel number)
 
 ## Architecture
 

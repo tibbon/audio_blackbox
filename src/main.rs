@@ -1,4 +1,4 @@
-use audio_recorder::{AudioRecorder, CpalAudioProcessor};
+use blackbox::{AudioRecorder, CpalAudioProcessor};
 use std::process;
 
 fn main() {
@@ -22,4 +22,7 @@ fn main() {
             process::exit(1);
         }
     }
+    
+    // The recorder will automatically stop after the specified duration
+    // and all resources will be cleaned up when the program exits
 }
