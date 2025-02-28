@@ -20,7 +20,7 @@ output_mode = "single"
 
 # Silence threshold (0-100, 0 disables silence detection)
 # Default: 0
-silence_threshold = 20
+silence_threshold = 0
 
 # Continuous recording mode (true/false)
 # Default: false

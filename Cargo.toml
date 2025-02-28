@@ -19,6 +19,14 @@ rand = "0.8.5"
 toml = "0.7.6"
 serde = { version = "1.0.185", features = ["derive"] }
 
+# macOS-specific dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.25.0"
+objc = "0.2.7"
+core-foundation = "0.9.3"
+core-graphics = "0.23.1"
+libc = "0.2.150"
+
 [lib]
 name = "blackbox"
 path = "src/lib.rs"
@@ -32,5 +40,20 @@ default = []
 
 [target.'cfg(target_os = "linux")'.dependencies]
 pkg-config = "0.3.30"
+
+[package.metadata.bundle]
+name = "BlackBox Audio Recorder"
+identifier = "com.blackbox.audiorecorder"
+icon = ["images/App.icns"]
+version = "0.1.0"
+copyright = "Copyright (c) 2023 David Fisher. All rights reserved."
+category = "public.app-category.utilities"
+short_description = "Audio recording application"
+long_description = """
+A macOS menu bar application for audio recording with multiple modes,
+silence detection, and performance monitoring.
+"""
+osx_minimum_system_version = "10.14"
+osx_frameworks = ["AppKit", "Foundation", "CoreAudio"]
 
 [dev-dependencies]

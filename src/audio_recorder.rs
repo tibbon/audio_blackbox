@@ -64,7 +64,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         // Check if silence detection is enabled
         let silence_threshold = self.config.get_silence_threshold();
 
-        if silence_threshold > 0 {
+        if silence_threshold > 0.0 {
             println!(
                 "  Silence Detection: Enabled (threshold: {})",
                 silence_threshold

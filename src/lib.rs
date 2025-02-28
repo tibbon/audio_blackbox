@@ -73,14 +73,14 @@ mod tests {
         // Set environment variables to override any config file settings
         // This ensures tests run with predictable values regardless of config file
         env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG);
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION);
+        env::set_var("DEBUG", DEFAULT_DEBUG.to_string());
+        env::set_var("RECORD_DURATION", DEFAULT_DURATION.to_string());
         env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-        env::set_var("SILENCE_THRESHOLD", DEFAULT_SILENCE_THRESHOLD);
-        env::set_var("CONTINUOUS_MODE", DEFAULT_CONTINUOUS_MODE);
-        env::set_var("RECORDING_CADENCE", DEFAULT_RECORDING_CADENCE);
+        env::set_var("SILENCE_THRESHOLD", DEFAULT_SILENCE_THRESHOLD.to_string());
+        env::set_var("CONTINUOUS_MODE", DEFAULT_CONTINUOUS_MODE.to_string());
+        env::set_var("RECORDING_CADENCE", DEFAULT_RECORDING_CADENCE.to_string());
         env::set_var("OUTPUT_DIR", DEFAULT_OUTPUT_DIR);
-        env::set_var("PERFORMANCE_LOGGING", DEFAULT_PERFORMANCE_LOGGING);
+        env::set_var("PERFORMANCE_LOGGING", DEFAULT_PERFORMANCE_LOGGING.to_string());
     }
 
     // Test environment variable handling
@@ -107,8 +107,7 @@ mod tests {
 
         // Test duration parsing
         assert_eq!(
-            "20".parse::<u64>()
-                .unwrap_or(DEFAULT_DURATION.parse().unwrap()),
+            "20".parse::<u64>().unwrap_or(DEFAULT_DURATION),
             20
         );
 

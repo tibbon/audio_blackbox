@@ -8,7 +8,7 @@ use crate::config::AppConfig;
 use crate::constants::{
     MultiChannelWriters, WavWriterType, INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS,
 };
-use crate::utils::{check_alsa_availability, is_silent};
+use crate::utils::{check_alsa_availability, is_silent, parse_channel_string};
 
 use chrono::prelude::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -316,7 +316,7 @@ impl CpalAudioProcessor {
         }
 
         // Check for silence and delete silent files if threshold is set
-        if silence_threshold > 0 {
+        if silence_threshold > 0.0 {
             for file_path in created_files {
                 match is_silent(&file_path, silence_threshold) {
                     Ok(true) => {
@@ -520,8 +520,8 @@ impl AudioProcessor for CpalAudioProcessor {
                                 let channels = channels_clone.lock().unwrap().clone();
                                 let silence_threshold = env::var("SILENCE_THRESHOLD")
                                     .unwrap_or_else(|_| "0".to_string())
-                                    .parse::<i32>()
-                                    .unwrap_or(0);
+                                    .parse::<f32>()
+                                    .unwrap_or(0.0);
 
                                 // Store paths of files being finalized to check for silence later
                                 let mut created_files = Vec::new();
@@ -588,7 +588,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                 }
 
                                 // Check for silence and delete silent files if threshold is set
-                                if silence_threshold > 0 {
+                                if silence_threshold > 0.0 {
                                     for file_path in created_files {
                                         match is_silent(&file_path, silence_threshold) {
                                             Ok(true) => {
@@ -825,7 +825,7 @@ impl AudioProcessor for CpalAudioProcessor {
         }
     }
 
-    fn finalize(&mut self) {
+    fn finalize(&mut self) -> std::io::Result<()> {
         // Load configuration
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
@@ -841,11 +841,12 @@ impl AudioProcessor for CpalAudioProcessor {
             // Finalize the writer
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file: {}", e);
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
             } else {
                 println!("Finalized recording to {}", file_path);
 
                 // Check if we should apply silence detection
-                if silence_threshold > 0 {
+                if silence_threshold > 0.0 {
                     // Check if the file is silent
                     match is_silent(&file_path, silence_threshold) {
                         Ok(true) => {
@@ -855,6 +856,7 @@ impl AudioProcessor for CpalAudioProcessor {
                             );
                             if let Err(e) = fs::remove_file(&file_path) {
                                 eprintln!("Error deleting silent file: {}", e);
+                                return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
                             }
                         }
                         Ok(false) => {
@@ -865,6 +867,7 @@ impl AudioProcessor for CpalAudioProcessor {
                         }
                         Err(e) => {
                             eprintln!("Error checking for silence: {}", e);
+                            return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
                         }
                     }
                 }
@@ -890,17 +893,19 @@ impl AudioProcessor for CpalAudioProcessor {
                 // Finalize the writer
                 if let Err(e) = writer.finalize() {
                     eprintln!("Error finalizing channel WAV file: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
                 } else {
                     println!("Finalized recording to {}", file_path);
 
                     // Check if we should apply silence detection
-                    if silence_threshold > 0 {
+                    if silence_threshold > 0.0 {
                         // Check if the file is silent
                         match is_silent(&file_path, silence_threshold) {
                             Ok(true) => {
                                 println!("Channel recording is silent (below threshold {}), deleting file", silence_threshold);
                                 if let Err(e) = fs::remove_file(&file_path) {
                                     eprintln!("Error deleting silent file: {}", e);
+                                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
                                 }
                             }
                             Ok(false) => {
@@ -908,11 +913,41 @@ impl AudioProcessor for CpalAudioProcessor {
                             }
                             Err(e) => {
                                 eprintln!("Error checking for silence: {}", e);
+                                return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
                             }
                         }
                     }
                 }
             }
         }
+        
+        Ok(())
+    }
+    
+    fn start_recording(&mut self) -> std::io::Result<()> {
+        // Get configuration from the AudioRecorder
+        let config = AppConfig::load();
+        let channels_str = config.get_audio_channels();
+        let channels = match parse_channel_string(&channels_str) {
+            Ok(chs) => chs,
+            Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)),
+        };
+        
+        let output_mode = config.get_output_mode();
+        let debug = config.get_debug();
+        
+        // Start the audio processing
+        self.process_audio(&channels, &output_mode, debug);
+        Ok(())
+    }
+    
+    fn stop_recording(&mut self) -> std::io::Result<()> {
+        // Just call finalize to stop the recording
+        self.finalize()
+    }
+    
+    fn is_recording(&self) -> bool {
+        // If there's an active stream, we're recording
+        self.stream.is_some()
     }
 }

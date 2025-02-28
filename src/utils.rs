@@ -1,7 +1,5 @@
 use crate::constants::MAX_CHANNELS;
-
-#[cfg(target_os = "linux")]
-use std::process::Command;
+use std::vec::Vec;
 
 /// Parse a string of channel specifications and return a vector of channel numbers.
 ///
@@ -118,8 +116,10 @@ pub fn check_alsa_availability() -> Result<(), String> {
 /// - Ok(true) if the file is silent (RMS < threshold)
 /// - Ok(false) if the file is not silent (RMS >= threshold) or if silence detection is disabled
 /// - Err(String) if there was an error reading or analyzing the file
-pub fn is_silent(file_path: &str, threshold: i32) -> Result<bool, String> {
-    if threshold <= 0 {
+pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, String> {
+    let threshold_i32 = threshold as i32;
+    
+    if threshold_i32 <= 0 {
         // If threshold is 0 or negative, we don't check for silence
         return Ok(false);
     }
@@ -145,5 +145,44 @@ pub fn is_silent(file_path: &str, threshold: i32) -> Result<bool, String> {
     let rms = mean_square.sqrt() as i32;
 
     // If RMS is below threshold, consider it silent
-    Ok(rms < threshold)
+    Ok(rms < threshold_i32)
+}
+
+// Parse a string like "0,1,2" into a vector of usize values
+pub fn parse_channel_string_old(channels_str: &str) -> Vec<usize> {
+    channels_str
+        .split(',')
+        .filter_map(|s| s.trim().parse::<usize>().ok())
+        .collect()
+}
+
+// Check if an audio buffer is silent based on a threshold
+pub fn is_silent_old(buffer: &[f32], threshold: f32) -> bool {
+    if threshold <= 0.0 {
+        return false;
+    }
+    
+    buffer.iter()
+        .all(|&sample| sample.abs() < threshold)
+}
+
+// Check if ALSA is available on the system (Linux only)
+#[cfg(target_os = "linux")]
+pub fn check_alsa_availability_old() -> bool {
+    // Check if ALSA library is available
+    let alsa_check = Command::new("sh")
+        .arg("-c")
+        .arg("ldconfig -p | grep -q libasound")
+        .status();
+    
+    match alsa_check {
+        Ok(status) => status.success(),
+        Err(_) => false,
+    }
+}
+
+// For non-Linux systems, ALSA is not relevant
+#[cfg(not(target_os = "linux"))]
+pub fn check_alsa_availability_old() -> bool {
+    true // Not applicable on non-Linux systems
 }
