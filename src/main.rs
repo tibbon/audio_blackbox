@@ -2,7 +2,10 @@ use blackbox::{AudioRecorder, CpalAudioProcessor, PerformanceTracker};
 use std::env;
 use std::path::Path;
 use std::process;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::Duration;
 
@@ -18,11 +21,10 @@ fn main() {
         .unwrap_or_else(|_| String::from("false"))
         .parse::<bool>()
         .unwrap_or(false);
-        
+
     // Get output directory
-    let output_dir = env::var("OUTPUT_DIR")
-        .unwrap_or_else(|_| String::from("./recordings"));
-        
+    let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| String::from("./recordings"));
+
     // Create output directory if it doesn't exist
     if !Path::new(&output_dir).exists() {
         if let Err(e) = std::fs::create_dir_all(&output_dir) {
@@ -36,12 +38,15 @@ fn main() {
     let performance_tracker = PerformanceTracker::new(
         performance_logging,
         &performance_log_path,
-        100,  // Keep the last 100 measurements
-        60    // Sample every 60 seconds
+        100, // Keep the last 100 measurements
+        60,  // Sample every 60 seconds
     );
-    
+
     if performance_logging {
-        println!("Performance monitoring enabled. Logs will be written to {}", performance_log_path);
+        println!(
+            "Performance monitoring enabled. Logs will be written to {}",
+            performance_log_path
+        );
         performance_tracker.start();
     }
 
@@ -53,7 +58,8 @@ fn main() {
     ctrlc::set_handler(move || {
         println!("Received shutdown signal, stopping recording...");
         r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     // Create the audio processor with CPAL implementation
     let processor = match CpalAudioProcessor::new() {
@@ -80,11 +86,11 @@ fn main() {
     // In continuous mode, keep running until we receive a shutdown signal
     if continuous_mode {
         println!("Running in continuous mode. Press Ctrl+C to stop.");
-        
+
         // Keep the application running until a shutdown signal is received
         while running.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_secs(1));
-            
+
             // Periodically report performance if monitoring is enabled
             if performance_logging && running.load(Ordering::SeqCst) {
                 if let Some(metrics) = performance_tracker.get_current_metrics() {
@@ -99,7 +105,7 @@ fn main() {
                 }
             }
         }
-        
+
         println!("Shutting down recorder...");
         // The recorder will be dropped at the end of the function,
         // which will cause the audio processor to be finalized
@@ -109,17 +115,17 @@ fn main() {
             .unwrap_or_else(|_| String::from("10"))
             .parse::<u64>()
             .unwrap_or(10);
-            
+
         println!("Recording for {} seconds...", duration);
         thread::sleep(Duration::from_secs(duration));
         println!("Recording complete.");
     }
-    
+
     // Stop performance tracking if it was enabled
     if performance_logging {
         performance_tracker.stop();
         println!("Performance monitoring stopped.");
-        
+
         // Print final performance statistics
         if let Some(avg_metrics) = performance_tracker.get_average_metrics() {
             println!(
@@ -130,6 +136,6 @@ fn main() {
             );
         }
     }
-    
+
     // All resources will be cleaned up when the program exits
 }

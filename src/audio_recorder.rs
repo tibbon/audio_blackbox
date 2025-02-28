@@ -36,8 +36,8 @@ impl<P: AudioProcessor> AudioRecorder<P> {
             .unwrap_or(false);
 
         // Get the selected channels from environment or default
-        let requested_channels = env::var("AUDIO_CHANNELS")
-            .unwrap_or_else(|_| DEFAULT_CHANNELS.to_string());
+        let requested_channels =
+            env::var("AUDIO_CHANNELS").unwrap_or_else(|_| DEFAULT_CHANNELS.to_string());
 
         let channels = match parse_channel_string(&requested_channels) {
             Ok(chs) => chs,
@@ -45,31 +45,34 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         };
 
         // Get the selected output mode from environment or default
-        let output_mode = env::var("OUTPUT_MODE")
-            .unwrap_or_else(|_| DEFAULT_OUTPUT_MODE.to_string());
+        let output_mode =
+            env::var("OUTPUT_MODE").unwrap_or_else(|_| DEFAULT_OUTPUT_MODE.to_string());
 
         // Print audio configuration
         println!("Starting recording:");
         println!("  Channels: {:?}", channels);
         println!("  Debug: {}", debug);
-        
+
         // Get the recording duration from environment or default
         let duration = env::var("RECORD_DURATION")
             .unwrap_or_else(|_| DEFAULT_DURATION.to_string())
             .parse::<u64>()
             .unwrap_or(10);
         println!("  Duration: {} seconds", duration);
-        
+
         println!("  Output Mode: {}", output_mode);
-        
+
         // Check if silence detection is enabled
         let silence_threshold = env::var("SILENCE_THRESHOLD")
             .unwrap_or_else(|_| DEFAULT_SILENCE_THRESHOLD.to_string())
             .parse::<i32>()
             .unwrap_or(0);
-        
+
         if silence_threshold > 0 {
-            println!("  Silence Detection: Enabled (threshold: {})", silence_threshold);
+            println!(
+                "  Silence Detection: Enabled (threshold: {})",
+                silence_threshold
+            );
         } else {
             println!("  Silence Detection: Disabled");
         }

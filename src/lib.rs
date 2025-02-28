@@ -14,11 +14,11 @@
 // Modular organization of code
 mod audio_processor;
 mod audio_recorder;
+mod benchmarking;
 mod constants;
 mod cpal_processor;
 mod mock_processor;
 mod utils;
-mod benchmarking;
 
 // Only include test_utils in test builds
 #[cfg(test)]
@@ -27,10 +27,10 @@ pub mod test_utils;
 // Re-exports for public API
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
+pub use benchmarking::{measure_execution_time, PerformanceMetrics, PerformanceTracker};
 pub use constants::*;
 pub use cpal_processor::CpalAudioProcessor;
 pub use utils::*;
-pub use benchmarking::{PerformanceTracker, PerformanceMetrics, measure_execution_time};
 
 // Expose test utilities
 #[cfg(test)]

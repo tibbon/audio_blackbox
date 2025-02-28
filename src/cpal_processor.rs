@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::audio_processor::AudioProcessor;
 use crate::constants::{
-    DEFAULT_OUTPUT_DIR, DEFAULT_RECORDING_CADENCE, MultiChannelWriters, WavWriterType,
+    MultiChannelWriters, WavWriterType, DEFAULT_OUTPUT_DIR, DEFAULT_RECORDING_CADENCE,
     INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS,
 };
 use crate::utils::{check_alsa_availability, is_silent};
@@ -61,7 +61,8 @@ impl CpalAudioProcessor {
         // Check and create output directory if in continuous mode
         let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| DEFAULT_OUTPUT_DIR.to_string());
         if !Path::new(&output_dir).exists() {
-            fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create output directory: {}", e))?;
+            fs::create_dir_all(&output_dir)
+                .map_err(|e| format!("Failed to create output directory: {}", e))?;
         }
 
         // Read continuous mode configuration
@@ -69,7 +70,7 @@ impl CpalAudioProcessor {
             .unwrap_or_else(|_| "false".to_string())
             .parse::<bool>()
             .unwrap_or(false);
-        
+
         let recording_cadence = env::var("RECORDING_CADENCE")
             .unwrap_or_else(|_| DEFAULT_RECORDING_CADENCE.to_string())
             .parse::<u64>()
@@ -244,7 +245,7 @@ impl CpalAudioProcessor {
         }
 
         println!("Rotating recording files...");
-        
+
         // Get current configuration for recreating files
         let output_mode = self.output_mode.lock().unwrap().clone();
         let channels = self.channels.lock().unwrap().clone();
@@ -281,9 +282,9 @@ impl CpalAudioProcessor {
                     now.minute() - (now.minute() % 5)
                 )
             };
-            
+
             created_files.push(file_path.clone());
-            
+
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file during rotation: {}", e);
             } else {
@@ -306,9 +307,9 @@ impl CpalAudioProcessor {
                     now.minute() - (now.minute() % 5),
                     channels.get(idx).unwrap_or(&idx)
                 );
-                
+
                 created_files.push(file_path.clone());
-                
+
                 if let Err(e) = writer.finalize() {
                     eprintln!("Error finalizing channel WAV file during rotation: {}", e);
                 } else {
@@ -331,7 +332,10 @@ impl CpalAudioProcessor {
                         }
                     }
                     Ok(false) => {
-                        println!("Recording is not silent (above threshold {}), keeping file", silence_threshold);
+                        println!(
+                            "Recording is not silent (above threshold {}), keeping file",
+                            silence_threshold
+                        );
                     }
                     Err(e) => {
                         eprintln!("Error checking for silence: {}", e);
@@ -362,9 +366,10 @@ impl CpalAudioProcessor {
                 );
 
                 if let Some(spec) = &*self.current_spec.lock().unwrap() {
-                    let writer = hound::WavWriter::create(&file_name, *spec)
-                        .map_err(|e| format!("Failed to create new WAV file during rotation: {}", e))?;
-                    
+                    let writer = hound::WavWriter::create(&file_name, *spec).map_err(|e| {
+                        format!("Failed to create new WAV file during rotation: {}", e)
+                    })?;
+
                     *self.writer.lock().unwrap() = Some(writer);
                     println!("Created new recording file: {}", file_name);
                 }
@@ -373,7 +378,7 @@ impl CpalAudioProcessor {
 
         // Reset the rotation timer
         *self.last_rotation_time.lock().unwrap() = Instant::now();
-        
+
         Ok(())
     }
 
@@ -384,14 +389,14 @@ impl CpalAudioProcessor {
         if !self.continuous_mode {
             return Ok(());
         }
-        
+
         let now = Instant::now();
         let last_rotation = *self.last_rotation_time.lock().unwrap();
-        
+
         if now.duration_since(last_rotation) >= Duration::from_secs(self.recording_cadence) {
             self.rotate_files()?;
         }
-        
+
         Ok(())
     }
 }
@@ -422,26 +427,30 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Auto-adapt to available channels
         let mut actual_channels: Vec<usize> = Vec::new();
-        
+
         // Validate and adapt channels
         for &channel in channels {
             if channel < total_channels {
                 actual_channels.push(channel);
             } else {
-                println!("Warning: Channel {} not available on device. Device only has {} channels.", 
-                         channel, total_channels);
+                println!(
+                    "Warning: Channel {} not available on device. Device only has {} channels.",
+                    channel, total_channels
+                );
             }
         }
-        
+
         // If no requested channels are available, use all available channels
         if actual_channels.is_empty() {
-            println!("No requested channels available. Using all available channels (0 to {}).", 
-                     total_channels - 1);
+            println!(
+                "No requested channels available. Using all available channels (0 to {}).",
+                total_channels - 1
+            );
             actual_channels = (0..total_channels).collect();
         }
-        
+
         println!("Using channels: {:?}", actual_channels);
-        
+
         // Setup the appropriate output mode
         match output_mode {
             "split" => {
@@ -468,12 +477,12 @@ impl AudioProcessor for CpalAudioProcessor {
         let buffer_clone = Arc::clone(&self.intermediate_buffer);
         let multichannel_writers_clone = Arc::clone(&self.multichannel_writers);
         let multichannel_buffers_clone = Arc::clone(&self.multichannel_buffers);
-        
+
         // For continuous mode, we need to check if we should rotate files
         let continuous_mode = self.continuous_mode;
         let last_rotation_time_clone = Arc::clone(&self.last_rotation_time);
         let recording_cadence = self.recording_cadence;
-        
+
         // Instead of using a raw pointer, create a thread-safe mechanism
         // to finalize files when needed
         let output_dir = self.output_dir.clone();
@@ -504,11 +513,11 @@ impl AudioProcessor for CpalAudioProcessor {
                         if continuous_mode {
                             let now = Instant::now();
                             let last_rotation = *last_rotation_time_clone.lock().unwrap();
-                            
+
                             if now.duration_since(last_rotation) >= Duration::from_secs(recording_cadence) {
                                 // Perform file rotation using thread-safe mechanisms
                                 println!("Rotating recording files...");
-                                
+
                                 // Get current configuration for recreating files
                                 let output_mode = output_mode_clone.lock().unwrap().clone();
                                 let channels = channels_clone.lock().unwrap().clone();
@@ -516,10 +525,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                     .unwrap_or_else(|_| "0".to_string())
                                     .parse::<i32>()
                                     .unwrap_or(0);
-                                
+
                                 // Store paths of files being finalized to check for silence later
                                 let mut created_files = Vec::new();
-                                
+
                                 // Finalize the main WAV file if it exists
                                 if let Some(writer) = writer_for_rotation.lock().unwrap().take() {
                                     let file_path = if output_mode == "single" && channels.len() > 2 {
@@ -545,16 +554,16 @@ impl AudioProcessor for CpalAudioProcessor {
                                             now.minute() - (now.minute() % 5)
                                         )
                                     };
-                                    
+
                                     created_files.push(file_path.clone());
-                                    
+
                                     if let Err(e) = writer.finalize() {
                                         eprintln!("Error finalizing WAV file during rotation: {}", e);
                                     } else {
                                         println!("Finalized recording to {}", file_path);
                                     }
                                 }
-                                
+
                                 // Finalize any multichannel writers
                                 let mut writers = multichannel_writers_for_rotation.lock().unwrap();
                                 for (idx, writer_opt) in writers.iter_mut().enumerate() {
@@ -570,9 +579,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                             now.minute() - (now.minute() % 5),
                                             channels.get(idx).unwrap_or(&idx)
                                         );
-                                        
+
                                         created_files.push(file_path.clone());
-                                        
+
                                         if let Err(e) = writer.finalize() {
                                             eprintln!("Error finalizing channel WAV file during rotation: {}", e);
                                         } else {
@@ -580,7 +589,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                 }
-                                
+
                                 // Check for silence and delete silent files if threshold is set
                                 if silence_threshold > 0 {
                                     for file_path in created_files {
@@ -603,7 +612,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                 }
-                                
+
                                 // Create new files for the next recording period
                                 match output_mode.as_str() {
                                     "split" => {
@@ -620,14 +629,14 @@ impl AudioProcessor for CpalAudioProcessor {
                                                 now.minute(),
                                                 channel
                                             );
-                                            
+
                                             let spec = hound::WavSpec {
                                                 channels: 1, // Mono for each individual channel
                                                 sample_rate,
                                                 bits_per_sample: 16,
                                                 sample_format: hound::SampleFormat::Int,
                                             };
-                                            
+
                                             match hound::WavWriter::create(&channel_file_name, spec) {
                                                 Ok(writer) => {
                                                     writers[idx] = Some(writer);
@@ -650,14 +659,14 @@ impl AudioProcessor for CpalAudioProcessor {
                                             now.hour(),
                                             now.minute()
                                         );
-                                        
+
                                         let spec = hound::WavSpec {
                                             channels: channels.len() as u16,
                                             sample_rate,
                                             bits_per_sample: 16,
                                             sample_format: hound::SampleFormat::Int,
                                         };
-                                        
+
                                         match hound::WavWriter::create(&multichannel_file_name, spec) {
                                             Ok(writer) => {
                                                 *writer_for_rotation.lock().unwrap() = Some(writer);
@@ -680,7 +689,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                             now.hour(),
                                             now.minute()
                                         );
-                                        
+
                                         if let Some(spec) = &*current_spec.lock().unwrap() {
                                             match hound::WavWriter::create(&file_name, *spec) {
                                                 Ok(writer) => {
@@ -694,7 +703,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                 }
-                                
+
                                 // Reset the rotation timer
                                 *last_rotation_time_clone.lock().unwrap() = Instant::now();
                             }
@@ -812,7 +821,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Store the stream to keep it alive during recording
         self.stream = Some(Box::new(stream));
-        
+
         // In continuous mode, initialize the rotation timer
         if self.continuous_mode {
             *self.last_rotation_time.lock().unwrap() = Instant::now();
@@ -911,4 +920,3 @@ impl AudioProcessor for CpalAudioProcessor {
         }
     }
 }
-
