@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.blackbox.audiorecorder</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/davidfisher/code/audio_recorder/target/release/blackbox</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/Users/davidfisher/Library/Logs/BlackBox/error.log</string>
+    <key>StandardOutPath</key>
+    <string>/Users/davidfisher/Library/Logs/BlackBox/output.log</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/davidfisher/code/audio_recorder</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist> 
