@@ -15,6 +15,8 @@ DEBUG_DIR = $(TARGET_DIR)/debug
 APP_BUNDLE_DIR = $(TARGET_DIR)/$(APP_NAME).app
 IMAGES_DIR = images
 RESOURCES_DIR = $(APP_BUNDLE_DIR)/Contents/Resources
+LAUNCH_AGENTS_DIR = $(HOME)/Library/LaunchAgents
+LOG_DIR = $(HOME)/Library/Logs/BlackBox
 
 # Binary
 BIN_NAME = blackbox
@@ -114,6 +116,25 @@ create-image-dirs:
 	mkdir -p $(IMAGES_DIR)
 	@echo "Created images directory. Please add idle_icon.png and recording_icon.png (16x16 PNG format)"
 
+# Install the service
+.PHONY: install
+install: release
+	@echo "Installing BlackBox service..."
+	@mkdir -p $(LAUNCH_AGENTS_DIR)
+	@mkdir -p $(LOG_DIR)
+	@cp com.blackbox.audiorecorder.plist $(LAUNCH_AGENTS_DIR)/
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
+	@echo "Service installed and started. Check logs at $(LOG_DIR)/"
+
+# Uninstall the service
+.PHONY: uninstall
+uninstall:
+	@echo "Uninstalling BlackBox service..."
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
+	@echo "Service uninstalled"
+
 # Help
 .PHONY: help
 help:
@@ -132,4 +153,6 @@ help:
 	@echo "  run             - Run the app directly"
 	@echo "  clean           - Clean build files"
 	@echo "  create-image-dirs - Create images directory for app icons"
+	@echo "  install         - Install and start the service"
+	@echo "  uninstall       - Stop and remove the service"
 	@echo "  help            - Show this help" 
