@@ -8,7 +8,7 @@ audio_channels = "0"
 
 # Enable debug output (true/false)
 # Default: false
-debug = true
+debug = false
 
 # Recording duration in seconds (0 for unlimited)
 # Default: 10
@@ -23,12 +23,12 @@ output_mode = "single"
 silence_threshold = 0
 
 # Continuous recording mode (true/false)
-# Default: false
-continuous_mode = false
+# Default: true
+continuous_mode = true
 
 # Recording cadence in seconds (how often to rotate files in continuous mode)
-# Default: 300
-recording_cadence = 300
+# Default: 900
+recording_cadence = 900
 
 # Output directory for recordings
 # Default: ./recordings
