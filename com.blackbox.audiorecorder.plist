@@ -9,7 +9,7 @@
         <string>/usr/local/bin/blackbox</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/davidfisher/code/audio_recorder</string>
+    <string>/Users/davidfisher/code/audio_blackbox</string>
     <key>StandardErrorPath</key>
     <string>~/Library/Logs/BlackBox/error.log</string>
     <key>StandardOutPath</key>
