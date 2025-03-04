@@ -391,11 +391,10 @@ mod tests {
 
     #[test]
     fn test_env_vars_override() {
-        // Set environment variables
+        // Set up environment variables
         env::set_var("AUDIO_CHANNELS", "0,2,3");
         env::set_var("DEBUG", "true");
 
-        // Create a new config with explicit values
         let mut config = AppConfig {
             audio_channels: Some(DEFAULT_CHANNELS.to_string()),
             debug: Some(false),
@@ -419,7 +418,7 @@ mod tests {
         assert_eq!(config.get_audio_channels(), "0,2,3");
         assert_eq!(config.get_debug(), true);
 
-        // Clean up
+        // Clean up environment variables
         env::remove_var("AUDIO_CHANNELS");
         env::remove_var("DEBUG");
     }

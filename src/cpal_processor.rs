@@ -831,7 +831,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let file_path = self.file_name.lock().unwrap().clone();
 
         // Finalize the WAV file first
-        if let Some(mut writer) = self.writer.lock().unwrap().take() {
+        if let Some(writer) = self.writer.lock().unwrap().take() {
             // Finalize the writer
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file: {}", e);
