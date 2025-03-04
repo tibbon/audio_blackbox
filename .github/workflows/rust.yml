@@ -29,6 +29,31 @@ jobs:
         profile: minimal
         toolchain: ${{ matrix.rust }}
         override: true
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-
+    
+    - name: Cache system packages (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/cache@v3
+      with:
+        path: |
+          /var/lib/apt/lists/*
+          /var/cache/apt/archives/*
+          /var/cache/apt/archives/partial/*
+        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
     
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
@@ -39,16 +64,6 @@ jobs:
         pkg-config --list-all | grep alsa || echo "ALSA not found in pkg-config"
         ls -la /usr/lib/pkgconfig/alsa.pc || echo "alsa.pc not found"
 
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
-    
     - name: Build
       run: cargo build --verbose
     
@@ -75,6 +90,29 @@ jobs:
         override: true
         components: rustfmt, clippy
     
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-
+    
+    - name: Cache system packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          /var/lib/apt/lists/*
+          /var/cache/apt/archives/*
+          /var/cache/apt/archives/partial/*
+        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+    
     - name: Install Linux dependencies
       run: |
         sudo apt-get update
@@ -100,6 +138,29 @@ jobs:
         profile: minimal
         toolchain: stable
         override: true
+    
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-
+    
+    - name: Cache system packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          /var/lib/apt/lists/*
+          /var/cache/apt/archives/*
+          /var/cache/apt/archives/partial/*
+        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
     
     - name: Install Linux dependencies
       run: |
