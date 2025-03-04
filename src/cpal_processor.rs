@@ -456,8 +456,10 @@ impl AudioProcessor for CpalAudioProcessor {
                 }
             }
             _ => {
-                // Use the default stereo WAV for backward compatibility
-                println!("Using standard stereo WAV output format");
+                panic!(
+                    "Invalid output mode for multichannel recording: {}",
+                    output_mode
+                );
             }
         }
 

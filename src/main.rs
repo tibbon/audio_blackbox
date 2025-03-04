@@ -44,6 +44,7 @@ fn main() {
 
     // Load configuration once at startup
     let config = AppConfig::load();
+    println!("Loaded configuration from {}", config_path.display());
 
     // Create output directory if it doesn't exist
     let output_dir = config.get_output_dir();

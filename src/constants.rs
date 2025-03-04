@@ -22,12 +22,12 @@ pub type WavWriterType = hound::WavWriter<BufWriter<File>>;
 pub type MultiChannelWriters = Arc<Mutex<Vec<Option<WavWriterType>>>>;
 
 // Environment variable names
-pub const ENV_OUTPUT_DIR: &str = "BLACKBOX_OUTPUT_DIR";
-pub const ENV_CHANNELS: &str = "BLACKBOX_CHANNELS";
-pub const ENV_DURATION: &str = "BLACKBOX_DURATION";
-pub const ENV_OUTPUT_MODE: &str = "BLACKBOX_OUTPUT_MODE";
-pub const ENV_DEBUG: &str = "BLACKBOX_DEBUG";
-pub const ENV_SILENCE_THRESHOLD: &str = "BLACKBOX_SILENCE_THRESHOLD";
-pub const ENV_CONTINUOUS_MODE: &str = "BLACKBOX_CONTINUOUS_MODE";
-pub const ENV_RECORDING_CADENCE: &str = "BLACKBOX_RECORDING_CADENCE";
-pub const ENV_PERFORMANCE_LOGGING: &str = "BLACKBOX_PERFORMANCE_LOGGING";
+pub const ENV_OUTPUT_DIR: &str = "OUTPUT_DIR";
+pub const ENV_CHANNELS: &str = "AUDIO_CHANNELS";
+pub const ENV_DURATION: &str = "RECORD_DURATION";
+pub const ENV_OUTPUT_MODE: &str = "OUTPUT_MODE";
+pub const ENV_DEBUG: &str = "DEBUG";
+pub const ENV_SILENCE_THRESHOLD: &str = "SILENCE_THRESHOLD";
+pub const ENV_CONTINUOUS_MODE: &str = "CONTINUOUS_MODE";
+pub const ENV_RECORDING_CADENCE: &str = "RECORDING_CADENCE";
+pub const ENV_PERFORMANCE_LOGGING: &str = "PERFORMANCE_LOGGING";

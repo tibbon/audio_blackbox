@@ -49,7 +49,11 @@ mod tests {
     use tempfile::tempdir;
 
     // Include shutdown tests
+    mod channel_tests;
+    mod config_tests;
+    mod performance_tests;
     mod shutdown_tests;
+    mod silence_tests;
 
     // Check if we're running in CI
     fn is_ci() -> bool {

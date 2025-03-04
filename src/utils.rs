@@ -1,7 +1,7 @@
 use crate::constants::MAX_CHANNELS;
-use std::vec::Vec;
 #[cfg(target_os = "linux")]
 use std::process::Command;
+use std::vec::Vec;
 
 /// Parse a string of channel specifications and return a vector of channel numbers.
 ///
@@ -119,9 +119,9 @@ pub fn check_alsa_availability() -> Result<(), String> {
 /// - Ok(false) if the file is not silent (RMS >= threshold) or if silence detection is disabled
 /// - Err(String) if there was an error reading or analyzing the file
 pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, String> {
-    let threshold_i32 = threshold as i32;
+    let threshold_f64 = threshold as f64;
 
-    if threshold_i32 <= 0 {
+    if threshold_f64 <= 0.0 {
         // If threshold is 0 or negative, we don't check for silence
         return Ok(false);
     }
@@ -142,12 +142,15 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, String> {
 
     // Calculate RMS (Root Mean Square) amplitude
     // RMS is a measure of the average power of the audio signal
-    let sum_of_squares: i64 = samples.iter().map(|&s| s as i64 * s as i64).sum();
-    let mean_square = sum_of_squares as f64 / samples.len() as f64;
-    let rms = mean_square.sqrt() as i32;
+    let sum_of_squares: f64 = samples
+        .iter()
+        .map(|&s| (s as f64 / i32::MAX as f64).powi(2))
+        .sum();
+    let mean_square = sum_of_squares / samples.len() as f64;
+    let rms = mean_square.sqrt();
 
     // If RMS is below threshold, consider it silent
-    Ok(rms < threshold_i32)
+    Ok(rms < threshold_f64)
 }
 
 // Parse a string like "0,1,2" into a vector of usize values

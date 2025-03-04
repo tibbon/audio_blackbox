@@ -61,6 +61,14 @@ impl AppConfig {
 
     /// Find the configuration file path
     fn find_config_file() -> Option<PathBuf> {
+        // First check if a config file path is specified in the environment
+        if let Ok(config_path) = env::var("BLACKBOX_CONFIG") {
+            let path = Path::new(&config_path);
+            if path.exists() {
+                return Some(path.to_path_buf());
+            }
+        }
+
         // Search order:
         // 1. Current directory: "./blackbox.toml"
         // 2. User's home directory: "~/.config/blackbox/config.toml"
@@ -125,7 +133,7 @@ impl AppConfig {
     }
 
     /// Merge another configuration into this one, only taking values that are Some
-    fn merge(&mut self, other: AppConfig) {
+    pub fn merge(&mut self, other: AppConfig) {
         if other.audio_channels.is_some() {
             self.audio_channels = other.audio_channels;
         }
@@ -155,52 +163,75 @@ impl AppConfig {
         }
     }
 
+    /// Parse a boolean value from a string
+    fn parse_bool(val: &str) -> Option<bool> {
+        match val.to_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => Some(true),
+            "false" | "0" | "no" | "off" => Some(false),
+            _ => val.parse().ok(),
+        }
+    }
+
     /// Apply environment variables to override configuration
     fn apply_env_vars(&mut self) {
-        if let Ok(val) = env::var("AUDIO_CHANNELS") {
+        // Try both prefixed and unprefixed environment variables
+        let channels = env::var("AUDIO_CHANNELS").or_else(|_| env::var("BLACKBOX_AUDIO_CHANNELS"));
+        if let Ok(val) = channels {
             self.audio_channels = Some(val);
         }
-        if let Ok(val) = env::var("DEBUG") {
-            // Parse boolean values correctly
-            match val.to_lowercase().as_str() {
-                "true" | "1" | "yes" | "on" => self.debug = Some(true),
-                "false" | "0" | "no" | "off" => self.debug = Some(false),
-                _ => {
-                    // Try standard parsing as fallback
-                    if let Ok(debug) = val.parse() {
-                        self.debug = Some(debug);
-                    }
-                }
+
+        let debug = env::var("DEBUG").or_else(|_| env::var("BLACKBOX_DEBUG"));
+        if let Ok(val) = debug {
+            if let Some(debug) = Self::parse_bool(&val) {
+                self.debug = Some(debug);
             }
         }
-        if let Ok(val) = env::var("RECORD_DURATION") {
+
+        let duration = env::var("RECORD_DURATION").or_else(|_| env::var("BLACKBOX_DURATION"));
+        if let Ok(val) = duration {
             if let Ok(duration) = val.parse() {
                 self.duration = Some(duration);
             }
         }
-        if let Ok(val) = env::var("OUTPUT_MODE") {
+
+        let output_mode = env::var("OUTPUT_MODE").or_else(|_| env::var("BLACKBOX_OUTPUT_MODE"));
+        if let Ok(val) = output_mode {
             self.output_mode = Some(val);
         }
-        if let Ok(val) = env::var("SILENCE_THRESHOLD") {
+
+        let threshold =
+            env::var("SILENCE_THRESHOLD").or_else(|_| env::var("BLACKBOX_SILENCE_THRESHOLD"));
+        if let Ok(val) = threshold {
             if let Ok(threshold) = val.parse() {
                 self.silence_threshold = Some(threshold);
             }
         }
-        if let Ok(val) = env::var("CONTINUOUS_MODE") {
-            if let Ok(continuous) = val.parse() {
+
+        let continuous =
+            env::var("CONTINUOUS_MODE").or_else(|_| env::var("BLACKBOX_CONTINUOUS_MODE"));
+        if let Ok(val) = continuous {
+            if let Some(continuous) = Self::parse_bool(&val) {
                 self.continuous_mode = Some(continuous);
             }
         }
-        if let Ok(val) = env::var("RECORDING_CADENCE") {
+
+        let cadence =
+            env::var("RECORDING_CADENCE").or_else(|_| env::var("BLACKBOX_RECORDING_CADENCE"));
+        if let Ok(val) = cadence {
             if let Ok(cadence) = val.parse() {
                 self.recording_cadence = Some(cadence);
             }
         }
-        if let Ok(val) = env::var("OUTPUT_DIR") {
+
+        let output_dir = env::var("OUTPUT_DIR").or_else(|_| env::var("BLACKBOX_OUTPUT_DIR"));
+        if let Ok(val) = output_dir {
             self.output_dir = Some(val);
         }
-        if let Ok(val) = env::var("PERFORMANCE_LOGGING") {
-            if let Ok(perf_logging) = val.parse() {
+
+        let perf_logging =
+            env::var("PERFORMANCE_LOGGING").or_else(|_| env::var("BLACKBOX_PERFORMANCE_LOGGING"));
+        if let Ok(val) = perf_logging {
+            if let Some(perf_logging) = Self::parse_bool(&val) {
                 self.performance_logging = Some(perf_logging);
             }
         }
