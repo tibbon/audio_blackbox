@@ -127,6 +127,22 @@ install: release
 	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
 	@echo "Service installed and started. Check logs at $(LOG_DIR)/"
 
+# Start the service
+.PHONY: start
+start:
+	@echo "Starting BlackBox service..."
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@echo "Service started. Check logs at $(LOG_DIR)/"
+
+# Stop the service
+.PHONY: stop
+stop:
+	@echo "Gracefully stopping BlackBox service..."
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@echo "Waiting for service to finalize files..."
+	@sleep 2
+	@echo "Service stopped"
+
 # Uninstall the service
 .PHONY: uninstall
 uninstall:
@@ -157,5 +173,7 @@ help:
 	@echo "  clean           - Clean build files"
 	@echo "  create-image-dirs - Create images directory for app icons"
 	@echo "  install         - Install and start the service"
+	@echo "  start           - Start the service"
+	@echo "  stop            - Stop the service"
 	@echo "  uninstall       - Stop and remove the service"
 	@echo "  help            - Show this help" 
