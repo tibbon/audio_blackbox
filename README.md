@@ -28,7 +28,33 @@ The application is currently in development. The core audio recording functional
 
 ### Current Workaround
 
-A simplified implementation of the `MenuBarApp` has been created that doesn't use the thread-unsafe parts of the Objective-C bindings. This allows the application to compile and run, but without the full menu bar functionality.
+Due to the issues with the native macOS menu bar implementation, a simplified command-line based control system is implemented:
+
+1. The application runs with a status display in the terminal
+2. Control is achieved through touch files:
+   - Start recording: `touch /tmp/blackbox_start`
+   - Stop recording: `touch /tmp/blackbox_stop`
+   - Quit app: `touch /tmp/blackbox_quit`
+   - Check status: `cat /tmp/blackbox_status`
+
+## Configuration
+
+The application is configured through the `blackbox.toml` file. Important settings include:
+
+```toml
+# Output mode: "single" (one file), "split" (one file per channel)
+# IMPORTANT: For multi-channel recording, only use "single" or "split"
+output_mode = "single"
+
+# Audio channels to record (comma-separated list or ranges like 0-2)
+audio_channels = "0"
+
+# Recording duration in seconds (0 for unlimited)
+duration = 5
+
+# Output directory for recordings
+output_dir = "./recordings"
+```
 
 ## Building and Running
 

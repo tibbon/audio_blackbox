@@ -2,6 +2,15 @@
 
 This document outlines the next steps and priorities for the BlackBox Audio Recorder project.
 
+## Recently Completed
+
+1. **Fixed Output Mode Validation**
+   - Added proper validation of output modes in the audio processor
+   - Implemented a new `setup_standard_mode` for mono/stereo recordings
+   - Updated configuration file comments to clearly document valid options
+   - Changed default output mode from "wav" to "single" to match code expectations
+   - Added better error messages that clearly indicate valid options
+
 ## High Priority
 
 1. **Fix Thread Safety Issues in Menu Bar Implementation**
