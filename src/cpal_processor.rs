@@ -827,14 +827,11 @@ impl AudioProcessor for CpalAudioProcessor {
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
 
-        // Close the stream to stop recording
-        self.stream = None;
+        // Get the file path before finalizing
+        let file_path = self.file_name.lock().unwrap().clone();
 
-        // Finalize the WAV file
-        if let Some(writer) = self.writer.lock().unwrap().take() {
-            // Get the file path before finalizing
-            let file_path = self.file_name.lock().unwrap().clone();
-
+        // Finalize the WAV file first
+        if let Some(mut writer) = self.writer.lock().unwrap().take() {
             // Finalize the writer
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file: {}", e);
@@ -842,107 +839,57 @@ impl AudioProcessor for CpalAudioProcessor {
                     std::io::ErrorKind::Other,
                     e.to_string(),
                 ));
-            } else {
-                println!("Finalized recording to {}", file_path);
+            }
+        }
 
-                // Check if the file is in the output directory
-                let path = Path::new(&file_path);
-                if let Some(file_name) = path.file_name() {
-                    if let Some(file_name_str) = file_name.to_str() {
-                        if let Some(parent_dir) = path.parent() {
-                            if let Some(parent_dir_str) = parent_dir.to_str() {
-                                // If the file is not in the output directory, move it there
-                                if parent_dir_str != self.output_dir {
-                                    let new_path = format!("{}/{}", self.output_dir, file_name_str);
-                                    println!("Moving file from {} to {}", file_path, new_path);
-                                    fs::rename(&file_path, &new_path)?;
-                                }
-                            }
-                        }
-                    }
-                }
+        // Then close the stream
+        self.stream = None;
 
-                // Check if we should apply silence detection
-                if silence_threshold > 0.0 {
-                    // Check if the file is silent
-                    match is_silent(&file_path, silence_threshold) {
-                        Ok(true) => {
-                            println!(
-                                "Recording is silent (below threshold {}), deleting file",
-                                silence_threshold
-                            );
-                            if let Err(e) = fs::remove_file(&file_path) {
-                                eprintln!("Error deleting silent file: {}", e);
-                                return Err(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    e.to_string(),
-                                ));
-                            }
-                        }
-                        Ok(false) => {
-                            println!(
-                                "Recording is not silent (above threshold {}), keeping file",
-                                silence_threshold
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Error checking for silence: {}", e);
-                            return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+        println!("Finalized recording to {}", file_path);
+
+        // Check if the file is in the output directory
+        let path = Path::new(&file_path);
+        if let Some(file_name) = path.file_name() {
+            if let Some(file_name_str) = file_name.to_str() {
+                if let Some(parent_dir) = path.parent() {
+                    if let Some(parent_dir_str) = parent_dir.to_str() {
+                        // If the file is not in the output directory, move it there
+                        if parent_dir_str != self.output_dir {
+                            let new_path = format!("{}/{}", self.output_dir, file_name_str);
+                            println!("Moving file from {} to {}", file_path, new_path);
+                            fs::rename(&file_path, &new_path)?;
                         }
                     }
                 }
             }
         }
 
-        // Finalize any multichannel writers
-        let mut writers = self.multichannel_writers.lock().unwrap();
-        for (idx, writer_opt) in writers.iter_mut().enumerate() {
-            if let Some(writer) = writer_opt.take() {
-                // Get the file path - we'll use the file_name pattern since we can't directly access the path
-                let now: DateTime<Local> = Local::now();
-                let file_path = format!(
-                    "{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute(),
-                    idx
-                );
-
-                // Finalize the writer
-                if let Err(e) = writer.finalize() {
-                    eprintln!("Error finalizing channel WAV file: {}", e);
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e.to_string(),
-                    ));
-                } else {
-                    println!("Finalized recording to {}", file_path);
-
-                    // Check if we should apply silence detection
-                    if silence_threshold > 0.0 {
-                        // Check if the file is silent
-                        match is_silent(&file_path, silence_threshold) {
-                            Ok(true) => {
-                                println!("Channel recording is silent (below threshold {}), deleting file", silence_threshold);
-                                if let Err(e) = fs::remove_file(&file_path) {
-                                    eprintln!("Error deleting silent file: {}", e);
-                                    return Err(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        e.to_string(),
-                                    ));
-                                }
-                            }
-                            Ok(false) => {
-                                println!("Channel recording is not silent (above threshold {}), keeping file", silence_threshold);
-                            }
-                            Err(e) => {
-                                eprintln!("Error checking for silence: {}", e);
-                                return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
-                            }
-                        }
+        // Check if we should apply silence detection
+        if silence_threshold > 0.0 {
+            // Check if the file is silent
+            match is_silent(&file_path, silence_threshold) {
+                Ok(true) => {
+                    println!(
+                        "Recording is silent (below threshold {}), deleting file",
+                        silence_threshold
+                    );
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        eprintln!("Error deleting silent file: {}", e);
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e.to_string(),
+                        ));
                     }
+                }
+                Ok(false) => {
+                    println!(
+                        "Recording is not silent (above threshold {}), keeping file",
+                        silence_threshold
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Error checking for silence: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
                 }
             }
         }
@@ -975,5 +922,17 @@ impl AudioProcessor for CpalAudioProcessor {
     fn is_recording(&self) -> bool {
         // If there's an active stream, we're recording
         self.stream.is_some()
+    }
+}
+
+// Add Drop implementation to ensure cleanup
+impl Drop for CpalAudioProcessor {
+    fn drop(&mut self) {
+        // Try to finalize if we're still recording
+        if self.is_recording() {
+            if let Err(e) = self.finalize() {
+                eprintln!("Error during cleanup: {}", e);
+            }
+        }
     }
 }
