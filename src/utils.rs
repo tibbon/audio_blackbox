@@ -1,5 +1,6 @@
 use crate::constants::MAX_CHANNELS;
 use std::vec::Vec;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
 /// Parse a string of channel specifications and return a vector of channel numbers.

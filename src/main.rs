@@ -42,7 +42,7 @@ fn main() {
         }
     }
 
-    // Load configuration
+    // Load configuration once at startup
     let config = AppConfig::load();
 
     // Create output directory if it doesn't exist
@@ -64,10 +64,15 @@ fn main() {
 
     // Set up signal handling for clean shutdown
     let running = Arc::new(AtomicBool::new(true));
+    let shutdown_in_progress = Arc::new(AtomicBool::new(false));
     let r = running.clone();
+    let s = shutdown_in_progress.clone();
     ::ctrlc::set_handler(move || {
-        println!("Shutting down...");
-        r.store(false, Ordering::SeqCst);
+        if !s.load(Ordering::SeqCst) {
+            println!("Shutting down...");
+            s.store(true, Ordering::SeqCst);
+            r.store(false, Ordering::SeqCst);
+        }
     })
     .expect("Error setting Ctrl-C handler");
 
