@@ -20,6 +20,8 @@ pub struct MockAudioProcessor {
     /// detected as silent by the silence detection algorithm. Used for testing
     /// the automatic deletion of silent recordings.
     pub create_silent_file: bool,
+    /// When true, finalize will return an error. Used for testing error handling.
+    pub should_fail_finalize: bool,
 }
 
 impl MockAudioProcessor {
@@ -34,6 +36,7 @@ impl MockAudioProcessor {
             file_name: file_name.to_string(),
             created_files: Vec::new(),
             create_silent_file: false,
+            should_fail_finalize: false,
         }
     }
 }
@@ -163,6 +166,13 @@ impl AudioProcessor for MockAudioProcessor {
     fn finalize(&mut self) -> std::io::Result<()> {
         self.finalized = true;
 
+        if self.should_fail_finalize {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Simulated finalize failure",
+            ));
+        }
+
         // Check if we should apply the silence threshold using AppConfig
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
@@ -202,8 +212,9 @@ impl AudioProcessor for MockAudioProcessor {
     }
 
     fn stop_recording(&mut self) -> std::io::Result<()> {
-        // Just call finalize
-        self.finalize()
+        // Just mark as stopped, don't finalize yet
+        self.audio_processed = false;
+        Ok(())
     }
 
     fn is_recording(&self) -> bool {

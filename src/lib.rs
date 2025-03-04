@@ -48,6 +48,9 @@ mod tests {
     use std::sync::Mutex;
     use tempfile::tempdir;
 
+    // Include shutdown tests
+    mod shutdown_tests;
+
     // Check if we're running in CI
     fn is_ci() -> bool {
         env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok()

@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use blackbox::AppConfig;
+use blackbox::AudioProcessor;
 use blackbox::AudioRecorder;
 use blackbox::CpalAudioProcessor;
 
@@ -122,6 +123,11 @@ fn main() {
 
         #[cfg(target_os = "macos")]
         menu_app.update_status(false);
+
+        // Finalize the recording
+        if let Err(e) = recorder.processor.finalize() {
+            eprintln!("Error finalizing recording: {}", e);
+        }
     } else {
         // Normal recording mode
         println!("Starting single recording");
@@ -167,9 +173,15 @@ fn main() {
 
         #[cfg(target_os = "macos")]
         menu_app.update_status(false);
+
+        // Finalize the recording
+        if let Err(e) = recorder.processor.finalize() {
+            eprintln!("Error finalizing recording: {}", e);
+        }
     }
 
     println!("Recording finished!");
+    std::process::exit(0);
 }
 
 // A simple performance monitor
