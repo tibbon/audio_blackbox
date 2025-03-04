@@ -4,31 +4,31 @@
 
 # Audio channels to record (comma-separated list or ranges like 0-2)
 # Default: 0,1
-audio_channels = "0"
+audio_channels = "0-31"
 
 # Enable debug output (true/false)
 # Default: false
-debug = true
+debug = false
 
 # Recording duration in seconds (0 for unlimited)
 # Default: 10
-duration = 5
+duration = 0
 
 # Output mode: "single" (one file), "split" (one file per channel)
 # Default: single
-output_mode = "single"
+output_mode = "split"
 
 # Silence threshold (0-100, 0 disables silence detection)
 # Default: 0
-silence_threshold = 0
+silence_threshold = 20
 
 # Continuous recording mode (true/false)
 # Default: false
-continuous_mode = false
+continuous_mode = true
 
 # Recording cadence in seconds (how often to rotate files in continuous mode)
 # Default: 300
-recording_cadence = 300
+recording_cadence = 3600
 
 # Output directory for recordings
 # Default: ./recordings
