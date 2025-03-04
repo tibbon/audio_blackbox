@@ -275,6 +275,7 @@ impl StatusItem {
         let _pool = AutoreleasePool::new();
         let status_item = unsafe {
             let status_bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
+            // Use a fixed width for the status item
             let status_item: id = msg_send![status_bar, statusItemWithLength:-1.0];
             if status_item == nil {
                 return Err(CocoaError::NilInstance("Failed to create status item".to_string()));

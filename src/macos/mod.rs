@@ -167,15 +167,14 @@ impl MenuBarApp {
         Self::send_notification("BlackBox Audio Recorder", 
             "App is running. Use the menu bar icon to control recording.");
         
-        // Main application loop - wait for user to stop the application
-        println!("Press Ctrl+C to exit");
-        
         // Set up a channel for CTRL+C handling
         let (tx, rx) = std::sync::mpsc::channel();
         ctrlc::set_handler(move || {
             let _ = tx.send(());
         }).expect("Error setting Ctrl-C handler");
         
+        // Main application loop - wait for user to stop the application
+        println!("Press Ctrl+C to exit");
         let mut running = true;
         
         while running {
@@ -205,8 +204,7 @@ impl MenuBarApp {
                 if let Ok(mut rec_guard) = self.recorder.lock() {
                     if let Some(ref mut rec) = *rec_guard {
                         if rec.get_processor().is_recording() {
-                            // The AudioRecorder doesn't have a get_processor_mut method,
-                            // but we can use the stop_recording method directly
+                            // Use the processor's stop_recording method directly
                             if let Err(e) = rec.processor.stop_recording() {
                                 eprintln!("Error stopping recording: {:?}", e);
                             } else {

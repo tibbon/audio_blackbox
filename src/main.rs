@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::env;
+use std::process;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::process;
 
 use blackbox::AppConfig;
 use blackbox::AudioProcessor;
