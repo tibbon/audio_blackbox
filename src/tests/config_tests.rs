@@ -165,17 +165,30 @@ fn test_config_env_vars() {
     env::remove_var("BLACKBOX_RECORDING_CADENCE");
     env::remove_var("BLACKBOX_OUTPUT_DIR");
     env::remove_var("BLACKBOX_PERFORMANCE_LOGGING");
+    env::remove_var("BLACKBOX_CONFIG");
+
+    // Point to a non-existent config file to ensure we only use environment variables
+    env::set_var("BLACKBOX_CONFIG", "/nonexistent/config.toml");
 
     // Set test environment variables with explicit values
     env::set_var("AUDIO_CHANNELS", "3,4,5");
+    env::set_var("BLACKBOX_AUDIO_CHANNELS", "3,4,5");
     env::set_var("DEBUG", "true");
+    env::set_var("BLACKBOX_DEBUG", "true");
     env::set_var("RECORD_DURATION", "120");
+    env::set_var("BLACKBOX_DURATION", "120");
     env::set_var("OUTPUT_MODE", "split");
+    env::set_var("BLACKBOX_OUTPUT_MODE", "split");
     env::set_var("SILENCE_THRESHOLD", "0.001");
+    env::set_var("BLACKBOX_SILENCE_THRESHOLD", "0.001");
     env::set_var("CONTINUOUS_MODE", "true");
+    env::set_var("BLACKBOX_CONTINUOUS_MODE", "true");
     env::set_var("RECORDING_CADENCE", "600");
+    env::set_var("BLACKBOX_RECORDING_CADENCE", "600");
     env::set_var("OUTPUT_DIR", "/tmp/test_output");
+    env::set_var("BLACKBOX_OUTPUT_DIR", "/tmp/test_output");
     env::set_var("PERFORMANCE_LOGGING", "true");
+    env::set_var("BLACKBOX_PERFORMANCE_LOGGING", "true");
 
     let config = AppConfig::load();
 
@@ -208,4 +221,5 @@ fn test_config_env_vars() {
     env::remove_var("BLACKBOX_RECORDING_CADENCE");
     env::remove_var("BLACKBOX_OUTPUT_DIR");
     env::remove_var("BLACKBOX_PERFORMANCE_LOGGING");
+    env::remove_var("BLACKBOX_CONFIG");
 }
