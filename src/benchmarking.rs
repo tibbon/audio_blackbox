@@ -218,9 +218,7 @@ mod tests {
 
     #[test]
     fn test_measure_execution_time_with_result() {
-        let (result, duration) = measure_execution_time(|| -> Result<i32, &str> {
-            Ok(42)
-        });
+        let (result, duration) = measure_execution_time(|| -> Result<i32, &str> { Ok(42) });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
         assert!(duration.as_nanos() > 0 || duration.as_nanos() == 0);
@@ -238,14 +236,14 @@ mod tests {
         // This test verifies that a tracker with an invalid path doesn't crash
         let tracker = PerformanceTracker::new(true, "/nonexistent/directory/metrics.log", 5, 1);
         tracker.start();
-        
+
         // Allow time for thread to run
         thread::sleep(Duration::from_secs(1));
-        
+
         // We don't assert the metrics value - it may be None or Some depending on the environment
         // Just check that we can call the method without panicking
         let _ = tracker.get_current_metrics();
-        
+
         tracker.stop();
     }
 
@@ -253,7 +251,7 @@ mod tests {
     fn test_performance_tracker_creation() {
         let temp_dir = tempdir().unwrap();
         let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
-        
+
         let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
         assert!(tracker.enabled);
         assert_eq!(tracker.log_path, log_path);
@@ -264,10 +262,10 @@ mod tests {
     #[test]
     fn test_performance_tracker_disabled() {
         let tracker = PerformanceTracker::new(false, "dummy.log", 10, 1);
-        
+
         tracker.start();
         assert!(!*tracker.running.lock().unwrap());
-        
+
         assert!(tracker.get_current_metrics().is_none());
         assert!(tracker.get_average_metrics().is_none());
     }
@@ -277,21 +275,21 @@ mod tests {
         // This test checks the performance metrics collection functionality
         let temp_dir = tempdir().unwrap();
         let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
-        
+
         // Create directory to ensure it exists
         std::fs::create_dir_all(temp_dir.path()).unwrap();
-        
+
         let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
         tracker.start();
-        
+
         // Wait for metrics collection
         thread::sleep(Duration::from_secs(3));
-        
+
         // We don't assert exact metrics as they're platform and environment dependent
         // Just make sure we can call the methods without crashing
         let _ = tracker.get_current_metrics();
         let _ = tracker.get_average_metrics();
-        
+
         tracker.stop();
     }
 
@@ -300,30 +298,33 @@ mod tests {
         // This test checks the log file creation
         let temp_dir = tempdir().unwrap();
         let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
-        
+
         // Create directory to ensure it exists
         std::fs::create_dir_all(temp_dir.path()).unwrap();
-        
+
         // Setup tracker
         let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
-        
+
         // Write a test header directly to the log
         let header = "timestamp,cpu_usage,memory_usage_bytes,memory_percent\n";
         let _ = write_to_log(&log_path, header);
-        
+
         // Start tracker
         tracker.start();
-        
+
         // Wait for potential writes
         thread::sleep(Duration::from_secs(2));
-        
+
         // Stop tracker
         tracker.stop();
-        
+
         // Verify that the file exists - we don't check content as it's environment dependent
         let file_exists = std::path::Path::new(&log_path).exists();
         if !file_exists {
-            println!("Warning: performance log file wasn't created at {}", log_path);
+            println!(
+                "Warning: performance log file wasn't created at {}",
+                log_path
+            );
         }
     }
 
@@ -331,16 +332,16 @@ mod tests {
     fn test_metrics_history_limit() {
         let temp_dir = tempdir().unwrap();
         let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
-        
+
         let history_length = 3;
         let tracker = PerformanceTracker::new(true, &log_path, history_length, 1);
         tracker.start();
-        
+
         thread::sleep(Duration::from_secs(4));
-        
+
         let metrics = tracker.metrics.lock().unwrap();
         assert!(metrics.len() <= history_length);
-        
+
         tracker.stop();
     }
 }

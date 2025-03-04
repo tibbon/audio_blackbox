@@ -167,7 +167,7 @@ impl AppConfig {
         match val.to_lowercase().as_str() {
             "true" | "1" | "yes" | "on" => Some(true),
             "false" | "0" | "no" | "off" => Some(false),
-            _ => None
+            _ => None,
         }
     }
 
