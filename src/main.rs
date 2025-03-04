@@ -22,13 +22,20 @@ fn main() {
     // Check if we should run the macOS menu bar app
     #[cfg(target_os = "macos")]
     {
+        println!("Checking for --menu-bar flag...");
         if let Some(arg) = env::args().nth(1) {
             if arg == "--menu-bar" {
+                println!("Menu bar flag detected, starting in macOS menu bar mode");
+                println!("Creating MenuBarApp instance...");
                 let menu_app = MenuBarApp::new();
+                println!("Menu bar app created successfully");
+                println!("Running MenuBarApp...");
                 menu_app.run();
+                println!("Menu bar app run completed - exiting");
                 return;
             }
         }
+        println!("No menu bar flag found, proceeding with normal operation");
     }
 
     // Check for configuration file

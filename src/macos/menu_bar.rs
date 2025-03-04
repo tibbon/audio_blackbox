@@ -26,9 +26,11 @@ pub struct MenuBarApp {
 
 impl MenuBarApp {
     pub fn new() -> Self {
+        println!("MenuBarApp: Initializing...");
         unsafe {
             let pool = NSAutoreleasePool::new(nil);
             
+            println!("MenuBarApp: Creating status bar item");
             // Create a status bar item
             let status_bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
             let status_item: id = msg_send![status_bar, statusItemWithLength:-1.0];
@@ -36,7 +38,9 @@ impl MenuBarApp {
             // Set title for status item
             let title = NSString::alloc(nil).init_str("●");
             let _: () = msg_send![status_item, setTitle:title];
+            println!("MenuBarApp: Status bar item created");
             
+            println!("MenuBarApp: Creating menu");
             // Create menu
             let menu: id = msg_send![class!(NSMenu), new];
             
@@ -81,6 +85,7 @@ impl MenuBarApp {
             let _: () = msg_send![duration_item, setSubmenu:duration_menu];
             let _: () = msg_send![settings_menu, addItem:duration_item];
             
+            println!("MenuBarApp: Adding duration options");
             // Add duration options
             let durations = [(30, "30 seconds"), (60, "1 minute"), 
                             (300, "5 minutes"), (1800, "30 minutes"), 
@@ -96,6 +101,7 @@ impl MenuBarApp {
                 let _: () = msg_send![duration_menu, addItem:duration_option];
             }
             
+            println!("MenuBarApp: Adding channel options");
             // Add channels submenu to settings
             let channels_item: id = msg_send![class!(NSMenuItem), new];
             let channels_title = NSString::alloc(nil).init_str("Input Channels");
@@ -118,6 +124,7 @@ impl MenuBarApp {
                 let _: () = msg_send![channels_menu, addItem:channel_option];
             }
             
+            println!("MenuBarApp: Adding output directory options");
             // Add "Choose Output Directory" to settings
             let dir_item: id = msg_send![class!(NSMenuItem), new];
             let dir_title = NSString::alloc(nil).init_str("Choose Output Directory...");
@@ -143,6 +150,7 @@ impl MenuBarApp {
             let separator2: id = msg_send![class!(NSMenuItem), separatorItem];
             let _: () = msg_send![menu, addItem:separator2];
             
+            println!("MenuBarApp: Adding quit menu item");
             // Add quit item
             let quit_item: id = msg_send![class!(NSMenuItem), new];
             let quit_title = NSString::alloc(nil).init_str("Quit");
@@ -157,8 +165,10 @@ impl MenuBarApp {
             pool.drain();
             
             // Load initial configuration
+            println!("MenuBarApp: Loading configuration");
             let config = AppConfig::load();
             
+            println!("MenuBarApp: Initialization complete");
             MenuBarApp {
                 status_item,
                 is_recording: Arc::new(Mutex::new(false)),
@@ -171,12 +181,15 @@ impl MenuBarApp {
     }
     
     pub fn run(&self) {
+        println!("MenuBarApp: Starting application run loop");
         // Set up main app
         unsafe {
+            println!("MenuBarApp: Setting activation policy");
             let app = NSApp();
             let _: () = msg_send![app, setActivationPolicy:NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory];
         }
         
+        println!("MenuBarApp: Creating background thread for menu poll");
         // Create a thread to check for menu item clicks
         let is_recording = self.is_recording.clone();
         let recorder = self.recorder.clone();
@@ -288,6 +301,7 @@ impl MenuBarApp {
         
         // Start a background thread to poll for menu clicks
         thread::spawn(move || {
+            println!("MenuBarApp: Background thread started, beginning event loop");
             loop {
                 // Sleep to avoid high CPU usage
                 thread::sleep(Duration::from_millis(100));
@@ -303,9 +317,9 @@ impl MenuBarApp {
                     let app = NSApp();
                     let _: () = msg_send![app, updateWindows];
                     
-                    // Run the runloop for a bit
-                    let current_loop = CFRunLoop::get_current();
-                    current_loop.run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(0), true);
+                    // Periodically process events
+                    let _current_loop = CFRunLoop::get_current();
+                    CFRunLoop::run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(100), true);
                     
                     // Check the recording item - if it was clicked, toggle recording
                     let start_item: id = msg_send![menu, itemWithTag:1];
@@ -521,10 +535,14 @@ impl MenuBarApp {
         });
         
         // Run the application
+        println!("MenuBarApp: Starting macOS application main run loop");
         unsafe {
             let app = NSApp();
+            println!("MenuBarApp: Calling app.run()");
             app.run();
+            println!("MenuBarApp: app.run() returned - this should not happen normally");
         }
+        println!("MenuBarApp: Application terminated");
     }
     
     pub fn update_status(&self, is_recording: bool) {
@@ -718,8 +736,8 @@ pub fn process_system_events() {
         let pool = NSAutoreleasePool::new(nil);
         
         // Process one event
-        let current_loop = CFRunLoop::get_current();
-        current_loop.run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(100), true);
+        let _current_loop = CFRunLoop::get_current();
+        CFRunLoop::run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(100), true);
         
         pool.drain();
     }
@@ -738,12 +756,18 @@ type BOOL = i8;
 
 impl NSMenuItemExtensions for id {
     unsafe fn wasClicked(&self) -> BOOL {
-        let clicked: BOOL = *(*self).get_ivar("_wasClicked");
+        let clicked: BOOL = if let Some(obj_ref) = (*self).as_ref() {
+            *obj_ref.get_ivar("_wasClicked")
+        } else {
+            NO
+        };
         clicked
     }
     
     unsafe fn setWasClicked(&self, was_clicked: BOOL) {
-        (*self).set_ivar("_wasClicked", was_clicked);
+        if let Some(obj_mut) = (*self).as_mut() {
+            obj_mut.set_ivar("_wasClicked", was_clicked);
+        }
     }
 }
 
@@ -761,12 +785,7 @@ impl IvarAccess for objc::runtime::Object {
         let cls = objc::runtime::object_getClass(self as *const Self);
         let ivar = objc::runtime::class_getInstanceVariable(cls, name.as_ptr() as *const i8);
         if ivar.is_null() {
-            // If ivar doesn't exist, initialize it
-            objc::runtime::object_setInstanceVariable(
-                self as *mut Self as *mut c_void,
-                name.as_ptr() as *const i8,
-                ptr::null_mut()
-            );
+            // If ivar doesn't exist, just return a zeroed value (can't add at runtime)
             return mem::zeroed();
         }
         
@@ -785,24 +804,27 @@ impl IvarAccess for objc::runtime::Object {
         if ivar.is_null() {
             // If ivar doesn't exist, we need to add it to the class
             let enc = format!("{}\0", std::any::type_name::<T>());
-            let ivar = objc::runtime::class_addIvar(
-                cls,
+            let cls_mut = cls as *mut objc::runtime::Class;
+            let ivar_added = objc::runtime::class_addIvar(
+                cls_mut,
                 name.as_ptr() as *const i8,
                 mem::size_of::<T>(),
                 mem::align_of::<T>() as u8,
                 enc.as_ptr() as *const i8
             );
-            if ivar == 0 {
-                // Failed to add ivar
+            if ivar_added == false {
+                // Failed to add ivar, return without setting
                 return;
             }
         }
         
-        // Now set the value
+        // Get the ivar again (might be newly added)
         let ivar = objc::runtime::class_getInstanceVariable(cls, name.as_ptr() as *const i8);
-        let offset = objc::runtime::ivar_getOffset(ivar);
-        let ptr = (self as *const Self as *mut u8).offset(offset as isize) as *mut T;
-        ptr.write(value);
+        if !ivar.is_null() {
+            let offset = objc::runtime::ivar_getOffset(ivar);
+            let ptr = (self as *const Self as *mut u8).offset(offset as isize) as *mut T;
+            ptr.write(value);
+        }
     }
 }
 

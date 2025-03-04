@@ -6,7 +6,7 @@ pub const INTERMEDIATE_BUFFER_SIZE: usize = 512;
 pub const DEFAULT_CHANNELS: &str = "0";
 pub const DEFAULT_DEBUG: bool = false;
 pub const DEFAULT_DURATION: u64 = 30;
-pub const DEFAULT_OUTPUT_MODE: &str = "wav";
+pub const DEFAULT_OUTPUT_MODE: &str = "single";
 pub const DEFAULT_SILENCE_THRESHOLD: f32 = 0.01;
 pub const MAX_CHANNELS: usize = 64;
 

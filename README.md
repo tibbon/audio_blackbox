@@ -1,118 +1,70 @@
-# Audio Recorder
+# BlackBox Audio Recorder
 
-A robust audio recording application built with Rust that supports various recording modes, silence detection, and performance monitoring.
+A macOS audio recording application with menu bar integration.
+
+## Overview
+
+BlackBox Audio Recorder is a Rust application that provides audio recording capabilities with a macOS menu bar interface. The application can record audio in continuous mode or for a specified duration, and provides status updates through the menu bar.
 
 ## Features
 
-- **Flexible configuration** via TOML file or environment variables
-- **Multiple recording modes**: single file, split channels, or continuous recording
-- **Smart channel selection**: automatically adapts to available hardware
-- **Silence detection**: optionally discard silent recordings
-- **Performance monitoring**: track resource usage during recording
-- **macOS menu bar integration**: system tray controls for recording (macOS only)
+- Audio recording with configurable duration
+- macOS menu bar integration
+- Continuous recording mode
+- Performance monitoring
+- Output directory selection
 
-## Configuration
+## Current Status
 
-The application can be configured in three ways (in order of precedence):
-1. Environment variables with `BLACKBOX_` prefix (highest priority)
-2. Environment variables without prefix
-3. Configuration file (`blackbox.toml`)
-4. Default values (lowest priority)
+The application is currently in development. The core audio recording functionality works, but the macOS menu bar integration has some issues with thread safety in the Objective-C bindings.
 
-On first run, a default configuration file is created in the current directory.
+### Known Issues
 
-### Key Settings
+1. **Thread Safety Issues**: The macOS menu bar implementation uses Objective-C objects that cannot be sent between threads safely. This causes compilation errors when trying to use the full menu bar implementation.
 
-- `audio_channels`: Channels to record (e.g., "0,1" or "0-2")
-- `debug`: Enable debug output (true/false)
-- `duration`: Recording duration in seconds (0 for unlimited)
-- `output_mode`: "single" (one file) or "split" (one file per channel)
-- `silence_threshold`: Threshold for silence detection (0.0-1.0, 0 disables)
-- `continuous_mode`: Enable continuous recording (true/false)
-- `recording_cadence`: Rotation interval for continuous mode (seconds)
-- `output_dir`: Directory for saving recordings
-- `performance_logging`: Enable performance metrics (true/false)
+2. **CFRunLoop Method Calls**: There are issues with calling methods on `CFRunLoop` objects, specifically the `run_in_mode` method.
 
-### Environment Variables
+3. **Cargo-Clippy Warnings**: The code generates numerous warnings related to unexpected `cfg` condition values for `cargo-clippy`.
 
-Each setting can be configured via environment variables:
+### Current Workaround
 
-```bash
-# With prefix (recommended)
-BLACKBOX_AUDIO_CHANNELS=0,1
-BLACKBOX_DEBUG=true
-BLACKBOX_DURATION=300
+A simplified implementation of the `MenuBarApp` has been created that doesn't use the thread-unsafe parts of the Objective-C bindings. This allows the application to compile and run, but without the full menu bar functionality.
 
-# Without prefix (legacy support)
-AUDIO_CHANNELS=0,1
-DEBUG=true
-RECORD_DURATION=300
-```
-
-## Usage
-
-```bash
-# Simple recording with default settings
-cargo run
-
-# Run as macOS menu bar app
-cargo run -- --menu-bar
-
-# Using environment variables
-BLACKBOX_AUDIO_CHANNELS=0,1 BLACKBOX_DURATION=5 cargo run
-
-# Using make targets (macOS)
-make app-bundle      # Create .app bundle
-make install        # Install as service
-make start         # Start recording service
-make stop          # Stop recording service
-```
-
-## Output
-
-The application creates WAV files in the configured output directory (default: `./recordings`). Files are named with timestamps and channel information:
-
-- Single mode: `YYYY-MM-DD-HH-mm.wav`
-- Split mode: `YYYY-MM-DD-HH-mm-chN.wav`
-- Continuous mode: Files are rotated according to the specified cadence
-
-## Hardware Compatibility
-
-The application adapts to various audio hardware setups:
-- Works with mono or stereo microphones
-- Supports multi-channel recording devices
-- Automatically adapts to available channels
-
-## Building
+## Building and Running
 
 ### Prerequisites
 
-- Rust toolchain (1.70.0 or later)
-- For Linux: ALSA development libraries (`libasound2-dev`)
-- For macOS: Xcode Command Line Tools
+- Rust (nightly toolchain)
+- macOS
+- ImageMagick (optional, for creating placeholder icons)
+
+### Building
 
 ```bash
-# Build debug version
 cargo build
-
-# Build release version
-cargo build --release
-
-# Build macOS app bundle
-make app-bundle
 ```
 
-## Testing
+### Running
+
+To run the application with the simplified menu bar implementation:
 
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test suite
-cargo test config_tests
-cargo test silence_tests
+./run_menubar.sh
 ```
+
+Or manually:
+
+```bash
+cargo run -- --menu-bar
+```
+
+## Future Work
+
+1. Fix the thread safety issues in the macOS menu bar implementation
+2. Implement proper error handling for the menu bar integration
+3. Add more configuration options for audio recording
+4. Improve the user interface with better icons and menu options
 
 ## License
 
-This program is licensed under the GNU General Public License v3.0. See the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.

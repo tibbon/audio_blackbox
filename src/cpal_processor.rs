@@ -221,6 +221,51 @@ impl CpalAudioProcessor {
         Ok(())
     }
 
+    /// Set up standard mode recording for mono or stereo (1 or 2 channels).
+    fn setup_standard_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
+        let now: DateTime<Local> = Local::now();
+        let date_str = format!(
+            "{}-{:02}-{:02}-{:02}-{:02}",
+            now.year(),
+            now.month(),
+            now.day(),
+            now.hour(),
+            now.minute()
+        );
+
+        println!("Setting up standard mode with {} channels", channels.len());
+
+        // Determine if we're recording mono or stereo
+        let num_channels = if channels.len() == 1 { 1 } else { 2 };
+        
+        // Create the WAV file
+        let file_name = format!("{}/{}.wav", self.output_dir, date_str);
+        
+        let spec = hound::WavSpec {
+            channels: num_channels as u16,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let writer = hound::WavWriter::create(&file_name, spec)
+            .map_err(|e| format!("Failed to create WAV file: {}", e))?;
+
+        // Store the writer
+        *self.writer.lock().unwrap() = Some(writer);
+        println!("Created WAV file: {}", file_name);
+
+        // Store the current configuration
+        *self.current_spec.lock().unwrap() = Some(spec);
+
+        // Initialize buffers
+        let mut buffers = self.multichannel_buffers.lock().unwrap();
+        buffers.clear();
+        buffers.resize(channels.len(), Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE));
+
+        Ok(())
+    }
+
     /// Rotates the current recording files, finalizing the current files and creating new ones.
     /// This method is part of the continuous recording mode functionality.
     #[allow(dead_code)]
@@ -444,23 +489,33 @@ impl AudioProcessor for CpalAudioProcessor {
         println!("Using channels: {:?}", actual_channels);
 
         // Setup the appropriate output mode
+        let valid_modes = ["split", "single"];
+        if !valid_modes.contains(&output_mode) {
+            panic!(
+                "Invalid output mode: '{}'. Valid options are: {:?}",
+                output_mode, valid_modes
+            );
+        }
+
         match output_mode {
             "split" => {
                 if let Err(e) = self.setup_split_mode(&actual_channels, sample_rate) {
                     panic!("Failed to setup split mode: {}", e);
                 }
             }
-            "single" if actual_channels.len() > 2 => {
+            "single" if actual_channels.len() <= 2 => {
+                // For mono or stereo, use the standard WAV format
+                if let Err(e) = self.setup_standard_mode(&actual_channels, sample_rate) {
+                    panic!("Failed to setup standard mode: {}", e);
+                }
+            }
+            "single" => {
+                // For more than 2 channels, use multichannel mode
                 if let Err(e) = self.setup_multichannel_mode(&actual_channels, sample_rate) {
                     panic!("Failed to setup multichannel mode: {}", e);
                 }
             }
-            _ => {
-                panic!(
-                    "Invalid output mode for multichannel recording: {}",
-                    output_mode
-                );
-            }
+            _ => unreachable!(), // We already validated the output mode above
         }
 
         // Clone channels to own them in the closure

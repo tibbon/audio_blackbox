@@ -37,6 +37,8 @@ path = "src/main.rs"
 
 [features]
 default = []
+cargo-clippy = []
+menu-bar = []
 
 [target.'cfg(target_os = "linux")'.dependencies]
 pkg-config = "0.3.30"

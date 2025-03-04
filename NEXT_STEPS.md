@@ -1,47 +1,68 @@
-# Next Steps for macOS Menu Bar Integration
+# Next Steps for BlackBox Audio Recorder
 
-We've set up the foundation for a macOS menu bar application, but there are still several issues to resolve:
+This document outlines the next steps and priorities for the BlackBox Audio Recorder project.
 
-## Current Progress
-- Created placeholder macOS menu bar implementation that allows the app to compile
-- Set up image placeholders for the menu bar status icons
-- Defined the overall architecture for the menu bar integration
+## High Priority
 
-## Remaining Tasks
+1. **Fix Thread Safety Issues in Menu Bar Implementation**
+   - Research thread-safe alternatives for Objective-C object handling in Rust
+   - Consider using a different approach for the menu bar implementation that doesn't require sending Objective-C objects between threads
+   - Explore using a single-threaded event loop for the menu bar
 
-1. **Fix AudioProcessor Trait Implementation**
-   - Update CpalAudioProcessor and MockAudioProcessor to implement the new methods:
-     - `start_recording`
-     - `stop_recording` 
-     - `is_recording`
-   - Update the return type of `finalize` to match the trait definition
+2. **Resolve CFRunLoop Method Call Issues**
+   - Fix the `run_in_mode` method call on `CFRunLoop` objects
+   - Ensure proper syntax for calling Core Foundation methods
 
-2. **Fix Config Implementation**
-   - Update config.rs to handle the new constant types (bool, u64, f32 instead of strings)
-   - Remove the parse() calls on native types
+3. **Address Cargo-Clippy Warnings**
+   - Add the `cargo-clippy` feature to the Cargo.toml file
+   - Update the code to use the proper feature flags
 
-3. **Complete macOS Menu Bar Implementation**
-   - Resolve the objc runtime binding issues in src/macos/menu_bar.rs
-   - Fix thread safety issues with proper synchronization
-   - Test menu bar functionality with recording status updates
+## Medium Priority
 
-## Building and Running
+1. **Improve Error Handling**
+   - Add better error handling for audio device initialization
+   - Implement graceful recovery from audio device errors
+   - Add more detailed error messages for menu bar initialization failures
 
-For now, you can build and test the basic functionality:
+2. **Enhance User Interface**
+   - Create better icons for the menu bar
+   - Add more menu options for configuration
+   - Implement a status indicator for recording quality
 
-```bash
-# Build the project
-cargo build
+3. **Add Configuration Options**
+   - Allow configuration of audio format (WAV, MP3, etc.)
+   - Add options for audio quality settings
+   - Implement configuration persistence
 
-# Run without menu bar
-cargo run
+## Low Priority
 
-# Run with menu bar (macOS only)
-cargo run -- --menu-bar
-```
+1. **Performance Optimizations**
+   - Optimize audio processing for lower CPU usage
+   - Reduce memory footprint during long recordings
+   - Implement more efficient file writing
 
-## Future Improvements
+2. **Additional Features**
+   - Add support for scheduled recordings
+   - Implement audio visualization
+   - Add support for audio effects or filters
 
-- Add proper error handling for menu bar operations
-- Add settings menu to configure the application
-- Add support for custom menu bar icons 
+3. **Cross-Platform Support**
+   - Investigate menu bar/system tray implementations for Linux and Windows
+   - Create platform-specific UI components for each supported OS
+
+## Technical Debt
+
+1. **Code Refactoring**
+   - Separate UI code from audio processing logic
+   - Improve module organization
+   - Add more comprehensive documentation
+
+2. **Testing**
+   - Add unit tests for core functionality
+   - Implement integration tests for the full application
+   - Add automated UI tests for the menu bar interface
+
+3. **Build System**
+   - Improve the build process for creating application bundles
+   - Add CI/CD pipeline for automated testing and releases
+   - Create installer packages for easy distribution 
