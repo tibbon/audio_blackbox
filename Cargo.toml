@@ -57,3 +57,4 @@ osx_minimum_system_version = "10.14"
 osx_frameworks = ["AppKit", "Foundation", "CoreAudio"]
 
 [dev-dependencies]
+temp-env = "0.3.4"
