@@ -130,8 +130,11 @@ install: release
 # Uninstall the service
 .PHONY: uninstall
 uninstall:
-	@echo "Uninstalling BlackBox service..."
+	@echo "Gracefully stopping BlackBox service..."
 	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@echo "Waiting for service to finalize files..."
+	@sleep 2
+	@echo "Removing service files..."
 	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
 	@echo "Service uninstalled"
 
