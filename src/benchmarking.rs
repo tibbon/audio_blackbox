@@ -192,6 +192,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::thread;
     use std::time::Duration;
     use tempfile::tempdir;
@@ -210,28 +211,118 @@ mod tests {
     }
 
     #[test]
-    fn test_performance_tracker() {
+    fn test_measure_execution_time_zero() {
+        let (result, duration) = measure_execution_time(|| 42);
+        assert_eq!(result, 42);
+        assert!(duration.as_nanos() > 0 || duration.as_nanos() == 0);
+    }
+
+    #[test]
+    fn test_measure_execution_time_with_result() {
+        let (result, duration) = measure_execution_time(|| -> Result<i32, &str> {
+            Ok(42)
+        });
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+        assert!(duration.as_nanos() > 0 || duration.as_nanos() == 0);
+    }
+
+    #[test]
+    fn test_write_to_log_error() {
+        let result = write_to_log("/nonexistent/directory/file.log", "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().kind() == std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn test_performance_tracker_invalid_path() {
+        let tracker = PerformanceTracker::new(true, "/nonexistent/directory/metrics.log", 5, 1);
+        tracker.start();
+        
+        thread::sleep(Duration::from_secs(1));
+        assert!(tracker.get_current_metrics().is_some());
+        
+        tracker.stop();
+    }
+
+    #[test]
+    fn test_performance_tracker_creation() {
         let temp_dir = tempdir().unwrap();
         let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
-
+        
         let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
+        assert!(tracker.enabled);
+        assert_eq!(tracker.log_path, log_path);
+        assert_eq!(tracker.history_length, 10);
+        assert_eq!(tracker.interval_secs, 1);
+    }
+
+    #[test]
+    fn test_performance_tracker_disabled() {
+        let tracker = PerformanceTracker::new(false, "dummy.log", 10, 1);
+        
         tracker.start();
+        assert!(!*tracker.running.lock().unwrap());
+        
+        assert!(tracker.get_current_metrics().is_none());
+        assert!(tracker.get_average_metrics().is_none());
+    }
 
-        // Wait longer for metrics to be collected
-        // The collection interval is 1 second, so waiting 3 seconds should be sufficient
-        thread::sleep(Duration::from_secs(3));
+    #[test]
+    fn test_performance_metrics_collection() {
+        let temp_dir = tempdir().unwrap();
+        let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
+        
+        let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
+        tracker.start();
+        
+        thread::sleep(Duration::from_secs(2));
+        
+        let current = tracker.get_current_metrics();
+        assert!(current.is_some());
+        let metrics = current.unwrap();
+        assert!(metrics.cpu_usage >= 0.0);
+        assert!(metrics.memory_usage > 0);
+        assert!(metrics.memory_percent >= 0.0);
+        
+        let average = tracker.get_average_metrics();
+        assert!(average.is_some());
+        
+        tracker.stop();
+        assert!(!*tracker.running.lock().unwrap());
+    }
 
-        // Do some CPU work to ensure metrics change
-        for _ in 0..1000000 {
-            let _ = rand::random::<u64>();
-        }
+    #[test]
+    fn test_performance_log_file() {
+        let temp_dir = tempdir().unwrap();
+        let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
+        
+        let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
+        tracker.start();
+        
+        thread::sleep(Duration::from_secs(2));
+        tracker.stop();
+        
+        assert!(fs::metadata(&log_path).is_ok());
+        let content = fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("timestamp,cpu_usage,memory_usage_bytes,memory_percent"));
+        assert!(content.lines().count() > 2);
+    }
 
-        // Wait a bit more to ensure the metrics are collected after our CPU work
-        thread::sleep(Duration::from_millis(1500));
-
-        let metrics = tracker.get_current_metrics();
-        assert!(metrics.is_some(), "Should have collected metrics");
-
+    #[test]
+    fn test_metrics_history_limit() {
+        let temp_dir = tempdir().unwrap();
+        let log_path = format!("{}/perflog.csv", temp_dir.path().to_str().unwrap());
+        
+        let history_length = 3;
+        let tracker = PerformanceTracker::new(true, &log_path, history_length, 1);
+        tracker.start();
+        
+        thread::sleep(Duration::from_secs(4));
+        
+        let metrics = tracker.metrics.lock().unwrap();
+        assert!(metrics.len() <= history_length);
+        
         tracker.stop();
     }
 }

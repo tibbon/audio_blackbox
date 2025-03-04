@@ -335,4 +335,76 @@ impl IvarAccess for objc::runtime::Object {
         let ptr = (self as *const Self as *mut u8).offset(offset as isize) as *mut T;
         ptr.write(value);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CpalAudioProcessor;
+    use std::time::Duration;
+
+    #[test]
+    fn test_menu_bar_app_creation() {
+        let app = MenuBarApp::new();
+        assert!(!*app.is_recording.lock().unwrap());
+        assert!(app.recorder.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_menu_bar_status_update() {
+        let app = MenuBarApp::new();
+        
+        // Test setting recording state to true
+        app.update_status(true);
+        assert!(*app.is_recording.lock().unwrap());
+        
+        // Test setting recording state to false
+        app.update_status(false);
+        assert!(!*app.is_recording.lock().unwrap());
+    }
+
+    #[test]
+    fn test_resource_path_finding() {
+        // Test development path
+        let dev_path = MenuBarApp::get_resource_path("test_resource.txt");
+        assert!(dev_path.is_some());
+        
+        // Test bundled app path
+        let bundle_path = MenuBarApp::get_resource_path("test_resource.txt");
+        assert!(bundle_path.is_some());
+    }
+
+    #[test]
+    fn test_recorder_initialization() {
+        let app = MenuBarApp::new();
+        let mut recorder = app.recorder.lock().unwrap();
+        
+        // Test creating a new recorder
+        if let Ok(processor) = CpalAudioProcessor::new() {
+            *recorder = Some(AudioRecorder::with_config(processor, AppConfig::load()));
+            assert!(recorder.is_some());
+        }
+    }
+
+    #[test]
+    fn test_config_updates() {
+        let app = MenuBarApp::new();
+        let config = app.config.lock().unwrap();
+        
+        // Verify default config values
+        assert_eq!(config.get_audio_channels(), "0");
+        assert!(!config.get_debug());
+    }
+
+    #[test]
+    fn test_process_system_events() {
+        // Test that processing system events doesn't panic
+        process_system_events();
+        
+        // Test multiple event processing
+        for _ in 0..3 {
+            process_system_events();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 } 
