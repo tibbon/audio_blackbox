@@ -829,6 +829,10 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Get the file path before finalizing
         let file_path = self.file_name.lock().unwrap().clone();
+        let channels = self.channels.lock().unwrap().clone();
+
+        // Store paths of files being finalized to check for silence later
+        let mut created_files = Vec::new();
 
         // Finalize the WAV file first
         if let Some(writer) = self.writer.lock().unwrap().take() {
@@ -840,6 +844,35 @@ impl AudioProcessor for CpalAudioProcessor {
                     e.to_string(),
                 ));
             }
+            created_files.push(file_path.clone());
+        }
+
+        // Finalize any multichannel writers
+        let mut writers = self.multichannel_writers.lock().unwrap();
+        for (idx, writer_opt) in writers.iter_mut().enumerate() {
+            if let Some(writer) = writer_opt.take() {
+                let now: DateTime<Local> = Local::now();
+                let file_path = format!(
+                    "{}/{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
+                    self.output_dir,
+                    now.year(),
+                    now.month(),
+                    now.day(),
+                    now.hour(),
+                    now.minute(),
+                    channels.get(idx).unwrap_or(&idx)
+                );
+
+                created_files.push(file_path.clone());
+
+                if let Err(e) = writer.finalize() {
+                    eprintln!("Error finalizing channel WAV file: {}", e);
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ));
+                }
+            }
         }
 
         // Then close the stream
@@ -847,17 +880,19 @@ impl AudioProcessor for CpalAudioProcessor {
 
         println!("Finalized recording to {}", file_path);
 
-        // Check if the file is in the output directory
-        let path = Path::new(&file_path);
-        if let Some(file_name) = path.file_name() {
-            if let Some(file_name_str) = file_name.to_str() {
-                if let Some(parent_dir) = path.parent() {
-                    if let Some(parent_dir_str) = parent_dir.to_str() {
-                        // If the file is not in the output directory, move it there
-                        if parent_dir_str != self.output_dir {
-                            let new_path = format!("{}/{}", self.output_dir, file_name_str);
-                            println!("Moving file from {} to {}", file_path, new_path);
-                            fs::rename(&file_path, &new_path)?;
+        // Check if the files are in the output directory and move them if needed
+        for file_path in &created_files {
+            let path = Path::new(file_path);
+            if let Some(file_name) = path.file_name() {
+                if let Some(file_name_str) = file_name.to_str() {
+                    if let Some(parent_dir) = path.parent() {
+                        if let Some(parent_dir_str) = parent_dir.to_str() {
+                            // If the file is not in the output directory, move it there
+                            if parent_dir_str != self.output_dir {
+                                let new_path = format!("{}/{}", self.output_dir, file_name_str);
+                                println!("Moving file from {} to {}", file_path, new_path);
+                                fs::rename(file_path, &new_path)?;
+                            }
                         }
                     }
                 }
@@ -866,30 +901,32 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Check if we should apply silence detection
         if silence_threshold > 0.0 {
-            // Check if the file is silent
-            match is_silent(&file_path, silence_threshold) {
-                Ok(true) => {
-                    println!(
-                        "Recording is silent (below threshold {}), deleting file",
-                        silence_threshold
-                    );
-                    if let Err(e) = fs::remove_file(&file_path) {
-                        eprintln!("Error deleting silent file: {}", e);
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            e.to_string(),
-                        ));
+            // Check if each file is silent
+            for file_path in created_files {
+                match is_silent(&file_path, silence_threshold) {
+                    Ok(true) => {
+                        println!(
+                            "Recording is silent (below threshold {}), deleting file: {}",
+                            silence_threshold, file_path
+                        );
+                        if let Err(e) = fs::remove_file(&file_path) {
+                            eprintln!("Error deleting silent file: {}", e);
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                e.to_string(),
+                            ));
+                        }
                     }
-                }
-                Ok(false) => {
-                    println!(
-                        "Recording is not silent (above threshold {}), keeping file",
-                        silence_threshold
-                    );
-                }
-                Err(e) => {
-                    eprintln!("Error checking for silence: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                    Ok(false) => {
+                        println!(
+                            "Recording is not silent (above threshold {}), keeping file: {}",
+                            silence_threshold, file_path
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Error checking for silence: {}", e);
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                    }
                 }
             }
         }
