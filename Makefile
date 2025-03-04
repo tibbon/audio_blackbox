@@ -138,26 +138,18 @@ start:
 .PHONY: stop
 stop:
 	@echo "Gracefully stopping BlackBox service..."
-	@if pgrep -f "$(BIN_NAME)" > /dev/null; then \
-		echo "Sending SIGINT to BlackBox process..."; \
-		pkill -SIGINT -f "$(BIN_NAME)"; \
-		echo "Waiting for service to finalize files..."; \
-		sleep 2; \
-	fi
 	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@echo "Waiting for service to finalize files..."
+	@sleep 5
 	@echo "Service stopped"
 
 # Uninstall the service
 .PHONY: uninstall
 uninstall:
 	@echo "Gracefully stopping BlackBox service..."
-	@if pgrep -f "$(BIN_NAME)" > /dev/null; then \
-		echo "Sending SIGINT to BlackBox process..."; \
-		pkill -SIGINT -f "$(BIN_NAME)"; \
-		echo "Waiting for service to finalize files..."; \
-		sleep 2; \
-	fi
 	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@echo "Waiting for service to finalize files..."
+	@sleep 5
 	@echo "Removing service files..."
 	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
 	@echo "Service uninstalled"

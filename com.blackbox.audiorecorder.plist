@@ -6,22 +6,25 @@
     <string>com.blackbox.audiorecorder</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/davidfisher/code/audio_blackbox/target/release/blackbox</string>
+        <string>/usr/local/bin/blackbox</string>
     </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/davidfisher/code/audio_recorder</string>
+    <key>StandardErrorPath</key>
+    <string>~/Library/Logs/BlackBox/error.log</string>
+    <key>StandardOutPath</key>
+    <string>~/Library/Logs/BlackBox/output.log</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardErrorPath</key>
-    <string>/Users/davidfisher/Library/Logs/BlackBox/error.log</string>
-    <key>StandardOutPath</key>
-    <string>/Users/davidfisher/Library/Logs/BlackBox/output.log</string>
-    <key>WorkingDirectory</key>
-    <string>/Users/davidfisher/code/audio_blackbox</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ExitTimeout</key>
+    <integer>5</integer>
+    <key>SignalToSendOnStop</key>
+    <integer>2</integer>
 </dict>
 </plist> 
