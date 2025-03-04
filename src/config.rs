@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::constants::{
     DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
-    DEFAULT_SILENCE_THRESHOLD, ENV_CONTINUOUS_MODE, ENV_DEBUG, ENV_DURATION,
-    ENV_PERFORMANCE_LOGGING, ENV_RECORDING_CADENCE, ENV_SILENCE_THRESHOLD,
+    DEFAULT_SILENCE_THRESHOLD,
 };
 
 /// The main configuration struct that holds all settings for the audio recorder.
@@ -168,72 +167,104 @@ impl AppConfig {
         match val.to_lowercase().as_str() {
             "true" | "1" | "yes" | "on" => Some(true),
             "false" | "0" | "no" | "off" => Some(false),
-            _ => val.parse().ok(),
+            _ => None
         }
     }
 
     /// Apply environment variables to override configuration
     fn apply_env_vars(&mut self) {
         // Try both prefixed and unprefixed environment variables
-        let channels = env::var("AUDIO_CHANNELS").or_else(|_| env::var("BLACKBOX_AUDIO_CHANNELS"));
-        if let Ok(val) = channels {
+        let channels = std::env::var("BLACKBOX_AUDIO_CHANNELS")
+            .ok()
+            .or_else(|| std::env::var("AUDIO_CHANNELS").ok());
+        if let Some(val) = channels {
             self.audio_channels = Some(val);
         }
 
-        let debug = env::var("DEBUG").or_else(|_| env::var("BLACKBOX_DEBUG"));
-        if let Ok(val) = debug {
-            if let Some(debug) = Self::parse_bool(&val) {
-                self.debug = Some(debug);
-            }
+        let debug = std::env::var("BLACKBOX_DEBUG")
+            .ok()
+            .and_then(|s| Self::parse_bool(&s))
+            .or_else(|| {
+                std::env::var("DEBUG")
+                    .ok()
+                    .and_then(|s| Self::parse_bool(&s))
+            });
+        if let Some(val) = debug {
+            self.debug = Some(val);
         }
 
-        let duration = env::var("RECORD_DURATION").or_else(|_| env::var("BLACKBOX_DURATION"));
-        if let Ok(val) = duration {
-            if let Ok(duration) = val.parse() {
-                self.duration = Some(duration);
-            }
+        let duration = std::env::var("BLACKBOX_DURATION")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("RECORD_DURATION")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = duration {
+            self.duration = Some(val);
         }
 
-        let output_mode = env::var("OUTPUT_MODE").or_else(|_| env::var("BLACKBOX_OUTPUT_MODE"));
-        if let Ok(val) = output_mode {
+        let output_mode = std::env::var("BLACKBOX_OUTPUT_MODE")
+            .ok()
+            .or_else(|| std::env::var("OUTPUT_MODE").ok());
+        if let Some(val) = output_mode {
             self.output_mode = Some(val);
         }
 
-        let threshold =
-            env::var("SILENCE_THRESHOLD").or_else(|_| env::var("BLACKBOX_SILENCE_THRESHOLD"));
-        if let Ok(val) = threshold {
-            if let Ok(threshold) = val.parse() {
-                self.silence_threshold = Some(threshold);
-            }
+        let threshold = std::env::var("BLACKBOX_SILENCE_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("SILENCE_THRESHOLD")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = threshold {
+            self.silence_threshold = Some(val);
         }
 
-        let continuous =
-            env::var("CONTINUOUS_MODE").or_else(|_| env::var("BLACKBOX_CONTINUOUS_MODE"));
-        if let Ok(val) = continuous {
-            if let Some(continuous) = Self::parse_bool(&val) {
-                self.continuous_mode = Some(continuous);
-            }
+        let continuous = std::env::var("BLACKBOX_CONTINUOUS_MODE")
+            .ok()
+            .and_then(|s| Self::parse_bool(&s))
+            .or_else(|| {
+                std::env::var("CONTINUOUS_MODE")
+                    .ok()
+                    .and_then(|s| Self::parse_bool(&s))
+            });
+        if let Some(val) = continuous {
+            self.continuous_mode = Some(val);
         }
 
-        let cadence =
-            env::var("RECORDING_CADENCE").or_else(|_| env::var("BLACKBOX_RECORDING_CADENCE"));
-        if let Ok(val) = cadence {
-            if let Ok(cadence) = val.parse() {
-                self.recording_cadence = Some(cadence);
-            }
+        let cadence = std::env::var("BLACKBOX_RECORDING_CADENCE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("RECORDING_CADENCE")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = cadence {
+            self.recording_cadence = Some(val);
         }
 
-        let output_dir = env::var("OUTPUT_DIR").or_else(|_| env::var("BLACKBOX_OUTPUT_DIR"));
-        if let Ok(val) = output_dir {
+        let output_dir = std::env::var("BLACKBOX_OUTPUT_DIR")
+            .ok()
+            .or_else(|| std::env::var("OUTPUT_DIR").ok());
+        if let Some(val) = output_dir {
             self.output_dir = Some(val);
         }
 
-        let perf_logging =
-            env::var("PERFORMANCE_LOGGING").or_else(|_| env::var("BLACKBOX_PERFORMANCE_LOGGING"));
-        if let Ok(val) = perf_logging {
-            if let Some(perf_logging) = Self::parse_bool(&val) {
-                self.performance_logging = Some(perf_logging);
-            }
+        let perf_logging = std::env::var("BLACKBOX_PERFORMANCE_LOGGING")
+            .ok()
+            .and_then(|s| Self::parse_bool(&s))
+            .or_else(|| {
+                std::env::var("PERFORMANCE_LOGGING")
+                    .ok()
+                    .and_then(|s| Self::parse_bool(&s))
+            });
+        if let Some(val) = perf_logging {
+            self.performance_logging = Some(val);
         }
     }
 
@@ -332,15 +363,25 @@ performance_logging = {}
     pub fn get_audio_channels(&self) -> String {
         self.audio_channels
             .clone()
+            .or_else(|| {
+                std::env::var("BLACKBOX_AUDIO_CHANNELS")
+                    .ok()
+                    .or_else(|| std::env::var("AUDIO_CHANNELS").ok())
+            })
             .unwrap_or_else(|| DEFAULT_CHANNELS.to_string())
     }
 
     pub fn get_debug(&self) -> bool {
         self.debug
             .or_else(|| {
-                std::env::var(ENV_DEBUG)
+                std::env::var("BLACKBOX_DEBUG")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(false))
+                    .and_then(|s| Self::parse_bool(&s))
+                    .or_else(|| {
+                        std::env::var("DEBUG")
+                            .ok()
+                            .and_then(|s| Self::parse_bool(&s))
+                    })
             })
             .unwrap_or(DEFAULT_DEBUG)
     }
@@ -348,9 +389,14 @@ performance_logging = {}
     pub fn get_duration(&self) -> u64 {
         self.duration
             .or_else(|| {
-                std::env::var(ENV_DURATION)
+                std::env::var("BLACKBOX_DURATION")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(10))
+                    .and_then(|s| s.parse().ok())
+                    .or_else(|| {
+                        std::env::var("RECORD_DURATION")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                    })
             })
             .unwrap_or(DEFAULT_DURATION)
     }
@@ -358,15 +404,25 @@ performance_logging = {}
     pub fn get_output_mode(&self) -> String {
         self.output_mode
             .clone()
+            .or_else(|| {
+                std::env::var("BLACKBOX_OUTPUT_MODE")
+                    .ok()
+                    .or_else(|| std::env::var("OUTPUT_MODE").ok())
+            })
             .unwrap_or_else(|| DEFAULT_OUTPUT_MODE.to_string())
     }
 
     pub fn get_silence_threshold(&self) -> f32 {
         self.silence_threshold
             .or_else(|| {
-                std::env::var(ENV_SILENCE_THRESHOLD)
+                std::env::var("BLACKBOX_SILENCE_THRESHOLD")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(0.0))
+                    .and_then(|s| s.parse().ok())
+                    .or_else(|| {
+                        std::env::var("SILENCE_THRESHOLD")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                    })
             })
             .unwrap_or(DEFAULT_SILENCE_THRESHOLD)
     }
@@ -374,9 +430,14 @@ performance_logging = {}
     pub fn get_continuous_mode(&self) -> bool {
         self.continuous_mode
             .or_else(|| {
-                std::env::var(ENV_CONTINUOUS_MODE)
+                std::env::var("BLACKBOX_CONTINUOUS_MODE")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(false))
+                    .and_then(|s| Self::parse_bool(&s))
+                    .or_else(|| {
+                        std::env::var("CONTINUOUS_MODE")
+                            .ok()
+                            .and_then(|s| Self::parse_bool(&s))
+                    })
             })
             .unwrap_or(DEFAULT_CONTINUOUS_MODE)
     }
@@ -384,9 +445,14 @@ performance_logging = {}
     pub fn get_recording_cadence(&self) -> u64 {
         self.recording_cadence
             .or_else(|| {
-                std::env::var(ENV_RECORDING_CADENCE)
+                std::env::var("BLACKBOX_RECORDING_CADENCE")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(300))
+                    .and_then(|s| s.parse().ok())
+                    .or_else(|| {
+                        std::env::var("RECORDING_CADENCE")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                    })
             })
             .unwrap_or(DEFAULT_RECORDING_CADENCE)
     }
@@ -394,15 +460,25 @@ performance_logging = {}
     pub fn get_output_dir(&self) -> String {
         self.output_dir
             .clone()
+            .or_else(|| {
+                std::env::var("BLACKBOX_OUTPUT_DIR")
+                    .ok()
+                    .or_else(|| std::env::var("OUTPUT_DIR").ok())
+            })
             .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_string())
     }
 
     pub fn get_performance_logging(&self) -> bool {
         self.performance_logging
             .or_else(|| {
-                std::env::var(ENV_PERFORMANCE_LOGGING)
+                std::env::var("BLACKBOX_PERFORMANCE_LOGGING")
                     .ok()
-                    .map(|s| s.parse().unwrap_or(false))
+                    .and_then(|s| Self::parse_bool(&s))
+                    .or_else(|| {
+                        std::env::var("PERFORMANCE_LOGGING")
+                            .ok()
+                            .and_then(|s| Self::parse_bool(&s))
+                    })
             })
             .unwrap_or(DEFAULT_PERFORMANCE_LOGGING)
     }
