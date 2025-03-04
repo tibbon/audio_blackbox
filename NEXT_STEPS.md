@@ -11,18 +11,33 @@ This document outlines the next steps and priorities for the BlackBox Audio Reco
    - Changed default output mode from "wav" to "single" to match code expectations
    - Added better error messages that clearly indicate valid options
 
+2. **Implemented Thread-Safe Menu Bar Architecture**
+   - Created a thread-safe design using a message passing architecture
+   - Separated UI code (Cocoa/Objective-C) into a dedicated UI thread
+   - Added proper communication channels between threads
+   - Resolved issues with Objective-C objects being sent between threads
+   - Simplified the menu bar implementation with a cleaner design
+
 ## High Priority
 
-1. **Fix Thread Safety Issues in Menu Bar Implementation**
-   - Research thread-safe alternatives for Objective-C object handling in Rust
-   - Consider using a different approach for the menu bar implementation that doesn't require sending Objective-C objects between threads
-   - Explore using a single-threaded event loop for the menu bar
+1. **Implement Safe Cocoa/AppKit Wrapper**
+   - Create a safe Rust wrapper around NSApplication and NSMenu
+   - Implement proper exception handling for Objective-C/Cocoa calls
+   - Develop a safe event handling system for menu interactions
+   - Add proper cleanup and resource management
+   - Create tests for the wrapper to ensure stability
 
-2. **Resolve CFRunLoop Method Call Issues**
+2. **Finalize Menu Bar Implementation**
+   - Build proper menu interface using the safe wrapper
+   - Add proper icons and visual feedback
+   - Implement support for more menu options
+   - Build and test on various macOS versions
+
+3. **Resolve CFRunLoop Method Call Issues**
    - Fix the `run_in_mode` method call on `CFRunLoop` objects
    - Ensure proper syntax for calling Core Foundation methods
 
-3. **Address Cargo-Clippy Warnings**
+4. **Address Cargo-Clippy Warnings**
    - Add the `cargo-clippy` feature to the Cargo.toml file
    - Update the code to use the proper feature flags
 

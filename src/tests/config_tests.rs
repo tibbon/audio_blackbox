@@ -5,9 +5,6 @@ use tempfile::tempdir;
 
 use crate::config::AppConfig;
 use crate::constants::*;
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Mutex;
 
 #[test]
 fn test_config_loading() {

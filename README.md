@@ -16,26 +16,37 @@ BlackBox Audio Recorder is a Rust application that provides audio recording capa
 
 ## Current Status
 
-The application is currently in development. The core audio recording functionality works, but the macOS menu bar integration has some issues with thread safety in the Objective-C bindings.
+The application is currently in development. The core audio recording functionality works well, and we have established a solid thread-safe architecture for the macOS menu bar integration.
+
+### Implementation Details
+
+1. **Thread-Safe Architecture**:
+   - Successfully implemented a message-passing architecture for thread safety
+   - Separated UI code into a dedicated thread to avoid Objective-C/Rust threading issues
+   - Created proper communication channels between components
+   - Eliminated issues with Objective-C objects being sent between threads
+
+2. **Current Limitations**:
+   - The menu bar UI is currently running in a simplified mode due to Objective-C exception handling issues
+   - Full native menu bar integration is in progress but requires additional work to handle Cocoa exceptions safely
 
 ### Known Issues
 
-1. **Thread Safety Issues**: The macOS menu bar implementation uses Objective-C objects that cannot be sent between threads safely. This causes compilation errors when trying to use the full menu bar implementation.
+1. **CFRunLoop Method Calls**: There are some issues with calling methods on `CFRunLoop` objects, specifically the `run_in_mode` method.
 
-2. **CFRunLoop Method Calls**: There are issues with calling methods on `CFRunLoop` objects, specifically the `run_in_mode` method.
+2. **Cargo-Clippy Warnings**: The code generates numerous warnings related to unexpected `cfg` condition values for `cargo-clippy`.
 
-3. **Cargo-Clippy Warnings**: The code generates numerous warnings related to unexpected `cfg` condition values for `cargo-clippy`.
+### Recent Improvements
 
-### Current Workaround
+1. **Thread-Safe Menu Bar Architecture**:
+   - Created a robust foundation for safe communication between UI and audio processing
+   - Implemented architecture that prevents thread safety violations with Cocoa objects
+   - Simplified the overall design for better maintainability
 
-Due to the issues with the native macOS menu bar implementation, a simplified command-line based control system is implemented:
-
-1. The application runs with a status display in the terminal
-2. Control is achieved through touch files:
-   - Start recording: `touch /tmp/blackbox_start`
-   - Stop recording: `touch /tmp/blackbox_stop`
-   - Quit app: `touch /tmp/blackbox_quit`
-   - Check status: `cat /tmp/blackbox_status`
+2. **Output Mode Validation**:
+   - Added validation for audio output modes
+   - Improved error messages for invalid configurations
+   - Changed default mode to match code expectations
 
 ## Configuration
 
@@ -72,7 +83,7 @@ cargo build
 
 ### Running
 
-To run the application with the simplified menu bar implementation:
+To run the application with the menu bar implementation:
 
 ```bash
 ./run_menubar.sh
@@ -84,12 +95,24 @@ Or manually:
 cargo run -- --menu-bar
 ```
 
-## Future Work
+## Menu Bar Integration Roadmap
 
-1. Fix the thread safety issues in the macOS menu bar implementation
-2. Implement proper error handling for the menu bar integration
-3. Add more configuration options for audio recording
-4. Improve the user interface with better icons and menu options
+Our plan for completing the menu bar implementation:
+
+1. **Short-term**:
+   - Resolve Objective-C exception handling issues
+   - Implement a safe wrapper around NSApplication and NSMenu
+   - Create proper event handling for menu items
+
+2. **Medium-term**:
+   - Add custom icons and improved visual design
+   - Implement configuration dialogs
+   - Add keyboard shortcuts
+
+3. **Long-term**:
+   - Create detailed audio visualization
+   - Implement drag-and-drop for files and configurations
+   - Add support for more advanced recording options
 
 ## License
 
