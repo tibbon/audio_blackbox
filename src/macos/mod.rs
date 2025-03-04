@@ -5,6 +5,14 @@
 #[cfg(feature = "menu-bar")]
 mod menu_bar;
 
+// macOS-specific functionality
+
+// Module for safe Cocoa/AppKit wrappers
+pub mod safe_cocoa;
+
+// Temporarily disable the menu_bar_impl module
+// pub mod menu_bar_impl;
+
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -41,73 +49,98 @@ enum AppMessage {
     Terminated,
 }
 
-// Create a wrapper that will be used by the application
-pub struct MenuBarApp {
-    // Communication channels
-    ui_sender: Sender<UiMessage>,
-    app_receiver: Receiver<AppMessage>,
-    app_sender: Sender<AppMessage>,
-    
-    // Shared state
+// Simple struct for thread-safe shared state
+#[derive(Clone)]
+struct SharedState {
     is_recording: Arc<Mutex<bool>>,
+    output_dir: Arc<Mutex<String>>,
+}
+
+// Control messages for the menu bar
+enum ControlMessage {
+    StartRecording,
+    StopRecording,
+    UpdateOutputDir(String),
+    Quit,
+}
+
+// Public interface for the menu bar application
+pub struct MenuBarApp {
+    // Shared state
+    state: SharedState,
+    // Recorder
     recorder: Arc<Mutex<Option<AudioRecorder<CpalAudioProcessor>>>>,
-    config: Arc<Mutex<AppConfig>>,
-    recording_start_time: Arc<Mutex<Option<Instant>>>,
+    // Control channel
+    control_sender: Option<std::sync::mpsc::Sender<ControlMessage>>,
+    // UI thread handle
+    ui_thread: Option<thread::JoinHandle<()>>,
 }
 
 impl MenuBarApp {
     pub fn new() -> Self {
-        println!("Creating MenuBarApp (thread-safe implementation)");
-        
-        // Create channels for communication
-        let (ui_sender, ui_receiver) = mpsc::channel::<UiMessage>();
-        let (app_sender, app_receiver) = mpsc::channel::<AppMessage>();
+        println!("Creating MenuBarApp (simplified)");
         
         // Initialize shared state
-        let is_recording = Arc::new(Mutex::new(false));
+        let state = SharedState {
+            is_recording: Arc::new(Mutex::new(false)),
+            output_dir: Arc::new(Mutex::new("recordings".to_string())),
+        };
+        
+        // Create recorder
         let recorder = Arc::new(Mutex::new(None));
-        let config = Arc::new(Mutex::new(AppConfig::new()));
-        let recording_start_time = Arc::new(Mutex::new(None));
         
-        // Get the current directory as the default output directory
-        let output_dir = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "recordings".to_string());
+        // Create control channel
+        let (control_sender, control_receiver) = std::sync::mpsc::channel();
         
-        if let Ok(mut cfg) = config.lock() {
-            if cfg.output_dir.is_none() {
-                cfg.output_dir = Some(output_dir.clone());
-            }
-        }
-        
-        // Clone app_sender for UI thread
-        let app_sender_ui = app_sender.clone();
-        
-        // Spawn UI thread safely - using simplified Cocoa API access
-        thread::spawn(move || {
-            // Create a simple UI with a menu bar status item
-            let mut ui = MacOsMenuBarUi::new(ui_receiver, app_sender_ui, output_dir);
+        // Start UI thread
+        let ui_state = state.clone();
+        let ui_thread = thread::spawn(move || {
+            // This would normally use our safe Cocoa wrapper
+            // For now, we'll just use a simple loop
+            let mut should_quit = false;
             
-            // Run the UI loop
-            ui.run();
+            println!("UI thread started");
+            
+            while !should_quit {
+                // Check for control messages
+                if let Ok(msg) = control_receiver.try_recv() {
+                    match msg {
+                        ControlMessage::StartRecording => {
+                            println!("UI: Starting recording");
+                            *ui_state.is_recording.lock().unwrap() = true;
+                        }
+                        ControlMessage::StopRecording => {
+                            println!("UI: Stopping recording");
+                            *ui_state.is_recording.lock().unwrap() = false;
+                        }
+                        ControlMessage::UpdateOutputDir(dir) => {
+                            println!("UI: Updating output dir to {}", dir);
+                            *ui_state.output_dir.lock().unwrap() = dir;
+                        }
+                        ControlMessage::Quit => {
+                            println!("UI: Quitting");
+                            should_quit = true;
+                        }
+                    }
+                }
+                
+                // Sleep to avoid using too much CPU
+                thread::sleep(Duration::from_millis(100));
+            }
             
             println!("UI thread terminated");
         });
         
-        // Return MenuBarApp instance
-        MenuBarApp { 
-            ui_sender,
-            app_receiver,
-            app_sender,
-            is_recording,
+        MenuBarApp {
+            state,
             recorder,
-            config,
-            recording_start_time,
+            control_sender: Some(control_sender),
+            ui_thread: Some(ui_thread),
         }
     }
-
-    pub fn run(&self) {
-        println!("Running MenuBarApp (thread-safe implementation)");
+    
+    pub fn run(&mut self) {
+        println!("Running MenuBarApp");
         
         // Create processor and recorder
         let processor = match CpalAudioProcessor::new() {
@@ -118,50 +151,46 @@ impl MenuBarApp {
             }
         };
         
+        // Initialize recorder with config
+        let mut config = AppConfig::new();
+        config.output_dir = Some(self.state.output_dir.lock().unwrap().clone());
+        
         if let Ok(mut rec_guard) = self.recorder.lock() {
-            if let Ok(cfg_guard) = self.config.lock() {
-                *rec_guard = Some(AudioRecorder::with_config(processor, cfg_guard.clone()));
-            }
+            *rec_guard = Some(AudioRecorder::with_config(processor, config));
         }
         
+        // Print initial status
         println!("Menu bar initialized and ready");
-        println!("Recording will be saved to: {}", 
-            self.config.lock().unwrap().get_output_dir());
+        println!("Recording will be saved to: {}", self.state.output_dir.lock().unwrap());
         
-        // Send a notification
+        // Send notification
         Self::send_notification("BlackBox Audio Recorder", 
             "App is running. Use the menu bar icon to control recording.");
         
-        // Main loop - process messages from the UI thread
-        loop {
-            match self.app_receiver.recv() {
-                Ok(AppMessage::RecordingStarted) => {
-                    println!("Starting recording...");
-                    if let Ok(mut rec_guard) = self.recorder.lock() {
-                        if let Some(ref mut rec) = *rec_guard {
+        // Main application loop - wait for user to stop the application
+        println!("Press Ctrl+C to exit");
+        
+        // Set up a channel for CTRL+C handling
+        let (tx, rx) = std::sync::mpsc::channel();
+        ctrlc::set_handler(move || {
+            let _ = tx.send(());
+        }).expect("Error setting Ctrl-C handler");
+        
+        let mut running = true;
+        
+        while running {
+            // Check recording state for any changes
+            let is_recording = *self.state.is_recording.lock().unwrap();
+            
+            // Update recorder if state has changed
+            if is_recording {
+                if let Ok(mut rec_guard) = self.recorder.lock() {
+                    if let Some(ref mut rec) = *rec_guard {
+                        if !rec.get_processor().is_recording() {
                             match rec.start_recording() {
                                 Ok(_) => {
                                     println!("Recording started!");
-                                    
-                                    // Set recording start time
-                                    if let Ok(mut time_guard) = self.recording_start_time.lock() {
-                                        *time_guard = Some(Instant::now());
-                                    }
-                                    
-                                    // Update recording state
-                                    if let Ok(mut is_rec) = self.is_recording.lock() {
-                                        *is_rec = true;
-                                    }
-                                    
-                                    // Send UI update
-                                    let _ = self.ui_sender.send(UiMessage::StartRecording);
-                                    
-                                    // Send notification
-                                    Self::send_notification("BlackBox Audio Recorder", 
-                                        "Recording started");
-                                        
-                                    // Start time updates
-                                    self.start_time_updates();
+                                    Self::send_notification("BlackBox Audio Recorder", "Recording started");
                                 },
                                 Err(e) => {
                                     eprintln!("Failed to start recording: {}", e);
@@ -171,106 +200,73 @@ impl MenuBarApp {
                             }
                         }
                     }
-                },
-                Ok(AppMessage::RecordingStopped) => {
-                    println!("Stopping recording...");
-                    if let Ok(mut rec_guard) = self.recorder.lock() {
-                        if let Some(ref mut rec) = *rec_guard {
+                }
+            } else {
+                if let Ok(mut rec_guard) = self.recorder.lock() {
+                    if let Some(ref mut rec) = *rec_guard {
+                        if rec.get_processor().is_recording() {
+                            // The AudioRecorder doesn't have a get_processor_mut method,
+                            // but we can use the stop_recording method directly
                             if let Err(e) = rec.processor.stop_recording() {
                                 eprintln!("Error stopping recording: {:?}", e);
+                            } else {
+                                println!("Recording stopped");
+                                Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
                             }
                         }
                     }
-                    
-                    // Reset recording start time
-                    if let Ok(mut time_guard) = self.recording_start_time.lock() {
-                        *time_guard = None;
-                    }
-                    
-                    // Update recording state
-                    if let Ok(mut is_rec) = self.is_recording.lock() {
-                        *is_rec = false;
-                    }
-                    
-                    // Send UI update
-                    let _ = self.ui_sender.send(UiMessage::StopRecording);
-                    
-                    // Send notification
-                    Self::send_notification("BlackBox Audio Recorder", 
-                        "Recording stopped");
-                },
-                Ok(AppMessage::StatusUpdated(status)) => {
-                    println!("Status updated: {}", status);
-                    
-                    // Send UI update
-                    let _ = self.ui_sender.send(UiMessage::UpdateStatus(status));
-                },
-                Ok(AppMessage::Terminated) => {
-                    println!("Quitting application...");
-                    
-                    // Stop recording if active
-                    let is_rec = *self.is_recording.lock().unwrap();
-                    if is_rec {
-                        if let Ok(mut rec_guard) = self.recorder.lock() {
-                            if let Some(ref mut rec) = *rec_guard {
-                                if let Err(e) = rec.processor.stop_recording() {
-                                    eprintln!("Error stopping recording: {:?}", e);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Send notification
-                    Self::send_notification("BlackBox Audio Recorder", 
-                        "Application terminated");
-                    
-                    // Send UI update to quit
-                    let _ = self.ui_sender.send(UiMessage::Quit);
-                    
-                    // Exit the application
-                    break;
-                },
-                Err(_) => {
-                    // Channel closed, UI thread has terminated
-                    println!("UI thread terminated, exiting...");
-                    break;
                 }
             }
+            
+            // Sleep to avoid using too much CPU
+            thread::sleep(Duration::from_millis(100));
+            
+            // Check if CTRL+C was pressed (with a timeout to avoid blocking)
+            if rx.try_recv().is_ok() {
+                running = false;
+            }
+        }
+        
+        // Clean up
+        if let Some(sender) = self.control_sender.take() {
+            let _ = sender.send(ControlMessage::Quit);
+        }
+        
+        if let Some(handle) = self.ui_thread.take() {
+            let _ = handle.join();
         }
         
         println!("Application exited.");
     }
     
-    // Start a thread to update the recording time display
-    fn start_time_updates(&self) {
-        let ui_sender = self.ui_sender.clone();
-        let recording_start_time = self.recording_start_time.clone();
-        let is_recording = self.is_recording.clone();
+    pub fn update_status(&mut self, is_recording: bool) {
+        println!("MenuBarApp: Updating status to: {}", is_recording);
         
-        thread::spawn(move || {
-            while *is_recording.lock().unwrap() {
-                if let Ok(time_guard) = recording_start_time.lock() {
-                    if let Some(start_time) = *time_guard {
-                        let elapsed = start_time.elapsed();
-                        let seconds = elapsed.as_secs();
-                        
-                        let hours = seconds / 3600;
-                        let minutes = (seconds % 3600) / 60;
-                        let secs = seconds % 60;
-                        
-                        let time_str = format!("Time: {:02}:{:02}:{:02}", hours, minutes, secs);
-                        
-                        // Send UI update
-                        let _ = ui_sender.send(UiMessage::UpdateTime(time_str));
-                    }
-                }
-                
-                // Update once per second
-                thread::sleep(Duration::from_secs(1));
+        // Update the shared state
+        *self.state.is_recording.lock().unwrap() = is_recording;
+        
+        // Send control message
+        if let Some(sender) = &self.control_sender {
+            if is_recording {
+                let _ = sender.send(ControlMessage::StartRecording);
+            } else {
+                let _ = sender.send(ControlMessage::StopRecording);
             }
-        });
+        }
     }
-
+    
+    pub fn set_output_directory(&mut self, dir: &str) {
+        println!("MenuBarApp: Setting output directory to: {}", dir);
+        
+        // Update the shared state
+        *self.state.output_dir.lock().unwrap() = dir.to_string();
+        
+        // Send control message
+        if let Some(sender) = &self.control_sender {
+            let _ = sender.send(ControlMessage::UpdateOutputDir(dir.to_string()));
+        }
+    }
+    
     // Helper to send a system notification
     fn send_notification(title: &str, message: &str) {
         if cfg!(target_os = "macos") {
@@ -283,125 +279,6 @@ impl MenuBarApp {
                 .args(["-e", &script])
                 .output();
         }
-    }
-
-    pub fn update_status(&self, is_recording: bool) {
-        println!("MenuBarApp: Updating status to: {}", is_recording);
-        
-        if is_recording {
-            // Send message to start recording
-            let _ = self.app_sender.send(AppMessage::RecordingStarted);
-        } else {
-            // Send message to stop recording
-            let _ = self.app_sender.send(AppMessage::RecordingStopped);
-        }
-    }
-    
-    pub fn set_output_directory(&self, dir: &str) {
-        println!("MenuBarApp: Output directory set to: {}", dir);
-        
-        // Update config
-        if let Ok(mut cfg) = self.config.lock() {
-            cfg.output_dir = Some(dir.to_string());
-        }
-        
-        // Send status update message
-        let _ = self.app_sender.send(AppMessage::StatusUpdated(
-            format!("Output directory: {}", dir)
-        ));
-    }
-}
-
-// A safer implementation of the macOS menu bar UI
-struct MacOsMenuBarUi {
-    // Communication channels
-    receiver: Receiver<UiMessage>,
-    sender: Sender<AppMessage>,
-    
-    // UI components
-    output_dir: String,
-    
-    // Cached states
-    is_recording: bool,
-}
-
-impl MacOsMenuBarUi {
-    fn new(receiver: Receiver<UiMessage>, sender: Sender<AppMessage>, output_dir: String) -> Self {
-        Self {
-            receiver,
-            sender,
-            output_dir,
-            is_recording: false,
-        }
-    }
-    
-    // Run the UI loop safely
-    fn run(&mut self) {
-        // Print a simple status message - the actual UI is not implemented yet
-        // due to issues with Objective-C exception handling
-        println!("Menu bar UI is running in a simplified mode");
-        println!("Output directory: {}", self.output_dir);
-        
-        // The UI loop - check for messages and respond
-        loop {
-            // Check for messages from the main thread
-            if let Ok(message) = self.receiver.recv_timeout(Duration::from_millis(100)) {
-                match message {
-                    UiMessage::StartRecording => {
-                        self.is_recording = true;
-                        println!("UI: Recording started");
-                    },
-                    UiMessage::StopRecording => {
-                        self.is_recording = false;
-                        println!("UI: Recording stopped");
-                    },
-                    UiMessage::UpdateStatus(status) => {
-                        println!("UI: Status updated: {}", status);
-                    },
-                    UiMessage::UpdateTime(time) => {
-                        // Only print occasionally to avoid flooding the console
-                        if time.ends_with(":00") {
-                            println!("UI: {}", time);
-                        }
-                    },
-                    UiMessage::Quit => {
-                        println!("UI: Quitting");
-                        break;
-                    }
-                }
-            }
-            
-            // Check for simulated UI events (keyboard input in this case)
-            if let Some(key) = self.check_keyboard_input() {
-                match key {
-                    's' => {
-                        // Toggle recording state
-                        self.is_recording = !self.is_recording;
-                        if self.is_recording {
-                            let _ = self.sender.send(AppMessage::RecordingStarted);
-                        } else {
-                            let _ = self.sender.send(AppMessage::RecordingStopped);
-                        }
-                    },
-                    'q' => {
-                        // Quit the application
-                        let _ = self.sender.send(AppMessage::Terminated);
-                        break;
-                    },
-                    _ => {}
-                }
-            }
-            
-            // Sleep a bit to avoid hogging CPU
-            thread::sleep(Duration::from_millis(50));
-        }
-    }
-    
-    // This is a placeholder that simulates keyboard input
-    // In a real implementation, we would check for actual menu clicks
-    fn check_keyboard_input(&self) -> Option<char> {
-        // This is just a placeholder - we're not actually checking keyboard input
-        None
     }
 }
 

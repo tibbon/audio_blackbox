@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use std::process;
 
 use blackbox::AppConfig;
 use blackbox::AudioProcessor;
@@ -20,22 +21,26 @@ use crate::macos::MenuBarApp;
 
 fn main() {
     // Check if we should run the macOS menu bar app
-    #[cfg(target_os = "macos")]
-    {
-        println!("Checking for --menu-bar flag...");
-        if let Some(arg) = env::args().nth(1) {
-            if arg == "--menu-bar" {
-                println!("Menu bar flag detected, starting in macOS menu bar mode");
-                println!("Creating MenuBarApp instance...");
-                let menu_app = MenuBarApp::new();
-                println!("Menu bar app created successfully");
-                println!("Running MenuBarApp...");
-                menu_app.run();
-                println!("Menu bar app run completed - exiting");
-                return;
-            }
+    let args: Vec<String> = env::args().collect();
+    if args.contains(&"--menu-bar".to_string()) {
+        println!("Menu bar flag detected, starting in macOS menu bar mode");
+        
+        #[cfg(target_os = "macos")]
+        {
+            println!("Creating MenuBarApp instance...");
+            let mut menu_app = MenuBarApp::new();
+            println!("Menu bar app created successfully");
+            println!("Running MenuBarApp...");
+            menu_app.run();
         }
-        println!("No menu bar flag found, proceeding with normal operation");
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            eprintln!("Menu bar mode is only available on macOS");
+            process::exit(1);
+        }
+        
+        return;
     }
 
     // Check for configuration file
@@ -97,7 +102,7 @@ fn main() {
 
     // Create macOS menu bar app if we're on macOS
     #[cfg(target_os = "macos")]
-    let menu_app = MenuBarApp::new();
+    let mut menu_app = MenuBarApp::new();
 
     // Continuous recording mode
     if config.get_continuous_mode() {
