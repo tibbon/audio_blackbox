@@ -133,7 +133,7 @@ impl MenuBarIcon {
     /// Create a circular icon with the specified color
     pub fn circle(color: &str, size: f64) -> CocoaResult<Self> {
         let pool = AutoreleasePool::new();
-        
+
         // Create an image with the specified size
         let size = NSSize::new(size, size);
         let image = unsafe {
@@ -144,9 +144,9 @@ impl MenuBarIcon {
             }
             image
         };
-        
+
         // More implementation details...
-        
+
         std::mem::drop(pool);
         Ok(Self { image })
     }
