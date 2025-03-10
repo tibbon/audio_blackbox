@@ -8,9 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicy,
-};
+use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
 use cocoa::base::{id, nil, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSString};
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};

@@ -135,22 +135,32 @@ fn test_config_defaults() {
             assert_eq!(config.debug, Some(DEFAULT_DEBUG));
             assert_eq!(config.duration, Some(DEFAULT_DURATION));
             assert_eq!(config.output_mode, Some(DEFAULT_OUTPUT_MODE.to_string()));
-            assert!((config.get_silence_threshold() - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON);
+            assert!(
+                (config.get_silence_threshold() - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON
+            );
             assert_eq!(config.continuous_mode, Some(DEFAULT_CONTINUOUS_MODE));
             assert_eq!(config.recording_cadence, Some(DEFAULT_RECORDING_CADENCE));
             assert_eq!(config.output_dir, Some(DEFAULT_OUTPUT_DIR.to_string()));
-            assert_eq!(config.performance_logging, Some(DEFAULT_PERFORMANCE_LOGGING));
+            assert_eq!(
+                config.performance_logging,
+                Some(DEFAULT_PERFORMANCE_LOGGING)
+            );
 
             // Verify getter methods return the same values
             assert_eq!(config.get_audio_channels(), DEFAULT_CHANNELS);
             assert_eq!(config.get_debug(), DEFAULT_DEBUG);
             assert_eq!(config.get_duration(), DEFAULT_DURATION);
             assert_eq!(config.get_output_mode(), DEFAULT_OUTPUT_MODE);
-            assert!((config.get_silence_threshold() - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON);
+            assert!(
+                (config.get_silence_threshold() - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON
+            );
             assert_eq!(config.get_continuous_mode(), DEFAULT_CONTINUOUS_MODE);
             assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
             assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
-            assert_eq!(config.get_performance_logging(), DEFAULT_PERFORMANCE_LOGGING);
+            assert_eq!(
+                config.get_performance_logging(),
+                DEFAULT_PERFORMANCE_LOGGING
+            );
         },
     );
 }
@@ -233,10 +243,7 @@ fn test_config_env_vars() {
                 "0,1,2",
                 "Config should load audio_channels from file"
             );
-            assert!(
-                config.get_debug(),
-                "Config should load debug from file"
-            );
+            assert!(config.get_debug(), "Config should load debug from file");
         },
     );
 }
