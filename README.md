@@ -9,14 +9,14 @@ BlackBox Audio Recorder is a Rust application that provides audio recording capa
 ## Features
 
 - Audio recording with configurable duration
-- macOS menu bar integration
+- macOS menu bar integration with thread-safe architecture
 - Continuous recording mode
 - Performance monitoring
 - Output directory selection
 
 ## Current Status
 
-The application is currently in development. The core audio recording functionality works well, and we have established a solid thread-safe architecture for the macOS menu bar integration.
+The application is currently in development. The core audio recording functionality works well, and we have established a solid foundation for the menu bar integration using a thread-safe architecture.
 
 ### Implementation Details
 
@@ -26,15 +26,21 @@ The application is currently in development. The core audio recording functional
    - Created proper communication channels between components
    - Eliminated issues with Objective-C objects being sent between threads
 
-2. **Current Limitations**:
-   - The menu bar UI is currently running in a simplified mode due to Objective-C exception handling issues
-   - Full native menu bar integration is in progress but requires additional work to handle Cocoa exceptions safely
+2. **Safe Cocoa/AppKit Wrappers**:
+   - Created robust wrappers around NSApplication, NSMenu, NSStatusItem, and other AppKit components
+   - Implemented proper exception handling for Objective-C interactions
+   - Designed resource management with Rust's ownership model
+
+3. **Current UI**:
+   - The menu bar implementation currently uses a simplified command-line based interface
+   - File-based control system for interaction (`touch /tmp/blackbox_start`, etc.)
+   - Working toward full graphical menu bar implementation using the safe wrappers
 
 ### Known Issues
 
 1. **CFRunLoop Method Calls**: There are some issues with calling methods on `CFRunLoop` objects, specifically the `run_in_mode` method.
 
-2. **Cargo-Clippy Warnings**: The code generates numerous warnings related to unexpected `cfg` condition values for `cargo-clippy`.
+2. **Thread Safety in Callbacks**: The menu item callbacks need additional work to ensure thread safety when working with Objective-C objects.
 
 ### Recent Improvements
 
@@ -95,14 +101,23 @@ Or manually:
 cargo run -- --menu-bar
 ```
 
+## Command-line Control
+
+The current implementation provides a file-based control system:
+
+- Start recording: `touch /tmp/blackbox_start`
+- Stop recording: `touch /tmp/blackbox_stop`
+- Quit application: `touch /tmp/blackbox_quit`
+- Check status: `cat /tmp/blackbox_status`
+
 ## Menu Bar Integration Roadmap
 
-Our plan for completing the menu bar implementation:
+Our plan for completing the visual menu bar implementation:
 
 1. **Short-term**:
-   - Resolve Objective-C exception handling issues
-   - Implement a safe wrapper around NSApplication and NSMenu
-   - Create proper event handling for menu items
+   - Integrate the safe_cocoa.rs wrappers with MenuBarApp
+   - Fix remaining thread safety issues in menu item callbacks
+   - Implement proper state update between UI and app threads
 
 2. **Medium-term**:
    - Add custom icons and improved visual design

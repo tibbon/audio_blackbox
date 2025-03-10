@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::process;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,11 +19,16 @@ mod macos;
 use crate::macos::MenuBarApp;
 
 fn main() {
+    // For test purposes, set this to skip all GUI-dependent tests
+    if cfg!(test) {
+        std::env::set_var("BLACKBOX_SKIP_GUI_TESTS", "1");
+    }
+
     // Check if we should run the macOS menu bar app
     let args: Vec<String> = env::args().collect();
     if args.contains(&"--menu-bar".to_string()) {
         println!("Menu bar flag detected, starting in macOS menu bar mode");
-        
+
         #[cfg(target_os = "macos")]
         {
             println!("Creating MenuBarApp instance...");
@@ -33,13 +37,13 @@ fn main() {
             println!("Running MenuBarApp...");
             menu_app.run();
         }
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             eprintln!("Menu bar mode is only available on macOS");
             process::exit(1);
         }
-        
+
         return;
     }
 

@@ -237,10 +237,10 @@ impl CpalAudioProcessor {
 
         // Determine if we're recording mono or stereo
         let num_channels = if channels.len() == 1 { 1 } else { 2 };
-        
+
         // Create the WAV file
         let file_name = format!("{}/{}.wav", self.output_dir, date_str);
-        
+
         let spec = hound::WavSpec {
             channels: num_channels as u16,
             sample_rate,
