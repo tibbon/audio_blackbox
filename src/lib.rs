@@ -11,6 +11,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
+// Include global lint allowances
+#[allow(unused_imports)]
+mod allow;
+
 // Modular organization of code
 mod audio_processor;
 mod audio_recorder;
