@@ -14,15 +14,15 @@ mod safe_cocoa;
 // Temporarily disable the menu_bar_impl module
 // pub mod menu_bar_impl;
 
-use std::sync::{Arc, Mutex};
+use std::process::Command;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::process::Command;
 
 use crate::AppConfig;
-use crate::AudioRecorder;
 use crate::AudioProcessor;
+use crate::AudioRecorder;
 use crate::CpalAudioProcessor;
 
 // Import the safe Cocoa wrappers
@@ -192,10 +192,7 @@ impl MenuBarApp {
                             eprintln!("Error stopping recording: {:?}", e);
                         } else {
                             println!("Recording stopped");
-                            Self::send_notification(
-                                "BlackBox Audio Recorder",
-                                "Recording stopped",
-                            );
+                            Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
                         }
                     }
                 }
@@ -244,10 +241,13 @@ impl MenuBarApp {
         if let Ok(mut output_dir) = self.state.output_dir.lock() {
             *output_dir = dir.to_string();
         }
-        
+
         // Send a message to the control channel if it exists
         if let Some(ref sender) = self.control_sender {
-            if sender.send(ControlMessage::UpdateOutputDir(dir.to_string())).is_err() {
+            if sender
+                .send(ControlMessage::UpdateOutputDir(dir.to_string()))
+                .is_err()
+            {
                 eprintln!("Failed to send UpdateOutputDir message");
             }
         }

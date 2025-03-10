@@ -359,9 +359,10 @@ impl Application {
     /// Process a single event with the given timeout
     pub fn process_event(&self, timeout: Duration) -> bool {
         unsafe {
-            let date: id = msg_send![class!(NSDate), dateWithTimeIntervalSinceNow:timeout.as_secs_f64()];
+            let date: id =
+                msg_send![class!(NSDate), dateWithTimeIntervalSinceNow:timeout.as_secs_f64()];
             let mode = kCFRunLoopDefaultMode;
-            
+
             let event: id = msg_send![
                 self.app,
                 nextEventMatchingMask:u64::MAX
@@ -369,17 +370,17 @@ impl Application {
                 inMode:mode
                 dequeue:YES
             ];
-            
+
             if event != nil {
                 let _: () = msg_send![self.app, sendEvent:event];
                 let _: () = msg_send![self.app, updateWindows];
                 return true;
             }
-            
+
             false
         }
     }
-    
+
     /// Stop the application's run loop
     pub fn terminate(&mut self) {
         self.is_running = false;
