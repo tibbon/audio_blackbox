@@ -42,8 +42,8 @@ menu-bar = []
 
 # These lints will only be activated when using cargo clippy
 [lints.clippy]
-pedantic = "warn"
-nursery = "warn"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -2 }
 # Allow specific lints that are problematic for this codebase
 arc_with_non_send_sync = "allow"
 module_name_repetitions = "allow"

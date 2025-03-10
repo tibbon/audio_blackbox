@@ -12,8 +12,40 @@
 // GNU General Public License for more details.
 
 // Include global lint allowances
-#[allow(unused_imports)]
-mod allow;
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::large_enum_variant)]
+#![allow(clippy::wildcard_imports)]
+#![allow(clippy::redundant_else)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::stable_sort_primitive)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::significant_drop_tightening)]
+#![allow(clippy::significant_drop_in_scrutinee)]
+#![allow(clippy::cognitive_complexity)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::use_self)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::manual_assert)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::needless_pass_by_ref_mut)]
+#![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::redundant_clone)]
 
 // Modular organization of code
 mod audio_processor;

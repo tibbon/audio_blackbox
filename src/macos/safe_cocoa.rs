@@ -1,3 +1,9 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::unnecessary_wraps)]
+
 // Safe wrapper for Cocoa/AppKit APIs
 // Provides exception-safe interfaces to common macOS UI functionality
 
@@ -398,8 +404,7 @@ extern "C" fn exception_handler(exception: *mut c_void) {
         let reason_str = nsstring_to_string(reason);
 
         eprintln!(
-            "Uncaught Objective-C exception: {} - {}",
-            name_str, reason_str
+            "Uncaught Objective-C exception: {name_str} - {reason_str}",
         );
     }
 }

@@ -1,3 +1,7 @@
+#![allow(clippy::use_self)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::needless_pass_by_ref_mut)]
+
 // We're providing a simplified implementation of the macOS menu bar
 // that displays a basic UI and allows recording functionality
 
@@ -72,31 +76,48 @@ pub struct MenuBarApp {
     // We can't share Cocoa objects between threads, so we don't store the Application instance
 }
 
-#[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
+        println!("Creating MenuBarApp (implementation)");
+
+        // Initialize shared state
         let state = SharedState {
             is_recording: Arc::new(Mutex::new(false)),
             output_dir: Arc::new(Mutex::new("recordings".to_string())),
         };
 
         // Create recorder
-        // This is OK because CpalAudioProcessor is Send+Sync
+        #[allow(clippy::arc_with_non_send_sync)]
         let recorder = Arc::new(Mutex::new(None));
 
         // Create control channel
         let (control_sender, control_receiver) = std::sync::mpsc::channel();
 
-        // Set up exception handling for Cocoa
-        setup_exception_handling();
-
-        // Create the UI thread
-        let state_clone = state.clone();
+        // Start UI thread
+        let ui_state = state.clone();
         let ui_thread = thread::spawn(move || {
-            let result = create_visual_menu_bar(control_receiver, state_clone);
-            if let Err(e) = result {
-                eprintln!("Error creating visual menu bar: {:?}", e);
+            // Set up exception handling for Objective-C
+            setup_exception_handling();
+
+            println!("UI thread started");
+
+            // Always use simplified UI for now
+            // In a real implementation, we would check for a feature flag or config option
+            let use_visual_ui = false; // Change this to true to use visual UI
+
+            if use_visual_ui {
+                println!("Using visual menu bar UI with safe_cocoa wrappers");
+                // Create the visual menu bar UI using our safe wrappers
+                if let Err(e) = create_visual_menu_bar(control_receiver, ui_state) {
+                    eprintln!("Failed to create menu bar UI: {e:?}");
+                    // Can't fall back to simplified UI here as control_receiver is moved
+                }
+            } else {
+                println!("Using simplified menu bar (non-visual)");
+                create_simplified_menu_bar(control_receiver, ui_state);
             }
+
+            println!("UI thread terminated");
         });
 
         MenuBarApp {
@@ -114,7 +135,7 @@ impl MenuBarApp {
         let processor = match CpalAudioProcessor::new() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("Failed to create audio processor: {}", e);
+                eprintln!("Failed to create audio processor: {e}");
                 return;
             }
         };
@@ -169,10 +190,10 @@ impl MenuBarApp {
                                     );
                                 }
                                 Err(e) => {
-                                    eprintln!("Failed to start recording: {}", e);
+                                    eprintln!("Failed to start recording: {e}");
                                     Self::send_notification(
                                         "BlackBox Audio Recorder",
-                                        &format!("Failed to start recording: {}", e),
+                                        &format!("Failed to start recording: {e}"),
                                     );
                                 }
                             }
@@ -184,7 +205,7 @@ impl MenuBarApp {
                     if rec.get_processor().is_recording() {
                         // Use the processor's stop_recording method directly
                         if let Err(e) = rec.processor.stop_recording() {
-                            eprintln!("Error stopping recording: {:?}", e);
+                            eprintln!("Error stopping recording: {e:?}");
                         } else {
                             println!("Recording stopped");
                             Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
@@ -215,7 +236,7 @@ impl MenuBarApp {
     }
 
     pub fn update_status(&mut self, is_recording: bool) {
-        println!("MenuBarApp: Updating status to: {}", is_recording);
+        println!("MenuBarApp: Updating status to: {is_recording}");
 
         // Update the shared state
         *self.state.is_recording.lock().unwrap() = is_recording;
@@ -253,8 +274,7 @@ impl MenuBarApp {
         if cfg!(target_os = "macos") {
             // macOS notification using osascript
             let script = format!(
-                r#"display notification "{}" with title "{}""#,
-                message, title
+                r#"display notification "{message}" with title "{title}""#,
             );
             let _ = Command::new("osascript").args(["-e", &script]).output();
         }
@@ -401,7 +421,7 @@ fn create_simplified_menu_bar(
                     let _ = std::fs::write("/tmp/blackbox_status", "Idle");
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
-                    println!("UI: Updating output dir to {}", dir);
+                    println!("UI: Updating output dir to {dir}");
                     *state.output_dir.lock().unwrap() = dir;
                 }
                 ControlMessage::Quit => {

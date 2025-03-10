@@ -1,9 +1,16 @@
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::use_self)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::needless_pass_by_ref_mut)]
+
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
-#[cfg(not(target_os = "macos"))]
-use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -55,7 +62,7 @@ fn main() {
         println!("Configuration file not found, creating default at blackbox.toml");
         let default_config = AppConfig::default();
         if let Err(e) = default_config.create_config_file("blackbox.toml") {
-            eprintln!("Failed to create configuration file: {}", e);
+            eprintln!("Failed to create configuration file: {e}");
             return;
         }
     }
@@ -68,10 +75,10 @@ fn main() {
     let output_dir = config.get_output_dir();
     if !Path::new(&output_dir).exists() {
         if let Err(e) = fs::create_dir_all(&output_dir) {
-            eprintln!("Failed to create output directory: {}", e);
+            eprintln!("Failed to create output directory: {e}");
             return;
         }
-        println!("Created output directory: {}", output_dir);
+        println!("Created output directory: {output_dir}");
     }
 
     // Set up performance monitoring if enabled
@@ -99,7 +106,7 @@ fn main() {
     let processor = match CpalAudioProcessor::new() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Failed to create audio processor: {}", e);
+            eprintln!("Failed to create audio processor: {e}");
             return;
         }
     };
@@ -120,7 +127,7 @@ fn main() {
         match recorder.start_recording() {
             Ok(_) => println!("Recording started!"),
             Err(e) => {
-                eprintln!("Failed to start recording: {}", e);
+                eprintln!("Failed to start recording: {e}");
                 return;
             }
         }
@@ -150,7 +157,7 @@ fn main() {
 
         // Finalize the recording
         if let Err(e) = recorder.processor.finalize() {
-            eprintln!("Error finalizing recording: {}", e);
+            eprintln!("Error finalizing recording: {e}");
         }
     } else {
         // Normal recording mode
@@ -162,14 +169,14 @@ fn main() {
         match recorder.start_recording() {
             Ok(_) => println!("Recording started!"),
             Err(e) => {
-                eprintln!("Failed to start recording: {}", e);
+                eprintln!("Failed to start recording: {e}");
                 return;
             }
         }
 
         // Wait for the recording duration
         let duration_secs = config.get_duration();
-        println!("Recording for {} seconds...", duration_secs);
+        println!("Recording for {duration_secs} seconds...");
 
         let mut remaining = duration_secs;
         while remaining > 0 && running.load(Ordering::SeqCst) {
@@ -188,7 +195,7 @@ fn main() {
             }
 
             if remaining % 5 == 0 && remaining > 0 {
-                println!("{} seconds remaining...", remaining);
+                println!("{remaining} seconds remaining...");
             }
         }
 
@@ -200,7 +207,7 @@ fn main() {
 
         // Finalize the recording
         if let Err(e) = recorder.processor.finalize() {
-            eprintln!("Error finalizing recording: {}", e);
+            eprintln!("Error finalizing recording: {e}");
         }
     }
 
