@@ -519,11 +519,11 @@ mod tests {
 
         // Verify environment variables were applied correctly
         assert_eq!(config.audio_channels, Some("0,2,3".to_string()));
-        assert_eq!(config.debug, Some(true));
+        assert!(config.get_debug());
 
         // Test the getter methods
         assert_eq!(config.get_audio_channels(), "0,2,3");
-        assert_eq!(config.get_debug(), true);
+        assert!(config.get_debug());
 
         // Clean up environment variables
         env::remove_var("AUDIO_CHANNELS");
@@ -579,7 +579,7 @@ mod tests {
 
         // Check that only the Some values were overridden
         assert_eq!(base_config.audio_channels, Some("2,3".to_string()));
-        assert_eq!(base_config.debug, Some(true));
+        assert!(base_config.get_debug());
         assert_eq!(base_config.duration, Some(10)); // Unchanged
         assert_eq!(base_config.output_mode, Some("split".to_string()));
         assert_eq!(base_config.silence_threshold, Some(0.0)); // Unchanged

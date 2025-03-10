@@ -57,7 +57,7 @@ pub fn generate_test_audio_i16(channels: u16, samples_per_channel: usize) -> Vec
     let mut data = Vec::with_capacity(channels as usize * samples_per_channel);
     for i in 0..(channels as usize * samples_per_channel) {
         // Generate a sine wave scaled to i16 range
-        let value = ((i as f32 / 10.0).sin() * 0.5 * std::i16::MAX as f32) as i16;
+        let value = ((i as f32 / 10.0).sin() * 0.5 * i16::MAX as f32) as i16;
         data.push(value);
     }
     data
@@ -68,7 +68,7 @@ pub fn generate_test_audio_u16(channels: u16, samples_per_channel: usize) -> Vec
     let mut data = Vec::with_capacity(channels as usize * samples_per_channel);
     for i in 0..(channels as usize * samples_per_channel) {
         // Generate a sine wave scaled and shifted to u16 range
-        let value = (((i as f32 / 10.0).sin() * 0.5 + 0.5) * std::u16::MAX as f32) as u16;
+        let value = ((i as f32 / 10.0).sin().mul_add(0.5, 0.5) * u16::MAX as f32) as u16;
         data.push(value);
     }
     data

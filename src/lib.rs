@@ -148,8 +148,8 @@ mod tests {
         );
 
         // Test bool parsing
-        assert_eq!("true".parse::<bool>().unwrap_or_else(|_| false), true);
-        assert_eq!("false".parse::<bool>().unwrap_or_else(|_| false), false);
+        assert!("true".parse::<bool>().unwrap_or(false));
+        assert!(!"false".parse::<bool>().unwrap_or(false));
 
         // Test duration parsing
         assert_eq!("20".parse::<u64>().unwrap_or(DEFAULT_DURATION), 20);
@@ -227,7 +227,7 @@ mod tests {
         let too_many = (0..=MAX_CHANNELS)
             .collect::<Vec<_>>()
             .iter()
-            .map(|n| n.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(",");
         assert!(parse_channel_string(&too_many).is_err());

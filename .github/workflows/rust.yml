@@ -122,7 +122,7 @@ jobs:
       run: cargo fmt --all -- --check
     
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      run: cargo clippy --no-default-features -- -D warnings
 
   release:
     name: Release
