@@ -38,32 +38,34 @@ This document outlines the next steps and priorities for the BlackBox Audio Reco
    - Ensured compatibility with rustfmt standards
    - Improved code organization in platform-specific modules
 
+6. **Fixed Cross-Platform Build Issues**
+   - Fixed conditional compilation in macOS modules
+   - Added proper `#[cfg(target_os = "macos")]` attributes to all macOS-specific code
+   - Made builds pass on Ubuntu and Windows
+   - Added proper struct attributes to fix clippy warnings
+   - Fixed process import in main.rs for non-macOS platforms
+   - Added global lint allowances for unavoidable warnings
+
 ## High Priority
 
-1. **Resolve Clippy Warnings**
+1. **Resolve Remaining Clippy Warnings**
    - Fix Clippy warnings in the codebase for the Lint job
    - Ensure all code follows Rust best practices
    - Improve error handling patterns where needed
    - Fix warnings about unused code or imports
 
-2. **Fix Cross-Platform Build Issues**
-   - Address build failures on Windows
-   - Ensure all platform-specific code is properly isolated
-   - Fix conditional compilation flags for different target platforms
-   - Test builds on all supported platforms
-
-3. **Complete Visual Menu Bar Implementation**
+2. **Complete Visual Menu Bar Implementation**
    - Integrate the safe_cocoa.rs wrappers with MenuBarApp
    - Fix remaining thread safety issues in menu item callbacks
    - Implement proper state update between UI and app threads
    - Add proper icons and visual styling
    - Test with various macOS versions
 
-4. **Resolve CFRunLoop Method Call Issues**
+3. **Resolve CFRunLoop Method Call Issues**
    - Fix the `run_in_mode` method call on `CFRunLoop` objects
    - Ensure proper syntax for calling Core Foundation methods
 
-5. **Address Cargo-Clippy Warnings**
+4. **Address Cargo-Clippy Warnings**
    - Add the `cargo-clippy` feature to the Cargo.toml file
    - Update the code to use the proper feature flags
 
