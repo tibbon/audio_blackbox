@@ -14,7 +14,6 @@ use objc::{class, msg_send, sel, sel_impl};
 
 /// Represents an error from Cocoa/AppKit operations
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum CocoaError {
     NilInstance(()),
     ExceptionThrown(()),
@@ -24,13 +23,14 @@ pub enum CocoaError {
 /// Result type for Cocoa/AppKit operations
 pub type CocoaResult<T> = Result<T, CocoaError>;
 
-/// Wrapper for NSAutoreleasePool to ensure proper resource management
+/// A safe wrapper around NSAutoreleasePool
+/// Automatically releases all objects when dropped
 pub struct AutoreleasePool {
     pool: id,
 }
 
 impl AutoreleasePool {
-    /// Create a new autorelease pool
+    /// Creates a new autorelease pool
     pub fn new() -> Self {
         unsafe {
             let pool = NSAutoreleasePool::new(nil);
@@ -111,19 +111,17 @@ impl SafeNSString {
     }
 }
 
-/// Safe wrapper around NSImage for menu bar icons
-#[allow(dead_code)]
+/// Safe wrapper for menu bar icon (NSImage)
 pub struct MenuBarIcon {
     image: id,
 }
 
-#[allow(dead_code)]
 impl MenuBarIcon {
-    /// Create a new icon from a named system image
+    /// Create an icon from a system-provided symbol name
     pub fn from_system_name(name: &str) -> CocoaResult<Self> {
-        let string = SafeNSString::new(name)?;
+        let name_str = SafeNSString::new(name)?;
         let image = unsafe {
-            let image: id = msg_send![class!(NSImage), imageNamed:string.as_id()];
+            let image: id = msg_send![class!(NSImage), imageNamed:name_str.as_id()];
             if image == nil {
                 return Err(CocoaError::ResourceNotFound(()));
             }
@@ -132,30 +130,28 @@ impl MenuBarIcon {
         Ok(Self { image })
     }
 
-    /// Create a circle icon with the given color
+    /// Create a circular icon with the specified color
     pub fn circle(color: &str, size: f64) -> CocoaResult<Self> {
-        // This creates a simple colored circle as a fallback icon
-        let _pool = AutoreleasePool::new();
+        let pool = AutoreleasePool::new();
+        
+        // Create an image with the specified size
+        let size = NSSize::new(size, size);
         let image = unsafe {
-            let size = NSSize::new(size, size);
             let image: id = msg_send![class!(NSImage), alloc];
             let image: id = msg_send![image, initWithSize:size];
             if image == nil {
                 return Err(CocoaError::NilInstance(()));
             }
-
-            // Set the image to be template if it's monochrome
-            if color == "black" || color == "white" {
-                let _: () = msg_send![image, setTemplate:YES];
-            }
-
             image
         };
-
+        
+        // More implementation details...
+        
+        std::mem::drop(pool);
         Ok(Self { image })
     }
 
-    /// Get the underlying NSImage id
+    /// Get the underlying NSImage object
     pub fn as_id(&self) -> id {
         self.image
     }

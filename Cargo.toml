@@ -40,6 +40,15 @@ default = []
 cargo-clippy = []
 menu-bar = []
 
+# These lints will only be activated when using cargo clippy
+[lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+# Allow specific lints that are problematic for this codebase
+arc_with_non_send_sync = "allow"
+module_name_repetitions = "allow"
+useless_transmute = "allow" # Needed for Objective-C FFI
+
 [target.'cfg(target_os = "linux")'.dependencies]
 pkg-config = "0.3.30"
 

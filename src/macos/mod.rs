@@ -72,48 +72,31 @@ pub struct MenuBarApp {
     // We can't share Cocoa objects between threads, so we don't store the Application instance
 }
 
+#[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
-        println!("Creating MenuBarApp (implementation)");
-
-        // Initialize shared state
         let state = SharedState {
             is_recording: Arc::new(Mutex::new(false)),
             output_dir: Arc::new(Mutex::new("recordings".to_string())),
         };
 
         // Create recorder
-        #[allow(clippy::arc_with_non_send_sync)]
+        // This is OK because CpalAudioProcessor is Send+Sync
         let recorder = Arc::new(Mutex::new(None));
 
         // Create control channel
         let (control_sender, control_receiver) = std::sync::mpsc::channel();
 
-        // Start UI thread
-        let ui_state = state.clone();
+        // Set up exception handling for Cocoa
+        setup_exception_handling();
+
+        // Create the UI thread
+        let state_clone = state.clone();
         let ui_thread = thread::spawn(move || {
-            // Set up exception handling for Objective-C
-            setup_exception_handling();
-
-            println!("UI thread started");
-
-            // Always use simplified UI for now
-            // In a real implementation, we would check for a feature flag or config option
-            let use_visual_ui = false; // Change this to true to use visual UI
-
-            if use_visual_ui {
-                println!("Using visual menu bar UI with safe_cocoa wrappers");
-                // Create the visual menu bar UI using our safe wrappers
-                if let Err(e) = create_visual_menu_bar(control_receiver, ui_state) {
-                    eprintln!("Failed to create menu bar UI: {:?}", e);
-                    // Can't fall back to simplified UI here as control_receiver is moved
-                }
-            } else {
-                println!("Using simplified menu bar (non-visual)");
-                create_simplified_menu_bar(control_receiver, ui_state);
+            let result = create_visual_menu_bar(control_receiver, state_clone);
+            if let Err(e) = result {
+                eprintln!("Error creating visual menu bar: {:?}", e);
             }
-
-            println!("UI thread terminated");
         });
 
         MenuBarApp {
