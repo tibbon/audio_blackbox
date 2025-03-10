@@ -33,7 +33,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "blackbox"
-path = "src/main.rs"
+path = "src/bin/main.rs"
 
 [features]
 default = []
