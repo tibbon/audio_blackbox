@@ -76,6 +76,7 @@ pub struct MenuBarApp {
     // We can't share Cocoa objects between threads, so we don't store the Application instance
 }
 
+#[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
         println!("Creating MenuBarApp (implementation)");
