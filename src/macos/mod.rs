@@ -14,23 +14,34 @@ mod safe_cocoa;
 // Temporarily disable the menu_bar_impl module
 // pub mod menu_bar_impl;
 
+#[cfg(target_os = "macos")]
 use std::process::Command;
+#[cfg(target_os = "macos")]
 use std::sync::mpsc;
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::thread;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 use crate::AppConfig;
+#[cfg(target_os = "macos")]
 use crate::AudioProcessor;
+#[cfg(target_os = "macos")]
 use crate::AudioRecorder;
+#[cfg(target_os = "macos")]
 use crate::CpalAudioProcessor;
 
 // Import the safe Cocoa wrappers
+#[cfg(target_os = "macos")]
 use self::safe_cocoa::{
     setup_exception_handling, Application, AutoreleasePool, CocoaResult, Menu, MenuItem, StatusItem,
 };
 
 // Simple struct for thread-safe shared state
+#[cfg(target_os = "macos")]
 #[derive(Clone)]
 struct SharedState {
     is_recording: Arc<Mutex<bool>>,
@@ -38,6 +49,7 @@ struct SharedState {
 }
 
 // Control messages for the menu bar
+#[cfg(target_os = "macos")]
 #[allow(dead_code)]
 enum ControlMessage {
     StartRecording,
