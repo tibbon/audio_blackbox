@@ -281,6 +281,7 @@ impl MenuBarApp {
 }
 
 // Function to create a visual menu bar using safe_cocoa wrappers
+#[cfg(target_os = "macos")]
 fn create_visual_menu_bar(
     control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
     state: SharedState,
@@ -379,6 +380,7 @@ fn create_visual_menu_bar(
 }
 
 // Fallback implementation
+#[cfg(target_os = "macos")]
 fn create_simplified_menu_bar(
     control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
     state: SharedState,
