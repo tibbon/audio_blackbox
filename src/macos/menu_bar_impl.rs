@@ -34,6 +34,7 @@ pub enum AppToUiMessage {
 }
 
 /// Main implementation of the macOS menu bar application
+#[cfg(target_os = "macos")]
 pub struct MenuBarAppImpl {
     // Communication channels
     ui_to_app_sender: Sender<UiToAppMessage>,
@@ -51,6 +52,7 @@ pub struct MenuBarAppImpl {
     ui_thread: Option<thread::JoinHandle<()>>,
 }
 
+#[cfg(target_os = "macos")]
 impl MenuBarAppImpl {
     /// Create a new instance of the macOS menu bar application
     pub fn new() -> Self {
@@ -333,8 +335,10 @@ impl MenuBarAppImpl {
 }
 
 /// The UI implementation using the safe Cocoa wrapper
+#[cfg(target_os = "macos")]
 struct MenuBarUi;
 
+#[cfg(target_os = "macos")]
 impl MenuBarUi {
     /// Run the menu bar UI
     fn run(

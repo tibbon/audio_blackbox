@@ -51,6 +51,7 @@ unsafe impl Send for ThreadSafeWrapper {}
 #[allow(clippy::missing_safety_doc)]
 unsafe impl Sync for ThreadSafeWrapper {}
 
+#[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
         println!("MenuBarApp: Initializing...");
