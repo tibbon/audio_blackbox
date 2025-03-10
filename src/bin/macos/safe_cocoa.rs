@@ -7,7 +7,6 @@
 #[cfg(target_os = "macos")]
 // Safe wrapper for Cocoa/AppKit APIs
 // Provides exception-safe interfaces to common macOS UI functionality
-
 #[cfg(target_os = "macos")]
 use std::ffi::CStr;
 #[cfg(target_os = "macos")]
