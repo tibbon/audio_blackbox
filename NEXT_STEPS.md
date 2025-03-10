@@ -4,21 +4,28 @@ This document outlines the next steps and priorities for the BlackBox Audio Reco
 
 ## Recently Completed
 
-1. **Fixed Output Mode Validation**
+1. **Fixed Performance Tests for CI Environments**
+   - Improved performance tests to properly handle CI environments
+   - Added proper directory creation in tests to prevent file access errors
+   - Made tests more resilient to environment-specific conditions
+   - Fixed assertions to handle cases where metrics might not be available
+   - Ensured tests pass both locally and in CI environments
+
+2. **Fixed Output Mode Validation**
    - Added proper validation of output modes in the audio processor
    - Implemented a new `setup_standard_mode` for mono/stereo recordings
    - Updated configuration file comments to clearly document valid options
    - Changed default output mode from "wav" to "single" to match code expectations
    - Added better error messages that clearly indicate valid options
 
-2. **Implemented Thread-Safe Menu Bar Architecture**
+3. **Implemented Thread-Safe Menu Bar Architecture**
    - Created a thread-safe design using a message passing architecture
    - Separated UI code (Cocoa/Objective-C) into a dedicated UI thread
    - Added proper communication channels between threads
    - Resolved issues with Objective-C objects being sent between threads
    - Simplified the menu bar implementation with a cleaner design
 
-3. **Developed Safe Cocoa/AppKit Wrapper**
+4. **Developed Safe Cocoa/AppKit Wrapper**
    - Created robust wrappers around NSApplication, NSMenu, NSStatusItem, etc.
    - Implemented exception handling for Objective-C interactions
    - Designed proper cleanup of Objective-C resources
