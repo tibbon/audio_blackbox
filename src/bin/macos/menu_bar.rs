@@ -3,21 +3,34 @@
 // Allow thread safety warnings for macOS-specific code
 #![allow(clippy::non_send_fields_in_send_ty)]
 
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::thread;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+#[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, YES};
+#[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSString};
+#[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 
+#[cfg(target_os = "macos")]
 use crate::AppConfig;
+#[cfg(target_os = "macos")]
 use crate::AudioRecorder;
+#[cfg(target_os = "macos")]
 use crate::CpalAudioProcessor;
 
+#[cfg(target_os = "macos")]
 pub struct MenuBarApp {
     status_item: id,
     is_recording: Arc<Mutex<bool>>,
@@ -28,6 +41,7 @@ pub struct MenuBarApp {
 }
 
 // Add a wrapper struct for thread-safe handling of Objective-C objects
+#[cfg(target_os = "macos")]
 #[derive(Clone)]
 struct ThreadSafeWrapper {
     // Use Arc<Mutex<...>> for thread-safe access
@@ -36,6 +50,7 @@ struct ThreadSafeWrapper {
     // Other thread-safe state
 }
 
+#[cfg(target_os = "macos")]
 impl ThreadSafeWrapper {
     fn new() -> Self {
         Self {
@@ -46,8 +61,11 @@ impl ThreadSafeWrapper {
 }
 
 // Mark the wrapper as Send and Sync with proper allow attributes
+#[cfg(target_os = "macos")]
 #[allow(clippy::missing_safety_doc)]
 unsafe impl Send for ThreadSafeWrapper {}
+
+#[cfg(target_os = "macos")]
 #[allow(clippy::missing_safety_doc)]
 unsafe impl Sync for ThreadSafeWrapper {}
 
@@ -789,26 +807,35 @@ pub fn process_system_events() {
 #[allow(non_upper_case_globals)]
 const NO: i8 = 0;
 
+#[cfg(target_os = "macos")]
 trait NSMenuItemExtensions {
-    unsafe fn wasClicked(&self) -> BOOL;
-    unsafe fn setWasClicked(&self, was_clicked: BOOL);
+    fn set_action(&self, action: extern "C" fn(&Object, Sel, id));
+    fn set_target(&self, target: id);
 }
 
-type BOOL = i8;
-
+#[cfg(target_os = "macos")]
 impl NSMenuItemExtensions for id {
-    unsafe fn wasClicked(&self) -> BOOL {
-        let clicked: BOOL = if let Some(obj_ref) = (*self).as_ref() {
-            *obj_ref.get_ivar("_wasClicked")
-        } else {
-            NO
-        };
-        clicked
+    fn set_action(&self, action: extern "C" fn(&Object, Sel, id)) {
+        unsafe {
+            let obj_ref = (*self).as_ref();
+            if let Some(obj_ref) = obj_ref {
+                let obj_mut = (*self).as_mut();
+                if let Some(obj_mut) = obj_mut {
+                    let _: () = msg_send![obj_mut, setAction:action];
+                }
+            }
+        }
     }
 
-    unsafe fn setWasClicked(&self, was_clicked: BOOL) {
-        if let Some(obj_mut) = (*self).as_mut() {
-            obj_mut.set_ivar("_wasClicked", was_clicked);
+    fn set_target(&self, target: id) {
+        unsafe {
+            let obj_ref = (*self).as_ref();
+            if let Some(obj_ref) = obj_ref {
+                let obj_mut = (*self).as_mut();
+                if let Some(obj_mut) = obj_mut {
+                    let _: () = msg_send![obj_mut, setTarget:target];
+                }
+            }
         }
     }
 }

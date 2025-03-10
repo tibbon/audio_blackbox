@@ -4,21 +4,32 @@
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::unnecessary_wraps)]
 
+#[cfg(target_os = "macos")]
 // Safe wrapper for Cocoa/AppKit APIs
 // Provides exception-safe interfaces to common macOS UI functionality
 
+#[cfg(target_os = "macos")]
 use std::ffi::CStr;
+#[cfg(target_os = "macos")]
 use std::os::raw::{c_char, c_void};
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 use cocoa::appkit::NSApplicationActivationPolicy;
+#[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, NO, YES};
+#[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSSize, NSString};
+#[cfg(target_os = "macos")]
 use core_foundation::runloop::kCFRunLoopDefaultMode;
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 
 /// Represents an error from Cocoa/AppKit operations
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub enum CocoaError {
     NilInstance(()),
@@ -27,14 +38,17 @@ pub enum CocoaError {
 }
 
 /// Result type for Cocoa/AppKit operations
+#[cfg(target_os = "macos")]
 pub type CocoaResult<T> = Result<T, CocoaError>;
 
 /// A safe wrapper around NSAutoreleasePool
 /// Automatically releases all objects when dropped
+#[cfg(target_os = "macos")]
 pub struct AutoreleasePool {
     pool: id,
 }
 
+#[cfg(target_os = "macos")]
 impl AutoreleasePool {
     /// Creates a new autorelease pool
     pub fn new() -> Self {
@@ -45,6 +59,7 @@ impl AutoreleasePool {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl Drop for AutoreleasePool {
     fn drop(&mut self) {
         unsafe {
@@ -118,10 +133,12 @@ impl SafeNSString {
 }
 
 /// Safe wrapper for menu bar icon (NSImage)
+#[cfg(target_os = "macos")]
 pub struct MenuBarIcon {
     image: id,
 }
 
+#[cfg(target_os = "macos")]
 impl MenuBarIcon {
     /// Create an icon from a system-provided symbol name
     pub fn from_system_name(name: &str) -> CocoaResult<Self> {
@@ -167,11 +184,13 @@ impl MenuBarIcon {
 pub type MenuItemAction = Box<dyn Fn() + Send + 'static>;
 
 /// Represents a single menu item
+#[cfg(target_os = "macos")]
 pub struct MenuItem {
     item: id,
     action: Option<Arc<Mutex<MenuItemAction>>>,
 }
 
+#[cfg(target_os = "macos")]
 impl MenuItem {
     /// Create a new menu item with the given title
     pub fn new(title: &str) -> CocoaResult<Self> {
@@ -221,11 +240,13 @@ impl MenuItem {
 }
 
 /// Represents a menu that can contain menu items
+#[cfg(target_os = "macos")]
 pub struct Menu {
     menu: id,
     items: Vec<MenuItem>,
 }
 
+#[cfg(target_os = "macos")]
 impl Menu {
     /// Create a new empty menu
     pub fn new() -> CocoaResult<Self> {

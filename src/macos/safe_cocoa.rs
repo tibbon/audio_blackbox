@@ -81,10 +81,12 @@ macro_rules! safe_msg_send {
 }
 
 /// Safe wrapper around NSString
+#[cfg(target_os = "macos")]
 pub struct SafeNSString {
     ns_string: id,
 }
 
+#[cfg(target_os = "macos")]
 impl SafeNSString {
     /// Create a new NSString from a Rust string
     pub fn new(string: &str) -> CocoaResult<Self> {
