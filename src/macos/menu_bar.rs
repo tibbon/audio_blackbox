@@ -1,22 +1,37 @@
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::thread;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicy, NSMenu, NSMenuItem, NSStatusBar,
 };
+#[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, YES};
+#[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSString};
+#[cfg(target_os = "macos")]
 use core_foundation::base::TCFType;
+#[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
+#[cfg(target_os = "macos")]
 use libc::c_void;
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 
+#[cfg(target_os = "macos")]
 use crate::AppConfig;
+#[cfg(target_os = "macos")]
 use crate::AudioRecorder;
+#[cfg(target_os = "macos")]
 use crate::CpalAudioProcessor;
 
+#[cfg(target_os = "macos")]
 pub struct MenuBarApp {
     status_item: id,
     is_recording: Arc<Mutex<bool>>,
@@ -26,6 +41,7 @@ pub struct MenuBarApp {
     status_update_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
+#[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
         println!("MenuBarApp: Initializing...");
@@ -747,6 +763,7 @@ impl MenuBarApp {
 }
 
 // Helper for system events
+#[cfg(target_os = "macos")]
 pub fn process_system_events() {
     unsafe {
         let pool = NSAutoreleasePool::new(nil);
@@ -760,16 +777,20 @@ pub fn process_system_events() {
 }
 
 // NSMenuItem extension
+#[cfg(target_os = "macos")]
 #[allow(non_upper_case_globals)]
 const NO: i8 = 0;
 
+#[cfg(target_os = "macos")]
 trait NSMenuItemExtensions {
     unsafe fn wasClicked(&self) -> BOOL;
     unsafe fn setWasClicked(&self, was_clicked: BOOL);
 }
 
+#[cfg(target_os = "macos")]
 type BOOL = i8;
 
+#[cfg(target_os = "macos")]
 impl NSMenuItemExtensions for id {
     unsafe fn wasClicked(&self) -> BOOL {
         let clicked: BOOL = if let Some(obj_ref) = (*self).as_ref() {
@@ -788,11 +809,13 @@ impl NSMenuItemExtensions for id {
 }
 
 // Extend objc::runtime::Object with Ivar methods
+#[cfg(target_os = "macos")]
 trait IvarAccess {
     unsafe fn get_ivar<T>(&self, name: &str) -> T;
     unsafe fn set_ivar<T>(&self, name: &str, value: T);
 }
 
+#[cfg(target_os = "macos")]
 impl IvarAccess for objc::runtime::Object {
     unsafe fn get_ivar<T>(&self, name: &str) -> T {
         use std::mem;
@@ -845,6 +868,7 @@ impl IvarAccess for objc::runtime::Object {
 }
 
 // Helper for formatting durations (e.g., "1:30" for 1 minute 30 seconds)
+#[cfg(target_os = "macos")]
 fn format_duration(seconds: u64) -> String {
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
@@ -858,12 +882,14 @@ fn format_duration(seconds: u64) -> String {
 }
 
 // Helper to convert NSString to Rust String
+#[cfg(target_os = "macos")]
 unsafe fn nsstring_to_string(ns_string: id) -> String {
     let utf8_string: *const i8 = msg_send![ns_string, UTF8String];
     let bytes = std::ffi::CStr::from_ptr(utf8_string).to_bytes();
     String::from_utf8_lossy(bytes).to_string()
 }
 
+#[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
     use super::*;
