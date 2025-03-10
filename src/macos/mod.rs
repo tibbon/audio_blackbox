@@ -273,9 +273,7 @@ impl MenuBarApp {
     fn send_notification(title: &str, message: &str) {
         if cfg!(target_os = "macos") {
             // macOS notification using osascript
-            let script = format!(
-                r#"display notification "{message}" with title "{title}""#,
-            );
+            let script = format!(r#"display notification "{message}" with title "{title}""#,);
             let _ = Command::new("osascript").args(["-e", &script]).output();
         }
     }

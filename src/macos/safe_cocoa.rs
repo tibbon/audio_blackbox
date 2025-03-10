@@ -403,9 +403,7 @@ extern "C" fn exception_handler(exception: *mut c_void) {
         let name_str = nsstring_to_string(name);
         let reason_str = nsstring_to_string(reason);
 
-        eprintln!(
-            "Uncaught Objective-C exception: {name_str} - {reason_str}",
-        );
+        eprintln!("Uncaught Objective-C exception: {name_str} - {reason_str}",);
     }
 }
 
