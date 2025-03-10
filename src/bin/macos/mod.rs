@@ -7,6 +7,7 @@
 
 // Import menu bar implementation but don't use it directly
 #[cfg(feature = "menu-bar")]
+#[cfg(target_os = "macos")]
 mod menu_bar;
 
 // macOS-specific functionality
