@@ -1,21 +1,33 @@
+#[cfg(target_os = "macos")]
 // Implementation of the macOS menu bar app using safe Cocoa/AppKit wrappers
 
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::sync::mpsc::{self, Receiver, Sender};
+#[cfg(target_os = "macos")]
 use std::thread;
+#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
+#[cfg(target_os = "macos")]
 use crate::AppConfig;
+#[cfg(target_os = "macos")]
 use crate::AudioRecorder;
+#[cfg(target_os = "macos")]
 use crate::AudioProcessor;
+#[cfg(target_os = "macos")]
 use crate::CpalAudioProcessor;
+#[cfg(target_os = "macos")]
 use crate::macos::safe_cocoa::{
     self, Application, StatusItem, Menu, MenuItem, MenuBarIcon,
     CocoaResult, CocoaError, setup_exception_handling
 };
 
 // Messages that can be sent from the UI thread to the app thread
+#[cfg(target_os = "macos")]
 pub enum UiToAppMessage {
     StartRecording,
     StopRecording,
@@ -24,6 +36,7 @@ pub enum UiToAppMessage {
 }
 
 // Messages that can be sent from the app thread to the UI thread
+#[cfg(target_os = "macos")]
 pub enum AppToUiMessage {
     RecordingStarted,
     RecordingStopped,
