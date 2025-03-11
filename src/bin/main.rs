@@ -117,6 +117,7 @@ fn main() {
 
     // Create macOS menu bar app if we're on macOS
     #[cfg(target_os = "macos")]
+    #[cfg(feature = "menu-bar")]
     let mut menu_app = MenuBarApp::new();
 
     // Continuous recording mode
@@ -124,6 +125,7 @@ fn main() {
         println!("Starting in continuous recording mode");
 
         #[cfg(target_os = "macos")]
+        #[cfg(feature = "menu-bar")]
         menu_app.update_status(true);
 
         match recorder.start_recording() {
@@ -155,6 +157,7 @@ fn main() {
         println!("Stopping recording...");
 
         #[cfg(target_os = "macos")]
+        #[cfg(feature = "menu-bar")]
         menu_app.update_status(false);
 
         // Finalize the recording
@@ -166,6 +169,7 @@ fn main() {
         println!("Starting single recording");
 
         #[cfg(target_os = "macos")]
+        #[cfg(feature = "menu-bar")]
         menu_app.update_status(true);
 
         match recorder.start_recording() {
@@ -205,6 +209,7 @@ fn main() {
         println!("Stopping recording...");
 
         #[cfg(target_os = "macos")]
+        #[cfg(feature = "menu-bar")]
         menu_app.update_status(false);
 
         // Finalize the recording

@@ -237,6 +237,7 @@ impl MenuBarApp {
         println!("Application exited.");
     }
 
+    #[cfg(feature = "menu-bar")]
     pub fn update_status(&mut self, is_recording: bool) {
         println!("MenuBarApp: Updating status to: {is_recording}");
 
