@@ -7,16 +7,16 @@
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
+use std::sync::mpsc::{channel, Receiver, Sender};
+#[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
 use std::thread;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
-#[cfg(target_os = "macos")]
-use std::sync::mpsc::{channel, Sender, Receiver};
 
 #[cfg(target_os = "macos")]
-use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
+use cocoa::appkit::{NSApp, NSApplicationActivationPolicy};
 #[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, BOOL, NO, YES};
 #[cfg(target_os = "macos")]
@@ -247,31 +247,36 @@ impl MenuBarApp {
 
         // Create a channel for thread communication
         let (tx, rx): (Sender<()>, Receiver<()>) = channel();
-        
+
         // Extract fields from self to avoid borrowing issues
         let is_recording = self.is_recording.clone();
         let recorder = self.recorder.clone();
         let config = self.config.clone();
         let status_item = self.status_item;
         let recording_start_time = self.recording_start_time.clone();
-        let status_update_thread = self.status_update_thread.clone();
+        let _status_update_thread = self.status_update_thread.clone();
+
+        // Create separate clones for the update_status_text closure
+        let is_recording_for_text = is_recording.clone();
+        let config_for_text = config.clone();
+        let recording_start_time_for_text = recording_start_time.clone();
 
         // Helper to update the recording status text
         let update_status_text = Arc::new(move || {
             // This function will only be called from the main thread
             unsafe {
                 let pool = NSAutoreleasePool::new(nil);
-                
+
                 let menu: id = msg_send![status_item, menu];
                 let status_item_menu: id = msg_send![menu, itemWithTag:10];
 
-                let status_text = if *is_recording.lock().unwrap() {
+                let status_text = if *is_recording_for_text.lock().unwrap() {
                     let duration = {
-                        let cfg = config.lock().unwrap();
+                        let cfg = config_for_text.lock().unwrap();
                         cfg.get_duration()
                     };
 
-                    if let Some(start_time) = *recording_start_time.lock().unwrap() {
+                    if let Some(start_time) = *recording_start_time_for_text.lock().unwrap() {
                         let elapsed = start_time.elapsed();
                         let elapsed_secs = elapsed.as_secs();
 
@@ -301,7 +306,7 @@ impl MenuBarApp {
                 // Also update output directory display
                 let current_dir_item: id = msg_send![menu, itemWithTag:301];
                 let output_dir = {
-                    let cfg = config.lock().unwrap();
+                    let cfg = config_for_text.lock().unwrap();
                     cfg.get_output_dir()
                 };
 
@@ -312,7 +317,7 @@ impl MenuBarApp {
                 pool.drain();
             }
         }) as Arc<dyn Fn()>;
-        
+
         // Start a background thread to poll for menu clicks
         thread::spawn(move || {
             println!("MenuBarApp: Background thread started, beginning event loop");
@@ -329,13 +334,13 @@ impl MenuBarApp {
         loop {
             // Wait for a signal from the background thread
             let _ = rx.recv_timeout(Duration::from_millis(100));
-            
+
             unsafe {
                 let pool = NSAutoreleasePool::new(nil);
 
                 // Check if menu items were clicked
                 let menu: id = msg_send![status_item, menu];
-                let selected_item: id = msg_send![menu, highlightedItem];
+                let _selected_item: id = msg_send![menu, highlightedItem];
 
                 // Process events to make the app responsive
                 let app = NSApp();
@@ -368,7 +373,10 @@ impl MenuBarApp {
                         let _: () = msg_send![status_item, setTitle:status_title];
 
                         // Start status update thread
-                        start_status_update_thread(is_recording.clone(), update_status_text.clone());
+                        start_status_update_thread(
+                            is_recording.clone(),
+                            update_status_text.clone(),
+                        );
 
                         // Reset click state
                         let _: () = msg_send![start_item, setWasClicked:NO];
@@ -385,8 +393,7 @@ impl MenuBarApp {
                                     cfg_lock.clone()
                                 };
 
-                                *rec_lock =
-                                    Some(AudioRecorder::with_config(processor, cfg_copy));
+                                *rec_lock = Some(AudioRecorder::with_config(processor, cfg_copy));
 
                                 // Start recording
                                 if let Some(rec) = rec_lock.as_mut() {
@@ -397,17 +404,18 @@ impl MenuBarApp {
                                             Some(std::time::Instant::now());
 
                                         // Update UI
-                                        let title =
-                                            NSString::alloc(nil).init_str("Stop Recording");
+                                        let title = NSString::alloc(nil).init_str("Stop Recording");
                                         let _: () = msg_send![start_item, setTitle:title];
 
                                         // Update status item color to red for recording
                                         let status_title = NSString::alloc(nil).init_str("🔴");
-                                        let _: () =
-                                            msg_send![status_item, setTitle:status_title];
+                                        let _: () = msg_send![status_item, setTitle:status_title];
 
                                         // Start status update thread
-                                        start_status_update_thread(is_recording.clone(), update_status_text.clone());
+                                        start_status_update_thread(
+                                            is_recording.clone(),
+                                            update_status_text.clone(),
+                                        );
                                     }
                                 }
                             }
@@ -444,8 +452,7 @@ impl MenuBarApp {
                             // Add checkmark to selected item and remove from others
                             for j in 0..10 {
                                 let other_tag = 100 + j;
-                                let other_item: id =
-                                    msg_send![menu, itemWithTag:other_tag as i64];
+                                let other_item: id = msg_send![menu, itemWithTag:other_tag as i64];
 
                                 if !other_item.is_null() {
                                     let state = if other_tag == tag { 1 } else { 0 };
@@ -488,8 +495,7 @@ impl MenuBarApp {
                             // Add checkmark to selected item and remove from others
                             for j in 0..10 {
                                 let other_tag = 200 + j;
-                                let other_item: id =
-                                    msg_send![menu, itemWithTag:other_tag as i64];
+                                let other_item: id = msg_send![menu, itemWithTag:other_tag as i64];
 
                                 if !other_item.is_null() {
                                     let state = if other_tag == tag { 1 } else { 0 };
@@ -566,54 +572,10 @@ impl MenuBarApp {
         }
     }
 
-    pub fn update_status(&self, is_recording: bool) {
-        unsafe {
-            let pool = NSAutoreleasePool::new(nil);
-
-            // Update recording state
-            *self.is_recording.lock().unwrap() = is_recording;
-
-            // Update recording start time
-            if is_recording {
-                *self.recording_start_time.lock().unwrap() = Some(std::time::Instant::now());
-            } else {
-                *self.recording_start_time.lock().unwrap() = None;
-            }
-
-            // Update menu title
-            let menu: id = msg_send![self.status_item, menu];
-            let start_item: id = msg_send![menu, itemWithTag:1];
-
-            let title = if is_recording {
-                "Stop Recording"
-            } else {
-                "Start Recording"
-            };
-
-            let ns_title = NSString::alloc(nil).init_str(title);
-            let _: () = msg_send![start_item, setTitle:ns_title];
-
-            // Update status item indicator
-            let status_title =
-                NSString::alloc(nil).init_str(if is_recording { "🔴" } else { "●" });
-            let _: () = msg_send![self.status_item, setTitle:status_title];
-
-            // Update status text
-            let status_item_menu: id = msg_send![menu, itemWithTag:10];
-            let status_text = if is_recording {
-                "Recording..."
-            } else {
-                "Not recording"
-            };
-            let ns_status = NSString::alloc(nil).init_str(status_text);
-            let _: () = msg_send![status_item_menu, setTitle:ns_status];
-
-            pool.drain();
-
-            // Start or stop the status update thread
-            if let Some(start_thread_fn) = self.start_status_thread() {
-                start_thread_fn();
-            }
+    /// Updates the recording status
+    pub fn update_status(&mut self, is_recording: bool) {
+        if let Ok(mut recording) = self.is_recording.lock() {
+            *recording = is_recording;
         }
     }
 
@@ -719,7 +681,8 @@ impl MenuBarApp {
                 }));
             } else {
                 // Update one last time to show "Not recording"
-                update_fn();
+                let menu: id = msg_send![status_item, menu];
+                update_status_text_in_thread(status_item, menu);
             }
         }))
     }
@@ -957,27 +920,40 @@ mod tests {
 
 // For the second thread spawn issue around line 745
 #[cfg(target_os = "macos")]
-fn start_status_update_thread(
-    is_recording: Arc<Mutex<bool>>,
-    update_status_text: Arc<dyn Fn()>
-) {
+fn start_status_update_thread(is_recording: Arc<Mutex<bool>>, _update_status_text: Arc<dyn Fn()>) {
     // Create a channel to communicate with the main thread
-    let (tx, rx) = channel();
+    let (tx, _rx) = channel();
     
     // Spawn a thread that doesn't use Objective-C objects
     thread::spawn(move || {
         while {
             let recording = *is_recording.lock().unwrap();
-            
+
             if recording {
                 // Signal the main thread to update the UI
                 let _ = tx.send(());
-                
+
                 // Sleep for a bit
                 thread::sleep(Duration::from_millis(500));
             }
-            
+
             recording
         } {}
     });
+}
+
+// Fix the update_fn error at line 679
+#[cfg(target_os = "macos")]
+fn update_status_text_in_thread(_status_item: id, menu: id) {
+    unsafe {
+        let pool = NSAutoreleasePool::new(nil);
+        
+        // Update status text
+        let status_item_menu: id = msg_send![menu, itemWithTag:10];
+        let status_text = "Not recording";
+        let ns_status = NSString::alloc(nil).init_str(status_text);
+        let _: () = msg_send![status_item_menu, setTitle:ns_status];
+        
+        pool.drain();
+    }
 }

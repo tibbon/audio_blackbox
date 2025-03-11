@@ -237,20 +237,11 @@ impl MenuBarApp {
         println!("Application exited.");
     }
 
-    #[cfg(feature = "menu-bar")]
+    /// Updates the recording status
+    #[allow(dead_code)]
     pub fn update_status(&mut self, is_recording: bool) {
-        println!("MenuBarApp: Updating status to: {is_recording}");
-
-        // Update the shared state
-        *self.state.is_recording.lock().unwrap() = is_recording;
-
-        // Send control message
-        if let Some(sender) = &self.control_sender {
-            if is_recording {
-                let _ = sender.send(ControlMessage::StartRecording);
-            } else {
-                let _ = sender.send(ControlMessage::StopRecording);
-            }
+        if let Ok(mut recording) = self.state.is_recording.lock() {
+            *recording = is_recording;
         }
     }
 
