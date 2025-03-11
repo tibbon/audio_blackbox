@@ -64,6 +64,7 @@ impl Drop for AutoreleasePool {
 }
 
 /// Wrapper around cocoa::msg_send! that provides better error handling
+#[cfg(target_os = "macos")]
 #[macro_export]
 macro_rules! safe_msg_send {
     ($obj:expr, $selector:ident) => {
@@ -91,10 +92,12 @@ macro_rules! safe_msg_send {
 }
 
 /// Safe wrapper around NSString
+#[cfg(target_os = "macos")]
 pub struct SafeNSString {
     ns_string: id,
 }
 
+#[cfg(target_os = "macos")]
 impl SafeNSString {
     /// Create a new NSString from a Rust string
     pub fn new(string: &str) -> CocoaResult<Self> {
@@ -176,6 +179,7 @@ impl MenuBarIcon {
 }
 
 /// Menu item action type
+#[cfg(target_os = "macos")]
 pub type MenuItemAction = Box<dyn Fn() + Send + 'static>;
 
 /// Represents a single menu item
@@ -284,11 +288,13 @@ impl Menu {
 }
 
 /// Represents a status item in the macOS menu bar
+#[cfg(target_os = "macos")]
 pub struct StatusItem {
     status_item: id,
     menu: Option<Menu>,
 }
 
+#[cfg(target_os = "macos")]
 impl StatusItem {
     /// Create a new status item in the menu bar
     pub fn new() -> CocoaResult<Self> {
