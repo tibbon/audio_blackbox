@@ -16,15 +16,15 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
 #[cfg(target_os = "macos")]
-use cocoa::base::{id, nil, YES, BOOL, NO};
+use cocoa::base::{id, nil, BOOL, NO, YES};
 #[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSString};
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
 #[cfg(target_os = "macos")]
-use objc::{class, msg_send, sel, sel_impl};
-#[cfg(target_os = "macos")]
 use objc::runtime::{Object, Sel};
+#[cfg(target_os = "macos")]
+use objc::{class, msg_send, sel, sel_impl};
 
 #[cfg(target_os = "macos")]
 use crate::AppConfig;
