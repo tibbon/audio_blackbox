@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
+#[cfg(target_os = "macos")]
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
@@ -234,7 +236,7 @@ impl MenuBarApp {
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(self) -> ! {
         println!("MenuBarApp: Starting application run loop");
         // Set up main app
         unsafe {
@@ -243,8 +245,10 @@ impl MenuBarApp {
             let _: () = msg_send![app, setActivationPolicy:NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory];
         }
 
-        println!("MenuBarApp: Creating background thread for menu poll");
-        // Create a thread to check for menu item clicks
+        // Create a channel for thread communication
+        let (tx, rx): (Sender<()>, Receiver<()>) = channel();
+        
+        // Extract fields from self to avoid borrowing issues
         let is_recording = self.is_recording.clone();
         let recorder = self.recorder.clone();
         let config = self.config.clone();
@@ -253,106 +257,62 @@ impl MenuBarApp {
         let status_update_thread = self.status_update_thread.clone();
 
         // Helper to update the recording status text
-        let update_status_text = {
-            let is_recording = is_recording.clone();
-            let recording_start_time = recording_start_time.clone();
-            let config = config.clone();
-            let status_item = status_item;
+        let update_status_text = Arc::new(move || {
+            // This function will only be called from the main thread
+            unsafe {
+                let pool = NSAutoreleasePool::new(nil);
+                
+                let menu: id = msg_send![status_item, menu];
+                let status_item_menu: id = msg_send![menu, itemWithTag:10];
 
-            move || {
-                unsafe {
-                    let pool = NSAutoreleasePool::new(nil);
+                let status_text = if *is_recording.lock().unwrap() {
+                    let duration = {
+                        let cfg = config.lock().unwrap();
+                        cfg.get_duration()
+                    };
 
-                    let menu: id = msg_send![status_item, menu];
-                    let status_item_menu: id = msg_send![menu, itemWithTag:10];
+                    if let Some(start_time) = *recording_start_time.lock().unwrap() {
+                        let elapsed = start_time.elapsed();
+                        let elapsed_secs = elapsed.as_secs();
 
-                    let status_text = if *is_recording.lock().unwrap() {
-                        let duration = {
-                            let cfg = config.lock().unwrap();
-                            cfg.get_duration()
-                        };
-
-                        if let Some(start_time) = *recording_start_time.lock().unwrap() {
-                            let elapsed = start_time.elapsed();
-                            let elapsed_secs = elapsed.as_secs();
-
-                            if duration > 0 {
-                                // Fixed duration recording
-                                let remaining = if duration > elapsed_secs {
-                                    duration - elapsed_secs
-                                } else {
-                                    0
-                                };
-
-                                format!("Recording: {} remaining", format_duration(remaining))
+                        if duration > 0 {
+                            // Fixed duration recording
+                            let remaining = if duration > elapsed_secs {
+                                duration - elapsed_secs
                             } else {
-                                // Continuous recording
-                                format!("Recording: {} elapsed", format_duration(elapsed_secs))
-                            }
+                                0
+                            };
+
+                            format!("Recording: {} remaining", format_duration(remaining))
                         } else {
-                            "Recording...".to_string()
+                            // Continuous recording
+                            format!("Recording: {} elapsed", format_duration(elapsed_secs))
                         }
                     } else {
-                        "Not recording".to_string()
-                    };
-
-                    let ns_status = NSString::alloc(nil).init_str(&status_text);
-                    let _: () = msg_send![status_item_menu, setTitle:ns_status];
-
-                    // Also update output directory display
-                    let current_dir_item: id = msg_send![menu, itemWithTag:301];
-                    let output_dir = {
-                        let cfg = config.lock().unwrap();
-                        cfg.get_output_dir()
-                    };
-
-                    let dir_text = format!("Output: {}", output_dir);
-                    let ns_dir = NSString::alloc(nil).init_str(&dir_text);
-                    let _: () = msg_send![current_dir_item, setTitle:ns_dir];
-
-                    pool.drain();
-                }
-            }
-        };
-
-        // Start a status update thread that updates the UI with recording status
-        let start_status_thread = {
-            let is_recording = is_recording.clone();
-            let status_update_thread = status_update_thread.clone();
-
-            move || {
-                // First stop any existing thread
-                let mut thread_guard = status_update_thread.lock().unwrap();
-                if let Some(handle) = thread_guard.take() {
-                    let _ = handle.join();
-                }
-
-                // Start a new thread if recording
-                if *is_recording.lock().unwrap() {
-                    let update_fn = update_status_text.clone();
-                    *thread_guard = Some(thread::spawn(move || {
-                        while {
-                            // Check if still recording
-                            let recording = *is_recording.lock().unwrap();
-
-                            if recording {
-                                // Update status text
-                                update_fn();
-
-                                // Sleep for a bit
-                                thread::sleep(Duration::from_millis(500));
-                            }
-
-                            recording
-                        } {}
-                    }));
+                        "Recording...".to_string()
+                    }
                 } else {
-                    // Update one last time to show "Not recording"
-                    update_status_text();
-                }
-            }
-        };
+                    "Not recording".to_string()
+                };
 
+                let ns_status = NSString::alloc(nil).init_str(&status_text);
+                let _: () = msg_send![status_item_menu, setTitle:ns_status];
+
+                // Also update output directory display
+                let current_dir_item: id = msg_send![menu, itemWithTag:301];
+                let output_dir = {
+                    let cfg = config.lock().unwrap();
+                    cfg.get_output_dir()
+                };
+
+                let dir_text = format!("Output: {}", output_dir);
+                let ns_dir = NSString::alloc(nil).init_str(&dir_text);
+                let _: () = msg_send![current_dir_item, setTitle:ns_dir];
+
+                pool.drain();
+            }
+        }) as Arc<dyn Fn()>;
+        
         // Start a background thread to poll for menu clicks
         thread::spawn(move || {
             println!("MenuBarApp: Background thread started, beginning event loop");
@@ -360,251 +320,250 @@ impl MenuBarApp {
                 // Sleep to avoid high CPU usage
                 thread::sleep(Duration::from_millis(100));
 
-                unsafe {
-                    let pool = NSAutoreleasePool::new(nil);
-
-                    // Check if menu items were clicked
-                    let menu: id = msg_send![status_item, menu];
-                    let selected_item: id = msg_send![menu, highlightedItem];
-
-                    // Process events to make the app responsive
-                    let app = NSApp();
-                    let _: () = msg_send![app, updateWindows];
-
-                    // Periodically process events
-                    let _current_loop = CFRunLoop::get_current();
-                    CFRunLoop::run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(100), true);
-
-                    // Check the recording item - if it was clicked, toggle recording
-                    let start_item: id = msg_send![menu, itemWithTag:1];
-                    let clicked: BOOL = msg_send![start_item, wasClicked];
-
-                    if clicked == YES {
-                        if *is_recording.lock().unwrap() {
-                            // Stop recording
-                            let mut rec_lock = recorder.lock().unwrap();
-                            *rec_lock = None;
-
-                            // Update recording state
-                            *is_recording.lock().unwrap() = false;
-                            *recording_start_time.lock().unwrap() = None;
-
-                            // Update UI
-                            let title = NSString::alloc(nil).init_str("Start Recording");
-                            let _: () = msg_send![start_item, setTitle:title];
-
-                            // Update status item color
-                            let status_title = NSString::alloc(nil).init_str("●");
-                            let _: () = msg_send![status_item, setTitle:status_title];
-
-                            // Update status thread
-                            start_status_thread();
-
-                            // Reset click state
-                            let _: () = msg_send![start_item, setWasClicked:NO];
-                        } else {
-                            // Start recording
-                            let mut rec_lock = recorder.lock().unwrap();
-
-                            if rec_lock.is_none() {
-                                // Create processor and recorder
-                                if let Ok(processor) = CpalAudioProcessor::new() {
-                                    // Create a copy of the config
-                                    let cfg_copy = {
-                                        let cfg_lock = config.lock().unwrap();
-                                        cfg_lock.clone()
-                                    };
-
-                                    *rec_lock =
-                                        Some(AudioRecorder::with_config(processor, cfg_copy));
-
-                                    // Start recording
-                                    if let Some(rec) = rec_lock.as_mut() {
-                                        if let Ok(_) = rec.start_recording() {
-                                            // Update recording state
-                                            *is_recording.lock().unwrap() = true;
-                                            *recording_start_time.lock().unwrap() =
-                                                Some(std::time::Instant::now());
-
-                                            // Update UI
-                                            let title =
-                                                NSString::alloc(nil).init_str("Stop Recording");
-                                            let _: () = msg_send![start_item, setTitle:title];
-
-                                            // Update status item color to red for recording
-                                            let status_title = NSString::alloc(nil).init_str("🔴");
-                                            let _: () =
-                                                msg_send![status_item, setTitle:status_title];
-
-                                            // Start status update thread
-                                            start_status_thread();
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Reset click state
-                            let _: () = msg_send![start_item, setWasClicked:NO];
-                        }
-                    }
-
-                    // Check for duration menu clicks (tag range 100-110)
-                    for i in 0..10 {
-                        let tag = 100 + i;
-                        let duration_item: id = msg_send![menu, itemWithTag:tag as i64];
-
-                        if !duration_item.is_null() {
-                            let clicked: BOOL = msg_send![duration_item, wasClicked];
-
-                            if clicked == YES {
-                                let seconds: i64 = msg_send![duration_item, representedObject];
-
-                                // Update configuration
-                                {
-                                    let mut cfg = config.lock().unwrap();
-                                    cfg.duration = Some(seconds as u64);
-                                }
-
-                                // Reset click state
-                                let _: () = msg_send![duration_item, setWasClicked:NO];
-
-                                // Update status display
-                                update_status_text();
-
-                                // Add checkmark to selected item and remove from others
-                                for j in 0..10 {
-                                    let other_tag = 100 + j;
-                                    let other_item: id =
-                                        msg_send![menu, itemWithTag:other_tag as i64];
-
-                                    if !other_item.is_null() {
-                                        let state = if other_tag == tag { 1 } else { 0 };
-                                        let _: () = msg_send![other_item, setState:state];
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Check for channel menu clicks (tag range 200-210)
-                    for i in 0..10 {
-                        let tag = 200 + i;
-                        let channel_item: id = msg_send![menu, itemWithTag:tag as i64];
-
-                        if !channel_item.is_null() {
-                            let clicked: BOOL = msg_send![channel_item, wasClicked];
-
-                            if clicked == YES {
-                                // Get the title which includes the channel spec
-                                let title: id = msg_send![channel_item, title];
-                                let channels_str = nsstring_to_string(title);
-
-                                // Extract just the channel spec (before the space)
-                                let channel_spec = if let Some(idx) = channels_str.find(' ') {
-                                    channels_str[..idx].to_string()
-                                } else {
-                                    channels_str
-                                };
-
-                                // Update configuration
-                                {
-                                    let mut cfg = config.lock().unwrap();
-                                    cfg.audio_channels = Some(channel_spec);
-                                }
-
-                                // Reset click state
-                                let _: () = msg_send![channel_item, setWasClicked:NO];
-
-                                // Add checkmark to selected item and remove from others
-                                for j in 0..10 {
-                                    let other_tag = 200 + j;
-                                    let other_item: id =
-                                        msg_send![menu, itemWithTag:other_tag as i64];
-
-                                    if !other_item.is_null() {
-                                        let state = if other_tag == tag { 1 } else { 0 };
-                                        let _: () = msg_send![other_item, setState:state];
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Check for output directory selection (tag 300)
-                    let dir_item: id = msg_send![menu, itemWithTag:300 as i64];
-                    if !dir_item.is_null() {
-                        let clicked: BOOL = msg_send![dir_item, wasClicked];
-
-                        if clicked == YES {
-                            // Open directory selection dialog
-                            let panel: id = msg_send![class!(NSOpenPanel), openPanel];
-                            let _: () = msg_send![panel, setCanChooseDirectories:YES];
-                            let _: () = msg_send![panel, setCanChooseFiles:NO];
-                            let _: () = msg_send![panel, setAllowsMultipleSelection:NO];
-                            let _: () =
-                                msg_send![panel, setPrompt:NSString::alloc(nil).init_str("Select")];
-                            let _: () = msg_send![panel, setTitle:NSString::alloc(nil).init_str("Choose Output Directory")];
-
-                            let response: i64 = msg_send![panel, runModal];
-
-                            if response == 1 {
-                                // NSModalResponseOK
-                                let urls: id = msg_send![panel, URLs];
-                                let count: u64 = msg_send![urls, count];
-
-                                if count > 0 {
-                                    let url: id = msg_send![urls, objectAtIndex:0];
-                                    let path: id = msg_send![url, path];
-                                    let path_str = nsstring_to_string(path);
-
-                                    // Update configuration
-                                    {
-                                        let mut cfg = config.lock().unwrap();
-                                        cfg.output_dir = Some(path_str);
-                                    }
-
-                                    // Update status display
-                                    update_status_text();
-                                }
-                            }
-
-                            // Reset click state
-                            let _: () = msg_send![dir_item, setWasClicked:NO];
-                        }
-                    }
-
-                    // Check the quit item
-                    let quit_item: id = msg_send![menu, itemWithTag:2];
-                    let clicked: BOOL = msg_send![quit_item, wasClicked];
-
-                    if clicked == YES {
-                        // Stop any active recording before quitting
-                        if *is_recording.lock().unwrap() {
-                            let mut rec_lock = recorder.lock().unwrap();
-                            *rec_lock = None;
-                        }
-
-                        // Quit the app
-                        let _: () = msg_send![app, terminate:nil];
-
-                        // Reset click state (though we're terminating)
-                        let _: () = msg_send![quit_item, setWasClicked:NO];
-                    }
-
-                    pool.drain();
-                }
+                // Send a signal to the main thread to process events
+                let _ = tx.send(());
             }
         });
 
-        // Run the application
-        println!("MenuBarApp: Starting macOS application main run loop");
-        unsafe {
-            let app = NSApp();
-            println!("MenuBarApp: Calling app.run()");
-            app.run();
-            println!("MenuBarApp: app.run() returned - this should not happen normally");
+        // Main thread event loop
+        loop {
+            // Wait for a signal from the background thread
+            let _ = rx.recv_timeout(Duration::from_millis(100));
+            
+            unsafe {
+                let pool = NSAutoreleasePool::new(nil);
+
+                // Check if menu items were clicked
+                let menu: id = msg_send![status_item, menu];
+                let selected_item: id = msg_send![menu, highlightedItem];
+
+                // Process events to make the app responsive
+                let app = NSApp();
+                let _: () = msg_send![app, updateWindows];
+
+                // Periodically process events
+                let _current_loop = CFRunLoop::get_current();
+                CFRunLoop::run_in_mode(kCFRunLoopDefaultMode, Duration::from_millis(100), true);
+
+                // Check the recording item - if it was clicked, toggle recording
+                let start_item: id = msg_send![menu, itemWithTag:1];
+                let clicked: BOOL = msg_send![start_item, wasClicked];
+
+                if clicked == YES {
+                    if *is_recording.lock().unwrap() {
+                        // Stop recording
+                        let mut rec_lock = recorder.lock().unwrap();
+                        *rec_lock = None;
+
+                        // Update recording state
+                        *is_recording.lock().unwrap() = false;
+                        *recording_start_time.lock().unwrap() = None;
+
+                        // Update UI
+                        let title = NSString::alloc(nil).init_str("Start Recording");
+                        let _: () = msg_send![start_item, setTitle:title];
+
+                        // Update status item color
+                        let status_title = NSString::alloc(nil).init_str("●");
+                        let _: () = msg_send![status_item, setTitle:status_title];
+
+                        // Start status update thread
+                        start_status_update_thread(is_recording.clone(), update_status_text.clone());
+
+                        // Reset click state
+                        let _: () = msg_send![start_item, setWasClicked:NO];
+                    } else {
+                        // Start recording
+                        let mut rec_lock = recorder.lock().unwrap();
+
+                        if rec_lock.is_none() {
+                            // Create processor and recorder
+                            if let Ok(processor) = CpalAudioProcessor::new() {
+                                // Create a copy of the config
+                                let cfg_copy = {
+                                    let cfg_lock = config.lock().unwrap();
+                                    cfg_lock.clone()
+                                };
+
+                                *rec_lock =
+                                    Some(AudioRecorder::with_config(processor, cfg_copy));
+
+                                // Start recording
+                                if let Some(rec) = rec_lock.as_mut() {
+                                    if let Ok(_) = rec.start_recording() {
+                                        // Update recording state
+                                        *is_recording.lock().unwrap() = true;
+                                        *recording_start_time.lock().unwrap() =
+                                            Some(std::time::Instant::now());
+
+                                        // Update UI
+                                        let title =
+                                            NSString::alloc(nil).init_str("Stop Recording");
+                                        let _: () = msg_send![start_item, setTitle:title];
+
+                                        // Update status item color to red for recording
+                                        let status_title = NSString::alloc(nil).init_str("🔴");
+                                        let _: () =
+                                            msg_send![status_item, setTitle:status_title];
+
+                                        // Start status update thread
+                                        start_status_update_thread(is_recording.clone(), update_status_text.clone());
+                                    }
+                                }
+                            }
+                        }
+
+                        // Reset click state
+                        let _: () = msg_send![start_item, setWasClicked:NO];
+                    }
+                }
+
+                // Check for duration menu clicks (tag range 100-110)
+                for i in 0..10 {
+                    let tag = 100 + i;
+                    let duration_item: id = msg_send![menu, itemWithTag:tag as i64];
+
+                    if !duration_item.is_null() {
+                        let clicked: BOOL = msg_send![duration_item, wasClicked];
+
+                        if clicked == YES {
+                            let seconds: i64 = msg_send![duration_item, representedObject];
+
+                            // Update configuration
+                            {
+                                let mut cfg = config.lock().unwrap();
+                                cfg.duration = Some(seconds as u64);
+                            }
+
+                            // Reset click state
+                            let _: () = msg_send![duration_item, setWasClicked:NO];
+
+                            // Update status display
+                            update_status_text();
+
+                            // Add checkmark to selected item and remove from others
+                            for j in 0..10 {
+                                let other_tag = 100 + j;
+                                let other_item: id =
+                                    msg_send![menu, itemWithTag:other_tag as i64];
+
+                                if !other_item.is_null() {
+                                    let state = if other_tag == tag { 1 } else { 0 };
+                                    let _: () = msg_send![other_item, setState:state];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check for channel menu clicks (tag range 200-210)
+                for i in 0..10 {
+                    let tag = 200 + i;
+                    let channel_item: id = msg_send![menu, itemWithTag:tag as i64];
+
+                    if !channel_item.is_null() {
+                        let clicked: BOOL = msg_send![channel_item, wasClicked];
+
+                        if clicked == YES {
+                            // Get the title which includes the channel spec
+                            let title: id = msg_send![channel_item, title];
+                            let channels_str = nsstring_to_string(title);
+
+                            // Extract just the channel spec (before the space)
+                            let channel_spec = if let Some(idx) = channels_str.find(' ') {
+                                channels_str[..idx].to_string()
+                            } else {
+                                channels_str
+                            };
+
+                            // Update configuration
+                            {
+                                let mut cfg = config.lock().unwrap();
+                                cfg.audio_channels = Some(channel_spec);
+                            }
+
+                            // Reset click state
+                            let _: () = msg_send![channel_item, setWasClicked:NO];
+
+                            // Add checkmark to selected item and remove from others
+                            for j in 0..10 {
+                                let other_tag = 200 + j;
+                                let other_item: id =
+                                    msg_send![menu, itemWithTag:other_tag as i64];
+
+                                if !other_item.is_null() {
+                                    let state = if other_tag == tag { 1 } else { 0 };
+                                    let _: () = msg_send![other_item, setState:state];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check for output directory selection (tag 300)
+                let dir_item: id = msg_send![menu, itemWithTag:300 as i64];
+                if !dir_item.is_null() {
+                    let clicked: BOOL = msg_send![dir_item, wasClicked];
+
+                    if clicked == YES {
+                        // Open directory selection dialog
+                        let panel: id = msg_send![class!(NSOpenPanel), openPanel];
+                        let _: () = msg_send![panel, setCanChooseDirectories:YES];
+                        let _: () = msg_send![panel, setCanChooseFiles:NO];
+                        let _: () = msg_send![panel, setAllowsMultipleSelection:NO];
+                        let _: () =
+                            msg_send![panel, setPrompt:NSString::alloc(nil).init_str("Select")];
+                        let _: () = msg_send![panel, setTitle:NSString::alloc(nil).init_str("Choose Output Directory")];
+
+                        let response: i64 = msg_send![panel, runModal];
+
+                        if response == 1 {
+                            // NSModalResponseOK
+                            let urls: id = msg_send![panel, URLs];
+                            let count: u64 = msg_send![urls, count];
+
+                            if count > 0 {
+                                let url: id = msg_send![urls, objectAtIndex:0];
+                                let path: id = msg_send![url, path];
+                                let path_str = nsstring_to_string(path);
+
+                                // Update configuration
+                                {
+                                    let mut cfg = config.lock().unwrap();
+                                    cfg.output_dir = Some(path_str);
+                                }
+
+                                // Update status display
+                                update_status_text();
+                            }
+                        }
+
+                        // Reset click state
+                        let _: () = msg_send![dir_item, setWasClicked:NO];
+                    }
+                }
+
+                // Check the quit item
+                let quit_item: id = msg_send![menu, itemWithTag:2];
+                let clicked: BOOL = msg_send![quit_item, wasClicked];
+
+                if clicked == YES {
+                    // Stop any active recording before quitting
+                    if *is_recording.lock().unwrap() {
+                        let mut rec_lock = recorder.lock().unwrap();
+                        *rec_lock = None;
+                    }
+
+                    // Quit the app
+                    let _: () = msg_send![app, terminate:nil];
+
+                    // Reset click state (though we're terminating)
+                    let _: () = msg_send![quit_item, setWasClicked:NO];
+                }
+
+                pool.drain();
+            }
         }
-        println!("MenuBarApp: Application terminated");
     }
 
     pub fn update_status(&self, is_recording: bool) {
@@ -760,7 +719,7 @@ impl MenuBarApp {
                 }));
             } else {
                 // Update one last time to show "Not recording"
-                update_status_text();
+                update_fn();
             }
         }))
     }
@@ -994,4 +953,31 @@ mod tests {
         assert_eq!(format_duration(3600), "1:00:00");
         assert_eq!(format_duration(3665), "1:01:05");
     }
+}
+
+// For the second thread spawn issue around line 745
+#[cfg(target_os = "macos")]
+fn start_status_update_thread(
+    is_recording: Arc<Mutex<bool>>,
+    update_status_text: Arc<dyn Fn()>
+) {
+    // Create a channel to communicate with the main thread
+    let (tx, rx) = channel();
+    
+    // Spawn a thread that doesn't use Objective-C objects
+    thread::spawn(move || {
+        while {
+            let recording = *is_recording.lock().unwrap();
+            
+            if recording {
+                // Signal the main thread to update the UI
+                let _ = tx.send(());
+                
+                // Sleep for a bit
+                thread::sleep(Duration::from_millis(500));
+            }
+            
+            recording
+        } {}
+    });
 }
