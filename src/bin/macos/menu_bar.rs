@@ -2,6 +2,7 @@
 #![allow(clippy::arc_with_non_send_sync)]
 // Allow thread safety warnings for macOS-specific code
 #![allow(clippy::non_send_fields_in_send_ty)]
+#![allow(clippy::significant_drop_in_scrutinee)]
 
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
@@ -15,13 +16,15 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
 #[cfg(target_os = "macos")]
-use cocoa::base::{id, nil, YES};
+use cocoa::base::{id, nil, YES, BOOL, NO};
 #[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSString};
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
+#[cfg(target_os = "macos")]
+use objc::runtime::{Object, Sel};
 
 #[cfg(target_os = "macos")]
 use crate::AppConfig;
@@ -376,7 +379,7 @@ impl MenuBarApp {
                     let start_item: id = msg_send![menu, itemWithTag:1];
                     let clicked: BOOL = msg_send![start_item, wasClicked];
 
-                    if clicked != NO {
+                    if clicked == YES {
                         if *is_recording.lock().unwrap() {
                             // Stop recording
                             let mut rec_lock = recorder.lock().unwrap();
@@ -453,7 +456,7 @@ impl MenuBarApp {
                         if !duration_item.is_null() {
                             let clicked: BOOL = msg_send![duration_item, wasClicked];
 
-                            if clicked != NO {
+                            if clicked == YES {
                                 let seconds: i64 = msg_send![duration_item, representedObject];
 
                                 // Update configuration
@@ -491,7 +494,7 @@ impl MenuBarApp {
                         if !channel_item.is_null() {
                             let clicked: BOOL = msg_send![channel_item, wasClicked];
 
-                            if clicked != NO {
+                            if clicked == YES {
                                 // Get the title which includes the channel spec
                                 let title: id = msg_send![channel_item, title];
                                 let channels_str = nsstring_to_string(title);
@@ -532,7 +535,7 @@ impl MenuBarApp {
                     if !dir_item.is_null() {
                         let clicked: BOOL = msg_send![dir_item, wasClicked];
 
-                        if clicked != NO {
+                        if clicked == YES {
                             // Open directory selection dialog
                             let panel: id = msg_send![class!(NSOpenPanel), openPanel];
                             let _: () = msg_send![panel, setCanChooseDirectories:YES];
@@ -574,7 +577,7 @@ impl MenuBarApp {
                     let quit_item: id = msg_send![menu, itemWithTag:2];
                     let clicked: BOOL = msg_send![quit_item, wasClicked];
 
-                    if clicked != NO {
+                    if clicked == YES {
                         // Stop any active recording before quitting
                         if *is_recording.lock().unwrap() {
                             let mut rec_lock = recorder.lock().unwrap();
@@ -803,10 +806,6 @@ pub fn process_system_events() {
     }
 }
 
-// NSMenuItem extension
-#[allow(non_upper_case_globals)]
-const NO: i8 = 0;
-
 #[cfg(target_os = "macos")]
 trait NSMenuItemExtensions {
     fn set_action(&self, action: extern "C" fn(&Object, Sel, id));
@@ -818,7 +817,7 @@ impl NSMenuItemExtensions for id {
     fn set_action(&self, action: extern "C" fn(&Object, Sel, id)) {
         unsafe {
             let obj_ref = (*self).as_ref();
-            if let Some(obj_ref) = obj_ref {
+            if let Some(_obj_ref) = obj_ref {
                 let obj_mut = (*self).as_mut();
                 if let Some(obj_mut) = obj_mut {
                     let _: () = msg_send![obj_mut, setAction:action];
@@ -830,7 +829,7 @@ impl NSMenuItemExtensions for id {
     fn set_target(&self, target: id) {
         unsafe {
             let obj_ref = (*self).as_ref();
-            if let Some(obj_ref) = obj_ref {
+            if let Some(_obj_ref) = obj_ref {
                 let obj_mut = (*self).as_mut();
                 if let Some(obj_mut) = obj_mut {
                     let _: () = msg_send![obj_mut, setTarget:target];
