@@ -233,8 +233,13 @@ final class RecordingState: ObservableObject {
                 statusText = "Disk Full"
                 return
             }
-            // Write errors
-            if let writeErrors = status["write_errors"] as? Int, writeErrors > 0 {
+            // Write errors — auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
+            if let writeErrors = status["write_errors"] as? Int, writeErrors > 48_000 {
+                stop()
+                errorMessage = "Recording stopped: excessive audio data loss (\(writeErrors) samples dropped)"
+                statusText = "Error"
+                return
+            } else if let writeErrors = status["write_errors"] as? Int, writeErrors > 0 {
                 errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
             }
         }
