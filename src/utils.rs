@@ -71,7 +71,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, String> {
     }
 
     // Remove duplicate channels
-    channels.sort();
+    channels.sort_unstable();
     channels.dedup();
 
     Ok(channels)

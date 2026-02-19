@@ -289,29 +289,22 @@ impl CpalAudioProcessor {
 
         // Finalize the main WAV file if it exists
         if let Some(writer) = self.writer.lock().unwrap().take() {
-            let file_path = if output_mode == "single" && channels.len() > 2 {
-                let now: DateTime<Local> = Local::now();
-                format!(
-                    "{}/{}-{:02}-{:02}-{:02}-{:02}-multichannel.wav",
-                    self.output_dir,
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute() - (now.minute() % 5) // Round to nearest 5 minutes for better organization
-                )
+            let now: DateTime<Local> = Local::now();
+            let suffix = if output_mode == "single" && channels.len() > 2 {
+                "-multichannel.wav"
             } else {
-                let now: DateTime<Local> = Local::now();
-                format!(
-                    "{}/{}-{:02}-{:02}-{:02}-{:02}.wav",
-                    self.output_dir,
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute() - (now.minute() % 5)
-                )
+                ".wav"
             };
+            let file_path = format!(
+                "{}/{}-{:02}-{:02}-{:02}-{:02}{}",
+                self.output_dir,
+                now.year(),
+                now.month(),
+                now.day(),
+                now.hour(),
+                now.minute() - (now.minute() % 5),
+                suffix
+            );
 
             created_files.push(file_path.clone());
 
@@ -490,12 +483,12 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Setup the appropriate output mode
         let valid_modes = ["split", "single"];
-        if !valid_modes.contains(&output_mode) {
-            panic!(
-                "Invalid output mode: '{}'. Valid options are: {:?}",
-                output_mode, valid_modes
-            );
-        }
+        assert!(
+            valid_modes.contains(&output_mode),
+            "Invalid output mode: '{}'. Valid options are: {:?}",
+            output_mode,
+            valid_modes
+        );
 
         match output_mode {
             "split" => {
@@ -580,29 +573,22 @@ impl AudioProcessor for CpalAudioProcessor {
 
                                 // Finalize the main WAV file if it exists
                                 if let Some(writer) = writer_for_rotation.lock().unwrap().take() {
-                                    let file_path = if output_mode == "single" && channels.len() > 2 {
-                                        let now: DateTime<Local> = Local::now();
-                                        format!(
-                                            "{}/{}-{:02}-{:02}-{:02}-{:02}-multichannel.wav",
-                                            output_dir,
-                                            now.year(),
-                                            now.month(),
-                                            now.day(),
-                                            now.hour(),
-                                            now.minute() - (now.minute() % 5) // Round to nearest 5 minutes for better organization
-                                        )
+                                    let now: DateTime<Local> = Local::now();
+                                    let suffix = if output_mode == "single" && channels.len() > 2 {
+                                        "-multichannel.wav"
                                     } else {
-                                        let now: DateTime<Local> = Local::now();
-                                        format!(
-                                            "{}/{}-{:02}-{:02}-{:02}-{:02}.wav",
-                                            output_dir,
-                                            now.year(),
-                                            now.month(),
-                                            now.day(),
-                                            now.hour(),
-                                            now.minute() - (now.minute() % 5)
-                                        )
+                                        ".wav"
                                     };
+                                    let file_path = format!(
+                                        "{}/{}-{:02}-{:02}-{:02}-{:02}{}",
+                                        output_dir,
+                                        now.year(),
+                                        now.month(),
+                                        now.day(),
+                                        now.hour(),
+                                        now.minute() - (now.minute() % 5),
+                                        suffix
+                                    );
 
                                     created_files.push(file_path.clone());
 
