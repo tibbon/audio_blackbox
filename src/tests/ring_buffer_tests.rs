@@ -6,7 +6,9 @@ use tempfile::tempdir;
 use crate::constants::RING_BUFFER_SECONDS;
 use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
 use crate::tests::default_test_env;
-use crate::writer_thread::{WriterCommand, WriterThreadState, writer_thread_main};
+use crate::writer_thread::{
+    WriterCommand, WriterThreadState, check_and_delete_silent_files, writer_thread_main,
+};
 
 /// Collect all `.wav` files (not `.recording.wav`) in a directory.
 fn wav_files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -361,12 +363,158 @@ fn test_writer_thread_silence_on_rotation() {
         reply_rx.recv().unwrap().unwrap();
         handle.join().unwrap();
 
-        // Both files were silent — both should be deleted
+        // Both files were silent — both should be deleted.
+        // Extra sleep to allow background silence-check thread to finish.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
         let files = wav_files_in(temp_dir.path());
         assert!(
             files.is_empty(),
             "Silent files should have been deleted, found: {:?}",
             files
+        );
+    });
+}
+
+// ===========================================================================
+// Direct unit test for check_and_delete_silent_files
+// ===========================================================================
+
+#[test]
+fn test_check_and_delete_silent_files_deletes_silent() {
+    temp_env::with_vars(default_test_env(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path();
+
+        // Create a silent WAV file
+        let silent_path = dir.join("silent.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&silent_path, spec).unwrap();
+        for _ in 0..1000 {
+            writer.write_sample(0_i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert!(silent_path.exists());
+
+        // Create a non-silent WAV file
+        let loud_path = dir.join("loud.wav");
+        let mut writer = hound::WavWriter::create(&loud_path, spec).unwrap();
+        for i in 0..1000 {
+            let sample = ((i as f32 / 10.0).sin() * 16000.0) as i16;
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert!(loud_path.exists());
+
+        let files = vec![
+            silent_path.to_str().unwrap().to_string(),
+            loud_path.to_str().unwrap().to_string(),
+        ];
+
+        // threshold must be > 0 (0 disables silence detection in is_silent)
+        check_and_delete_silent_files(&files, 0.01);
+
+        // Silent file should be deleted, loud file should remain
+        assert!(!silent_path.exists(), "Silent file should be deleted");
+        assert!(loud_path.exists(), "Non-silent file should be kept");
+    });
+}
+
+#[test]
+fn test_check_and_delete_silent_files_skips_missing() {
+    temp_env::with_vars(default_test_env(), || {
+        // Passing a nonexistent file path should not panic
+        let files = vec!["/tmp/nonexistent_test_file_12345.wav".to_string()];
+        check_and_delete_silent_files(&files, 0.01);
+        // Should complete without panic — error is just logged
+    });
+}
+
+// ===========================================================================
+// Background silence thread doesn't block writer processing
+// ===========================================================================
+
+#[test]
+fn test_rotation_silence_thread_does_not_block_writer() {
+    // Verify that after rotation, the writer thread continues accepting
+    // new samples immediately (the silence check happens in background).
+    let mut env = default_test_env();
+    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
+    env.push(("SILENCE_THRESHOLD", Some("10")));
+
+    temp_env::with_vars(env, || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let write_errors = Arc::new(AtomicU64::new(0));
+
+        let ring_size = 44100 * RING_BUFFER_SECONDS;
+        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
+
+        let mut state = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            "single",
+            10.0, // high threshold — everything is "silent"
+            Arc::clone(&write_errors),
+            0,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+
+        let rotation_needed = Arc::new(AtomicBool::new(false));
+        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+
+        let rotation_clone = Arc::clone(&rotation_needed);
+        let rotation_signal = Arc::clone(&rotation_needed);
+        let handle = std::thread::spawn(move || {
+            writer_thread_main(consumer, rotation_clone, command_rx, state);
+        });
+
+        // Push first batch
+        let data1 = generate_uniform_interleaved_f32(1, 200, &[0], 0.3);
+        if let Ok(chunk) = producer.write_chunk_uninit(data1.len()) {
+            chunk.fill_from_iter(data1.iter().copied());
+        }
+
+        // Wait for processing, then cross second boundary for distinct timestamp
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // Signal rotation
+        rotation_signal.store(true, Ordering::Release);
+
+        // Immediately push a second batch — writer thread should accept it
+        // without waiting for the silence check to finish
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let data2 = generate_uniform_interleaved_f32(1, 500, &[0], 0.3);
+        if let Ok(chunk) = producer.write_chunk_uninit(data2.len()) {
+            chunk.fill_from_iter(data2.iter().copied());
+        }
+
+        // Give time for processing
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Shutdown
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
+        reply_rx.recv().unwrap().unwrap();
+        handle.join().unwrap();
+
+        // Allow background silence thread to complete
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        // No write errors should have occurred — the writer thread was
+        // never blocked by silence detection
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            0,
+            "No write errors expected — writer thread should not be blocked by silence check"
         );
     });
 }

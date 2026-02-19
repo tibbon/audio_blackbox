@@ -384,30 +384,16 @@ impl WriterThreadState {
             }
         }
 
-        // Check for silence and delete silent files
-        if self.silence_threshold > 0.0 {
-            for file_path in final_files {
-                match is_silent(&file_path, self.silence_threshold) {
-                    Ok(true) => {
-                        info!(
-                            "Recording is silent (below threshold {}), deleting file",
-                            self.silence_threshold
-                        );
-                        if let Err(e) = fs::remove_file(&file_path) {
-                            error!("Error deleting silent file: {}", e);
-                        }
-                    }
-                    Ok(false) => {
-                        info!(
-                            "Recording is not silent (above threshold {}), keeping file",
-                            self.silence_threshold
-                        );
-                    }
-                    Err(e) => {
-                        error!("Error checking for silence: {}", e);
-                    }
-                }
-            }
+        // Check for silence on a background thread so the writer thread can
+        // immediately resume draining the ring buffer during rotation.
+        if self.silence_threshold > 0.0 && !final_files.is_empty() {
+            let threshold = self.silence_threshold;
+            std::thread::Builder::new()
+                .name("blackbox-silence".to_string())
+                .spawn(move || {
+                    check_and_delete_silent_files(&final_files, threshold);
+                })
+                .ok(); // If thread spawn fails, skip silence check rather than block
         }
 
         // Create new files for the next recording period
@@ -502,29 +488,10 @@ impl WriterThreadState {
             }
         }
 
-        // Check silence and delete silent files
+        // Check silence synchronously during finalize — recording has stopped,
+        // no ring buffer pressure.
         if self.silence_threshold > 0.0 {
-            for file_path in final_files {
-                match is_silent(&file_path, self.silence_threshold) {
-                    Ok(true) => {
-                        info!(
-                            "Recording is silent (below threshold {}), deleting file: {}",
-                            self.silence_threshold, file_path
-                        );
-                        fs::remove_file(&file_path)?;
-                    }
-                    Ok(false) => {
-                        info!(
-                            "Recording is not silent (above threshold {}), keeping file: {}",
-                            self.silence_threshold, file_path
-                        );
-                    }
-                    Err(e) => {
-                        error!("Error checking for silence: {}", e);
-                        return Err(e);
-                    }
-                }
-            }
+            check_and_delete_silent_files(&final_files, self.silence_threshold);
         }
 
         Ok(())
@@ -552,6 +519,34 @@ fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadSt
         chunk.commit_all();
         n
     })
+}
+
+/// Check each file for silence and delete silent ones. Used by both the
+/// background silence-check thread (during rotation) and the synchronous
+/// finalize path (during shutdown).
+pub fn check_and_delete_silent_files(files: &[String], threshold: f32) {
+    for file_path in files {
+        match is_silent(file_path, threshold) {
+            Ok(true) => {
+                info!(
+                    "Recording is silent (below threshold {}), deleting file: {}",
+                    threshold, file_path
+                );
+                if let Err(e) = fs::remove_file(file_path) {
+                    error!("Error deleting silent file: {}", e);
+                }
+            }
+            Ok(false) => {
+                info!(
+                    "Recording is not silent (above threshold {}), keeping file: {}",
+                    threshold, file_path
+                );
+            }
+            Err(e) => {
+                error!("Error checking for silence: {}", e);
+            }
+        }
+    }
 }
 
 fn drain_remaining(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) {
