@@ -37,6 +37,7 @@ struct BlackBoxApp: App {
             }
         } label: {
             Image(nsImage: menuBarNSImage)
+                .accessibilityLabel(menuBarAccessibilityLabel)
         }
 
         Window("Welcome to BlackBox", id: "onboarding") {
@@ -161,6 +162,19 @@ struct BlackBoxApp: App {
         }
 
         return NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
+    }
+
+    private var menuBarAccessibilityLabel: String {
+        if !hasCompletedOnboarding {
+            return "BlackBox: Setup required"
+        }
+        if let error = recorder.errorMessage {
+            return "BlackBox: Error \u{2014} \(error)"
+        }
+        if recorder.isRecording {
+            return "BlackBox: \(recorder.statusText)"
+        }
+        return "BlackBox: Ready"
     }
 
     private func quitApp() {
