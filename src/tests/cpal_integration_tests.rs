@@ -430,11 +430,9 @@ fn test_finalize_keeps_non_silent_file() {
     let temp_dir = tempdir().unwrap();
     let dir = temp_dir.path().to_str().unwrap();
 
-    // Samples are i16-range but is_silent() normalizes by i32::MAX, so RMS
-    // is very small (~0.000009 for 0.8 amplitude).  Use a tiny threshold.
     let mut env = default_test_env();
     env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0.000001")));
+    env.push(("SILENCE_THRESHOLD", Some("0.01")));
 
     temp_env::with_vars(env, || {
         let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], "single").unwrap();
@@ -479,11 +477,10 @@ fn test_split_mode_silence_per_channel() {
     let temp_dir = tempdir().unwrap();
     let dir = temp_dir.path().to_str().unwrap();
 
-    // Threshold between ch0 RMS (0, silent) and ch1 RMS (~0.0000097).
-    // Samples are i16-range but is_silent() normalizes by i32::MAX.
+    // Threshold between ch0 RMS (0, silent) and ch1 RMS (~0.636 for 0.9 amplitude).
     let mut env = default_test_env();
     env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0.000005")));
+    env.push(("SILENCE_THRESHOLD", Some("0.01")));
 
     temp_env::with_vars(env, || {
         let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], "split").unwrap();

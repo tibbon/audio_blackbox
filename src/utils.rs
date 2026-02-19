@@ -149,10 +149,17 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
         BlackboxError::Wav(format!("Failed to open WAV file for silence check: {}", e))
     })?;
 
+    // Normalize by the actual bit depth — hound reads i32 but doesn't scale to i32 range.
+    // A 16-bit WAV yields values in [-32768, 32767], so we must divide by i16::MAX, not i32::MAX.
+    let norm: f64 = match reader.spec().bits_per_sample {
+        16 => f64::from(i16::MAX),
+        24 => f64::from(0x7F_FFFFi32), // 2^23 - 1
+        _ => f64::from(i32::MAX),
+    };
+
     // Stream through samples without collecting into memory
     let mut sum_of_squares: f64 = 0.0;
     let mut count: u64 = 0;
-    let norm = f64::from(i32::MAX);
 
     for sample in reader.into_samples::<i32>() {
         let s = sample.map_err(|e| BlackboxError::Wav(format!("Failed to read sample: {}", e)))?;
