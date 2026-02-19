@@ -114,6 +114,8 @@ mod tests {
             ("BLACKBOX_PERFORMANCE_LOGGING", None),
             ("BLACKBOX_INPUT_DEVICE", None),
             ("INPUT_DEVICE", None),
+            ("BLACKBOX_MIN_DISK_SPACE_MB", None),
+            ("MIN_DISK_SPACE_MB", None),
             ("BLACKBOX_CONFIG", None),
         ]
     }

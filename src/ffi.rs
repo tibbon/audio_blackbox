@@ -252,17 +252,17 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             return std::ptr::null_mut();
         };
 
-        let (is_recording, write_errors) = handle
+        let (is_recording, write_errors, disk_space_low) = handle
             .recorder
             .lock()
             .ok()
             .and_then(|guard| {
                 guard.as_ref().map(|r| {
                     let p = r.get_processor();
-                    (p.is_recording(), p.write_error_count())
+                    (p.is_recording(), p.write_error_count(), p.disk_space_low())
                 })
             })
-            .unwrap_or((false, 0));
+            .unwrap_or((false, 0, false));
 
         let input_device = handle
             .config
@@ -275,6 +275,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             "recording": is_recording,
             "input_device": input_device,
             "write_errors": write_errors,
+            "disk_space_low": disk_space_low,
         });
 
         to_c_string(&status.to_string())

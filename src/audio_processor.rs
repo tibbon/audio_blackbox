@@ -24,4 +24,9 @@ pub trait AudioProcessor {
     fn write_error_count(&self) -> u64 {
         0
     }
+
+    /// Whether recording has been paused because available disk space is below threshold.
+    fn disk_space_low(&self) -> bool {
+        false
+    }
 }

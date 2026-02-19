@@ -145,6 +145,7 @@ struct OutputSettingsTab: View {
     @AppStorage(SettingsKeys.outputMode) private var outputMode: String = "split"
     @AppStorage(SettingsKeys.continuousMode) private var continuousMode: Bool = false
     @AppStorage(SettingsKeys.recordingCadence) private var recordingCadence: Int = 300
+    @AppStorage(SettingsKeys.minDiskSpaceMB) private var minDiskSpaceMB: Int = 500
     @State private var outputDir: String = "recordings"
 
     var body: some View {
@@ -216,6 +217,24 @@ struct OutputSettingsTab: View {
                     }
                 }
             }
+
+            Section("Disk Space") {
+                HStack {
+                    Text("Minimum free space:")
+                    TextField("MB", value: $minDiskSpaceMB, format: .number)
+                        .frame(width: 80)
+                        .onSubmit {
+                            if minDiskSpaceMB < 0 { minDiskSpaceMB = 0 }
+                            applyConfig()
+                        }
+                        .accessibilityLabel("Minimum free disk space")
+                        .accessibilityValue("\(minDiskSpaceMB) megabytes")
+                    Text("MB")
+                }
+                Text("Recording stops automatically when free disk space drops below this threshold. Set to 0 to disable.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
         .onAppear(perform: loadOutputDir)
@@ -249,6 +268,7 @@ struct OutputSettingsTab: View {
             "output_mode": outputMode,
             "continuous_mode": continuousMode,
             "recording_cadence": recordingCadence,
+            "min_disk_space_mb": minDiskSpaceMB,
         ]
         recorder.bridge.setConfig(config)
     }
@@ -322,4 +342,5 @@ enum SettingsKeys {
     static let recordingCadence = "recordingCadence"
     static let launchAtLogin = "launchAtLogin"
     static let autoRecord = "autoRecord"
+    static let minDiskSpaceMB = "minDiskSpaceMB"
 }

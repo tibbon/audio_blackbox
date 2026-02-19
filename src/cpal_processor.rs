@@ -36,6 +36,8 @@ pub struct CpalAudioProcessor {
     debug: bool,
     /// Counts write_sample errors and ring buffer overflow drops (atomic for RT safety).
     write_errors: Arc<AtomicU64>,
+    /// Set by the writer thread when disk space drops below threshold.
+    disk_space_low: Arc<AtomicBool>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
     writer_thread: Option<WriterThreadHandle>,
     /// Test-only: bypass ring buffer and writer thread, write directly.
@@ -93,6 +95,7 @@ impl CpalAudioProcessor {
             output_mode: String::new(),
             debug: false,
             write_errors: Arc::new(AtomicU64::new(0)),
+            disk_space_low: Arc::new(AtomicBool::new(false)),
             writer_thread: None,
             #[cfg(test)]
             direct_state: None,
@@ -203,8 +206,10 @@ impl AudioProcessor for CpalAudioProcessor {
             )));
         }
 
-        // Capture silence threshold before entering the closure
-        let silence_threshold = AppConfig::load().get_silence_threshold();
+        // Capture config values before entering the closure
+        let loaded_config = AppConfig::load();
+        let silence_threshold = loaded_config.get_silence_threshold();
+        let min_disk_space_mb = loaded_config.get_min_disk_space_mb();
 
         // Create writer thread state with initial WAV writers
         let mut state = WriterThreadState::new(
@@ -215,6 +220,8 @@ impl AudioProcessor for CpalAudioProcessor {
             silence_threshold,
             Arc::clone(&self.write_errors),
             debug,
+            min_disk_space_mb,
+            Arc::clone(&self.disk_space_low),
         )?;
         state.total_device_channels = total_channels;
 
@@ -244,6 +251,7 @@ impl AudioProcessor for CpalAudioProcessor {
             rotation_needed: Arc::clone(&rotation_needed),
             command_tx,
             join_handle: Some(join_handle),
+            disk_space_low: Arc::clone(&self.disk_space_low),
         });
 
         // Clone write_errors for the callback
@@ -388,6 +396,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn write_error_count(&self) -> u64 {
         self.write_errors.load(Ordering::Relaxed)
     }
+
+    fn disk_space_low(&self) -> bool {
+        self.disk_space_low.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for CpalAudioProcessor {
@@ -417,6 +429,8 @@ impl CpalAudioProcessor {
 
         let write_errors = Arc::new(AtomicU64::new(0));
 
+        let disk_space_low = Arc::new(AtomicBool::new(false));
+
         let mut state = WriterThreadState::new(
             output_dir,
             sample_rate,
@@ -425,6 +439,8 @@ impl CpalAudioProcessor {
             AppConfig::load().get_silence_threshold(),
             Arc::clone(&write_errors),
             false,
+            0, // disable disk check in tests
+            Arc::clone(&disk_space_low),
         )?;
         // For tests, total_device_channels is set per feed_test_data call
         state.total_device_channels = 0;
@@ -439,6 +455,7 @@ impl CpalAudioProcessor {
             output_mode: output_mode.to_string(),
             debug: false,
             write_errors,
+            disk_space_low,
             writer_thread: None,
             direct_state: Some(state),
         })

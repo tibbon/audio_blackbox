@@ -1,14 +1,16 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
-use log::{error, info};
+use log::{error, info, warn};
 
-use crate::constants::{MAX_CHANNELS, WRITER_THREAD_READ_CHUNK, WavWriterType};
+use crate::constants::{
+    DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, WRITER_THREAD_READ_CHUNK, WavWriterType,
+};
 use crate::error::BlackboxError;
-use crate::utils::is_silent;
+use crate::utils::{available_disk_space_mb, is_silent};
 
 use chrono::prelude::*;
 
@@ -42,9 +44,12 @@ pub enum WriterCommand {
 
 pub struct WriterThreadHandle {
     #[allow(dead_code)]
-    pub rotation_needed: Arc<std::sync::atomic::AtomicBool>,
+    pub rotation_needed: Arc<AtomicBool>,
     pub command_tx: std::sync::mpsc::SyncSender<WriterCommand>,
     pub join_handle: Option<std::thread::JoinHandle<()>>,
+    /// Set by the writer thread when available disk space drops below threshold.
+    #[allow(dead_code)]
+    pub disk_space_low: Arc<AtomicBool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -67,10 +72,19 @@ pub struct WriterThreadState {
     pub debug: bool,
     /// Partial frames carried over between ring buffer reads.
     frame_remainder: Vec<f32>,
+    /// Minimum free disk space in MB before stopping writes (0 = disabled).
+    pub min_disk_space_mb: u64,
+    /// Shared flag: set when disk space drops below threshold.
+    pub disk_space_low: Arc<AtomicBool>,
+    /// When true, writing is paused because disk space is low.
+    disk_stopped: bool,
+    /// Last time we checked disk space.
+    last_disk_check: Instant,
 }
 
 impl WriterThreadState {
     /// Create a new `WriterThreadState` with initial WAV writers set up.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_dir: &str,
         sample_rate: u32,
@@ -79,6 +93,8 @@ impl WriterThreadState {
         silence_threshold: f32,
         write_errors: Arc<AtomicU64>,
         debug: bool,
+        min_disk_space_mb: u64,
+        disk_space_low: Arc<AtomicBool>,
     ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
             fs::create_dir_all(output_dir)?;
@@ -103,6 +119,10 @@ impl WriterThreadState {
             write_errors,
             debug,
             frame_remainder: Vec::new(),
+            min_disk_space_mb,
+            disk_space_low,
+            disk_stopped: false,
+            last_disk_check: Instant::now(),
         };
 
         // Set up writers based on output mode
@@ -225,13 +245,45 @@ impl WriterThreadState {
         Ok(())
     }
 
+    /// Check available disk space and stop writing if below threshold.
+    /// Returns true if writing should continue, false if disk is low.
+    pub fn check_disk_space(&mut self) -> bool {
+        if self.min_disk_space_mb == 0 || self.disk_stopped {
+            return !self.disk_stopped;
+        }
+
+        let now = Instant::now();
+        if now.duration_since(self.last_disk_check) < Duration::from_secs(DISK_CHECK_INTERVAL_SECS)
+        {
+            return true;
+        }
+        self.last_disk_check = now;
+
+        if let Some(available_mb) = available_disk_space_mb(&self.output_dir)
+            && available_mb < self.min_disk_space_mb
+        {
+            warn!(
+                "Disk space low: {}MB available, threshold is {}MB — stopping recording",
+                available_mb, self.min_disk_space_mb
+            );
+            self.disk_space_low.store(true, Ordering::Release);
+            self.disk_stopped = true;
+            // Finalize current files so data written so far is safe
+            if let Err(e) = self.finalize_all() {
+                error!("Error finalizing files after disk space warning: {}", e);
+            }
+            return false;
+        }
+        true
+    }
+
     /// Write interleaved f32 samples to WAV writers.
     ///
     /// Handles partial frames: if `data` doesn't divide evenly by `total_device_channels`,
     /// leftover samples are stored in `frame_remainder` and prepended to the next call.
     pub fn write_samples(&mut self, data: &[f32]) {
-        // If total_device_channels is 0, we can't process frames
-        if self.total_device_channels == 0 {
+        // If total_device_channels is 0 or disk stopped, skip writing
+        if self.total_device_channels == 0 || self.disk_stopped {
             return;
         }
 
@@ -535,12 +587,15 @@ pub fn writer_thread_main(
             return;
         }
 
-        // 2. Check rotation flag (set by RT callback via AtomicBool)
+        // 2. Check disk space periodically
+        state.check_disk_space();
+
+        // 3. Check rotation flag (set by RT callback via AtomicBool)
         if rotation_needed.swap(false, Ordering::Acquire) {
             state.rotate_files();
         }
 
-        // 3. Read available samples from ring buffer
+        // 4. Read available samples from ring buffer
         if read_available(&mut consumer, &mut state) == 0 {
             // Ring buffer empty — sleep briefly to avoid busy-wait
             std::thread::sleep(Duration::from_millis(1));

@@ -169,6 +169,12 @@ final class RecordingState: ObservableObject {
             config["recording_cadence"] = cadence
         }
 
+        // Disk space threshold
+        let minDisk = defaults.integer(forKey: SettingsKeys.minDiskSpaceMB)
+        if minDisk > 0 {
+            config["min_disk_space_mb"] = minDisk
+        }
+
         if !config.isEmpty {
             bridge.setConfig(config)
         }
@@ -211,11 +217,19 @@ final class RecordingState: ObservableObject {
             statusText = String(format: "Recording %d:%02d", minutes, seconds)
         }
 
-        // Check for write errors from Rust engine
-        if let status = bridge.getStatus(),
-           let writeErrors = status["write_errors"] as? Int,
-           writeErrors > 0 {
-            errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
+        // Check status from Rust engine
+        if let status = bridge.getStatus() {
+            // Disk space low — stop recording gracefully
+            if let diskLow = status["disk_space_low"] as? Bool, diskLow {
+                stop()
+                errorMessage = "Recording stopped: disk space is low"
+                statusText = "Disk Full"
+                return
+            }
+            // Write errors
+            if let writeErrors = status["write_errors"] as? Int, writeErrors > 0 {
+                errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
+            }
         }
     }
 

@@ -58,6 +58,8 @@ fn test_ring_buffer_overflow_counted() {
             0.0,
             Arc::clone(&write_errors),
             false,
+            0,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -118,6 +120,8 @@ fn test_writer_thread_processes_all_samples() {
             0.0,
             Arc::clone(&write_errors),
             false,
+            0,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -176,6 +180,8 @@ fn test_writer_thread_rotation() {
             0.0,
             Arc::clone(&write_errors),
             false,
+            0,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -251,6 +257,8 @@ fn test_writer_thread_shutdown_drains() {
             0.0,
             Arc::clone(&write_errors),
             false,
+            0,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -314,6 +322,8 @@ fn test_writer_thread_silence_on_rotation() {
             10.0, // high threshold — everything is "silent"
             Arc::clone(&write_errors),
             false,
+            0,
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         state.total_device_channels = 1;

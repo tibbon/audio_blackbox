@@ -105,6 +105,27 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
     Ok(())
 }
 
+/// Query available disk space at the given path, in megabytes.
+///
+/// Returns `None` if the query fails (e.g., path doesn't exist or unsupported platform).
+#[cfg(unix)]
+pub fn available_disk_space_mb(path: &str) -> Option<u64> {
+    use std::ffi::CString;
+    let c_path = CString::new(path).ok()?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
+    if result == 0 {
+        Some(stat.f_bavail as u64 * stat.f_frsize / (1024 * 1024))
+    } else {
+        None
+    }
+}
+
+#[cfg(not(unix))]
+pub fn available_disk_space_mb(_path: &str) -> Option<u64> {
+    None
+}
+
 /// Helper function that checks if a WAV file is mostly silent by calculating its RMS amplitude
 /// and comparing it to the provided threshold.
 ///

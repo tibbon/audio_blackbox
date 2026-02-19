@@ -5,9 +5,9 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::constants::{
-    DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_OUTPUT_DIR,
-    DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
-    DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION,
+    DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
+    DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_THRESHOLD,
 };
 use crate::error::BlackboxError;
 
@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub performance_logging: Option<bool>,
     /// Input device name (None = system default)
     pub input_device: Option<String>,
+    /// Minimum free disk space in MB before stopping recording (0 = disabled)
+    pub min_disk_space_mb: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -53,6 +55,7 @@ impl Default for AppConfig {
             output_dir: Some(DEFAULT_OUTPUT_DIR.to_string()),
             performance_logging: Some(DEFAULT_PERFORMANCE_LOGGING),
             input_device: None,
+            min_disk_space_mb: Some(DEFAULT_MIN_DISK_SPACE_MB),
         }
     }
 }
@@ -168,6 +171,9 @@ impl AppConfig {
         if other.input_device.is_some() {
             self.input_device = other.input_device;
         }
+        if other.min_disk_space_mb.is_some() {
+            self.min_disk_space_mb = other.min_disk_space_mb;
+        }
     }
 
     /// Parse a boolean value from a string
@@ -280,6 +286,18 @@ impl AppConfig {
             .or_else(|| std::env::var("INPUT_DEVICE").ok());
         if let Some(val) = input_device {
             self.input_device = Some(val);
+        }
+
+        let min_disk = std::env::var("BLACKBOX_MIN_DISK_SPACE_MB")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("MIN_DISK_SPACE_MB")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = min_disk {
+            self.min_disk_space_mb = Some(val);
         }
     }
 
@@ -439,6 +457,10 @@ performance_logging = {}
     pub fn get_input_device(&self) -> Option<String> {
         self.input_device.clone()
     }
+
+    pub fn get_min_disk_space_mb(&self) -> u64 {
+        self.min_disk_space_mb.unwrap_or(DEFAULT_MIN_DISK_SPACE_MB)
+    }
 }
 
 #[cfg(test)]
@@ -469,6 +491,7 @@ mod tests {
                     output_dir: None,
                     performance_logging: None,
                     input_device: None,
+                    min_disk_space_mb: None,
                 };
 
                 // Apply environment variables directly
@@ -643,6 +666,7 @@ mod tests {
             output_dir: Some("./recordings".to_string()),
             performance_logging: Some(false),
             input_device: None,
+            min_disk_space_mb: Some(500),
         };
 
         let override_config = AppConfig {
@@ -656,6 +680,7 @@ mod tests {
             output_dir: None,          // This shouldn't override
             performance_logging: None, // This shouldn't override
             input_device: None,
+            min_disk_space_mb: None, // This shouldn't override
         };
 
         base_config.merge(override_config);

@@ -15,6 +15,11 @@ pub const DEFAULT_OUTPUT_DIR: &str = "recordings";
 pub const DEFAULT_PERFORMANCE_LOGGING: bool = false;
 pub const PERFORMANCE_LOG_INTERVAL: u64 = 3600; // 1 hour in seconds
 
+// Disk space monitoring
+pub const DEFAULT_MIN_DISK_SPACE_MB: u64 = 500;
+/// How often the writer thread checks available disk space.
+pub const DISK_CHECK_INTERVAL_SECS: u64 = 10;
+
 // Ring buffer constants
 /// How many seconds of audio the ring buffer can hold (at device sample rate * channels).
 pub const RING_BUFFER_SECONDS: usize = 2;
