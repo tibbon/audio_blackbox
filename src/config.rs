@@ -358,128 +358,49 @@ performance_logging = {}
         Ok(())
     }
 
-    // Accessor methods with proper unwrapping
+    // Accessor methods — env vars are already resolved by apply_env_vars() during load().
+    // These just unwrap the Option with a default fallback.
 
     pub fn get_audio_channels(&self) -> String {
         self.audio_channels
             .clone()
-            .or_else(|| {
-                std::env::var("BLACKBOX_AUDIO_CHANNELS")
-                    .ok()
-                    .or_else(|| std::env::var("AUDIO_CHANNELS").ok())
-            })
             .unwrap_or_else(|| DEFAULT_CHANNELS.to_string())
     }
 
     pub fn get_debug(&self) -> bool {
-        self.debug
-            .or_else(|| {
-                std::env::var("BLACKBOX_DEBUG")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-                    .or_else(|| {
-                        std::env::var("DEBUG")
-                            .ok()
-                            .and_then(|s| Self::parse_bool(&s))
-                    })
-            })
-            .unwrap_or(DEFAULT_DEBUG)
+        self.debug.unwrap_or(DEFAULT_DEBUG)
     }
 
     pub fn get_duration(&self) -> u64 {
-        self.duration
-            .or_else(|| {
-                std::env::var("BLACKBOX_DURATION")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .or_else(|| {
-                        std::env::var("RECORD_DURATION")
-                            .ok()
-                            .and_then(|s| s.parse().ok())
-                    })
-            })
-            .unwrap_or(DEFAULT_DURATION)
+        self.duration.unwrap_or(DEFAULT_DURATION)
     }
 
     pub fn get_output_mode(&self) -> String {
         self.output_mode
             .clone()
-            .or_else(|| {
-                std::env::var("BLACKBOX_OUTPUT_MODE")
-                    .ok()
-                    .or_else(|| std::env::var("OUTPUT_MODE").ok())
-            })
             .unwrap_or_else(|| DEFAULT_OUTPUT_MODE.to_string())
     }
 
     pub fn get_silence_threshold(&self) -> f32 {
-        self.silence_threshold
-            .or_else(|| {
-                std::env::var("BLACKBOX_SILENCE_THRESHOLD")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .or_else(|| {
-                        std::env::var("SILENCE_THRESHOLD")
-                            .ok()
-                            .and_then(|s| s.parse().ok())
-                    })
-            })
-            .unwrap_or(DEFAULT_SILENCE_THRESHOLD)
+        self.silence_threshold.unwrap_or(DEFAULT_SILENCE_THRESHOLD)
     }
 
     pub fn get_continuous_mode(&self) -> bool {
-        self.continuous_mode
-            .or_else(|| {
-                std::env::var("BLACKBOX_CONTINUOUS_MODE")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-                    .or_else(|| {
-                        std::env::var("CONTINUOUS_MODE")
-                            .ok()
-                            .and_then(|s| Self::parse_bool(&s))
-                    })
-            })
-            .unwrap_or(DEFAULT_CONTINUOUS_MODE)
+        self.continuous_mode.unwrap_or(DEFAULT_CONTINUOUS_MODE)
     }
 
     pub fn get_recording_cadence(&self) -> u64 {
-        self.recording_cadence
-            .or_else(|| {
-                std::env::var("BLACKBOX_RECORDING_CADENCE")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-                    .or_else(|| {
-                        std::env::var("RECORDING_CADENCE")
-                            .ok()
-                            .and_then(|s| s.parse().ok())
-                    })
-            })
-            .unwrap_or(DEFAULT_RECORDING_CADENCE)
+        self.recording_cadence.unwrap_or(DEFAULT_RECORDING_CADENCE)
     }
 
     pub fn get_output_dir(&self) -> String {
         self.output_dir
             .clone()
-            .or_else(|| {
-                std::env::var("BLACKBOX_OUTPUT_DIR")
-                    .ok()
-                    .or_else(|| std::env::var("OUTPUT_DIR").ok())
-            })
             .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_string())
     }
 
     pub fn get_performance_logging(&self) -> bool {
         self.performance_logging
-            .or_else(|| {
-                std::env::var("BLACKBOX_PERFORMANCE_LOGGING")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-                    .or_else(|| {
-                        std::env::var("PERFORMANCE_LOGGING")
-                            .ok()
-                            .and_then(|s| Self::parse_bool(&s))
-                    })
-            })
             .unwrap_or(DEFAULT_PERFORMANCE_LOGGING)
     }
 }
