@@ -7,7 +7,7 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ## Features
 
 - **Multi-channel recording** — record 1 to 64+ channels simultaneously (tested at 121x realtime on Apple Silicon)
-- **Three output modes** — `single` (one multichannel file), `split` (one file per channel), `multichannel` (all channels in one file)
+- **Two output modes** — `single` (one file, automatically multichannel for 3+ channels), `split` (one file per channel)
 - **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes
 - **Silence detection** — automatically deletes silent recordings on rotation
 - **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer
@@ -27,8 +27,8 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ```bash
 cargo build                          # Debug build
 cargo build --release                # Release build
-cargo test                           # Run all tests (108 tests)
-cargo clippy --no-default-features -- -D warnings   # Lint (matches CI)
+cargo test                           # Run all tests (112 total)
+cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 ```
 
@@ -37,7 +37,7 @@ cargo fmt --all -- --check           # Format check
 Configure via `blackbox.toml`, environment variables, or `BLACKBOX_*` prefixed env vars. Environment variables take precedence over the config file.
 
 ```toml
-# Output mode: "single", "split", or "multichannel"
+# Output mode: "single" (one file) or "split" (one file per channel)
 output_mode = "single"
 
 # Audio channels to record (comma-separated or ranges)
@@ -47,7 +47,7 @@ audio_channels = "0"
 duration = 30
 
 # Output directory for recordings
-output_dir = "./recordings"
+output_dir = "recordings"
 
 # Silence threshold (0.0 to disable)
 silence_threshold = 0.01
@@ -131,8 +131,8 @@ CI runs on every push to `main` and on pull requests. Six parallel jobs:
 |-----|---------------|
 | **Format** | `cargo fmt --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **Test (Ubuntu)** | All 108 tests |
-| **Test (macOS)** | All 108 tests |
+| **Test (Ubuntu)** | 100 lib tests |
+| **Test (macOS)** | 100 lib + 12 macOS binary tests |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
 
