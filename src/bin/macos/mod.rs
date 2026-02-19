@@ -2,22 +2,11 @@
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::needless_pass_by_ref_mut)]
 
-// We're providing a simplified implementation of the macOS menu bar
-// that displays a basic UI and allows recording functionality
-
-// Import menu bar implementation but don't use it directly
-#[cfg(feature = "menu-bar")]
-#[cfg(target_os = "macos")]
-mod menu_bar;
-
-// macOS-specific functionality
+// macOS menu bar implementation for audio recording
 
 // Module for safe Cocoa/AppKit wrappers
 #[cfg(target_os = "macos")]
 mod safe_cocoa;
-
-// Temporarily disable the menu_bar_impl module
-// pub mod menu_bar_impl;
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
