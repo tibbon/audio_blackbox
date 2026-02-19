@@ -13,7 +13,6 @@ use crate::utils::{check_alsa_availability, is_silent, parse_channel_string};
 use chrono::prelude::*;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::env;
 
 /// Returns a timestamp string like "2024-01-15-14-30" from the current local time.
 fn timestamp_now() -> String {
@@ -98,8 +97,9 @@ impl CpalAudioProcessor {
 
         let sample_rate = config_audio.sample_rate();
 
+        // Placeholder spec — immediately overridden by setup_*_mode() in process_audio()
         let spec = hound::WavSpec {
-            channels: 2, // Default is stereo WAV for backward compatibility
+            channels: 1,
             sample_rate,
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
@@ -248,146 +248,6 @@ impl CpalAudioProcessor {
 
         Ok(())
     }
-
-    /// Rotates the current recording files, finalizing the current files and creating new ones.
-    /// This method is part of the continuous recording mode functionality.
-    #[allow(dead_code)]
-    fn rotate_files(&self) -> Result<(), String> {
-        if !self.continuous_mode {
-            return Ok(());
-        }
-
-        println!("Rotating recording files...");
-
-        // Load configuration
-        let config = AppConfig::load();
-        let silence_threshold = config.get_silence_threshold();
-
-        let output_mode = &self.output_mode;
-        let channels = &self.channels;
-
-        // Store paths of files being finalized to check for silence later
-        let mut created_files = Vec::new();
-
-        // Finalize the main WAV file if it exists
-        if let Some(writer) = self.writer.lock().unwrap().take() {
-            let suffix = if output_mode == "single" && channels.len() > 2 {
-                "-multichannel.wav"
-            } else {
-                ".wav"
-            };
-            let file_path = format!("{}/{}{}", self.output_dir, timestamp_rounded(), suffix);
-
-            created_files.push(file_path.clone());
-
-            if let Err(e) = writer.finalize() {
-                eprintln!("Error finalizing WAV file during rotation: {}", e);
-            } else {
-                println!("Finalized recording to {}", file_path);
-            }
-        }
-
-        // Finalize any multichannel writers
-        let mut writers = self.multichannel_writers.lock().unwrap();
-        for (idx, writer_opt) in writers.iter_mut().enumerate() {
-            if let Some(writer) = writer_opt.take() {
-                let file_path = format!(
-                    "{}/{}-ch{}.wav",
-                    self.output_dir,
-                    timestamp_rounded(),
-                    channels.get(idx).unwrap_or(&idx)
-                );
-
-                created_files.push(file_path.clone());
-
-                if let Err(e) = writer.finalize() {
-                    eprintln!("Error finalizing channel WAV file during rotation: {}", e);
-                } else {
-                    println!("Finalized recording to {}", file_path);
-                }
-            }
-        }
-
-        // Check for silence and delete silent files if threshold is set
-        if silence_threshold > 0.0 {
-            for file_path in created_files {
-                match is_silent(&file_path, silence_threshold) {
-                    Ok(true) => {
-                        println!(
-                            "Recording is silent (below threshold {}), deleting file",
-                            silence_threshold
-                        );
-                        if let Err(e) = fs::remove_file(&file_path) {
-                            eprintln!("Error deleting silent file: {}", e);
-                        }
-                    }
-                    Ok(false) => {
-                        println!(
-                            "Recording is not silent (above threshold {}), keeping file",
-                            silence_threshold
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Error checking for silence: {}", e);
-                    }
-                }
-            }
-        }
-
-        // Create new files for the next recording period
-        match output_mode.as_str() {
-            "split" => {
-                self.setup_split_mode(channels, self.sample_rate)?;
-            }
-            "single" if channels.len() > 2 => {
-                self.setup_multichannel_mode(channels, self.sample_rate)?;
-            }
-            _ => {
-                // Standard stereo mode
-                let file_name = format!("{}.wav", timestamp_now());
-
-                let full_path = format!("{}/{}", self.output_dir, file_name);
-
-                if let Some(spec) = &*self.current_spec.lock().unwrap() {
-                    let writer = hound::WavWriter::create(&full_path, *spec).map_err(|e| {
-                        format!("Failed to create new WAV file during rotation: {}", e)
-                    })?;
-
-                    *self.writer.lock().unwrap() = Some(writer);
-                    println!("Created new recording file: {}", full_path);
-                }
-            }
-        }
-
-        // Reset the rotation timer
-        *self.last_rotation_time.lock().unwrap() = Instant::now();
-
-        Ok(())
-    }
-
-    /// Checks if it's time to rotate files based on the configured recording cadence.
-    /// This method is part of the continuous recording mode functionality.
-    #[allow(dead_code)]
-    fn check_and_rotate_files(&self) -> Result<(), String> {
-        if !self.continuous_mode {
-            return Ok(());
-        }
-
-        let now = Instant::now();
-        let last_rotation = *self.last_rotation_time.lock().unwrap();
-
-        if now.duration_since(last_rotation) >= Duration::from_secs(self.recording_cadence) {
-            self.rotate_files()?;
-        }
-
-        Ok(())
-    }
-
-    /// Update the file name with a new path
-    #[allow(dead_code)]
-    fn update_file_name(&mut self, new_path: String) {
-        self.file_name = new_path;
-    }
 }
 
 impl AudioProcessor for CpalAudioProcessor {
@@ -452,32 +312,40 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Setup the appropriate output mode
         let valid_modes = ["split", "single"];
-        assert!(
-            valid_modes.contains(&output_mode),
-            "Invalid output mode: '{}'. Valid options are: {:?}",
-            output_mode,
-            valid_modes
-        );
+        if !valid_modes.contains(&output_mode) {
+            return Err(std::io::Error::other(format!(
+                "Invalid output mode: '{}'. Valid options are: {:?}",
+                output_mode, valid_modes
+            )));
+        }
 
         match output_mode {
             "split" => {
-                if let Err(e) = self.setup_split_mode(&actual_channels, sample_rate) {
-                    panic!("Failed to setup split mode: {}", e);
-                }
+                self.setup_split_mode(&actual_channels, sample_rate)
+                    .map_err(|e| {
+                        std::io::Error::other(format!("Failed to setup split mode: {}", e))
+                    })?;
             }
             "single" if actual_channels.len() <= 2 => {
                 // For mono or stereo, use the standard WAV format
-                if let Err(e) = self.setup_standard_mode(&actual_channels, sample_rate) {
-                    panic!("Failed to setup standard mode: {}", e);
-                }
+                self.setup_standard_mode(&actual_channels, sample_rate)
+                    .map_err(|e| {
+                        std::io::Error::other(format!("Failed to setup standard mode: {}", e))
+                    })?;
             }
             "single" => {
                 // For more than 2 channels, use multichannel mode
-                if let Err(e) = self.setup_multichannel_mode(&actual_channels, sample_rate) {
-                    panic!("Failed to setup multichannel mode: {}", e);
-                }
+                self.setup_multichannel_mode(&actual_channels, sample_rate)
+                    .map_err(|e| {
+                        std::io::Error::other(format!("Failed to setup multichannel mode: {}", e))
+                    })?;
             }
-            _ => unreachable!(), // We already validated the output mode above
+            _ => {
+                return Err(std::io::Error::other(format!(
+                    "Unexpected output mode: '{}'",
+                    output_mode
+                )));
+            }
         }
 
         // Clone channels to own them in the closure
@@ -493,6 +361,10 @@ impl AudioProcessor for CpalAudioProcessor {
         let continuous_mode = self.continuous_mode;
         let last_rotation_time_clone = Arc::clone(&self.last_rotation_time);
         let recording_cadence = self.recording_cadence;
+
+        // Capture silence threshold from config before entering the closure
+        // so we don't call env::var on the real-time audio thread
+        let silence_threshold = AppConfig::load().get_silence_threshold();
 
         // Clone shared state for the audio callback's rotation logic
         let output_dir = self.output_dir.clone();
@@ -529,10 +401,6 @@ impl AudioProcessor for CpalAudioProcessor {
                                 // Use the configuration captured at process_audio() start
                                 let output_mode = &output_mode_owned;
                                 let channels = &channels_owned;
-                                let silence_threshold = env::var("SILENCE_THRESHOLD")
-                                    .unwrap_or_else(|_| "0".to_string())
-                                    .parse::<f32>()
-                                    .unwrap_or(0.0);
 
                                 // Store paths of files being finalized to check for silence later
                                 let mut created_files = Vec::new();
@@ -737,41 +605,21 @@ impl AudioProcessor for CpalAudioProcessor {
                                 }
                             }
                             _ => {
-                                // Default stereo mode
+                                // Standard mode: write the requested channels
                                 let mut writer_guard = writer_clone.lock().unwrap();
                                 let mut buffer = buffer_clone.lock().unwrap();
 
                                 if let Some(writer) = &mut *writer_guard {
-                                    // Process each frame
                                     let frame_size = total_channels;
                                     let frames = data.chunks(frame_size);
 
                                     for frame in frames {
-                                        // Handle both mono and stereo inputs appropriately
-                                        if frame.len() >= 2 {
-                                            // Stereo input - convert f32 to i16 range and write to the stereo file
-                                            let left_i16 = (frame[0] * 32767.0) as i32;
-                                            let right_i16 = (frame[1] * 32767.0) as i32;
-
-                                            let _ = writer.write_sample(left_i16);
-                                            let _ = writer.write_sample(right_i16);
-
-                                            // Also store in the buffer for later processing
-                                            buffer.push(left_i16);
-                                            buffer.push(right_i16);
-                                        } else if frame.len() == 1 {
-                                            // Mono input - duplicate the single channel to create stereo
-                                            let sample_i16 = (frame[0] * 32767.0) as i32;
-
-                                            // Write the same sample to both left and right channels
-                                            let _ = writer.write_sample(sample_i16);
-                                            let _ = writer.write_sample(sample_i16);
-
-                                            // Also store in the buffer for later processing
-                                            buffer.push(sample_i16);
-                                            buffer.push(sample_i16);
-                                        } else {
-                                            eprintln!("Empty frame encountered");
+                                        for &channel in &channels_owned {
+                                            if channel < frame.len() {
+                                                let sample = (frame[channel] * 32767.0) as i32;
+                                                let _ = writer.write_sample(sample);
+                                                buffer.push(sample);
+                                            }
                                         }
 
                                         if buffer.len() >= INTERMEDIATE_BUFFER_SIZE {
