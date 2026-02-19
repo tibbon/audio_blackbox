@@ -46,7 +46,7 @@ test:
 # Run linting
 .PHONY: lint
 lint:
-	$(CARGO_BIN) clippy -- -D warnings
+	$(CARGO_BIN) clippy --no-default-features -- -D warnings
 	$(CARGO_BIN) fmt --all -- --check
 
 # Create macOS .app bundle (release mode)

@@ -467,6 +467,104 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_bool_variants() {
+        // True variants
+        assert_eq!(AppConfig::parse_bool("true"), Some(true));
+        assert_eq!(AppConfig::parse_bool("TRUE"), Some(true));
+        assert_eq!(AppConfig::parse_bool("True"), Some(true));
+        assert_eq!(AppConfig::parse_bool("1"), Some(true));
+        assert_eq!(AppConfig::parse_bool("yes"), Some(true));
+        assert_eq!(AppConfig::parse_bool("YES"), Some(true));
+        assert_eq!(AppConfig::parse_bool("on"), Some(true));
+        assert_eq!(AppConfig::parse_bool("ON"), Some(true));
+
+        // False variants
+        assert_eq!(AppConfig::parse_bool("false"), Some(false));
+        assert_eq!(AppConfig::parse_bool("FALSE"), Some(false));
+        assert_eq!(AppConfig::parse_bool("0"), Some(false));
+        assert_eq!(AppConfig::parse_bool("no"), Some(false));
+        assert_eq!(AppConfig::parse_bool("off"), Some(false));
+
+        // Invalid values
+        assert_eq!(AppConfig::parse_bool("invalid"), None);
+        assert_eq!(AppConfig::parse_bool(""), None);
+        assert_eq!(AppConfig::parse_bool("maybe"), None);
+        assert_eq!(AppConfig::parse_bool("2"), None);
+    }
+
+    #[test]
+    fn test_generate_sample_config_is_valid_toml() {
+        let sample = AppConfig::generate_sample_config();
+
+        // Should contain all expected keys
+        assert!(sample.contains("audio_channels"));
+        assert!(sample.contains("debug"));
+        assert!(sample.contains("duration"));
+        assert!(sample.contains("output_mode"));
+        assert!(sample.contains("silence_threshold"));
+        assert!(sample.contains("continuous_mode"));
+        assert!(sample.contains("recording_cadence"));
+        assert!(sample.contains("output_dir"));
+        assert!(sample.contains("performance_logging"));
+
+        // Should be parseable as TOML (ignoring comment lines)
+        let parsed: Result<AppConfig, _> = toml::from_str(&sample);
+        assert!(
+            parsed.is_ok(),
+            "Generated sample config should be valid TOML: {:?}",
+            parsed.err()
+        );
+    }
+
+    #[test]
+    fn test_config_new_equals_default() {
+        let new_config = AppConfig::new();
+        let default_config = AppConfig::default();
+
+        assert_eq!(new_config.audio_channels, default_config.audio_channels);
+        assert_eq!(new_config.debug, default_config.debug);
+        assert_eq!(new_config.duration, default_config.duration);
+        assert_eq!(new_config.output_mode, default_config.output_mode);
+    }
+
+    #[test]
+    fn test_config_create_file_nested_dirs() {
+        let temp_dir = tempdir().unwrap();
+        let nested_path = temp_dir.path().join("a/b/c/config.toml");
+
+        let config = AppConfig::default();
+        let result = config.create_config_file(nested_path.to_str().unwrap());
+        assert!(result.is_ok());
+        assert!(nested_path.exists());
+    }
+
+    #[test]
+    fn test_config_malformed_toml_falls_back_to_defaults() {
+        temp_env::with_vars(
+            vec![
+                ("BLACKBOX_CONFIG", None::<&str>),
+                ("AUDIO_CHANNELS", None::<&str>),
+                ("DEBUG", None::<&str>),
+                ("BLACKBOX_AUDIO_CHANNELS", None::<&str>),
+                ("BLACKBOX_DEBUG", None::<&str>),
+            ],
+            || {
+                let temp_dir = tempdir().unwrap();
+                let config_path = temp_dir.path().join("bad.toml");
+                fs::write(&config_path, "this is not valid toml [[[").unwrap();
+
+                // SAFETY: test serialized by temp_env
+                unsafe { std::env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
+
+                let config = AppConfig::load();
+                // Should fall back to defaults, not crash
+                assert_eq!(config.get_audio_channels(), DEFAULT_CHANNELS);
+                assert_eq!(config.get_debug(), DEFAULT_DEBUG);
+            },
+        );
+    }
+
+    #[test]
     fn test_merge_configs() {
         let mut base_config = AppConfig {
             audio_channels: Some("0,1".to_string()),

@@ -67,10 +67,11 @@ mod tests {
     use std::path::Path;
     use tempfile::tempdir;
 
-    // Include shutdown tests
+    // Include test submodules
     mod channel_tests;
     mod config_tests;
     mod performance_tests;
+    mod recorder_tests;
     mod shutdown_tests;
     mod silence_tests;
 
