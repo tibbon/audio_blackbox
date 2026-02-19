@@ -15,6 +15,18 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
 use std::env;
 
+/// Returns a timestamp string like "2024-01-15-14-30" from the current local time.
+fn timestamp_now() -> String {
+    Local::now().format("%Y-%m-%d-%H-%M").to_string()
+}
+
+/// Returns a timestamp string rounded down to the nearest 5 minutes.
+fn timestamp_rounded() -> String {
+    let now = Local::now();
+    let rounded_min = now.minute() - (now.minute() % 5);
+    format!("{}-{:02}", now.format("%Y-%m-%d-%H"), rounded_min)
+}
+
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 pub struct CpalAudioProcessor {
@@ -63,15 +75,7 @@ impl CpalAudioProcessor {
         }
 
         // Generate the output file name
-        let now: DateTime<Local> = Local::now();
-        let file_name = format!(
-            "{}-{:02}-{:02}-{:02}-{:02}.wav",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute()
-        );
+        let file_name = format!("{}.wav", timestamp_now());
 
         let host = cpal::default_host();
         let device = host
@@ -127,15 +131,7 @@ impl CpalAudioProcessor {
 
     /// Set up split mode recording where each channel is recorded to its own file.
     fn setup_split_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
-        let now: DateTime<Local> = Local::now();
-        let date_str = format!(
-            "{}-{:02}-{:02}-{:02}-{:02}",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute()
-        );
+        let date_str = timestamp_now();
 
         println!("Setting up split mode with {} channels", channels.len());
 
@@ -183,15 +179,7 @@ impl CpalAudioProcessor {
 
     /// Set up multichannel mode recording where all channels are recorded to a single file.
     fn setup_multichannel_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
-        let now: DateTime<Local> = Local::now();
-        let date_str = format!(
-            "{}-{:02}-{:02}-{:02}-{:02}",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute()
-        );
+        let date_str = timestamp_now();
 
         let multichannel_file_name = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
 
@@ -223,15 +211,7 @@ impl CpalAudioProcessor {
 
     /// Set up standard mode recording for mono or stereo (1 or 2 channels).
     fn setup_standard_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
-        let now: DateTime<Local> = Local::now();
-        let date_str = format!(
-            "{}-{:02}-{:02}-{:02}-{:02}",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute()
-        );
+        let date_str = timestamp_now();
 
         println!("Setting up standard mode with {} channels", channels.len());
 
@@ -289,22 +269,12 @@ impl CpalAudioProcessor {
 
         // Finalize the main WAV file if it exists
         if let Some(writer) = self.writer.lock().unwrap().take() {
-            let now: DateTime<Local> = Local::now();
             let suffix = if output_mode == "single" && channels.len() > 2 {
                 "-multichannel.wav"
             } else {
                 ".wav"
             };
-            let file_path = format!(
-                "{}/{}-{:02}-{:02}-{:02}-{:02}{}",
-                self.output_dir,
-                now.year(),
-                now.month(),
-                now.day(),
-                now.hour(),
-                now.minute() - (now.minute() % 5),
-                suffix
-            );
+            let file_path = format!("{}/{}{}", self.output_dir, timestamp_rounded(), suffix);
 
             created_files.push(file_path.clone());
 
@@ -319,15 +289,10 @@ impl CpalAudioProcessor {
         let mut writers = self.multichannel_writers.lock().unwrap();
         for (idx, writer_opt) in writers.iter_mut().enumerate() {
             if let Some(writer) = writer_opt.take() {
-                let now: DateTime<Local> = Local::now();
                 let file_path = format!(
-                    "{}/{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
+                    "{}/{}-ch{}.wav",
                     self.output_dir,
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute() - (now.minute() % 5),
+                    timestamp_rounded(),
                     channels.get(idx).unwrap_or(&idx)
                 );
 
@@ -377,15 +342,7 @@ impl CpalAudioProcessor {
             }
             _ => {
                 // Standard stereo mode
-                let now: DateTime<Local> = Local::now();
-                let file_name = format!(
-                    "{}-{:02}-{:02}-{:02}-{:02}.wav",
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute()
-                );
+                let file_name = format!("{}.wav", timestamp_now());
 
                 let full_path = format!("{}/{}", self.output_dir, file_name);
 
@@ -573,20 +530,15 @@ impl AudioProcessor for CpalAudioProcessor {
 
                                 // Finalize the main WAV file if it exists
                                 if let Some(writer) = writer_for_rotation.lock().unwrap().take() {
-                                    let now: DateTime<Local> = Local::now();
                                     let suffix = if output_mode == "single" && channels.len() > 2 {
                                         "-multichannel.wav"
                                     } else {
                                         ".wav"
                                     };
                                     let file_path = format!(
-                                        "{}/{}-{:02}-{:02}-{:02}-{:02}{}",
+                                        "{}/{}{}",
                                         output_dir,
-                                        now.year(),
-                                        now.month(),
-                                        now.day(),
-                                        now.hour(),
-                                        now.minute() - (now.minute() % 5),
+                                        timestamp_rounded(),
                                         suffix
                                     );
 
@@ -603,15 +555,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                 let mut writers = multichannel_writers_for_rotation.lock().unwrap();
                                 for (idx, writer_opt) in writers.iter_mut().enumerate() {
                                     if let Some(writer) = writer_opt.take() {
-                                        let now: DateTime<Local> = Local::now();
                                         let file_path = format!(
-                                            "{}/{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
+                                            "{}/{}-ch{}.wav",
                                             output_dir,
-                                            now.year(),
-                                            now.month(),
-                                            now.day(),
-                                            now.hour(),
-                                            now.minute() - (now.minute() % 5),
+                                            timestamp_rounded(),
                                             channels.get(idx).unwrap_or(&idx)
                                         );
 
@@ -653,15 +600,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                     "split" => {
                                         // Create a WAV writer for each channel
                                         for (idx, &channel) in channels.iter().enumerate() {
-                                            let now: DateTime<Local> = Local::now();
                                             let channel_file_name = format!(
-                                                "{}/{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
+                                                "{}/{}-ch{}.wav",
                                                 output_dir,
-                                                now.year(),
-                                                now.month(),
-                                                now.day(),
-                                                now.hour(),
-                                                now.minute(),
+                                                timestamp_now(),
                                                 channel
                                             );
 
@@ -684,15 +626,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                     "single" if channels.len() > 2 => {
-                                        let now: DateTime<Local> = Local::now();
                                         let multichannel_file_name = format!(
-                                            "{}/{}-{:02}-{:02}-{:02}-{:02}-multichannel.wav",
+                                            "{}/{}-multichannel.wav",
                                             output_dir,
-                                            now.year(),
-                                            now.month(),
-                                            now.day(),
-                                            now.hour(),
-                                            now.minute()
+                                            timestamp_now()
                                         );
 
                                         let spec = hound::WavSpec {
@@ -714,15 +651,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                     }
                                     _ => {
                                         // Standard stereo mode
-                                        let now: DateTime<Local> = Local::now();
-                                        let file_name = format!(
-                                            "{}-{:02}-{:02}-{:02}-{:02}.wav",
-                                            now.year(),
-                                            now.month(),
-                                            now.day(),
-                                            now.hour(),
-                                            now.minute()
-                                        );
+                                        let file_name = format!("{}.wav", timestamp_now());
 
                                         let full_path = format!("{}/{}", output_dir, file_name);
 
@@ -891,15 +820,10 @@ impl AudioProcessor for CpalAudioProcessor {
         let mut writers = self.multichannel_writers.lock().unwrap();
         for (idx, writer_opt) in writers.iter_mut().enumerate() {
             if let Some(writer) = writer_opt.take() {
-                let now: DateTime<Local> = Local::now();
                 let file_path = format!(
-                    "{}/{}-{:02}-{:02}-{:02}-{:02}-ch{}.wav",
+                    "{}/{}-ch{}.wav",
                     self.output_dir,
-                    now.year(),
-                    now.month(),
-                    now.day(),
-                    now.hour(),
-                    now.minute(),
+                    timestamp_now(),
                     channels.get(idx).unwrap_or(&idx)
                 );
 
