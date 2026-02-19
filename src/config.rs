@@ -1,8 +1,8 @@
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::constants::{
     DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_OUTPUT_DIR,
@@ -394,9 +394,25 @@ performance_logging = {}
     }
 
     pub fn get_output_dir(&self) -> String {
-        self.output_dir
+        let dir = self
+            .output_dir
             .clone()
-            .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_string())
+            .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_string());
+
+        // Reject paths containing ".." components to prevent path traversal
+        let has_parent_traversal = Path::new(&dir)
+            .components()
+            .any(|c| matches!(c, Component::ParentDir));
+
+        if has_parent_traversal {
+            warn!(
+                "Output directory '{}' contains path traversal components, using default",
+                dir
+            );
+            return DEFAULT_OUTPUT_DIR.to_string();
+        }
+
+        dir
     }
 
     pub fn get_performance_logging(&self) -> bool {
@@ -563,6 +579,23 @@ mod tests {
                 assert_eq!(config.get_debug(), DEFAULT_DEBUG);
             },
         );
+    }
+
+    #[test]
+    fn test_output_dir_rejects_path_traversal() {
+        let mut config = AppConfig::default();
+        config.output_dir = Some("../../../etc/passwd".to_string());
+        assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
+
+        config.output_dir = Some("recordings/../../../tmp".to_string());
+        assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
+
+        // Normal paths should be fine
+        config.output_dir = Some("my/recordings".to_string());
+        assert_eq!(config.get_output_dir(), "my/recordings");
+
+        config.output_dir = Some("/absolute/path/recordings".to_string());
+        assert_eq!(config.get_output_dir(), "/absolute/path/recordings");
     }
 
     #[test]

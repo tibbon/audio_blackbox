@@ -4,3 +4,5 @@
 *.wav
 /logs
 /recordings
+.claude
+CLAUDE.md

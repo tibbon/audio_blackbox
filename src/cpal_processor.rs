@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,17 +23,16 @@ fn timestamp_now() -> String {
     Local::now().format("%Y-%m-%d-%H-%M").to_string()
 }
 
-/// Returns a timestamp string rounded down to the nearest 5 minutes.
-fn timestamp_rounded() -> String {
-    let now = Local::now();
-    let rounded_min = now.minute() - (now.minute() % 5);
-    format!("{}-{:02}", now.format("%Y-%m-%d-%H"), rounded_min)
+/// Returns a `.recording.wav` temporary path for the given final `.wav` path.
+/// Files are written to this path during recording and renamed on finalize,
+/// so a crash never leaves a corrupt `.wav` file — only `.recording.wav`.
+fn tmp_wav_path(final_path: &str) -> String {
+    final_path.replace(".wav", ".recording.wav")
 }
 
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 pub struct CpalAudioProcessor {
-    file_name: String,
     writer: Arc<Mutex<Option<WavWriterType>>>,
     multichannel_writers: MultiChannelWriters,
     intermediate_buffer: Arc<Mutex<Vec<i32>>>,
@@ -51,6 +51,11 @@ pub struct CpalAudioProcessor {
     output_mode: String,
     debug: bool,
     current_spec: Arc<Mutex<Option<hound::WavSpec>>>,
+    /// Counts write_sample errors in the audio callback (atomic for RT safety)
+    write_errors: Arc<AtomicU64>,
+    /// Maps temporary recording paths to their final paths.
+    /// Files are written to `.recording.wav` and renamed on finalize.
+    pending_files: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl CpalAudioProcessor {
@@ -74,9 +79,6 @@ impl CpalAudioProcessor {
         if !Path::new(&output_dir).exists() {
             fs::create_dir_all(&output_dir)?;
         }
-
-        // Generate the output file name
-        let file_name = format!("{}.wav", timestamp_now());
 
         let host = cpal::default_host();
         let device = host
@@ -107,16 +109,18 @@ impl CpalAudioProcessor {
             sample_format: hound::SampleFormat::Int,
         };
 
-        // In continuous mode, we'll create the first file in the output directory
-        let full_path = format!("{}/{}", output_dir, file_name);
+        // Create the initial recording file
+        let full_path = format!("{}/{}.wav", output_dir, timestamp_now());
+        let tmp_path = tmp_wav_path(&full_path);
 
         let writer = Arc::new(Mutex::new(Some(
-            hound::WavWriter::create(&full_path, spec)
+            hound::WavWriter::create(&tmp_path, spec)
                 .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {}", e)))?,
         )));
 
+        let pending_files = Arc::new(Mutex::new(vec![(tmp_path, full_path)]));
+
         Ok(CpalAudioProcessor {
-            file_name: full_path,
             writer,
             multichannel_writers: Arc::new(Mutex::new(Vec::new())),
             intermediate_buffer: Arc::new(Mutex::new(Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE))),
@@ -131,6 +135,8 @@ impl CpalAudioProcessor {
             output_mode: String::new(),
             debug: false,
             current_spec: Arc::new(Mutex::new(Some(spec))),
+            write_errors: Arc::new(AtomicU64::new(0)),
+            pending_files,
         })
     }
 
@@ -142,6 +148,7 @@ impl CpalAudioProcessor {
 
         let mut writers = self.multichannel_writers.lock().unwrap();
         let mut buffers = self.multichannel_buffers.lock().unwrap();
+        let mut pending = self.pending_files.lock().unwrap();
 
         // Ensure the vectors are of the correct size
         writers.clear();
@@ -155,7 +162,8 @@ impl CpalAudioProcessor {
 
         // Create a WAV writer for each channel
         for (idx, &channel) in channels.iter().enumerate() {
-            let channel_file_name = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
+            let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
+            let tmp_path = tmp_wav_path(&final_path);
 
             let spec = hound::WavSpec {
                 channels: 1, // Mono for each individual channel
@@ -164,12 +172,13 @@ impl CpalAudioProcessor {
                 sample_format: hound::SampleFormat::Int,
             };
 
-            let writer = hound::WavWriter::create(&channel_file_name, spec).map_err(|e| {
+            let writer = hound::WavWriter::create(&tmp_path, spec).map_err(|e| {
                 BlackboxError::Wav(format!("Failed to create channel WAV file: {}", e))
             })?;
 
             writers[idx] = Some(writer);
-            info!("Created channel WAV file: {}", channel_file_name);
+            pending.push((tmp_path, final_path.clone()));
+            info!("Created channel WAV file: {}", final_path);
         }
 
         // Store the current configuration
@@ -191,7 +200,8 @@ impl CpalAudioProcessor {
     ) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
-        let multichannel_file_name = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
+        let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
+        let tmp_path = tmp_wav_path(&final_path);
 
         info!(
             "Setting up multichannel mode with {} channels",
@@ -205,7 +215,7 @@ impl CpalAudioProcessor {
             sample_format: hound::SampleFormat::Int,
         };
 
-        let writer = hound::WavWriter::create(&multichannel_file_name, spec).map_err(|e| {
+        let writer = hound::WavWriter::create(&tmp_path, spec).map_err(|e| {
             BlackboxError::Wav(format!("Failed to create multichannel WAV file: {}", e))
         })?;
 
@@ -216,7 +226,13 @@ impl CpalAudioProcessor {
         // Store the current configuration
         *self.current_spec.lock().unwrap() = Some(spec);
 
-        info!("Created multichannel WAV file: {}", multichannel_file_name);
+        // Track pending file for atomic rename on finalize
+        let mut pending = self.pending_files.lock().unwrap();
+        // Replace the placeholder entry from new()
+        pending.clear();
+        pending.push((tmp_path, final_path.clone()));
+
+        info!("Created multichannel WAV file: {}", final_path);
         Ok(())
     }
 
@@ -234,7 +250,8 @@ impl CpalAudioProcessor {
         let num_channels = if channels.len() == 1 { 1 } else { 2 };
 
         // Create the WAV file
-        let file_name = format!("{}/{}.wav", self.output_dir, date_str);
+        let final_path = format!("{}/{}.wav", self.output_dir, date_str);
+        let tmp_path = tmp_wav_path(&final_path);
 
         let spec = hound::WavSpec {
             channels: num_channels as u16,
@@ -243,15 +260,21 @@ impl CpalAudioProcessor {
             sample_format: hound::SampleFormat::Int,
         };
 
-        let writer = hound::WavWriter::create(&file_name, spec)
+        let writer = hound::WavWriter::create(&tmp_path, spec)
             .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {}", e)))?;
 
         // Store the writer
         *self.writer.lock().unwrap() = Some(writer);
-        info!("Created WAV file: {}", file_name);
+        info!("Created WAV file: {}", final_path);
 
         // Store the current configuration
         *self.current_spec.lock().unwrap() = Some(spec);
+
+        // Track pending file for atomic rename on finalize
+        let mut pending = self.pending_files.lock().unwrap();
+        // Replace the placeholder entry from new()
+        pending.clear();
+        pending.push((tmp_path, final_path));
 
         // Initialize buffers
         let mut buffers = self.multichannel_buffers.lock().unwrap();
@@ -373,6 +396,8 @@ impl AudioProcessor for CpalAudioProcessor {
         let writer_for_rotation = Arc::clone(&self.writer);
         let multichannel_writers_for_rotation = Arc::clone(&self.multichannel_writers);
         let sample_rate = self.sample_rate;
+        let write_errors = Arc::clone(&self.write_errors);
+        let pending_files_for_rotation = Arc::clone(&self.pending_files);
 
         // Error callback
         let err_fn = move |err| {
@@ -403,62 +428,48 @@ impl AudioProcessor for CpalAudioProcessor {
                                 let output_mode = &output_mode_owned;
                                 let channels = &channels_owned;
 
-                                // Store paths of files being finalized to check for silence later
-                                let mut created_files = Vec::new();
+                                // Take all pending (tmp → final) pairs from the previous period
+                                let old_pending: Vec<(String, String)> = {
+                                    let mut pf = pending_files_for_rotation.lock().unwrap();
+                                    std::mem::take(&mut *pf)
+                                };
 
                                 // Finalize the main WAV file if it exists
-                                if let Some(writer) = writer_for_rotation.lock().unwrap().take() {
-                                    let suffix = if output_mode == "single" && channels.len() > 2 {
-                                        "-multichannel.wav"
-                                    } else {
-                                        ".wav"
-                                    };
-                                    let file_path = format!(
-                                        "{}/{}{}",
-                                        output_dir,
-                                        timestamp_rounded(),
-                                        suffix
-                                    );
-
-                                    created_files.push(file_path.clone());
-
-                                    if let Err(e) = writer.finalize() {
-                                        error!("Error finalizing WAV file during rotation: {}", e);
-                                    } else {
-                                        info!("Finalized recording to {}", file_path);
-                                    }
+                                if let Some(writer) = writer_for_rotation.lock().unwrap().take()
+                                    && let Err(e) = writer.finalize()
+                                {
+                                    error!("Error finalizing WAV file during rotation: {}", e);
                                 }
 
                                 // Finalize any multichannel writers
                                 let mut writers = multichannel_writers_for_rotation.lock().unwrap();
-                                for (idx, writer_opt) in writers.iter_mut().enumerate() {
-                                    if let Some(writer) = writer_opt.take() {
-                                        let file_path = format!(
-                                            "{}/{}-ch{}.wav",
-                                            output_dir,
-                                            timestamp_rounded(),
-                                            channels.get(idx).unwrap_or(&idx)
-                                        );
+                                for writer_opt in writers.iter_mut() {
+                                    if let Some(writer) = writer_opt.take()
+                                        && let Err(e) = writer.finalize()
+                                    {
+                                        error!("Error finalizing channel WAV file during rotation: {}", e);
+                                    }
+                                }
 
-                                        created_files.push(file_path.clone());
-
-                                        if let Err(e) = writer.finalize() {
-                                            error!("Error finalizing channel WAV file during rotation: {}", e);
+                                // Rename tmp files to final paths
+                                let mut final_files = Vec::new();
+                                for (tmp_path, final_path) in &old_pending {
+                                    if Path::new(tmp_path).exists() {
+                                        if let Err(e) = fs::rename(tmp_path, final_path) {
+                                            error!("Error renaming {} to {}: {}", tmp_path, final_path, e);
                                         } else {
-                                            info!("Finalized recording to {}", file_path);
+                                            info!("Finalized recording to {}", final_path);
+                                            final_files.push(final_path.clone());
                                         }
                                     }
                                 }
 
-                                // Check for silence and delete silent files if threshold is set
+                                // Check for silence and delete silent files
                                 if silence_threshold > 0.0 {
-                                    for file_path in created_files {
+                                    for file_path in final_files {
                                         match is_silent(&file_path, silence_threshold) {
                                             Ok(true) => {
-                                                info!(
-                                                    "Recording is silent (below threshold {}), deleting file",
-                                                    silence_threshold
-                                                );
+                                                info!("Recording is silent (below threshold {}), deleting file", silence_threshold);
                                                 if let Err(e) = fs::remove_file(&file_path) {
                                                     error!("Error deleting silent file: {}", e);
                                                 }
@@ -474,29 +485,24 @@ impl AudioProcessor for CpalAudioProcessor {
                                 }
 
                                 // Create new files for the next recording period
+                                let mut new_pending = Vec::new();
                                 match output_mode.as_str() {
                                     "split" => {
-                                        // Create a WAV writer for each channel
                                         for (idx, &channel) in channels.iter().enumerate() {
-                                            let channel_file_name = format!(
-                                                "{}/{}-ch{}.wav",
-                                                output_dir,
-                                                timestamp_now(),
-                                                channel
-                                            );
-
+                                            let final_path = format!("{}/{}-ch{}.wav", output_dir, timestamp_now(), channel);
+                                            let tmp = tmp_wav_path(&final_path);
                                             let spec = hound::WavSpec {
-                                                channels: 1, // Mono for each individual channel
+                                                channels: 1,
                                                 sample_rate,
                                                 bits_per_sample: 16,
                                                 sample_format: hound::SampleFormat::Int,
                                             };
-
-                                            match hound::WavWriter::create(&channel_file_name, spec) {
-                                                Ok(writer) => {
-                                                    writers[idx] = Some(writer);
-                                                    info!("Created channel WAV file: {}", channel_file_name);
-                                                },
+                                            match hound::WavWriter::create(&tmp, spec) {
+                                                Ok(w) => {
+                                                    writers[idx] = Some(w);
+                                                    new_pending.push((tmp, final_path.clone()));
+                                                    info!("Created channel WAV file: {}", final_path);
+                                                }
                                                 Err(e) => {
                                                     error!("Failed to create channel WAV file: {}", e);
                                                 }
@@ -504,42 +510,35 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                     "single" if channels.len() > 2 => {
-                                        let multichannel_file_name = format!(
-                                            "{}/{}-multichannel.wav",
-                                            output_dir,
-                                            timestamp_now()
-                                        );
-
+                                        let final_path = format!("{}/{}-multichannel.wav", output_dir, timestamp_now());
+                                        let tmp = tmp_wav_path(&final_path);
                                         let spec = hound::WavSpec {
                                             channels: channels.len() as u16,
                                             sample_rate,
                                             bits_per_sample: 16,
                                             sample_format: hound::SampleFormat::Int,
                                         };
-
-                                        match hound::WavWriter::create(&multichannel_file_name, spec) {
-                                            Ok(writer) => {
-                                                *writer_for_rotation.lock().unwrap() = Some(writer);
-                                                info!("Created multichannel WAV file: {}", multichannel_file_name);
-                                            },
+                                        match hound::WavWriter::create(&tmp, spec) {
+                                            Ok(w) => {
+                                                *writer_for_rotation.lock().unwrap() = Some(w);
+                                                new_pending.push((tmp, final_path.clone()));
+                                                info!("Created multichannel WAV file: {}", final_path);
+                                            }
                                             Err(e) => {
                                                 error!("Failed to create multichannel WAV file: {}", e);
                                             }
                                         }
                                     }
                                     _ => {
-                                        // Standard stereo mode
-                                        let file_name = format!("{}.wav", timestamp_now());
-
-                                        let full_path = format!("{}/{}", output_dir, file_name);
-
+                                        let final_path = format!("{}/{}.wav", output_dir, timestamp_now());
+                                        let tmp = tmp_wav_path(&final_path);
                                         if let Some(spec) = &*current_spec.lock().unwrap() {
-                                            match hound::WavWriter::create(&full_path, *spec) {
-                                                Ok(writer) => {
-                                                    *writer_for_rotation.lock().unwrap() = Some(writer);
-                                                    // We can't update self.file_name directly in this context
-                                                    info!("Created new recording file: {}", full_path);
-                                                },
+                                            match hound::WavWriter::create(&tmp, *spec) {
+                                                Ok(w) => {
+                                                    *writer_for_rotation.lock().unwrap() = Some(w);
+                                                    new_pending.push((tmp, final_path.clone()));
+                                                    info!("Created new recording file: {}", final_path);
+                                                }
                                                 Err(e) => {
                                                     error!("Failed to create new WAV file: {}", e);
                                                 }
@@ -547,6 +546,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                         }
                                     }
                                 }
+
+                                // Update shared pending files for the new recording period
+                                *pending_files_for_rotation.lock().unwrap() = new_pending;
 
                                 // Reset the rotation timer
                                 *last_rotation_time_clone.lock().unwrap() = Instant::now();
@@ -572,7 +574,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                         {
                                             // Convert f32 to i16 range
                                             let sample = (frame[channel] * 32767.0) as i32;
-                                            let _ = writer.write_sample(sample);
+                                            if writer.write_sample(sample).is_err() {
+                                                write_errors.fetch_add(1, Ordering::Relaxed);
+                                            }
 
                                             // Also store in the buffer for later processing
                                             if idx < buffers.len() {
@@ -599,7 +603,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                             if channel < frame.len() {
                                                 // Convert f32 to i16 range
                                                 let sample = (frame[channel] * 32767.0) as i32;
-                                                let _ = writer.write_sample(sample);
+                                                if writer.write_sample(sample).is_err() {
+                                                    write_errors.fetch_add(1, Ordering::Relaxed);
+                                                }
                                             }
                                         }
                                     }
@@ -618,7 +624,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                         for &channel in &channels_owned {
                                             if channel < frame.len() {
                                                 let sample = (frame[channel] * 32767.0) as i32;
-                                                let _ = writer.write_sample(sample);
+                                                if writer.write_sample(sample).is_err() {
+                                                    write_errors.fetch_add(1, Ordering::Relaxed);
+                                                }
                                                 buffer.push(sample);
                                             }
                                         }
@@ -662,67 +670,51 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn finalize(&mut self) -> Result<(), BlackboxError> {
-        // Load configuration
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
 
-        // Get the file path before finalizing
-        let file_path = self.file_name.clone();
-        let channels = &self.channels;
+        // Report any write errors that accumulated during recording
+        let errors = self.write_errors.load(Ordering::Relaxed);
+        if errors > 0 {
+            warn!("{} sample write errors occurred during recording", errors);
+        }
 
-        // Store paths of files being finalized to check for silence later
-        let mut created_files = Vec::new();
-
-        // Finalize the WAV file first
+        // Finalize the main WAV file
         if let Some(writer) = self.writer.lock().unwrap().take() {
             writer
                 .finalize()
                 .map_err(|e| BlackboxError::Wav(format!("Error finalizing WAV file: {}", e)))?;
-            created_files.push(file_path.clone());
         }
 
         // Finalize any multichannel writers
-        let mut writers = self.multichannel_writers.lock().unwrap();
-        for (idx, writer_opt) in writers.iter_mut().enumerate() {
-            if let Some(writer) = writer_opt.take() {
-                let file_path = format!(
-                    "{}/{}-ch{}.wav",
-                    self.output_dir,
-                    timestamp_now(),
-                    channels.get(idx).unwrap_or(&idx)
-                );
-
-                created_files.push(file_path.clone());
-
-                writer.finalize().map_err(|e| {
-                    BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e))
-                })?;
+        {
+            let mut writers = self.multichannel_writers.lock().unwrap();
+            for writer_opt in writers.iter_mut() {
+                if let Some(writer) = writer_opt.take() {
+                    writer.finalize().map_err(|e| {
+                        BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e))
+                    })?;
+                }
             }
         }
 
-        // Then close the stream
+        // Close the stream
         self.stream = None;
 
-        info!("Finalized recording to {}", file_path);
-
-        // Check if the files are in the output directory and move them if needed
-        for file_path in &created_files {
-            let path = Path::new(file_path);
-            if let Some(file_name) = path.file_name()
-                && let Some(file_name_str) = file_name.to_str()
-                && let Some(parent_dir) = path.parent()
-                && let Some(parent_dir_str) = parent_dir.to_str()
-                && parent_dir_str != self.output_dir
-            {
-                let new_path = format!("{}/{}", self.output_dir, file_name_str);
-                info!("Moving file from {} to {}", file_path, new_path);
-                fs::rename(file_path, &new_path)?;
+        // Rename all pending .recording.wav files to their final .wav paths
+        let pending = std::mem::take(&mut *self.pending_files.lock().unwrap());
+        let mut final_files = Vec::new();
+        for (tmp_path, final_path) in &pending {
+            if Path::new(tmp_path).exists() {
+                fs::rename(tmp_path, final_path)?;
+                info!("Finalized recording to {}", final_path);
+                final_files.push(final_path.clone());
             }
         }
 
-        // Check if we should apply silence detection
+        // Check silence and delete silent files
         if silence_threshold > 0.0 {
-            for file_path in created_files {
+            for file_path in final_files {
                 match is_silent(&file_path, silence_threshold) {
                     Ok(true) => {
                         info!(
