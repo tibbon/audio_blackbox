@@ -92,6 +92,18 @@ impl WriterThreadState {
             fs::create_dir_all(output_dir)?;
         }
 
+        // Fail early if disk space is already below threshold
+        if min_disk_space_mb > 0
+            && let Some(available_mb) = available_disk_space_mb(output_dir)
+            && available_mb < min_disk_space_mb
+        {
+            disk_space_low.store(true, Ordering::Release);
+            return Err(BlackboxError::Io(std::io::Error::other(format!(
+                "Insufficient disk space: {}MB available, {}MB required",
+                available_mb, min_disk_space_mb
+            ))));
+        }
+
         let mut state = WriterThreadState {
             output_mode: output_mode.to_string(),
             channels: channels.to_vec(),

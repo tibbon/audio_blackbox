@@ -518,3 +518,71 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         );
     });
 }
+
+// ===========================================================================
+// Disk space check at startup
+// ===========================================================================
+
+#[test]
+fn test_new_fails_when_disk_space_low() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let disk_space_low = Arc::new(AtomicBool::new(false));
+
+        // Set threshold absurdly high (999 TB) — guaranteed to exceed available space
+        let result = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            "single",
+            0.0,
+            Arc::clone(&write_errors),
+            999_000_000, // 999 TB in MB
+            Arc::clone(&disk_space_low),
+        );
+
+        let err = result
+            .err()
+            .expect("Should fail when disk space is below threshold");
+        assert!(
+            disk_space_low.load(Ordering::Relaxed),
+            "disk_space_low flag should be set"
+        );
+
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Insufficient disk space"),
+            "Error should mention disk space: {err_msg}",
+        );
+    });
+}
+
+#[test]
+fn test_new_succeeds_when_disk_check_disabled() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let disk_space_low = Arc::new(AtomicBool::new(false));
+
+        // min_disk_space_mb = 0 disables the check
+        let result = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            "single",
+            0.0,
+            Arc::clone(&write_errors),
+            0,
+            Arc::clone(&disk_space_low),
+        );
+
+        assert!(result.is_ok(), "Should succeed when disk check is disabled");
+        assert!(
+            !disk_space_low.load(Ordering::Relaxed),
+            "disk_space_low should not be set"
+        );
+    });
+}
