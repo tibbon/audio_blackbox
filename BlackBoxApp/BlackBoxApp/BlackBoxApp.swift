@@ -64,18 +64,20 @@ struct BlackBoxApp: App {
 
     @ViewBuilder
     private var preferencesButton: some View {
-        if #available(macOS 14.0, *) {
-            SettingsLink {
-                Text("Preferences...")
-            }
-            .keyboardShortcut(",")
-        } else {
-            Button("Preferences...") {
-                NSApp.activate(ignoringOtherApps: true)
+        // SettingsLink doesn't work reliably inside MenuBarExtra menus,
+        // so we use the sendAction approach on all macOS versions.
+        Button("Preferences...") {
+            // Activate the app first so the settings window comes to front
+            NSApp.activate(ignoringOtherApps: true)
+            // On macOS 14+, the selector is showSettingsWindow:
+            // On macOS 13, it's showPreferencesWindow:
+            if #available(macOS 14.0, *) {
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } else {
+                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
             }
-            .keyboardShortcut(",")
         }
+        .keyboardShortcut(",")
     }
 
     private var menuBarIcon: String {
