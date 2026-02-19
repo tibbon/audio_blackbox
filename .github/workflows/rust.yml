@@ -12,8 +12,66 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # ── Formatting ─────────────────────────────────────────────────────
+  # Fast check — fails early before burning CI minutes on builds.
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+  # ── Lint ───────────────────────────────────────────────────────────
+  # Clippy on all targets (lib, bins, tests, benchmarks).
+  lint:
+    name: Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-clippy-
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config
+
+    - name: Run clippy (all targets)
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
+
+    - name: Check Cargo.lock is up-to-date
+      run: cargo update --locked --dry-run
+
+  # ── Tests ──────────────────────────────────────────────────────────
+  # Run on both Ubuntu and macOS. cargo test compiles everything, so
+  # no separate build step is needed.
   test:
-    name: Test on ${{ matrix.os }}
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -27,8 +85,6 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
 
     - name: Cache Rust dependencies
       uses: actions/cache@v4
@@ -37,9 +93,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-test-
 
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
@@ -47,14 +103,30 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libasound2-dev pkg-config alsa-utils
 
-    - name: Build
-      run: cargo build --verbose
-
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1
 
-  lint:
-    name: Lint
+  # ── Security audit ─────────────────────────────────────────────────
+  # Check dependencies for known vulnerabilities (RUSTSEC advisories).
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@cargo-audit
+
+    - name: Run audit
+      run: cargo audit
+
+  # ── Benchmark smoke test ───────────────────────────────────────────
+  # Builds the bench binary in release mode and runs a quick smoke test
+  # to catch regressions. Not for perf numbers (CI runners are noisy).
+  bench:
+    name: Benchmark smoke test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,8 +135,6 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
 
     - name: Cache Rust dependencies
       uses: actions/cache@v4
@@ -73,31 +143,47 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-bench-
 
     - name: Install Linux dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+        sudo apt-get install -y libasound2-dev pkg-config
 
-    - name: Check formatting
-      run: cargo fmt --all -- --check
+    - name: Build bench binary (release)
+      run: cargo build --release --bin bench-writer
 
-    - name: Run clippy
-      run: cargo clippy --no-default-features -- -D warnings
+    - name: Smoke test — single mode (64ch, 2s)
+      run: target/release/bench-writer --channels 64 --seconds 2 --mode single
 
-    - name: Check Cargo.lock is up-to-date
-      run: cargo update --locked --dry-run
+    - name: Smoke test — split mode (16ch, 2s)
+      run: target/release/bench-writer --channels 16 --seconds 2 --mode split
 
+    - name: Smoke test — pipeline mode (64ch, 2s)
+      run: target/release/bench-writer --channels 64 --seconds 2 --mode pipeline
+
+  # ── Release ────────────────────────────────────────────────────────
+  # Builds release binaries on both Linux and macOS, then creates a
+  # GitHub release with both artifacts.
   release:
-    name: Release
-    needs: [test, lint]
+    name: Release (${{ matrix.os }})
+    needs: [fmt, lint, test, audit]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: blackbox-linux-amd64
+            binary: target/release/blackbox
+          - os: macos-latest
+            artifact: blackbox-macos-arm64
+            binary: target/release/blackbox
+
     steps:
     - uses: actions/checkout@v4
 
@@ -111,23 +197,26 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-release-
 
     - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+        sudo apt-get install -y libasound2-dev pkg-config
 
     - name: Build release
       run: cargo build --release
 
-    - name: Create release
+    - name: Rename binary
+      run: cp ${{ matrix.binary }} ${{ matrix.artifact }}
+
+    - name: Upload release artifact
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          target/release/blackbox
+        files: ${{ matrix.artifact }}
         draft: false
         prerelease: false
       env:

@@ -71,6 +71,7 @@ mod tests {
     use tempfile::tempdir;
 
     // Include test submodules
+    mod benchmark_tests;
     mod channel_tests;
     mod config_tests;
     mod cpal_integration_tests;

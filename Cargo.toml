@@ -37,6 +37,10 @@ path = "src/lib.rs"
 name = "blackbox"
 path = "src/bin/main.rs"
 
+[[bin]]
+name = "bench-writer"
+path = "src/bin/bench_writer.rs"
+
 [features]
 default = []
 cargo-clippy = [] # Required: objc crate macros check this feature internally
