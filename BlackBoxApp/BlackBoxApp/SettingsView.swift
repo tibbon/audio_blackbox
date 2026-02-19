@@ -29,11 +29,11 @@ struct SettingsView: View {
 
 struct RecordingSettingsTab: View {
     @ObservedObject var recorder: RecordingState
-    @State private var selectedDevice: String = ""
-    @State private var channelSpec: String = "0"
-    @State private var outputMode: String = "single"
-    @State private var silenceEnabled: Bool = true
-    @State private var silenceThreshold: Double = 0.01
+    @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
+    @AppStorage(SettingsKeys.outputMode) private var outputMode: String = "single"
+    @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
+    @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
 
     var body: some View {
         Form {
@@ -86,17 +86,6 @@ struct RecordingSettingsTab: View {
             }
         }
         .padding()
-        .onAppear(perform: loadConfig)
-    }
-
-    private func loadConfig() {
-        guard let config = recorder.bridge.getConfig() else { return }
-        selectedDevice = config["input_device"] as? String ?? ""
-        channelSpec = config["audio_channels"] as? String ?? "0"
-        outputMode = config["output_mode"] as? String ?? "single"
-        let threshold = config["silence_threshold"] as? Double ?? 0.01
-        silenceEnabled = threshold > 0
-        silenceThreshold = threshold > 0 ? threshold : 0.01
     }
 
     private func applyConfig() {
@@ -116,16 +105,16 @@ struct RecordingSettingsTab: View {
 
 struct OutputSettingsTab: View {
     @ObservedObject var recorder: RecordingState
+    @AppStorage(SettingsKeys.continuousMode) private var continuousMode: Bool = false
+    @AppStorage(SettingsKeys.recordingCadence) private var recordingCadence: Int = 300
     @State private var outputDir: String = "recordings"
-    @State private var continuousMode: Bool = false
-    @State private var recordingCadence: Int = 300
 
     var body: some View {
         Form {
             Section("Output Directory") {
                 HStack {
                     TextField("Directory", text: $outputDir)
-                        .onSubmit { applyConfig() }
+                        .disabled(true)
                     Button("Choose...") {
                         chooseDirectory()
                     }
@@ -155,19 +144,17 @@ struct OutputSettingsTab: View {
             }
         }
         .padding()
-        .onAppear(perform: loadConfig)
+        .onAppear(perform: loadOutputDir)
     }
 
-    private func loadConfig() {
-        guard let config = recorder.bridge.getConfig() else { return }
-        outputDir = config["output_dir"] as? String ?? "recordings"
-        continuousMode = config["continuous_mode"] as? Bool ?? false
-        recordingCadence = (config["recording_cadence"] as? Int) ?? 300
+    private func loadOutputDir() {
+        if let config = recorder.bridge.getConfig() {
+            outputDir = config["output_dir"] as? String ?? "recordings"
+        }
     }
 
     private func applyConfig() {
         let config: [String: Any] = [
-            "output_dir": outputDir,
             "continuous_mode": continuousMode,
             "recording_cadence": recordingCadence,
         ]
@@ -192,17 +179,23 @@ struct OutputSettingsTab: View {
 // MARK: - General Tab
 
 struct GeneralSettingsTab: View {
-    @AppStorage("launchAtLogin") private var launchAtLogin = false
-    @AppStorage("autoRecord") private var autoRecord = false
+    @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
+    @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
 
     var body: some View {
         Form {
             Section("Startup") {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _ in
-                        updateLoginItem()
+                Toggle("Launch at login and begin recording", isOn: Binding(
+                    get: { launchAtLogin && autoRecord },
+                    set: { newValue in
+                        launchAtLogin = newValue
+                        autoRecord = newValue
+                        updateLoginItem(enabled: newValue)
                     }
-                Toggle("Start recording automatically on launch", isOn: $autoRecord)
+                ))
+                Text("App will start silently in the menu bar and begin recording with your saved settings.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("About") {
@@ -220,21 +213,35 @@ struct GeneralSettingsTab: View {
         }
         .padding()
         .onAppear {
-            // Sync toggle state with actual system registration
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
 
-    private func updateLoginItem() {
+    private func updateLoginItem(enabled: Bool) {
         do {
-            if launchAtLogin {
+            if enabled {
                 try SMAppService.mainApp.register()
             } else {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            // Revert toggle on failure
             launchAtLogin = SMAppService.mainApp.status == .enabled
+            autoRecord = launchAtLogin
         }
     }
+}
+
+// MARK: - Settings Keys
+
+/// Centralized UserDefaults keys for all persisted settings.
+enum SettingsKeys {
+    static let inputDevice = "inputDevice"
+    static let audioChannels = "audioChannels"
+    static let outputMode = "outputMode"
+    static let silenceEnabled = "silenceEnabled"
+    static let silenceThreshold = "silenceThreshold"
+    static let continuousMode = "continuousMode"
+    static let recordingCadence = "recordingCadence"
+    static let launchAtLogin = "launchAtLogin"
+    static let autoRecord = "autoRecord"
 }

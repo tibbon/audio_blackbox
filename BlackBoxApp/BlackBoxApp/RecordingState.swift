@@ -22,10 +22,10 @@ final class RecordingState: ObservableObject {
         bridge = RustBridge()
         refreshDevices()
         restoreOutputDirBookmark()
+        restoreSavedSettings()
 
         // Auto-record on launch if enabled
-        if UserDefaults.standard.bool(forKey: "autoRecord") {
-            // Delay slightly to let the app finish launching
+        if UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.start()
             }
@@ -121,12 +121,10 @@ final class RecordingState: ObservableObject {
         if dir.hasPrefix("/") {
             url = URL(fileURLWithPath: dir)
         } else {
-            // Relative path — resolve from current working directory
             let cwd = FileManager.default.currentDirectoryPath
             url = URL(fileURLWithPath: cwd).appendingPathComponent(dir)
         }
 
-        // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         NSWorkspace.shared.open(url)
     }
@@ -136,7 +134,44 @@ final class RecordingState: ObservableObject {
     }
 
     func selectDevice(_ name: String) {
+        UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
         bridge.setConfig(["input_device": name])
+    }
+
+    // MARK: - Settings Persistence
+
+    /// Restore all saved audio settings from UserDefaults and push to Rust engine.
+    /// Called once at init, before auto-record fires.
+    private func restoreSavedSettings() {
+        let defaults = UserDefaults.standard
+        var config: [String: Any] = [:]
+
+        if let device = defaults.string(forKey: SettingsKeys.inputDevice), !device.isEmpty {
+            config["input_device"] = device
+        }
+        if let channels = defaults.string(forKey: SettingsKeys.audioChannels) {
+            config["audio_channels"] = channels
+        }
+        if let mode = defaults.string(forKey: SettingsKeys.outputMode) {
+            config["output_mode"] = mode
+        }
+
+        // Silence threshold: reconstruct from enabled flag + threshold value
+        let silenceEnabled = defaults.object(forKey: SettingsKeys.silenceEnabled) as? Bool ?? true
+        let silenceThreshold = defaults.object(forKey: SettingsKeys.silenceThreshold) as? Double ?? 0.01
+        config["silence_threshold"] = silenceEnabled ? silenceThreshold : 0.0
+
+        // Output settings
+        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
+        config["continuous_mode"] = continuousMode
+        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
+        if cadence > 0 {
+            config["recording_cadence"] = cadence
+        }
+
+        if !config.isEmpty {
+            bridge.setConfig(config)
+        }
     }
 
     // MARK: - Duration Timer
@@ -223,11 +258,9 @@ final class RecordingState: ObservableObject {
                 bridge.setConfig(["output_dir": url.path])
             }
             if isStale {
-                // Re-save the bookmark to refresh it
                 saveOutputDirBookmark(for: url)
             }
         } catch {
-            // Bookmark invalid — user will need to re-select directory
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         }
     }
