@@ -116,6 +116,11 @@ struct BlackBoxApp: App {
             openWindow(id: "about")
         }
 
+        Menu("Help") {
+            Link("BlackBox Support", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
+            Link("Privacy Policy", destination: URL(string: "https://dollhousemediatech.com/blackbox/privacy")!)
+        }
+
         Button("Settings\u{2026}") {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "settings")
