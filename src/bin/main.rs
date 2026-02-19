@@ -7,7 +7,6 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::needless_pass_by_ref_mut)]
 
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -22,6 +21,7 @@ use blackbox::AppConfig;
 use blackbox::AudioProcessor;
 use blackbox::AudioRecorder;
 use blackbox::CpalAudioProcessor;
+use blackbox::PerformanceTracker;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -83,12 +83,16 @@ fn main() {
         println!("Created output directory: {output_dir}");
     }
 
-    // Set up performance monitoring if enabled
-    let mut perf_monitor = None;
-    if config.get_performance_logging() {
+    // Set up performance monitoring using the real PerformanceTracker
+    let perf_tracker = if config.get_performance_logging() {
         println!("Performance monitoring enabled");
-        perf_monitor = Some(PerformanceMonitor::new());
-    }
+        let log_path = format!("{output_dir}/performance.log");
+        let tracker = PerformanceTracker::new(true, &log_path, 60, 5);
+        tracker.start();
+        Some(tracker)
+    } else {
+        None
+    };
 
     // Set up signal handling for clean shutdown
     let running = Arc::new(AtomicBool::new(true));
@@ -120,151 +124,84 @@ fn main() {
     #[cfg(feature = "menu-bar")]
     let mut menu_app = MenuBarApp::new();
 
-    // Continuous recording mode
-    if config.get_continuous_mode() {
-        println!("Starting in continuous recording mode");
-
-        #[cfg(target_os = "macos")]
-        #[cfg(feature = "menu-bar")]
-        menu_app.update_status(true);
-
-        match recorder.start_recording() {
-            Ok(_) => println!("Recording started!"),
-            Err(e) => {
-                eprintln!("Failed to start recording: {e}");
-                return;
-            }
-        }
-
-        // Main loop
-        println!("Press Ctrl+C to stop recording");
-        while running.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_secs(1));
-
-            // Check system resources if performance monitoring is enabled
-            if let Some(ref mut monitor) = perf_monitor {
-                let metrics = monitor.get_metrics();
-                if metrics.cpu_usage > 80.0 {
-                    eprintln!("Warning: High CPU usage: {:.1}%", metrics.cpu_usage);
-                }
-                if metrics.memory_usage > 80.0 {
-                    eprintln!("Warning: High memory usage: {:.1}%", metrics.memory_usage);
-                }
-            }
-        }
-
-        // Stop recording
-        println!("Stopping recording...");
-
-        #[cfg(target_os = "macos")]
-        #[cfg(feature = "menu-bar")]
-        menu_app.update_status(false);
-
-        // Finalize the recording
-        if let Err(e) = recorder.processor.finalize() {
-            eprintln!("Error finalizing recording: {e}");
-        }
+    // Start recording
+    let mode_label = if config.get_continuous_mode() {
+        "continuous"
     } else {
-        // Normal recording mode
-        println!("Starting single recording");
+        "single"
+    };
+    println!("Starting {mode_label} recording");
 
-        #[cfg(target_os = "macos")]
-        #[cfg(feature = "menu-bar")]
-        menu_app.update_status(true);
+    #[cfg(target_os = "macos")]
+    #[cfg(feature = "menu-bar")]
+    menu_app.update_status(true);
 
-        match recorder.start_recording() {
-            Ok(_) => println!("Recording started!"),
-            Err(e) => {
-                eprintln!("Failed to start recording: {e}");
-                return;
-            }
+    match recorder.start_recording() {
+        Ok(_) => println!("Recording started!"),
+        Err(e) => {
+            eprintln!("Failed to start recording: {e}");
+            return;
         }
+    }
 
-        // Wait for the recording duration
-        let duration_secs = config.get_duration();
+    // Main recording loop
+    println!("Press Ctrl+C to stop recording");
+    let duration_secs = if config.get_continuous_mode() {
+        0 // 0 means unlimited
+    } else {
+        config.get_duration()
+    };
+
+    if duration_secs > 0 {
         println!("Recording for {duration_secs} seconds...");
+    }
 
-        let mut remaining = duration_secs;
-        while remaining > 0 && running.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_secs(1));
-            remaining -= 1;
+    let mut elapsed: u64 = 0;
+    while running.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_secs(1));
+        elapsed += 1;
 
-            // Check system resources if performance monitoring is enabled
-            if let Some(ref mut monitor) = perf_monitor {
-                let metrics = monitor.get_metrics();
+        // Check system resources if performance monitoring is enabled
+        if let Some(ref tracker) = perf_tracker {
+            if let Some(metrics) = tracker.get_current_metrics() {
                 if metrics.cpu_usage > 80.0 {
                     eprintln!("Warning: High CPU usage: {:.1}%", metrics.cpu_usage);
                 }
-                if metrics.memory_usage > 80.0 {
-                    eprintln!("Warning: High memory usage: {:.1}%", metrics.memory_usage);
+                if metrics.memory_percent > 80.0 {
+                    eprintln!("Warning: High memory usage: {:.1}%", metrics.memory_percent);
                 }
             }
+        }
 
+        // For fixed-duration mode, check if time is up and print remaining
+        if duration_secs > 0 {
+            if elapsed >= duration_secs {
+                break;
+            }
+            let remaining = duration_secs - elapsed;
             if remaining > 0 && remaining.is_multiple_of(5) {
                 println!("{remaining} seconds remaining...");
             }
         }
+    }
 
-        // Stop recording
-        println!("Stopping recording...");
+    // Stop recording
+    println!("Stopping recording...");
 
-        #[cfg(target_os = "macos")]
-        #[cfg(feature = "menu-bar")]
-        menu_app.update_status(false);
+    #[cfg(target_os = "macos")]
+    #[cfg(feature = "menu-bar")]
+    menu_app.update_status(false);
 
-        // Finalize the recording
-        if let Err(e) = recorder.processor.finalize() {
-            eprintln!("Error finalizing recording: {e}");
-        }
+    // Finalize the recording
+    if let Err(e) = recorder.processor.finalize() {
+        eprintln!("Error finalizing recording: {e}");
+    }
+
+    // Stop performance tracking
+    if let Some(ref tracker) = perf_tracker {
+        tracker.stop();
     }
 
     println!("Recording finished!");
     std::process::exit(0);
-}
-
-// A simple performance monitor
-struct PerformanceMonitor {
-    metrics: HashMap<String, f32>,
-}
-
-struct PerformanceMetrics {
-    cpu_usage: f32,
-    memory_usage: f32,
-}
-
-impl PerformanceMonitor {
-    fn new() -> Self {
-        PerformanceMonitor {
-            metrics: HashMap::new(),
-        }
-    }
-
-    fn get_metrics(&mut self) -> PerformanceMetrics {
-        // In a real implementation, this would measure actual system metrics
-        // For now, we just return simulated values
-
-        // Simulate CPU usage between 10-90%
-        let cpu = 10.0
-            + (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                % 80) as f32;
-
-        // Simulate memory usage between 20-70%
-        let mem = 20.0
-            + (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                % 50) as f32;
-
-        self.metrics.insert("cpu".to_string(), cpu);
-        self.metrics.insert("memory".to_string(), mem);
-
-        PerformanceMetrics {
-            cpu_usage: cpu,
-            memory_usage: mem,
-        }
-    }
 }
