@@ -30,7 +30,7 @@ fn timestamp_rounded() -> String {
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 pub struct CpalAudioProcessor {
-    file_name: Arc<Mutex<String>>,
+    file_name: String,
     writer: Arc<Mutex<Option<WavWriterType>>>,
     multichannel_writers: MultiChannelWriters,
     intermediate_buffer: Arc<Mutex<Vec<i32>>>,
@@ -45,9 +45,9 @@ pub struct CpalAudioProcessor {
     recording_cadence: u64,
     output_dir: String,
     last_rotation_time: Arc<Mutex<Instant>>,
-    channels: Arc<Mutex<Vec<usize>>>,
-    output_mode: Arc<Mutex<String>>,
-    debug: Arc<Mutex<bool>>,
+    channels: Vec<usize>,
+    output_mode: String,
+    debug: bool,
     current_spec: Arc<Mutex<Option<hound::WavSpec>>>,
 }
 
@@ -111,7 +111,7 @@ impl CpalAudioProcessor {
         )));
 
         Ok(CpalAudioProcessor {
-            file_name: Arc::new(Mutex::new(full_path)),
+            file_name: full_path,
             writer,
             multichannel_writers: Arc::new(Mutex::new(Vec::new())),
             intermediate_buffer: Arc::new(Mutex::new(Vec::with_capacity(INTERMEDIATE_BUFFER_SIZE))),
@@ -122,9 +122,9 @@ impl CpalAudioProcessor {
             recording_cadence,
             output_dir,
             last_rotation_time: Arc::new(Mutex::new(Instant::now())),
-            channels: Arc::new(Mutex::new(Vec::new())),
-            output_mode: Arc::new(Mutex::new(String::new())),
-            debug: Arc::new(Mutex::new(false)),
+            channels: Vec::new(),
+            output_mode: String::new(),
+            debug: false,
             current_spec: Arc::new(Mutex::new(Some(spec))),
         })
     }
@@ -260,9 +260,8 @@ impl CpalAudioProcessor {
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
 
-        // Get current configuration for recreating files
-        let output_mode = self.output_mode.lock().unwrap().clone();
-        let channels = self.channels.lock().unwrap().clone();
+        let output_mode = &self.output_mode;
+        let channels = &self.channels;
 
         // Store paths of files being finalized to check for silence later
         let mut created_files = Vec::new();
@@ -335,10 +334,10 @@ impl CpalAudioProcessor {
         // Create new files for the next recording period
         match output_mode.as_str() {
             "split" => {
-                self.setup_split_mode(&channels, self.sample_rate)?;
+                self.setup_split_mode(channels, self.sample_rate)?;
             }
             "single" if channels.len() > 2 => {
-                self.setup_multichannel_mode(&channels, self.sample_rate)?;
+                self.setup_multichannel_mode(channels, self.sample_rate)?;
             }
             _ => {
                 // Standard stereo mode
@@ -383,17 +382,17 @@ impl CpalAudioProcessor {
 
     /// Update the file name with a new path
     #[allow(dead_code)]
-    fn update_file_name(&self, new_path: String) {
-        *self.file_name.lock().unwrap() = new_path;
+    fn update_file_name(&mut self, new_path: String) {
+        self.file_name = new_path;
     }
 }
 
 impl AudioProcessor for CpalAudioProcessor {
     fn process_audio(&mut self, channels: &[usize], output_mode: &str, debug: bool) {
-        // Store the configuration for later use in continuous mode
-        *self.channels.lock().unwrap() = channels.to_vec();
-        *self.output_mode.lock().unwrap() = output_mode.to_string();
-        *self.debug.lock().unwrap() = debug;
+        // Store the configuration for later use in continuous mode and finalize
+        self.channels = channels.to_vec();
+        self.output_mode = output_mode.to_string();
+        self.debug = debug;
 
         // Get CPAL host and device
         let host = cpal::default_host();
@@ -482,12 +481,9 @@ impl AudioProcessor for CpalAudioProcessor {
         let last_rotation_time_clone = Arc::clone(&self.last_rotation_time);
         let recording_cadence = self.recording_cadence;
 
-        // Instead of using a raw pointer, create a thread-safe mechanism
-        // to finalize files when needed
+        // Clone shared state for the audio callback's rotation logic
         let output_dir = self.output_dir.clone();
         let current_spec = Arc::clone(&self.current_spec);
-        let channels_clone = Arc::clone(&self.channels);
-        let output_mode_clone = Arc::clone(&self.output_mode);
         let writer_for_rotation = Arc::clone(&self.writer);
         let multichannel_writers_for_rotation = Arc::clone(&self.multichannel_writers);
         let sample_rate = self.sample_rate;
@@ -517,9 +513,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                 // Perform file rotation using thread-safe mechanisms
                                 println!("Rotating recording files...");
 
-                                // Get current configuration for recreating files
-                                let output_mode = output_mode_clone.lock().unwrap().clone();
-                                let channels = channels_clone.lock().unwrap().clone();
+                                // Use the configuration captured at process_audio() start
+                                let output_mode = &output_mode_owned;
+                                let channels = &channels_owned;
                                 let silence_threshold = env::var("SILENCE_THRESHOLD")
                                     .unwrap_or_else(|_| "0".to_string())
                                     .parse::<f32>()
@@ -800,8 +796,8 @@ impl AudioProcessor for CpalAudioProcessor {
         let silence_threshold = config.get_silence_threshold();
 
         // Get the file path before finalizing
-        let file_path = self.file_name.lock().unwrap().clone();
-        let channels = self.channels.lock().unwrap().clone();
+        let file_path = self.file_name.clone();
+        let channels = &self.channels;
 
         // Store paths of files being finalized to check for silence later
         let mut created_files = Vec::new();
