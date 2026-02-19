@@ -51,6 +51,7 @@ struct BlackBoxApp: App {
                 if recorder.isRecording {
                     recorder.stop()
                 }
+                recorder.releaseOutputDirAccess()
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q")

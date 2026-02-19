@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import AVFoundation
 import Combine
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
@@ -13,10 +14,14 @@ final class RecordingState: ObservableObject {
     let bridge: RustBridge
     private var recordingStartTime: Date?
     private var timer: Timer?
+    private var securityScopedURL: URL?
+
+    private static let bookmarkKey = "outputDirBookmark"
 
     init() {
         bridge = RustBridge()
         refreshDevices()
+        restoreOutputDirBookmark()
     }
 
     // MARK: - Actions
@@ -31,6 +36,18 @@ final class RecordingState: ObservableObject {
 
     func start() {
         errorMessage = nil
+        checkMicrophonePermission { [weak self] granted in
+            guard let self else { return }
+            if granted {
+                self.startRecordingInternal()
+            } else {
+                self.errorMessage = "Microphone access denied. Open System Settings to grant permission."
+                self.statusText = "Error"
+            }
+        }
+    }
+
+    private func startRecordingInternal() {
         if bridge.startRecording() {
             isRecording = true
             recordingStartTime = Date()
@@ -39,6 +56,41 @@ final class RecordingState: ObservableObject {
         } else {
             errorMessage = bridge.lastError ?? "Failed to start recording"
             statusText = "Error"
+        }
+    }
+
+    // MARK: - Microphone Permission
+
+    private func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            completion(true)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                Task { @MainActor in
+                    completion(granted)
+                }
+            }
+        case .denied, .restricted:
+            showMicrophonePermissionAlert()
+            completion(false)
+        @unknown default:
+            completion(false)
+        }
+    }
+
+    private func showMicrophonePermissionAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Microphone Access Required"
+        alert.informativeText = "BlackBox needs microphone access to record audio. Please grant access in System Settings > Privacy & Security > Microphone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
@@ -105,5 +157,59 @@ final class RecordingState: ObservableObject {
         } else {
             statusText = String(format: "Recording %d:%02d", minutes, seconds)
         }
+    }
+
+    // MARK: - Security-Scoped Bookmarks
+
+    /// Save a security-scoped bookmark for the chosen output directory.
+    func saveOutputDirBookmark(for url: URL) {
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
+
+            // Release previous access if any
+            securityScopedURL?.stopAccessingSecurityScopedResource()
+            securityScopedURL = url
+
+            // Update Rust config with the chosen path
+            bridge.setConfig(["output_dir": url.path])
+        } catch {
+            errorMessage = "Failed to save directory bookmark: \(error.localizedDescription)"
+        }
+    }
+
+    /// Restore the security-scoped bookmark on launch.
+    private func restoreOutputDirBookmark() {
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return }
+        do {
+            var isStale = false
+            let url = try URL(
+                resolvingBookmarkData: data,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            if url.startAccessingSecurityScopedResource() {
+                securityScopedURL = url
+                bridge.setConfig(["output_dir": url.path])
+            }
+            if isStale {
+                // Re-save the bookmark to refresh it
+                saveOutputDirBookmark(for: url)
+            }
+        } catch {
+            // Bookmark invalid — user will need to re-select directory
+            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+        }
+    }
+
+    /// Release security-scoped resource access.
+    func releaseOutputDirAccess() {
+        securityScopedURL?.stopAccessingSecurityScopedResource()
+        securityScopedURL = nil
     }
 }

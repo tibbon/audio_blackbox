@@ -183,7 +183,7 @@ struct OutputSettingsTab: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             outputDir = url.path
-            applyConfig()
+            recorder.saveOutputDirBookmark(for: url)
         }
     }
 }

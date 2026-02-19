@@ -174,6 +174,18 @@ SWIFT_APP_DIR = BlackBoxApp
 rust-lib:
 	$(CARGO_BIN) build --release --features ffi
 
+# Build universal (fat) Rust static library for aarch64 + x86_64
+.PHONY: rust-lib-universal
+rust-lib-universal:
+	$(CARGO_BIN) build --release --features ffi --target=aarch64-apple-darwin
+	$(CARGO_BIN) build --release --features ffi --target=x86_64-apple-darwin
+	@mkdir -p $(TARGET_DIR)/universal
+	lipo -create \
+		$(TARGET_DIR)/aarch64-apple-darwin/release/libblackbox.a \
+		$(TARGET_DIR)/x86_64-apple-darwin/release/libblackbox.a \
+		-output $(TARGET_DIR)/universal/libblackbox.a
+	@echo "Universal library created at $(TARGET_DIR)/universal/libblackbox.a"
+
 # Swift source files for the menu bar app
 SWIFT_SOURCES = $(SWIFT_APP_DIR)/BlackBoxApp/BlackBoxApp.swift \
                 $(SWIFT_APP_DIR)/BlackBoxApp/RecordingState.swift \

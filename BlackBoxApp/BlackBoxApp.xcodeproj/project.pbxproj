@@ -12,11 +12,13 @@
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
+		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
@@ -47,6 +49,7 @@
 				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
+				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
 				FD293BB00932B1C1871E349D /* SettingsView.swift */,
@@ -109,6 +112,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */,
+				94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,7 +137,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
@@ -223,7 +227,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";

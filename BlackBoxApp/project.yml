@@ -33,7 +33,7 @@ targets:
           - "Security"
         IMPORT_PATHS: "$(SRCROOT)/bridge"
         ENABLE_HARDENED_RUNTIME: YES
-        CODE_SIGN_ENTITLEMENTS: ""
+        CODE_SIGN_ENTITLEMENTS: "BlackBox.entitlements"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
