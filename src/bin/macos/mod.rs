@@ -192,7 +192,7 @@ impl MenuBarApp {
                 && rec.get_processor().is_recording()
             {
                 // Use the processor's stop_recording method directly
-                if let Err(e) = rec.processor.stop_recording() {
+                if let Err(e) = rec.processor_mut().stop_recording() {
                     eprintln!("Error stopping recording: {e:?}");
                 } else {
                     println!("Recording stopped");
@@ -354,32 +354,18 @@ fn create_visual_menu_bar(
     Ok(())
 }
 
-// Fallback implementation
+// Fallback implementation — processes ControlMessages without Cocoa UI
 fn create_simplified_menu_bar(
     control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
     state: SharedState,
 ) {
-    // This is our fallback implementation that doesn't use Cocoa
-    let mut should_quit = false;
-
     println!("Using simplified menu bar (non-visual)");
-
-    // Create a temporary status file to allow command line control
-    let _ = std::fs::write("/tmp/blackbox_status", "Idle");
-
-    // Remove any existing control files
-    let _ = std::fs::remove_file("/tmp/blackbox_start");
-    let _ = std::fs::remove_file("/tmp/blackbox_stop");
-    let _ = std::fs::remove_file("/tmp/blackbox_quit");
-
-    // Print instructions
     println!("\n==== BlackBox Audio Recorder ====");
-    println!("Commands available in separate terminal:");
-    println!("- Start recording: `touch /tmp/blackbox_start`");
-    println!("- Stop recording:  `touch /tmp/blackbox_stop`");
-    println!("- Quit app:        `touch /tmp/blackbox_quit`");
-    println!("- Check status:    `cat /tmp/blackbox_status`");
+    println!("Recording is controlled via the main thread.");
+    println!("Press Ctrl+C to exit.");
     println!("================================\n");
+
+    let mut should_quit = false;
 
     while !should_quit {
         // Check for control messages from the main thread
@@ -388,12 +374,10 @@ fn create_simplified_menu_bar(
                 ControlMessage::StartRecording => {
                     println!("UI: Starting recording");
                     *state.is_recording.lock().unwrap() = true;
-                    let _ = std::fs::write("/tmp/blackbox_status", "Recording");
                 }
                 ControlMessage::StopRecording => {
                     println!("UI: Stopping recording");
                     *state.is_recording.lock().unwrap() = false;
-                    let _ = std::fs::write("/tmp/blackbox_status", "Idle");
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
                     println!("UI: Updating output dir to {dir}");
@@ -406,34 +390,8 @@ fn create_simplified_menu_bar(
             }
         }
 
-        // Check for file-based control commands
-        if std::path::Path::new("/tmp/blackbox_start").exists() {
-            let _ = std::fs::remove_file("/tmp/blackbox_start");
-            if !*state.is_recording.lock().unwrap() {
-                *state.is_recording.lock().unwrap() = true;
-                let _ = std::fs::write("/tmp/blackbox_status", "Recording");
-            }
-        }
-
-        if std::path::Path::new("/tmp/blackbox_stop").exists() {
-            let _ = std::fs::remove_file("/tmp/blackbox_stop");
-            if *state.is_recording.lock().unwrap() {
-                *state.is_recording.lock().unwrap() = false;
-                let _ = std::fs::write("/tmp/blackbox_status", "Idle");
-            }
-        }
-
-        if std::path::Path::new("/tmp/blackbox_quit").exists() {
-            let _ = std::fs::remove_file("/tmp/blackbox_quit");
-            should_quit = true;
-        }
-
-        // Sleep to avoid using too much CPU
         thread::sleep(Duration::from_millis(100));
     }
-
-    // Clean up status file
-    let _ = std::fs::remove_file("/tmp/blackbox_status");
 }
 
 #[cfg(test)]

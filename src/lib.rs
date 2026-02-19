@@ -198,7 +198,7 @@ mod tests {
             let path = Path::new(&file_name);
             assert!(path.exists(), "Test file should have been created");
 
-            let _ = recorder.processor.finalize();
+            let _ = recorder.processor_mut().finalize();
             assert!(!path.exists(), "Silent file should have been deleted");
         });
     }
@@ -221,7 +221,7 @@ mod tests {
             let result = recorder.start_recording();
             assert!(result.is_ok());
 
-            let _ = recorder.processor.finalize();
+            let _ = recorder.processor_mut().finalize();
 
             let path = Path::new(&file_name);
             assert!(!path.exists(), "Silent file should have been deleted");
@@ -249,7 +249,7 @@ mod tests {
             let path = Path::new(&file_name);
             assert!(path.exists(), "File should have been created");
 
-            let _ = recorder.processor.finalize();
+            let _ = recorder.processor_mut().finalize();
             assert!(
                 path.exists(),
                 "Non-silent file should not have been deleted"

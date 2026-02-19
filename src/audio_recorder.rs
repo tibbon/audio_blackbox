@@ -7,8 +7,8 @@ use crate::utils::parse_channel_string;
 /// It takes an implementation of the AudioProcessor trait, configures it
 /// based on environment variables and config files, and manages the recording process.
 pub struct AudioRecorder<P: AudioProcessor> {
-    pub processor: P,
-    pub config: AppConfig,
+    processor: P,
+    config: AppConfig,
 }
 
 impl<P: AudioProcessor> AudioRecorder<P> {
@@ -28,6 +28,16 @@ impl<P: AudioProcessor> AudioRecorder<P> {
     /// Get a reference to the processor.
     pub fn get_processor(&self) -> &P {
         &self.processor
+    }
+
+    /// Get a mutable reference to the processor.
+    pub fn processor_mut(&mut self) -> &mut P {
+        &mut self.processor
+    }
+
+    /// Get a reference to the configuration.
+    pub fn config(&self) -> &AppConfig {
+        &self.config
     }
 
     /// Start the recording process using the configuration.

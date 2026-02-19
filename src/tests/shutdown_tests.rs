@@ -18,8 +18,8 @@ fn test_clean_shutdown() {
     assert!(recorder.start_recording().is_ok());
 
     // Stop recording
-    assert!(recorder.processor.stop_recording().is_ok());
-    assert!(recorder.processor.finalize().is_ok());
+    assert!(recorder.processor_mut().stop_recording().is_ok());
+    assert!(recorder.processor_mut().finalize().is_ok());
 
     // Verify the file was created and finalized
     assert!(std::path::Path::new(&file_name).exists());
@@ -40,8 +40,8 @@ fn test_shutdown_during_recording() {
     assert!(recorder.start_recording().is_ok());
 
     // Stop recording
-    assert!(recorder.processor.stop_recording().is_ok());
-    assert!(recorder.processor.finalize().is_ok());
+    assert!(recorder.processor_mut().stop_recording().is_ok());
+    assert!(recorder.processor_mut().finalize().is_ok());
 
     // Verify the file was created and finalized
     assert!(std::path::Path::new(&file_name).exists());
@@ -62,10 +62,10 @@ fn test_multiple_shutdown_attempts() {
     assert!(recorder.start_recording().is_ok());
 
     // First shutdown attempt
-    assert!(recorder.processor.stop_recording().is_ok());
+    assert!(recorder.processor_mut().stop_recording().is_ok());
 
     // Second shutdown attempt should not cause issues
-    assert!(recorder.processor.finalize().is_ok());
+    assert!(recorder.processor_mut().finalize().is_ok());
 
     // Verify the file was created and finalized
     assert!(std::path::Path::new(&file_name).exists());
@@ -87,8 +87,8 @@ fn test_shutdown_with_error() {
     assert!(recorder.start_recording().is_ok());
 
     // Stop recording
-    assert!(recorder.processor.stop_recording().is_ok());
+    assert!(recorder.processor_mut().stop_recording().is_ok());
 
     // Finalize should fail but not panic
-    assert!(recorder.processor.finalize().is_err());
+    assert!(recorder.processor_mut().finalize().is_err());
 }

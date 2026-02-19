@@ -58,12 +58,12 @@ fn test_recorder_reload_config() {
         let mut recorder = AudioRecorder::new(processor);
 
         // Record initial config state
-        let initial_debug = recorder.config.get_debug();
+        let initial_debug = recorder.config().get_debug();
 
         // Reload config — should not panic or change behavior in isolated env
         recorder.reload_config();
 
-        assert_eq!(recorder.config.get_debug(), initial_debug);
+        assert_eq!(recorder.config().get_debug(), initial_debug);
     });
 }
 
@@ -177,7 +177,7 @@ fn test_recorder_finalize_error_propagation() {
 
         let mut recorder = AudioRecorder::new(processor);
         assert!(recorder.start_recording().is_ok());
-        assert!(recorder.processor.finalize().is_err());
+        assert!(recorder.processor_mut().finalize().is_err());
     });
 }
 
@@ -191,15 +191,15 @@ fn test_recorder_start_stop_is_recording() {
         let mut recorder = AudioRecorder::new(processor);
 
         // Before recording
-        assert!(!recorder.processor.is_recording());
+        assert!(!recorder.get_processor().is_recording());
 
         // Start
         assert!(recorder.start_recording().is_ok());
-        assert!(recorder.processor.is_recording());
+        assert!(recorder.get_processor().is_recording());
 
         // Stop
-        assert!(recorder.processor.stop_recording().is_ok());
-        assert!(!recorder.processor.is_recording());
+        assert!(recorder.processor_mut().stop_recording().is_ok());
+        assert!(!recorder.get_processor().is_recording());
     });
 }
 
@@ -213,7 +213,7 @@ fn test_recorder_wav_file_valid() {
         let mut recorder = AudioRecorder::new(processor);
 
         assert!(recorder.start_recording().is_ok());
-        assert!(recorder.processor.finalize().is_ok());
+        assert!(recorder.processor_mut().finalize().is_ok());
 
         // Verify the WAV file is actually readable
         let reader = hound::WavReader::open(&file_name);
@@ -251,10 +251,10 @@ fn test_recorder_split_mode_wav_files_valid() {
             let mut recorder = AudioRecorder::new(processor);
 
             assert!(recorder.start_recording().is_ok());
-            assert!(recorder.processor.finalize().is_ok());
+            assert!(recorder.processor_mut().finalize().is_ok());
 
             // Verify each created file is a valid WAV
-            for path in &recorder.processor.created_files {
+            for path in &recorder.get_processor().created_files {
                 assert!(
                     Path::new(path).exists(),
                     "Created file should exist: {}",

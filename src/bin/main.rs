@@ -188,7 +188,7 @@ fn main() {
     menu_app.update_status(false);
 
     // Finalize the recording
-    if let Err(e) = recorder.processor.finalize() {
+    if let Err(e) = recorder.processor_mut().finalize() {
         eprintln!("Error finalizing recording: {e}");
     }
 
