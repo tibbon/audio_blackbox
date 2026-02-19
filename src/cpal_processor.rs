@@ -44,13 +44,16 @@ pub struct CpalAudioProcessor {
 }
 
 impl CpalAudioProcessor {
-    /// Create a new CpalAudioProcessor instance.
+    /// Create a new CpalAudioProcessor instance, loading config from env/TOML.
     ///
     /// Probes the audio device for sample rate and stores config.
     /// WAV writers are not created until `process_audio()` is called.
     pub fn new() -> Result<Self, BlackboxError> {
-        let config = AppConfig::load();
+        Self::with_config(&AppConfig::load())
+    }
 
+    /// Create a new CpalAudioProcessor using the provided configuration.
+    pub fn with_config(config: &AppConfig) -> Result<Self, BlackboxError> {
         check_alsa_availability()?;
 
         let output_dir = config.get_output_dir();
@@ -62,9 +65,7 @@ impl CpalAudioProcessor {
         }
 
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
+        let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
 
         info!(
             "Using audio device: {}",
@@ -97,6 +98,46 @@ impl CpalAudioProcessor {
             direct_state: None,
         })
     }
+
+    /// Find an input device by name, or return the default input device.
+    fn find_input_device(
+        host: &cpal::Host,
+        device_name: Option<&str>,
+    ) -> Result<cpal::Device, BlackboxError> {
+        if let Some(name) = device_name {
+            let devices = host.input_devices().map_err(|e| {
+                BlackboxError::AudioDevice(format!("Failed to enumerate input devices: {}", e))
+            })?;
+            for device in devices {
+                if let Ok(desc) = device.description()
+                    && desc.name() == name
+                {
+                    return Ok(device);
+                }
+            }
+            warn!(
+                "Input device '{}' not found, falling back to default",
+                name
+            );
+        }
+        host.default_input_device()
+            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))
+    }
+
+    /// List all available input device names.
+    pub fn list_input_devices() -> Result<Vec<String>, BlackboxError> {
+        let host = cpal::default_host();
+        let devices = host.input_devices().map_err(|e| {
+            BlackboxError::AudioDevice(format!("Failed to enumerate input devices: {}", e))
+        })?;
+        let mut names = Vec::new();
+        for device in devices {
+            if let Ok(desc) = device.description() {
+                names.push(desc.name().to_string());
+            }
+        }
+        Ok(names)
+    }
 }
 
 impl AudioProcessor for CpalAudioProcessor {
@@ -111,9 +152,9 @@ impl AudioProcessor for CpalAudioProcessor {
         self.debug = debug;
 
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
+        let app_config = AppConfig::load();
+        let device =
+            Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
 
         info!(
             "Using audio device: {}",

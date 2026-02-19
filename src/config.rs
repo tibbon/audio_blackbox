@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub output_dir: Option<String>,
     /// Enable performance metrics collection
     pub performance_logging: Option<bool>,
+    /// Input device name (None = system default)
+    pub input_device: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -50,6 +52,7 @@ impl Default for AppConfig {
             recording_cadence: Some(DEFAULT_RECORDING_CADENCE),
             output_dir: Some(DEFAULT_OUTPUT_DIR.to_string()),
             performance_logging: Some(DEFAULT_PERFORMANCE_LOGGING),
+            input_device: None,
         }
     }
 }
@@ -162,6 +165,9 @@ impl AppConfig {
         if other.performance_logging.is_some() {
             self.performance_logging = other.performance_logging;
         }
+        if other.input_device.is_some() {
+            self.input_device = other.input_device;
+        }
     }
 
     /// Parse a boolean value from a string
@@ -268,6 +274,13 @@ impl AppConfig {
         if let Some(val) = perf_logging {
             self.performance_logging = Some(val);
         }
+
+        let input_device = std::env::var("BLACKBOX_INPUT_DEVICE")
+            .ok()
+            .or_else(|| std::env::var("INPUT_DEVICE").ok());
+        if let Some(val) = input_device {
+            self.input_device = Some(val);
+        }
     }
 
     /// Generate a sample configuration file with comments
@@ -315,6 +328,9 @@ output_dir = "{}"
 # Enable performance logging (true/false)
 # Default: {}
 performance_logging = {}
+
+# Input device name (leave commented out for system default)
+# input_device = "MacBook Pro Microphone"
 "#,
             DEFAULT_CHANNELS,
             default_config.get_audio_channels(),
@@ -419,6 +435,10 @@ performance_logging = {}
         self.performance_logging
             .unwrap_or(DEFAULT_PERFORMANCE_LOGGING)
     }
+
+    pub fn get_input_device(&self) -> Option<String> {
+        self.input_device.clone()
+    }
 }
 
 #[cfg(test)]
@@ -448,6 +468,7 @@ mod tests {
                     recording_cadence: None,
                     output_dir: None,
                     performance_logging: None,
+                    input_device: None,
                 };
 
                 // Apply environment variables directly
@@ -621,6 +642,7 @@ mod tests {
             recording_cadence: Some(300),
             output_dir: Some("./recordings".to_string()),
             performance_logging: Some(false),
+            input_device: None,
         };
 
         let override_config = AppConfig {
@@ -633,6 +655,7 @@ mod tests {
             recording_cadence: None,   // This shouldn't override
             output_dir: None,          // This shouldn't override
             performance_logging: None, // This shouldn't override
+            input_device: None,
         };
 
         base_config.merge(override_config);

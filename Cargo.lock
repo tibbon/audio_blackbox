@@ -134,6 +134,7 @@ dependencies = [
  "pkg-config",
  "rtrb",
  "serde",
+ "serde_json",
  "sysinfo",
  "temp-env",
  "tempfile",

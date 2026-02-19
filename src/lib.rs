@@ -39,6 +39,8 @@ mod config;
 mod constants;
 mod cpal_processor;
 pub mod error;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 #[cfg(test)]
 mod mock_processor;
 mod utils;
@@ -75,6 +77,8 @@ mod tests {
     mod channel_tests;
     mod config_tests;
     mod cpal_integration_tests;
+    #[cfg(feature = "ffi")]
+    mod ffi_tests;
     mod performance_tests;
     mod recorder_tests;
     mod ring_buffer_tests;
@@ -108,6 +112,8 @@ mod tests {
             ("BLACKBOX_RECORDING_CADENCE", None),
             ("BLACKBOX_OUTPUT_DIR", None),
             ("BLACKBOX_PERFORMANCE_LOGGING", None),
+            ("BLACKBOX_INPUT_DEVICE", None),
+            ("INPUT_DEVICE", None),
             ("BLACKBOX_CONFIG", None),
         ]
     }
