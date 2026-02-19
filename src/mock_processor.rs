@@ -43,7 +43,12 @@ impl MockAudioProcessor {
 }
 
 impl AudioProcessor for MockAudioProcessor {
-    fn process_audio(&mut self, channels: &[usize], output_mode: &str, debug: bool) {
+    fn process_audio(
+        &mut self,
+        channels: &[usize],
+        output_mode: &str,
+        debug: bool,
+    ) -> std::io::Result<()> {
         self.channels = channels.to_vec();
         self.output_mode = output_mode.to_string();
         self.debug = debug;
@@ -56,10 +61,7 @@ impl AudioProcessor for MockAudioProcessor {
         // Make sure the output directory exists
         if let Some(dir) = Path::new(&self.file_name).parent() {
             if !dir.exists() {
-                if let Err(e) = fs::create_dir_all(dir) {
-                    eprintln!("Error creating directory: {}", e);
-                    return;
-                }
+                fs::create_dir_all(dir)?;
             }
         }
 
@@ -146,6 +148,8 @@ impl AudioProcessor for MockAudioProcessor {
                 }
             );
         }
+
+        Ok(())
     }
 
     fn finalize(&mut self) -> std::io::Result<()> {
@@ -186,8 +190,7 @@ impl AudioProcessor for MockAudioProcessor {
 
         // In the mock, we'll just simulate this by immediately processing audio
         // with the stored configuration
-        self.process_audio(&channels, &output_mode, debug);
-        Ok(())
+        self.process_audio(&channels, &output_mode, debug)
     }
 
     fn stop_recording(&mut self) -> std::io::Result<()> {

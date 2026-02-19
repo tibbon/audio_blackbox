@@ -74,7 +74,9 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         }
 
         // Start the processor with the selected configuration
-        self.processor.process_audio(&channels, &output_mode, debug);
+        self.processor
+            .process_audio(&channels, &output_mode, debug)
+            .map_err(|e| format!("Failed to start audio processing: {}", e))?;
 
         Ok(format!("Recording started with channels {:?}", channels))
     }

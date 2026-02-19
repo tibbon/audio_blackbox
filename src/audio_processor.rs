@@ -6,7 +6,7 @@ use std::io::Result;
 
 pub trait AudioProcessor {
     /// Process audio from the specified channels with the given output mode and debug flag.
-    fn process_audio(&mut self, channels: &[usize], output_mode: &str, debug: bool);
+    fn process_audio(&mut self, channels: &[usize], output_mode: &str, debug: bool) -> Result<()>;
 
     /// Finalize the audio processing, closing any open files or resources.
     fn finalize(&mut self) -> Result<()>;

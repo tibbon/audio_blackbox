@@ -388,7 +388,12 @@ impl CpalAudioProcessor {
 }
 
 impl AudioProcessor for CpalAudioProcessor {
-    fn process_audio(&mut self, channels: &[usize], output_mode: &str, debug: bool) {
+    fn process_audio(
+        &mut self,
+        channels: &[usize],
+        output_mode: &str,
+        debug: bool,
+    ) -> std::io::Result<()> {
         // Store the configuration for later use in continuous mode and finalize
         self.channels = channels.to_vec();
         self.output_mode = output_mode.to_string();
@@ -398,13 +403,13 @@ impl AudioProcessor for CpalAudioProcessor {
         let host = cpal::default_host();
         let device = host
             .default_input_device()
-            .expect("No input device available");
+            .ok_or_else(|| std::io::Error::other("No input device available"))?;
 
         println!("Using audio device: {}", device.name().unwrap());
 
-        let config = device
-            .default_input_config()
-            .expect("Failed to get default input stream config");
+        let config = device.default_input_config().map_err(|e| {
+            std::io::Error::other(format!("Failed to get default input stream config: {}", e))
+        })?;
 
         println!("Default input stream config: {:?}", config);
 
@@ -771,15 +776,22 @@ impl AudioProcessor for CpalAudioProcessor {
                     },
                     err_fn,
                     None,
-                ).expect("Failed to build input stream")
+                ).map_err(|e| {
+                    std::io::Error::other(format!("Failed to build input stream: {}", e))
+                })?
             }
-            // Similar implementations for I16 and U16 would follow the same pattern
-            // ... other formats ...
-            _ => panic!("Unsupported sample format"),
+            _ => {
+                return Err(std::io::Error::other(format!(
+                    "Unsupported sample format: {:?}",
+                    config.sample_format()
+                )));
+            }
         };
 
         // Start recording
-        stream.play().expect("Failed to play stream");
+        stream
+            .play()
+            .map_err(|e| std::io::Error::other(format!("Failed to play stream: {}", e)))?;
 
         // Store the stream to keep it alive during recording
         self.stream = Some(Box::new(stream));
@@ -788,6 +800,8 @@ impl AudioProcessor for CpalAudioProcessor {
         if self.continuous_mode {
             *self.last_rotation_time.lock().unwrap() = Instant::now();
         }
+
+        Ok(())
     }
 
     fn finalize(&mut self) -> std::io::Result<()> {
@@ -901,8 +915,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let debug = config.get_debug();
 
         // Start the audio processing
-        self.process_audio(&channels, &output_mode, debug);
-        Ok(())
+        self.process_audio(&channels, &output_mode, debug)
     }
 
     fn stop_recording(&mut self) -> std::io::Result<()> {
