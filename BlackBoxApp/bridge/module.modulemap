@@ -1,0 +1,4 @@
+module BlackBoxFFI {
+    header "blackbox_ffi.h"
+    export *
+}

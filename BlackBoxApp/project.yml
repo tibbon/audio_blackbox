@@ -1,0 +1,46 @@
+name: BlackBoxApp
+options:
+  deploymentTarget:
+    macOS: "13.0"
+  bundleIdPrefix: com.blackbox
+  xcodeVersion: "16.0"
+
+settings:
+  SWIFT_VERSION: "5.10"
+
+targets:
+  BlackBoxApp:
+    type: application
+    platform: macOS
+    sources:
+      - BlackBoxApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.blackbox.audiorecorder
+        PRODUCT_NAME: "BlackBox Audio Recorder"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/bridge"
+        LIBRARY_SEARCH_PATHS:
+          - "$(SRCROOT)/../target/release"
+          - "$(SRCROOT)/../target/debug"
+        OTHER_LDFLAGS:
+          - "-lblackbox"
+          - "-framework"
+          - "CoreAudio"
+          - "-framework"
+          - "AudioToolbox"
+          - "-framework"
+          - "Security"
+        IMPORT_PATHS: "$(SRCROOT)/bridge"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: ""
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+    info:
+      path: BlackBoxApp/Info.plist
+      properties:
+        LSUIElement: true
+        LSMinimumSystemVersion: "13.0"
+        NSMicrophoneUsageDescription: "BlackBox Audio Recorder needs microphone access to record audio from your input devices."
+        NSHumanReadableCopyright: "Copyright © 2026 David Fisher. All rights reserved."

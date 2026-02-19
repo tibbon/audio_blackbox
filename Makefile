@@ -162,6 +162,67 @@ verify:
 	$(CARGO_BIN) test -- --test-threads=1
 	$(CARGO_BIN) build
 
+# --- SwiftUI Menu Bar App ---
+
+XCODE_PROJECT = BlackBoxApp/BlackBoxApp.xcodeproj
+XCODE_SCHEME = BlackBoxApp
+XCODE_CONFIG = Release
+SWIFT_APP_DIR = BlackBoxApp
+
+# Build the Rust static library with FFI exports
+.PHONY: rust-lib
+rust-lib:
+	$(CARGO_BIN) build --release --features ffi
+
+# Swift source files for the menu bar app
+SWIFT_SOURCES = $(SWIFT_APP_DIR)/BlackBoxApp/BlackBoxApp.swift \
+                $(SWIFT_APP_DIR)/BlackBoxApp/RecordingState.swift \
+                $(SWIFT_APP_DIR)/BlackBoxApp/RustBridge.swift
+SWIFT_APP_BINARY = $(RELEASE_DIR)/BlackBoxApp
+SWIFT_APP_BUNDLE = $(RELEASE_DIR)/BlackBox Audio Recorder.app
+
+# Build the SwiftUI app (depends on rust-lib)
+.PHONY: swift-app
+swift-app: rust-lib
+	@if command -v xcodebuild >/dev/null 2>&1 && xcodebuild -version >/dev/null 2>&1; then \
+		echo "Building with xcodebuild..."; \
+		xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) build; \
+	else \
+		echo "Building with swiftc (no Xcode)..."; \
+		swiftc -parse-as-library -target arm64-apple-macosx13.0 \
+			-sdk $$(xcrun --show-sdk-path) \
+			-I $(SWIFT_APP_DIR)/bridge \
+			-L $(RELEASE_DIR) \
+			-lblackbox \
+			-framework CoreAudio -framework AudioToolbox -framework Security -framework AppKit \
+			-o $(SWIFT_APP_BINARY) \
+			$(SWIFT_SOURCES); \
+		mkdir -p "$(SWIFT_APP_BUNDLE)/Contents/MacOS"; \
+		mkdir -p "$(SWIFT_APP_BUNDLE)/Contents/Resources"; \
+		cp $(SWIFT_APP_BINARY) "$(SWIFT_APP_BUNDLE)/Contents/MacOS/BlackBox Audio Recorder"; \
+		cp $(SWIFT_APP_DIR)/BlackBoxApp/Info.plist "$(SWIFT_APP_BUNDLE)/Contents/"; \
+		plutil -replace CFBundleExecutable -string "BlackBox Audio Recorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
+		plutil -replace CFBundleName -string "BlackBox Audio Recorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
+		plutil -replace CFBundleIdentifier -string "com.blackbox.audiorecorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
+		plutil -replace CFBundleDevelopmentRegion -string "en" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
+		echo "APPL????" > "$(SWIFT_APP_BUNDLE)/Contents/PkgInfo"; \
+		echo "App bundle created at $(SWIFT_APP_BUNDLE)"; \
+	fi
+
+# Build both Rust lib + Swift app
+.PHONY: app
+app: swift-app
+
+# Build and run the SwiftUI menu bar app
+.PHONY: run-app
+run-app: swift-app
+	@open "$(SWIFT_APP_BUNDLE)"
+
+# Regenerate Xcode project from project.yml (requires xcodegen)
+.PHONY: xcodegen
+xcodegen:
+	cd $(SWIFT_APP_DIR) && xcodegen generate
+
 # Help
 .PHONY: help
 help:
@@ -185,4 +246,9 @@ help:
 	@echo "  start           - Start the service"
 	@echo "  stop            - Stop the service"
 	@echo "  uninstall       - Stop and remove the service"
+	@echo "  rust-lib        - Build Rust static library with FFI"
+	@echo "  swift-app       - Build SwiftUI menu bar app"
+	@echo "  app             - Build Rust lib + Swift app"
+	@echo "  run-app         - Build and run the SwiftUI app"
+	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
 	@echo "  help            - Show this help"
