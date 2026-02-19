@@ -4,6 +4,7 @@ import SwiftUI
 struct BlackBoxApp: App {
     @StateObject private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
 
     var body: some Scene {
         MenuBarExtra("BlackBox", systemImage: menuBarIcon) {
@@ -12,7 +13,7 @@ struct BlackBoxApp: App {
                 .font(.headline)
 
             if let error = recorder.errorMessage {
-                Text(error)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundColor(.red)
                     .font(.caption)
             }
@@ -27,13 +28,25 @@ struct BlackBoxApp: App {
 
             Divider()
 
-            // Input device submenu
+            // Input device submenu with checkmarks
             if !recorder.availableDevices.isEmpty {
                 Menu("Input Device") {
-                    ForEach(recorder.availableDevices, id: \.self) { device in
-                        Button(device) {
-                            recorder.selectDevice(device)
+                    Toggle("System Default", isOn: Binding(
+                        get: { selectedDevice.isEmpty },
+                        set: { newValue in
+                            if newValue { recorder.selectDevice("") }
                         }
+                    ))
+
+                    Divider()
+
+                    ForEach(recorder.availableDevices, id: \.self) { device in
+                        Toggle(device, isOn: Binding(
+                            get: { selectedDevice == device },
+                            set: { newValue in
+                                if newValue { recorder.selectDevice(device) }
+                            }
+                        ))
                     }
                 }
 
@@ -46,23 +59,19 @@ struct BlackBoxApp: App {
 
             Divider()
 
-            Button("Preferences...") {
+            Button("Settings\u{2026}") {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "settings")
             }
             .keyboardShortcut(",")
 
             Button("Quit") {
-                if recorder.isRecording {
-                    recorder.stop()
-                }
-                recorder.releaseOutputDirAccess()
-                NSApplication.shared.terminate(nil)
+                quitApp()
             }
             .keyboardShortcut("q")
         }
 
-        Window("BlackBox Preferences", id: "settings") {
+        Window("BlackBox Settings", id: "settings") {
             SettingsView(recorder: recorder)
         }
         .defaultSize(width: 480, height: 360)
@@ -74,5 +83,24 @@ struct BlackBoxApp: App {
             return "exclamationmark.circle"
         }
         return recorder.isRecording ? "record.circle.fill" : "record.circle"
+    }
+
+    private func quitApp() {
+        if recorder.isRecording {
+            let alert = NSAlert()
+            alert.messageText = "Recording in Progress"
+            alert.informativeText = "BlackBox is currently recording. Do you want to stop recording and quit?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Stop & Quit")
+            alert.addButton(withTitle: "Cancel")
+
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() != .alertFirstButtonReturn {
+                return
+            }
+            recorder.stop()
+        }
+        recorder.releaseOutputDirAccess()
+        NSApplication.shared.terminate(nil)
     }
 }
