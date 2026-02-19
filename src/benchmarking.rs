@@ -5,7 +5,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 
 /// Struct to track performance metrics over time
 pub struct PerformanceTracker {
@@ -78,7 +78,7 @@ impl PerformanceTracker {
             while *running.lock().unwrap() {
                 sys.refresh_all();
 
-                if let Some(process) = sys.process(sysinfo::Pid::from(pid as usize)) {
+                if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
                     let cpu_usage = process.cpu_usage();
                     let memory_usage = process.memory();
                     let memory_percent = (memory_usage as f32 / sys.total_memory() as f32) * 100.0;

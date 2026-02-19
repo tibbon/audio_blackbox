@@ -84,7 +84,10 @@ impl CpalAudioProcessor {
 
         println!(
             "Using audio device: {}",
-            device.name().map_err(|e| e.to_string())?
+            device
+                .description()
+                .map(|d| d.name().to_string())
+                .map_err(|e| e.to_string())?
         );
 
         let config_audio = device
@@ -93,7 +96,7 @@ impl CpalAudioProcessor {
 
         println!("Default input stream config: {:?}", config_audio);
 
-        let sample_rate = config_audio.sample_rate().0;
+        let sample_rate = config_audio.sample_rate();
 
         let spec = hound::WavSpec {
             channels: 2, // Default is stereo WAV for backward compatibility
@@ -405,7 +408,12 @@ impl AudioProcessor for CpalAudioProcessor {
             .default_input_device()
             .ok_or_else(|| std::io::Error::other("No input device available"))?;
 
-        println!("Using audio device: {}", device.name().unwrap());
+        println!(
+            "Using audio device: {}",
+            device
+                .description()
+                .map_or_else(|_| "unknown".to_string(), |d| d.name().to_string())
+        );
 
         let config = device.default_input_config().map_err(|e| {
             std::io::Error::other(format!("Failed to get default input stream config: {}", e))
@@ -414,7 +422,7 @@ impl AudioProcessor for CpalAudioProcessor {
         println!("Default input stream config: {:?}", config);
 
         let total_channels = config.channels() as usize;
-        let sample_rate = config.sample_rate().0;
+        let sample_rate = config.sample_rate();
 
         // Auto-adapt to available channels
         let mut actual_channels: Vec<usize> = Vec::new();
