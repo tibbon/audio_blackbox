@@ -343,4 +343,5 @@ enum SettingsKeys {
     static let launchAtLogin = "launchAtLogin"
     static let autoRecord = "autoRecord"
     static let minDiskSpaceMB = "minDiskSpaceMB"
+    static let hasCompletedOnboarding = "hasCompletedOnboarding"
 }

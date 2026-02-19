@@ -5,78 +5,45 @@ struct BlackBoxApp: App {
     @StateObject private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
+    @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
 
     var body: some Scene {
         MenuBarExtra {
-            // Status line
-            Text(recorder.statusText)
-                .font(.headline)
+            if !hasCompletedOnboarding {
+                // Onboarding-required menu
+                Text("Setup Required")
+                    .font(.headline)
 
-            if let error = recorder.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
+                Text("Complete setup to start recording")
                     .font(.caption)
-            }
+                    .foregroundColor(.secondary)
 
-            Divider()
+                Divider()
 
-            // Primary action
-            Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
-                recorder.toggle()
-            }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
-
-            Divider()
-
-            // Input device submenu with checkmarks
-            if !recorder.availableDevices.isEmpty {
-                Menu("Input Device") {
-                    Toggle("System Default", isOn: Binding(
-                        get: { selectedDevice.isEmpty },
-                        set: { newValue in
-                            if newValue { recorder.selectDevice("") }
-                        }
-                    ))
-
-                    Divider()
-
-                    ForEach(recorder.availableDevices, id: \.self) { device in
-                        Toggle(device, isOn: Binding(
-                            get: { selectedDevice == device },
-                            set: { newValue in
-                                if newValue { recorder.selectDevice(device) }
-                            }
-                        ))
-                    }
+                Button("Set Up BlackBox\u{2026}") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "onboarding")
                 }
 
                 Divider()
-            }
 
-            Button("Show Recordings in Finder") {
-                recorder.openOutputDir()
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q")
+            } else {
+                // Normal menu
+                normalMenu
             }
-
-            Divider()
-
-            Button("About BlackBox\u{2026}") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "about")
-            }
-
-            Button("Settings\u{2026}") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "settings")
-            }
-            .keyboardShortcut(",")
-
-            Button("Quit") {
-                quitApp()
-            }
-            .keyboardShortcut("q")
         } label: {
             Image(nsImage: menuBarNSImage)
         }
+
+        Window("Welcome to BlackBox", id: "onboarding") {
+            OnboardingView(recorder: recorder)
+        }
+        .defaultSize(width: 460, height: 380)
+        .windowResizability(.contentSize)
 
         Window("BlackBox Settings", id: "settings") {
             SettingsView(recorder: recorder)
@@ -91,11 +58,84 @@ struct BlackBoxApp: App {
         .windowResizability(.contentSize)
     }
 
+    @ViewBuilder
+    private var normalMenu: some View {
+        // Status line
+        Text(recorder.statusText)
+            .font(.headline)
+
+        if let error = recorder.errorMessage {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
+                .font(.caption)
+        }
+
+        Divider()
+
+        // Primary action
+        Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
+            recorder.toggle()
+        }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+
+        Divider()
+
+        // Input device submenu with checkmarks
+        if !recorder.availableDevices.isEmpty {
+            Menu("Input Device") {
+                Toggle("System Default", isOn: Binding(
+                    get: { selectedDevice.isEmpty },
+                    set: { newValue in
+                        if newValue { recorder.selectDevice("") }
+                    }
+                ))
+
+                Divider()
+
+                ForEach(recorder.availableDevices, id: \.self) { device in
+                    Toggle(device, isOn: Binding(
+                        get: { selectedDevice == device },
+                        set: { newValue in
+                            if newValue { recorder.selectDevice(device) }
+                        }
+                    ))
+                }
+            }
+
+            Divider()
+        }
+
+        Button("Show Recordings in Finder") {
+            recorder.openOutputDir()
+        }
+
+        Divider()
+
+        Button("About BlackBox\u{2026}") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "about")
+        }
+
+        Button("Settings\u{2026}") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "settings")
+        }
+        .keyboardShortcut(",")
+
+        Button("Quit") {
+            quitApp()
+        }
+        .keyboardShortcut("q")
+    }
+
     private var menuBarNSImage: NSImage {
         let name: String
         let description: String
 
-        if recorder.errorMessage != nil {
+        if !hasCompletedOnboarding {
+            name = "questionmark.circle"
+            description = "Setup Required"
+        } else if recorder.errorMessage != nil {
             name = "exclamationmark.circle"
             description = "Error"
         } else if recorder.isRecording {

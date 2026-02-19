@@ -12,6 +12,7 @@
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
+		8A1F2C3D4E5B6A7890123456 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
@@ -22,6 +23,7 @@
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
+		8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
 		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -49,6 +51,7 @@
 				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
+				8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */,
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
@@ -125,6 +128,7 @@
 			files = (
 				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
 				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
+				8A1F2C3D4E5B6A7890123456 /* OnboardingView.swift in Sources */,
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
 				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
 			);

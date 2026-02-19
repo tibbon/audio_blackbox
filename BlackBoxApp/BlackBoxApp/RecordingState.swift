@@ -24,8 +24,10 @@ final class RecordingState: ObservableObject {
         restoreOutputDirBookmark()
         restoreSavedSettings()
 
-        // Auto-record on launch if enabled
-        if UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord) {
+        // Auto-record on launch if enabled (skip if onboarding not complete)
+        if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
+            && UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord)
+        {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.start()
             }
