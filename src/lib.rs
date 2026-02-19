@@ -38,6 +38,7 @@ mod benchmarking;
 mod config;
 mod constants;
 mod cpal_processor;
+pub mod error;
 #[cfg(test)]
 mod mock_processor;
 mod utils;
@@ -53,6 +54,7 @@ pub use benchmarking::{PerformanceMetrics, PerformanceTracker, measure_execution
 pub use config::AppConfig;
 pub use constants::*;
 pub use cpal_processor::CpalAudioProcessor;
+pub use error::BlackboxError;
 pub use utils::*;
 
 // Expose test utilities

@@ -1,5 +1,6 @@
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
+use crate::error::BlackboxError;
 use crate::utils::parse_channel_string;
 
 /// The main struct responsible for coordinating audio recording.
@@ -46,16 +47,12 @@ impl<P: AudioProcessor> AudioRecorder<P> {
     /// 1. Environment variables
     /// 2. Configuration file
     /// 3. Default values
-    pub fn start_recording(&mut self) -> Result<String, String> {
+    pub fn start_recording(&mut self) -> Result<String, BlackboxError> {
         let debug = self.config.get_debug();
 
         // Get the selected channels
         let requested_channels = self.config.get_audio_channels();
-
-        let channels = match parse_channel_string(&requested_channels) {
-            Ok(chs) => chs,
-            Err(e) => return Err(format!("Error parsing channels: {}", e)),
-        };
+        let channels = parse_channel_string(&requested_channels)?;
 
         // Get the output mode
         let output_mode = self.config.get_output_mode();
@@ -85,14 +82,13 @@ impl<P: AudioProcessor> AudioRecorder<P> {
 
         // Start the processor with the selected configuration
         self.processor
-            .process_audio(&channels, &output_mode, debug)
-            .map_err(|e| format!("Failed to start audio processing: {}", e))?;
+            .process_audio(&channels, &output_mode, debug)?;
 
         Ok(format!("Recording started with channels {:?}", channels))
     }
 
     /// Create a default config file if one doesn't exist
-    pub fn create_default_config(&self, path: &str) -> Result<(), String> {
+    pub fn create_default_config(&self, path: &str) -> Result<(), BlackboxError> {
         self.config.create_config_file(path)
     }
 

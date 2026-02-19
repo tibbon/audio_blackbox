@@ -1,5 +1,6 @@
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
+use crate::error::BlackboxError;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -48,7 +49,7 @@ impl AudioProcessor for MockAudioProcessor {
         channels: &[usize],
         output_mode: &str,
         debug: bool,
-    ) -> std::io::Result<()> {
+    ) -> Result<(), BlackboxError> {
         self.channels = channels.to_vec();
         self.output_mode = output_mode.to_string();
         self.debug = debug;
@@ -152,11 +153,11 @@ impl AudioProcessor for MockAudioProcessor {
         Ok(())
     }
 
-    fn finalize(&mut self) -> std::io::Result<()> {
+    fn finalize(&mut self) -> Result<(), BlackboxError> {
         self.finalized = true;
 
         if self.should_fail_finalize {
-            return Err(std::io::Error::other("Simulated finalize failure"));
+            return Err(BlackboxError::Wav("Simulated finalize failure".to_string()));
         }
 
         // Check if we should apply the silence threshold using AppConfig
@@ -172,17 +173,16 @@ impl AudioProcessor for MockAudioProcessor {
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
                     eprintln!("Failed to delete silent file in test: {}", e);
-                    return Err(std::io::Error::other(e.to_string()));
-                } else {
-                    println!("Deleted silent test file: {}", file_path);
+                    return Err(BlackboxError::Io(e));
                 }
+                println!("Deleted silent test file: {}", file_path);
             }
         }
 
         Ok(())
     }
 
-    fn start_recording(&mut self) -> std::io::Result<()> {
+    fn start_recording(&mut self) -> Result<(), BlackboxError> {
         // Clone the values to avoid borrowing self mutably and immutably
         let channels = self.channels.clone();
         let output_mode = self.output_mode.clone();
@@ -193,7 +193,7 @@ impl AudioProcessor for MockAudioProcessor {
         self.process_audio(&channels, &output_mode, debug)
     }
 
-    fn stop_recording(&mut self) -> std::io::Result<()> {
+    fn stop_recording(&mut self) -> Result<(), BlackboxError> {
         // Just mark as stopped, don't finalize yet
         self.audio_processed = false;
         Ok(())

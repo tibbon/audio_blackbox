@@ -8,6 +8,7 @@ use crate::constants::{
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
     DEFAULT_SILENCE_THRESHOLD,
 };
+use crate::error::BlackboxError;
 
 /// The main configuration struct that holds all settings for the audio recorder.
 ///
@@ -339,7 +340,7 @@ performance_logging = {}
     }
 
     /// Create a configuration file in the specified location
-    pub fn create_config_file(&self, path: &str) -> Result<(), String> {
+    pub fn create_config_file(&self, path: &str) -> Result<(), BlackboxError> {
         // Generate sample config content
         let config_content = Self::generate_sample_config();
 
@@ -347,12 +348,11 @@ performance_logging = {}
         if let Some(parent) = Path::new(path).parent()
             && !parent.exists()
         {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+            fs::create_dir_all(parent)?;
         }
 
         // Write the file
-        fs::write(path, config_content)
-            .map_err(|e| format!("Failed to write config file: {}", e))?;
+        fs::write(path, config_content)?;
 
         Ok(())
     }

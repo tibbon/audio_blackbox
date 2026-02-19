@@ -84,9 +84,11 @@ fn test_recorder_start_recording_invalid_channels() {
 
             let result = recorder.start_recording();
             assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
             assert!(
-                result.unwrap_err().contains("Error parsing channels"),
-                "Error message should mention channel parsing"
+                err_msg.contains("Channel parse error"),
+                "Error message should mention channel parsing, got: {}",
+                err_msg
             );
         },
     );

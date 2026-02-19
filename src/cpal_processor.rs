@@ -8,6 +8,7 @@ use crate::config::AppConfig;
 use crate::constants::{
     INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS, MultiChannelWriters, WavWriterType,
 };
+use crate::error::BlackboxError;
 use crate::utils::{check_alsa_availability, is_silent, parse_channel_string};
 
 use chrono::prelude::*;
@@ -55,7 +56,7 @@ impl CpalAudioProcessor {
     ///
     /// This sets up the recording environment, including WAV file writers
     /// and audio stream configuration.
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, BlackboxError> {
         // Load configuration
         let config = AppConfig::load();
 
@@ -69,8 +70,7 @@ impl CpalAudioProcessor {
 
         // Check and create output directory
         if !Path::new(&output_dir).exists() {
-            fs::create_dir_all(&output_dir)
-                .map_err(|e| format!("Failed to create output directory: {}", e))?;
+            fs::create_dir_all(&output_dir)?;
         }
 
         // Generate the output file name
@@ -79,19 +79,19 @@ impl CpalAudioProcessor {
         let host = cpal::default_host();
         let device = host
             .default_input_device()
-            .ok_or_else(|| "No input device available".to_string())?;
+            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
 
         println!(
             "Using audio device: {}",
             device
                 .description()
                 .map(|d| d.name().to_string())
-                .map_err(|e| e.to_string())?
+                .map_err(|e| BlackboxError::AudioDevice(e.to_string()))?
         );
 
-        let config_audio = device
-            .default_input_config()
-            .map_err(|e| format!("Failed to get default input stream config: {}", e))?;
+        let config_audio = device.default_input_config().map_err(|e| {
+            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
+        })?;
 
         println!("Default input stream config: {:?}", config_audio);
 
@@ -110,7 +110,7 @@ impl CpalAudioProcessor {
 
         let writer = Arc::new(Mutex::new(Some(
             hound::WavWriter::create(&full_path, spec)
-                .map_err(|e| format!("Failed to create WAV file: {}", e))?,
+                .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {}", e)))?,
         )));
 
         Ok(CpalAudioProcessor {
@@ -133,7 +133,7 @@ impl CpalAudioProcessor {
     }
 
     /// Set up split mode recording where each channel is recorded to its own file.
-    fn setup_split_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
+    fn setup_split_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
         println!("Setting up split mode with {} channels", channels.len());
@@ -162,8 +162,9 @@ impl CpalAudioProcessor {
                 sample_format: hound::SampleFormat::Int,
             };
 
-            let writer = hound::WavWriter::create(&channel_file_name, spec)
-                .map_err(|e| format!("Failed to create channel WAV file: {}", e))?;
+            let writer = hound::WavWriter::create(&channel_file_name, spec).map_err(|e| {
+                BlackboxError::Wav(format!("Failed to create channel WAV file: {}", e))
+            })?;
 
             writers[idx] = Some(writer);
             println!("Created channel WAV file: {}", channel_file_name);
@@ -181,7 +182,11 @@ impl CpalAudioProcessor {
     }
 
     /// Set up multichannel mode recording where all channels are recorded to a single file.
-    fn setup_multichannel_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
+    fn setup_multichannel_mode(
+        &self,
+        channels: &[usize],
+        sample_rate: u32,
+    ) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
         let multichannel_file_name = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
@@ -198,8 +203,9 @@ impl CpalAudioProcessor {
             sample_format: hound::SampleFormat::Int,
         };
 
-        let writer = hound::WavWriter::create(&multichannel_file_name, spec)
-            .map_err(|e| format!("Failed to create multichannel WAV file: {}", e))?;
+        let writer = hound::WavWriter::create(&multichannel_file_name, spec).map_err(|e| {
+            BlackboxError::Wav(format!("Failed to create multichannel WAV file: {}", e))
+        })?;
 
         // Replace the default stereo writer with our multichannel writer
         let mut writer_guard = self.writer.lock().unwrap();
@@ -213,7 +219,11 @@ impl CpalAudioProcessor {
     }
 
     /// Set up standard mode recording for mono or stereo (1 or 2 channels).
-    fn setup_standard_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), String> {
+    fn setup_standard_mode(
+        &self,
+        channels: &[usize],
+        sample_rate: u32,
+    ) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
         println!("Setting up standard mode with {} channels", channels.len());
@@ -232,7 +242,7 @@ impl CpalAudioProcessor {
         };
 
         let writer = hound::WavWriter::create(&file_name, spec)
-            .map_err(|e| format!("Failed to create WAV file: {}", e))?;
+            .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {}", e)))?;
 
         // Store the writer
         *self.writer.lock().unwrap() = Some(writer);
@@ -256,7 +266,7 @@ impl AudioProcessor for CpalAudioProcessor {
         channels: &[usize],
         output_mode: &str,
         debug: bool,
-    ) -> std::io::Result<()> {
+    ) -> Result<(), BlackboxError> {
         // Store the configuration for later use in continuous mode and finalize
         self.channels = channels.to_vec();
         self.output_mode = output_mode.to_string();
@@ -266,7 +276,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let host = cpal::default_host();
         let device = host
             .default_input_device()
-            .ok_or_else(|| std::io::Error::other("No input device available"))?;
+            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
 
         println!(
             "Using audio device: {}",
@@ -276,7 +286,7 @@ impl AudioProcessor for CpalAudioProcessor {
         );
 
         let config = device.default_input_config().map_err(|e| {
-            std::io::Error::other(format!("Failed to get default input stream config: {}", e))
+            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
         })?;
 
         println!("Default input stream config: {:?}", config);
@@ -313,7 +323,7 @@ impl AudioProcessor for CpalAudioProcessor {
         // Setup the appropriate output mode
         let valid_modes = ["split", "single"];
         if !valid_modes.contains(&output_mode) {
-            return Err(std::io::Error::other(format!(
+            return Err(BlackboxError::Config(format!(
                 "Invalid output mode: '{}'. Valid options are: {:?}",
                 output_mode, valid_modes
             )));
@@ -321,27 +331,16 @@ impl AudioProcessor for CpalAudioProcessor {
 
         match output_mode {
             "split" => {
-                self.setup_split_mode(&actual_channels, sample_rate)
-                    .map_err(|e| {
-                        std::io::Error::other(format!("Failed to setup split mode: {}", e))
-                    })?;
+                self.setup_split_mode(&actual_channels, sample_rate)?;
             }
             "single" if actual_channels.len() <= 2 => {
-                // For mono or stereo, use the standard WAV format
-                self.setup_standard_mode(&actual_channels, sample_rate)
-                    .map_err(|e| {
-                        std::io::Error::other(format!("Failed to setup standard mode: {}", e))
-                    })?;
+                self.setup_standard_mode(&actual_channels, sample_rate)?;
             }
             "single" => {
-                // For more than 2 channels, use multichannel mode
-                self.setup_multichannel_mode(&actual_channels, sample_rate)
-                    .map_err(|e| {
-                        std::io::Error::other(format!("Failed to setup multichannel mode: {}", e))
-                    })?;
+                self.setup_multichannel_mode(&actual_channels, sample_rate)?;
             }
             _ => {
-                return Err(std::io::Error::other(format!(
+                return Err(BlackboxError::Config(format!(
                     "Unexpected output mode: '{}'",
                     output_mode
                 )));
@@ -633,11 +632,11 @@ impl AudioProcessor for CpalAudioProcessor {
                     err_fn,
                     None,
                 ).map_err(|e| {
-                    std::io::Error::other(format!("Failed to build input stream: {}", e))
+                    BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
                 })?
             }
             _ => {
-                return Err(std::io::Error::other(format!(
+                return Err(BlackboxError::AudioDevice(format!(
                     "Unsupported sample format: {:?}",
                     config.sample_format()
                 )));
@@ -647,7 +646,7 @@ impl AudioProcessor for CpalAudioProcessor {
         // Start recording
         stream
             .play()
-            .map_err(|e| std::io::Error::other(format!("Failed to play stream: {}", e)))?;
+            .map_err(|e| BlackboxError::AudioDevice(format!("Failed to play stream: {}", e)))?;
 
         // Store the stream to keep it alive during recording
         self.stream = Some(Box::new(stream));
@@ -660,7 +659,7 @@ impl AudioProcessor for CpalAudioProcessor {
         Ok(())
     }
 
-    fn finalize(&mut self) -> std::io::Result<()> {
+    fn finalize(&mut self) -> Result<(), BlackboxError> {
         // Load configuration
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
@@ -674,11 +673,9 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Finalize the WAV file first
         if let Some(writer) = self.writer.lock().unwrap().take() {
-            // Finalize the writer
-            if let Err(e) = writer.finalize() {
-                eprintln!("Error finalizing WAV file: {}", e);
-                return Err(std::io::Error::other(e.to_string()));
-            }
+            writer
+                .finalize()
+                .map_err(|e| BlackboxError::Wav(format!("Error finalizing WAV file: {}", e)))?;
             created_files.push(file_path.clone());
         }
 
@@ -695,10 +692,9 @@ impl AudioProcessor for CpalAudioProcessor {
 
                 created_files.push(file_path.clone());
 
-                if let Err(e) = writer.finalize() {
-                    eprintln!("Error finalizing channel WAV file: {}", e);
-                    return Err(std::io::Error::other(e.to_string()));
-                }
+                writer.finalize().map_err(|e| {
+                    BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e))
+                })?;
             }
         }
 
@@ -724,7 +720,6 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Check if we should apply silence detection
         if silence_threshold > 0.0 {
-            // Check if each file is silent
             for file_path in created_files {
                 match is_silent(&file_path, silence_threshold) {
                     Ok(true) => {
@@ -732,10 +727,7 @@ impl AudioProcessor for CpalAudioProcessor {
                             "Recording is silent (below threshold {}), deleting file: {}",
                             silence_threshold, file_path
                         );
-                        if let Err(e) = fs::remove_file(&file_path) {
-                            eprintln!("Error deleting silent file: {}", e);
-                            return Err(std::io::Error::other(e.to_string()));
-                        }
+                        fs::remove_file(&file_path)?;
                     }
                     Ok(false) => {
                         println!(
@@ -745,7 +737,7 @@ impl AudioProcessor for CpalAudioProcessor {
                     }
                     Err(e) => {
                         eprintln!("Error checking for silence: {}", e);
-                        return Err(std::io::Error::other(e));
+                        return Err(e);
                     }
                 }
             }
@@ -754,24 +746,18 @@ impl AudioProcessor for CpalAudioProcessor {
         Ok(())
     }
 
-    fn start_recording(&mut self) -> std::io::Result<()> {
-        // Get configuration from the AudioRecorder
+    fn start_recording(&mut self) -> Result<(), BlackboxError> {
         let config = AppConfig::load();
         let channels_str = config.get_audio_channels();
-        let channels = match parse_channel_string(&channels_str) {
-            Ok(chs) => chs,
-            Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)),
-        };
+        let channels = parse_channel_string(&channels_str)?;
 
         let output_mode = config.get_output_mode();
         let debug = config.get_debug();
 
-        // Start the audio processing
         self.process_audio(&channels, &output_mode, debug)
     }
 
-    fn stop_recording(&mut self) -> std::io::Result<()> {
-        // Just call finalize to stop the recording
+    fn stop_recording(&mut self) -> Result<(), BlackboxError> {
         self.finalize()
     }
 
