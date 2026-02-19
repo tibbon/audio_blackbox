@@ -185,15 +185,12 @@ struct GeneralSettingsTab: View {
     var body: some View {
         Form {
             Section("Startup") {
-                Toggle("Launch at login and begin recording", isOn: Binding(
-                    get: { launchAtLogin && autoRecord },
-                    set: { newValue in
-                        launchAtLogin = newValue
-                        autoRecord = newValue
-                        updateLoginItem(enabled: newValue)
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _ in
+                        updateLoginItem()
                     }
-                ))
-                Text("App will start silently in the menu bar and begin recording with your saved settings.")
+                Toggle("Start recording automatically when launched", isOn: $autoRecord)
+                Text("When auto-record is enabled, recording begins with your saved settings.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -217,16 +214,15 @@ struct GeneralSettingsTab: View {
         }
     }
 
-    private func updateLoginItem(enabled: Bool) {
+    private func updateLoginItem() {
         do {
-            if enabled {
+            if launchAtLogin {
                 try SMAppService.mainApp.register()
             } else {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
-            autoRecord = launchAtLogin
         }
     }
 }
