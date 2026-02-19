@@ -290,14 +290,25 @@ impl AudioProcessor for CpalAudioProcessor {
                                 }
                             }
 
-                            // Push raw f32 to ring buffer (lock-free, wait-free, zero I/O)
-                            match producer.write_chunk_uninit(data.len()) {
-                                Ok(chunk) => {
-                                    chunk.fill_from_iter(data.iter().copied());
+                            // Push raw f32 to ring buffer (lock-free, wait-free, zero I/O).
+                            // Try the full chunk first; on failure, write as much as fits
+                            // so we only drop the true overflow instead of the entire callback.
+                            if producer.write_chunk_uninit(data.len()).is_ok_and(|chunk| {
+                                chunk.fill_from_iter(data.iter().copied());
+                                true
+                            }) {
+                                // Wrote everything
+                            } else {
+                                let available = producer.slots();
+                                if available > 0
+                                    && let Ok(chunk) = producer.write_chunk_uninit(available)
+                                {
+                                    chunk.fill_from_iter(data[..available].iter().copied());
                                 }
-                                Err(_) => {
-                                    // Ring buffer full — drop samples, count errors
-                                    write_errors.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                let dropped = data.len() - available;
+                                if dropped > 0 {
+                                    write_errors
+                                        .fetch_add(dropped as u64, Ordering::Relaxed);
                                 }
                             }
                         },
