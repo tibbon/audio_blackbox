@@ -106,6 +106,17 @@ final class RecordingState: ObservableObject {
         }
     }
 
+    /// Show an NSAlert for critical errors that require the user's attention.
+    private func showCriticalAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     func stop() {
         stopTimer()
         if bridge.stopRecording() {
@@ -203,8 +214,10 @@ final class RecordingState: ObservableObject {
             stopTimer()
             isRecording = false
             recordingStartTime = nil
-            errorMessage = bridge.lastError ?? "Recording stopped unexpectedly"
+            let msg = bridge.lastError ?? "Recording stopped unexpectedly"
+            errorMessage = msg
             statusText = "Error"
+            showCriticalAlert(title: "Recording Stopped", message: msg)
             return
         }
 
@@ -224,22 +237,28 @@ final class RecordingState: ObservableObject {
             // Audio stream error — device disconnected or driver failure
             if let streamError = status["stream_error"] as? Bool, streamError {
                 stop()
-                errorMessage = "Recording stopped: audio device disconnected or encountered an error"
+                let msg = "Audio device disconnected or encountered an error."
+                errorMessage = msg
                 statusText = "Error"
+                showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
             // Disk space low — stop recording gracefully
             if let diskLow = status["disk_space_low"] as? Bool, diskLow {
                 stop()
-                errorMessage = "Recording stopped: disk space is low"
+                let msg = "Disk space is low. Free up space and try again."
+                errorMessage = msg
                 statusText = "Disk Full"
+                showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
             // Write errors — auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
             if let writeErrors = status["write_errors"] as? Int, writeErrors > 48_000 {
                 stop()
-                errorMessage = "Recording stopped: excessive audio data loss (\(writeErrors) samples dropped)"
+                let msg = "Excessive audio data loss (\(writeErrors) samples dropped). Your system may be under heavy load."
+                errorMessage = msg
                 statusText = "Error"
+                showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             } else if let writeErrors = status["write_errors"] as? Int, writeErrors > 0 {
                 errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
