@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BlackBoxApp: App {
     @StateObject private var recorder = RecordingState()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra("BlackBox", systemImage: menuBarIcon) {
@@ -45,7 +46,11 @@ struct BlackBoxApp: App {
 
             Divider()
 
-            preferencesButton
+            Button("Preferences...") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "settings")
+            }
+            .keyboardShortcut(",")
 
             Button("Quit") {
                 if recorder.isRecording {
@@ -57,27 +62,11 @@ struct BlackBoxApp: App {
             .keyboardShortcut("q")
         }
 
-        Settings {
+        Window("BlackBox Preferences", id: "settings") {
             SettingsView(recorder: recorder)
         }
-    }
-
-    @ViewBuilder
-    private var preferencesButton: some View {
-        // SettingsLink doesn't work reliably inside MenuBarExtra menus,
-        // so we use the sendAction approach on all macOS versions.
-        Button("Preferences...") {
-            // Activate the app first so the settings window comes to front
-            NSApp.activate(ignoringOtherApps: true)
-            // On macOS 14+, the selector is showSettingsWindow:
-            // On macOS 13, it's showPreferencesWindow:
-            if #available(macOS 14.0, *) {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            } else {
-                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-            }
-        }
-        .keyboardShortcut(",")
+        .defaultSize(width: 480, height: 360)
+        .windowResizability(.contentSize)
     }
 
     private var menuBarIcon: String {
