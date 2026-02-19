@@ -131,7 +131,6 @@ dependencies = [
  "libc",
  "log",
  "objc",
- "pkg-config",
  "rtrb",
  "serde",
  "serde_json",

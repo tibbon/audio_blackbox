@@ -85,7 +85,6 @@ fn benchmark_direct_write_throughput() {
                 output_mode,
                 0.0,
                 Arc::clone(&write_errors),
-                false,
                 0,
                 Arc::new(AtomicBool::new(false)),
             )
@@ -180,7 +179,6 @@ fn benchmark_split_mode_throughput() {
                 "split",
                 0.0,
                 Arc::clone(&write_errors),
-                false,
                 0,
                 Arc::new(AtomicBool::new(false)),
             )
@@ -260,7 +258,6 @@ fn benchmark_ring_buffer_pipeline() {
                 "single",
                 0.0,
                 Arc::clone(&write_errors),
-                false,
                 0,
                 Arc::new(AtomicBool::new(false)),
             )
@@ -369,7 +366,6 @@ fn benchmark_rotation_overhead() {
                     mode,
                     0.0, // No silence detection — measure just I/O
                     Arc::clone(&write_errors),
-                    false,
                     0,
                     Arc::new(AtomicBool::new(false)),
                 )

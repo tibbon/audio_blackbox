@@ -31,7 +31,6 @@ cocoa = "0.25"
 objc = "0.2.7"
 core-foundation = "0.9"
 core-graphics = "0.23"
-libc = "0.2.150"
 
 [lib]
 name = "blackbox"
@@ -61,8 +60,6 @@ arc_with_non_send_sync = "allow"
 module_name_repetitions = "allow"
 useless_transmute = "allow" # Needed for Objective-C FFI
 
-[target.'cfg(target_os = "linux")'.dependencies]
-pkg-config = "0.3.30"
 
 [package.metadata.bundle]
 name = "BlackBox Audio Recorder"

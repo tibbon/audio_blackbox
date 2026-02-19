@@ -207,9 +207,8 @@ impl AudioProcessor for CpalAudioProcessor {
         }
 
         // Capture config values before entering the closure
-        let loaded_config = AppConfig::load();
-        let silence_threshold = loaded_config.get_silence_threshold();
-        let min_disk_space_mb = loaded_config.get_min_disk_space_mb();
+        let silence_threshold = app_config.get_silence_threshold();
+        let min_disk_space_mb = app_config.get_min_disk_space_mb();
 
         // Create writer thread state with initial WAV writers
         let mut state = WriterThreadState::new(
@@ -219,7 +218,6 @@ impl AudioProcessor for CpalAudioProcessor {
             output_mode,
             silence_threshold,
             Arc::clone(&self.write_errors),
-            debug,
             min_disk_space_mb,
             Arc::clone(&self.disk_space_low),
         )?;
@@ -248,10 +246,8 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Store handle (producer goes to the callback, not into the handle)
         self.writer_thread = Some(WriterThreadHandle {
-            rotation_needed: Arc::clone(&rotation_needed),
             command_tx,
             join_handle: Some(join_handle),
-            disk_space_low: Arc::clone(&self.disk_space_low),
         });
 
         // Clone write_errors for the callback
@@ -307,8 +303,7 @@ impl AudioProcessor for CpalAudioProcessor {
                                 }
                                 let dropped = data.len() - available;
                                 if dropped > 0 {
-                                    write_errors
-                                        .fetch_add(dropped as u64, Ordering::Relaxed);
+                                    write_errors.fetch_add(dropped as u64, Ordering::Relaxed);
                                 }
                             }
                         },
@@ -449,7 +444,6 @@ impl CpalAudioProcessor {
             output_mode,
             AppConfig::load().get_silence_threshold(),
             Arc::clone(&write_errors),
-            false,
             0, // disable disk check in tests
             Arc::clone(&disk_space_low),
         )?;

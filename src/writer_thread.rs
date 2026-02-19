@@ -43,13 +43,8 @@ pub enum WriterCommand {
 // ---------------------------------------------------------------------------
 
 pub struct WriterThreadHandle {
-    #[allow(dead_code)]
-    pub rotation_needed: Arc<AtomicBool>,
     pub command_tx: std::sync::mpsc::SyncSender<WriterCommand>,
     pub join_handle: Option<std::thread::JoinHandle<()>>,
-    /// Set by the writer thread when available disk space drops below threshold.
-    #[allow(dead_code)]
-    pub disk_space_low: Arc<AtomicBool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -68,8 +63,6 @@ pub struct WriterThreadState {
     pub pending_files: Vec<(String, String)>,
     pub silence_threshold: f32,
     pub write_errors: Arc<AtomicU64>,
-    #[allow(dead_code)]
-    pub debug: bool,
     /// Partial frames carried over between ring buffer reads.
     frame_remainder: Vec<f32>,
     /// Minimum free disk space in MB before stopping writes (0 = disabled).
@@ -92,7 +85,6 @@ impl WriterThreadState {
         output_mode: &str,
         silence_threshold: f32,
         write_errors: Arc<AtomicU64>,
-        debug: bool,
         min_disk_space_mb: u64,
         disk_space_low: Arc<AtomicBool>,
     ) -> Result<Self, BlackboxError> {
@@ -117,7 +109,6 @@ impl WriterThreadState {
             pending_files: Vec::new(),
             silence_threshold,
             write_errors,
-            debug,
             frame_remainder: Vec::new(),
             min_disk_space_mb,
             disk_space_low,

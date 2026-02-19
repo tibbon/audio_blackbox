@@ -57,7 +57,6 @@ fn test_ring_buffer_overflow_counted() {
             "single",
             0.0,
             Arc::clone(&write_errors),
-            false,
             0,
             Arc::new(AtomicBool::new(false)),
         )
@@ -119,7 +118,6 @@ fn test_writer_thread_processes_all_samples() {
             "single",
             0.0,
             Arc::clone(&write_errors),
-            false,
             0,
             Arc::new(AtomicBool::new(false)),
         )
@@ -179,7 +177,6 @@ fn test_writer_thread_rotation() {
             "single",
             0.0,
             Arc::clone(&write_errors),
-            false,
             0,
             Arc::new(AtomicBool::new(false)),
         )
@@ -256,7 +253,6 @@ fn test_writer_thread_shutdown_drains() {
             "single",
             0.0,
             Arc::clone(&write_errors),
-            false,
             0,
             Arc::new(AtomicBool::new(false)),
         )
@@ -321,7 +317,6 @@ fn test_writer_thread_silence_on_rotation() {
             "single",
             10.0, // high threshold — everything is "silent"
             Arc::clone(&write_errors),
-            false,
             0,
             Arc::new(AtomicBool::new(false)),
         )

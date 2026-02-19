@@ -55,10 +55,18 @@ pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
 pub use benchmarking::{PerformanceMetrics, PerformanceTracker, measure_execution_time};
 pub use config::AppConfig;
-pub use constants::*;
+pub use constants::{
+    DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION,
+    DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
+    DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_THRESHOLD,
+    DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, RING_BUFFER_SECONDS, WRITER_THREAD_READ_CHUNK,
+    WavWriterType,
+};
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
-pub use utils::*;
+pub use utils::{
+    available_disk_space_mb, check_alsa_availability, is_silent, parse_channel_string,
+};
 
 // Expose test utilities
 #[cfg(test)]
