@@ -9,6 +9,8 @@
 mod safe_cocoa;
 
 #[cfg(target_os = "macos")]
+use log::{debug, error, info, warn};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::sync::mpsc;
@@ -69,7 +71,7 @@ pub struct MenuBarApp {
 #[cfg(target_os = "macos")]
 impl MenuBarApp {
     pub fn new() -> Self {
-        println!("Creating MenuBarApp (implementation)");
+        info!("Creating MenuBarApp (implementation)");
 
         // Initialize shared state
         let state = SharedState {
@@ -90,25 +92,25 @@ impl MenuBarApp {
             // Set up exception handling for Objective-C
             setup_exception_handling();
 
-            println!("UI thread started");
+            info!("UI thread started");
 
             // Always use simplified UI for now
             // In a real implementation, we would check for a feature flag or config option
             let use_visual_ui = false; // Change this to true to use visual UI
 
             if use_visual_ui {
-                println!("Using visual menu bar UI with safe_cocoa wrappers");
+                info!("Using visual menu bar UI with safe_cocoa wrappers");
                 // Create the visual menu bar UI using our safe wrappers
                 if let Err(e) = create_visual_menu_bar(control_receiver, ui_state) {
-                    eprintln!("Failed to create menu bar UI: {e:?}");
+                    error!("Failed to create menu bar UI: {e:?}");
                     // Can't fall back to simplified UI here as control_receiver is moved
                 }
             } else {
-                println!("Using simplified menu bar (non-visual)");
+                info!("Using simplified menu bar (non-visual)");
                 create_simplified_menu_bar(control_receiver, ui_state);
             }
 
-            println!("UI thread terminated");
+            info!("UI thread terminated");
         });
 
         MenuBarApp {
@@ -120,13 +122,13 @@ impl MenuBarApp {
     }
 
     pub fn run(&mut self) {
-        println!("Running MenuBarApp");
+        info!("Running MenuBarApp");
 
         // Create processor and recorder
         let processor = match CpalAudioProcessor::new() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("Failed to create audio processor: {e}");
+                error!("Failed to create audio processor: {e}");
                 return;
             }
         };
@@ -140,8 +142,8 @@ impl MenuBarApp {
         }
 
         // Print initial status
-        println!("Menu bar initialized and ready");
-        println!(
+        info!("Menu bar initialized and ready");
+        info!(
             "Recording will be saved to: {}",
             self.state.output_dir.lock().unwrap()
         );
@@ -160,7 +162,7 @@ impl MenuBarApp {
         .expect("Error setting Ctrl-C handler");
 
         // Main application loop - wait for user to stop the application
-        println!("Press Ctrl+C to exit");
+        info!("Press Ctrl+C to exit");
         let mut running = true;
 
         while running {
@@ -175,11 +177,11 @@ impl MenuBarApp {
                 {
                     match rec.start_recording() {
                         Ok(_) => {
-                            println!("Recording started!");
+                            info!("Recording started!");
                             Self::send_notification("BlackBox Audio Recorder", "Recording started");
                         }
                         Err(e) => {
-                            eprintln!("Failed to start recording: {e}");
+                            error!("Failed to start recording: {e}");
                             Self::send_notification(
                                 "BlackBox Audio Recorder",
                                 &format!("Failed to start recording: {e}"),
@@ -193,9 +195,9 @@ impl MenuBarApp {
             {
                 // Use the processor's stop_recording method directly
                 if let Err(e) = rec.processor_mut().stop_recording() {
-                    eprintln!("Error stopping recording: {e:?}");
+                    error!("Error stopping recording: {e:?}");
                 } else {
-                    println!("Recording stopped");
+                    info!("Recording stopped");
                     Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
                 }
             }
@@ -218,7 +220,7 @@ impl MenuBarApp {
             let _ = handle.join();
         }
 
-        println!("Application exited.");
+        info!("Application exited.");
     }
 
     /// Updates the recording status
@@ -242,7 +244,7 @@ impl MenuBarApp {
                 .send(ControlMessage::UpdateOutputDir(dir.to_string()))
                 .is_err()
         {
-            eprintln!("Failed to send UpdateOutputDir message");
+            warn!("Failed to send UpdateOutputDir message");
         }
     }
 
@@ -316,10 +318,10 @@ fn create_visual_menu_bar(
     let timeout = Duration::from_millis(100);
 
     // Print status display
-    println!("==== BlackBox Audio Recorder ====");
-    println!("Menu bar UI initialized");
-    println!("Check the menu bar icon to control the app");
-    println!("================================");
+    info!("==== BlackBox Audio Recorder ====");
+    info!("Menu bar UI initialized");
+    info!("Check the menu bar icon to control the app");
+    info!("================================");
 
     // Main event loop
     let mut running = true;
@@ -359,11 +361,11 @@ fn create_simplified_menu_bar(
     control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
     state: SharedState,
 ) {
-    println!("Using simplified menu bar (non-visual)");
-    println!("\n==== BlackBox Audio Recorder ====");
-    println!("Recording is controlled via the main thread.");
-    println!("Press Ctrl+C to exit.");
-    println!("================================\n");
+    info!("Using simplified menu bar (non-visual)");
+    info!("==== BlackBox Audio Recorder ====");
+    info!("Recording is controlled via the main thread.");
+    info!("Press Ctrl+C to exit.");
+    info!("================================");
 
     let mut should_quit = false;
 
@@ -372,19 +374,19 @@ fn create_simplified_menu_bar(
         if let Ok(msg) = control_receiver.try_recv() {
             match msg {
                 ControlMessage::StartRecording => {
-                    println!("UI: Starting recording");
+                    debug!("UI: Starting recording");
                     *state.is_recording.lock().unwrap() = true;
                 }
                 ControlMessage::StopRecording => {
-                    println!("UI: Stopping recording");
+                    debug!("UI: Stopping recording");
                     *state.is_recording.lock().unwrap() = false;
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
-                    println!("UI: Updating output dir to {dir}");
+                    debug!("UI: Updating output dir to {dir}");
                     *state.output_dir.lock().unwrap() = dir;
                 }
                 ControlMessage::Quit => {
-                    println!("UI: Quitting");
+                    debug!("UI: Quitting");
                     should_quit = true;
                 }
             }

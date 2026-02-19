@@ -1,6 +1,8 @@
 use crate::constants::MAX_CHANNELS;
 use crate::error::BlackboxError;
 #[cfg(target_os = "linux")]
+use log::warn;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use std::vec::Vec;
 
@@ -94,10 +96,8 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
     match output {
         Ok(o) if o.status.success() => Ok(()),
         _ => {
-            eprintln!(
-                "WARNING: ALSA libraries not found. Audio recording might not work correctly on Linux."
-            );
-            eprintln!("Try installing libasound2-dev package: sudo apt-get install libasound2-dev");
+            warn!("ALSA libraries not found. Audio recording might not work correctly on Linux.");
+            warn!("Try installing libasound2-dev package: sudo apt-get install libasound2-dev");
             // Continue execution anyway, as cpal might fall back to another backend
             Ok(())
         }

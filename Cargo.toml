@@ -9,8 +9,10 @@ description = "An audio blackbox for your recording needs"
 
 [dependencies]
 cpal = "0.17"
+env_logger = "0.11"
 hound = "3.5.1"
 chrono = "0.4.31"
+log = "0.4"
 tempfile = "3.9.0"
 ctrlc = "3.4.1"
 sysinfo = "0.38"

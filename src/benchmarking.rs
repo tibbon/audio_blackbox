@@ -1,4 +1,5 @@
 use chrono::prelude::*;
+use log::error;
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -71,7 +72,7 @@ impl PerformanceTracker {
             );
 
             if let Err(e) = write_to_log(&log_path, &header) {
-                eprintln!("Failed to initialize performance log: {}", e);
+                error!("Failed to initialize performance log: {}", e);
             }
 
             // Monitoring loop
@@ -107,7 +108,7 @@ impl PerformanceTracker {
                     );
 
                     if let Err(e) = write_to_log(&log_path, &log_line) {
-                        eprintln!("Failed to write to performance log: {}", e);
+                        error!("Failed to write to performance log: {}", e);
                     }
                 }
 

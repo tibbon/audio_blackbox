@@ -1,3 +1,5 @@
+use log::{debug, error};
+
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
 use crate::error::BlackboxError;
@@ -86,7 +88,7 @@ impl AudioProcessor for MockAudioProcessor {
                 let _ = writer.finalize();
             }
             Err(e) => {
-                eprintln!("Error creating test WAV file: {}", e);
+                error!("Error creating test WAV file: {}", e);
             }
         }
 
@@ -131,16 +133,16 @@ impl AudioProcessor for MockAudioProcessor {
                         let _ = writer.finalize();
                     }
                     Err(e) => {
-                        eprintln!("Error creating test WAV file: {}", e);
+                        error!("Error creating test WAV file: {}", e);
                     }
                 }
             }
-            println!(
+            debug!(
                 "Created {} individual mock channel WAV files",
                 channels.len()
             );
         } else {
-            println!(
+            debug!(
                 "Created mock {} WAV file",
                 if self.create_silent_file {
                     "silent"
@@ -172,10 +174,10 @@ impl AudioProcessor for MockAudioProcessor {
             let files_to_delete = self.created_files.clone(); // Clone to avoid borrowing issues
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
-                    eprintln!("Failed to delete silent file in test: {}", e);
+                    error!("Failed to delete silent file in test: {}", e);
                     return Err(BlackboxError::Io(e));
                 }
-                println!("Deleted silent test file: {}", file_path);
+                debug!("Deleted silent test file: {}", file_path);
             }
         }
 

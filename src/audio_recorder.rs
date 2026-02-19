@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
 use crate::error::BlackboxError;
@@ -57,27 +59,25 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         // Get the output mode
         let output_mode = self.config.get_output_mode();
 
-        // Print audio configuration
-        println!("Starting recording:");
-        println!("  Channels: {:?}", channels);
-        println!("  Debug: {}", debug);
+        // Log audio configuration
+        info!("Starting recording:");
+        info!("  Channels: {:?}", channels);
+        info!("  Debug: {}", debug);
 
-        // Get the recording duration
         let duration = self.config.get_duration();
-        println!("  Duration: {} seconds", duration);
+        info!("  Duration: {} seconds", duration);
 
-        println!("  Output Mode: {}", output_mode);
+        info!("  Output Mode: {}", output_mode);
 
-        // Check if silence detection is enabled
         let silence_threshold = self.config.get_silence_threshold();
 
         if silence_threshold > 0.0 {
-            println!(
+            info!(
                 "  Silence Detection: Enabled (threshold: {})",
                 silence_threshold
             );
         } else {
-            println!("  Silence Detection: Disabled");
+            info!("  Silence Detection: Disabled");
         }
 
         // Start the processor with the selected configuration

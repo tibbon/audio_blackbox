@@ -3,6 +3,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use log::{debug, error, info, warn};
+
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
 use crate::constants::{
@@ -81,7 +83,7 @@ impl CpalAudioProcessor {
             .default_input_device()
             .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
 
-        println!(
+        info!(
             "Using audio device: {}",
             device
                 .description()
@@ -93,7 +95,7 @@ impl CpalAudioProcessor {
             BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
         })?;
 
-        println!("Default input stream config: {:?}", config_audio);
+        debug!("Default input stream config: {:?}", config_audio);
 
         let sample_rate = config_audio.sample_rate();
 
@@ -136,7 +138,7 @@ impl CpalAudioProcessor {
     fn setup_split_mode(&self, channels: &[usize], sample_rate: u32) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
-        println!("Setting up split mode with {} channels", channels.len());
+        info!("Setting up split mode with {} channels", channels.len());
 
         let mut writers = self.multichannel_writers.lock().unwrap();
         let mut buffers = self.multichannel_buffers.lock().unwrap();
@@ -167,7 +169,7 @@ impl CpalAudioProcessor {
             })?;
 
             writers[idx] = Some(writer);
-            println!("Created channel WAV file: {}", channel_file_name);
+            info!("Created channel WAV file: {}", channel_file_name);
         }
 
         // Store the current configuration
@@ -191,7 +193,7 @@ impl CpalAudioProcessor {
 
         let multichannel_file_name = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
 
-        println!(
+        info!(
             "Setting up multichannel mode with {} channels",
             channels.len()
         );
@@ -214,7 +216,7 @@ impl CpalAudioProcessor {
         // Store the current configuration
         *self.current_spec.lock().unwrap() = Some(spec);
 
-        println!("Created multichannel WAV file: {}", multichannel_file_name);
+        info!("Created multichannel WAV file: {}", multichannel_file_name);
         Ok(())
     }
 
@@ -226,7 +228,7 @@ impl CpalAudioProcessor {
     ) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
 
-        println!("Setting up standard mode with {} channels", channels.len());
+        info!("Setting up standard mode with {} channels", channels.len());
 
         // Determine if we're recording mono or stereo
         let num_channels = if channels.len() == 1 { 1 } else { 2 };
@@ -246,7 +248,7 @@ impl CpalAudioProcessor {
 
         // Store the writer
         *self.writer.lock().unwrap() = Some(writer);
-        println!("Created WAV file: {}", file_name);
+        info!("Created WAV file: {}", file_name);
 
         // Store the current configuration
         *self.current_spec.lock().unwrap() = Some(spec);
@@ -278,7 +280,7 @@ impl AudioProcessor for CpalAudioProcessor {
             .default_input_device()
             .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))?;
 
-        println!(
+        info!(
             "Using audio device: {}",
             device
                 .description()
@@ -289,7 +291,7 @@ impl AudioProcessor for CpalAudioProcessor {
             BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
         })?;
 
-        println!("Default input stream config: {:?}", config);
+        debug!("Default input stream config: {:?}", config);
 
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
@@ -302,8 +304,8 @@ impl AudioProcessor for CpalAudioProcessor {
             if channel < total_channels {
                 actual_channels.push(channel);
             } else {
-                println!(
-                    "Warning: Channel {} not available on device. Device only has {} channels.",
+                warn!(
+                    "Channel {} not available on device. Device only has {} channels.",
                     channel, total_channels
                 );
             }
@@ -311,14 +313,14 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // If no requested channels are available, use all available channels
         if actual_channels.is_empty() {
-            println!(
+            warn!(
                 "No requested channels available. Using all available channels (0 to {}).",
                 total_channels - 1
             );
             actual_channels = (0..total_channels).collect();
         }
 
-        println!("Using channels: {:?}", actual_channels);
+        info!("Using channels: {:?}", actual_channels);
 
         // Setup the appropriate output mode
         let valid_modes = ["split", "single"];
@@ -374,7 +376,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Error callback
         let err_fn = move |err| {
-            eprintln!("an error occurred on stream: {}", err);
+            error!("an error occurred on stream: {}", err);
         };
 
         // Create a stream based on the sample format
@@ -385,7 +387,7 @@ impl AudioProcessor for CpalAudioProcessor {
                     &config.into(),
                     move |data: &[f32], _: &_| {
                         if debug {
-                            println!("Processing {} samples", data.len());
+                            debug!("Processing {} samples", data.len());
                         }
 
                         // Check if we need to rotate files in continuous mode
@@ -395,7 +397,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
                             if now.duration_since(last_rotation) >= Duration::from_secs(recording_cadence) {
                                 // Perform file rotation using thread-safe mechanisms
-                                println!("Rotating recording files...");
+                                info!("Rotating recording files...");
 
                                 // Use the configuration captured at process_audio() start
                                 let output_mode = &output_mode_owned;
@@ -421,9 +423,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                     created_files.push(file_path.clone());
 
                                     if let Err(e) = writer.finalize() {
-                                        eprintln!("Error finalizing WAV file during rotation: {}", e);
+                                        error!("Error finalizing WAV file during rotation: {}", e);
                                     } else {
-                                        println!("Finalized recording to {}", file_path);
+                                        info!("Finalized recording to {}", file_path);
                                     }
                                 }
 
@@ -441,9 +443,9 @@ impl AudioProcessor for CpalAudioProcessor {
                                         created_files.push(file_path.clone());
 
                                         if let Err(e) = writer.finalize() {
-                                            eprintln!("Error finalizing channel WAV file during rotation: {}", e);
+                                            error!("Error finalizing channel WAV file during rotation: {}", e);
                                         } else {
-                                            println!("Finalized recording to {}", file_path);
+                                            info!("Finalized recording to {}", file_path);
                                         }
                                     }
                                 }
@@ -453,19 +455,19 @@ impl AudioProcessor for CpalAudioProcessor {
                                     for file_path in created_files {
                                         match is_silent(&file_path, silence_threshold) {
                                             Ok(true) => {
-                                                println!(
+                                                info!(
                                                     "Recording is silent (below threshold {}), deleting file",
                                                     silence_threshold
                                                 );
                                                 if let Err(e) = fs::remove_file(&file_path) {
-                                                    eprintln!("Error deleting silent file: {}", e);
+                                                    error!("Error deleting silent file: {}", e);
                                                 }
                                             }
                                             Ok(false) => {
-                                                println!("Recording is not silent (above threshold {}), keeping file", silence_threshold);
+                                                info!("Recording is not silent (above threshold {}), keeping file", silence_threshold);
                                             }
                                             Err(e) => {
-                                                eprintln!("Error checking for silence: {}", e);
+                                                error!("Error checking for silence: {}", e);
                                             }
                                         }
                                     }
@@ -493,10 +495,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                             match hound::WavWriter::create(&channel_file_name, spec) {
                                                 Ok(writer) => {
                                                     writers[idx] = Some(writer);
-                                                    println!("Created channel WAV file: {}", channel_file_name);
+                                                    info!("Created channel WAV file: {}", channel_file_name);
                                                 },
                                                 Err(e) => {
-                                                    eprintln!("Failed to create channel WAV file: {}", e);
+                                                    error!("Failed to create channel WAV file: {}", e);
                                                 }
                                             }
                                         }
@@ -518,10 +520,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                         match hound::WavWriter::create(&multichannel_file_name, spec) {
                                             Ok(writer) => {
                                                 *writer_for_rotation.lock().unwrap() = Some(writer);
-                                                println!("Created multichannel WAV file: {}", multichannel_file_name);
+                                                info!("Created multichannel WAV file: {}", multichannel_file_name);
                                             },
                                             Err(e) => {
-                                                eprintln!("Failed to create multichannel WAV file: {}", e);
+                                                error!("Failed to create multichannel WAV file: {}", e);
                                             }
                                         }
                                     }
@@ -536,10 +538,10 @@ impl AudioProcessor for CpalAudioProcessor {
                                                 Ok(writer) => {
                                                     *writer_for_rotation.lock().unwrap() = Some(writer);
                                                     // We can't update self.file_name directly in this context
-                                                    println!("Created new recording file: {}", full_path);
+                                                    info!("Created new recording file: {}", full_path);
                                                 },
                                                 Err(e) => {
-                                                    eprintln!("Failed to create new WAV file: {}", e);
+                                                    error!("Failed to create new WAV file: {}", e);
                                                 }
                                             }
                                         }
@@ -701,7 +703,7 @@ impl AudioProcessor for CpalAudioProcessor {
         // Then close the stream
         self.stream = None;
 
-        println!("Finalized recording to {}", file_path);
+        info!("Finalized recording to {}", file_path);
 
         // Check if the files are in the output directory and move them if needed
         for file_path in &created_files {
@@ -713,7 +715,7 @@ impl AudioProcessor for CpalAudioProcessor {
                 && parent_dir_str != self.output_dir
             {
                 let new_path = format!("{}/{}", self.output_dir, file_name_str);
-                println!("Moving file from {} to {}", file_path, new_path);
+                info!("Moving file from {} to {}", file_path, new_path);
                 fs::rename(file_path, &new_path)?;
             }
         }
@@ -723,20 +725,20 @@ impl AudioProcessor for CpalAudioProcessor {
             for file_path in created_files {
                 match is_silent(&file_path, silence_threshold) {
                     Ok(true) => {
-                        println!(
+                        info!(
                             "Recording is silent (below threshold {}), deleting file: {}",
                             silence_threshold, file_path
                         );
                         fs::remove_file(&file_path)?;
                     }
                     Ok(false) => {
-                        println!(
+                        info!(
                             "Recording is not silent (above threshold {}), keeping file: {}",
                             silence_threshold, file_path
                         );
                     }
                     Err(e) => {
-                        eprintln!("Error checking for silence: {}", e);
+                        error!("Error checking for silence: {}", e);
                         return Err(e);
                     }
                 }
@@ -774,7 +776,7 @@ impl Drop for CpalAudioProcessor {
         if self.is_recording()
             && let Err(e) = self.finalize()
         {
-            eprintln!("Error during cleanup: {}", e);
+            error!("Error during cleanup: {}", e);
         }
     }
 }

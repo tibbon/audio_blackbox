@@ -1,3 +1,4 @@
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -112,16 +113,16 @@ impl AppConfig {
             match fs::read_to_string(&config_path) {
                 Ok(content) => match toml::from_str::<AppConfig>(&content) {
                     Ok(file_config) => {
-                        println!("Loaded configuration from {}", config_path.display());
+                        info!("Loaded configuration from {}", config_path.display());
                         // Merge with defaults
                         config.merge(file_config);
                     }
                     Err(e) => {
-                        eprintln!("Error parsing config file: {}", e);
+                        error!("Error parsing config file: {}", e);
                     }
                 },
                 Err(e) => {
-                    eprintln!("Error reading config file: {}", e);
+                    error!("Error reading config file: {}", e);
                 }
             }
         }
