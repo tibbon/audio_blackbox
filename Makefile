@@ -159,7 +159,7 @@ uninstall:
 verify:
 	$(CARGO_BIN) fmt --all -- --check
 	$(CARGO_BIN) clippy --no-default-features -- -D warnings
-	$(CARGO_BIN) test
+	$(CARGO_BIN) test -- --test-threads=1
 	$(CARGO_BIN) build
 
 # Help

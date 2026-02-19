@@ -1,10 +1,11 @@
+use std::collections::BTreeSet;
+
 use crate::constants::MAX_CHANNELS;
 use crate::error::BlackboxError;
 #[cfg(target_os = "linux")]
 use log::warn;
 #[cfg(target_os = "linux")]
 use std::process::Command;
-use std::vec::Vec;
 
 /// Parse a string of channel specifications and return a vector of channel numbers.
 ///
@@ -12,7 +13,7 @@ use std::vec::Vec;
 /// and ranges of channels (e.g., "1-24"). The resulting vector is sorted
 /// and contains no duplicates.
 pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
-    let mut channels = Vec::new();
+    let mut channels = BTreeSet::new();
 
     for part in input.split(',') {
         if part.contains('-') {
@@ -47,10 +48,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
                 )));
             }
 
-            // Add all channels in the range
-            for channel in start..=end {
-                channels.push(channel);
-            }
+            channels.extend(start..=end);
         } else {
             // Handle individual channel
             let channel = part.trim().parse::<usize>().map_err(|_| {
@@ -65,7 +63,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
                 )));
             }
 
-            channels.push(channel);
+            channels.insert(channel);
         }
     }
 
@@ -75,11 +73,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
         ));
     }
 
-    // Remove duplicate channels
-    channels.sort_unstable();
-    channels.dedup();
-
-    Ok(channels)
+    Ok(channels.into_iter().collect())
 }
 
 /// Checks if ALSA is available on Linux systems.
@@ -127,34 +121,29 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
     let threshold_f64 = threshold as f64;
 
     if threshold_f64 <= 0.0 {
-        // If threshold is 0 or negative, we don't check for silence
         return Ok(false);
     }
 
-    // Open the WAV file for reading
     let reader = hound::WavReader::open(file_path).map_err(|e| {
         BlackboxError::Wav(format!("Failed to open WAV file for silence check: {}", e))
     })?;
 
-    // Read all samples
-    let samples: Vec<i32> = reader
-        .into_samples()
-        .collect::<Result<Vec<i32>, _>>()
-        .map_err(|e| BlackboxError::Wav(format!("Failed to read samples: {}", e)))?;
+    // Stream through samples without collecting into memory
+    let mut sum_of_squares: f64 = 0.0;
+    let mut count: u64 = 0;
+    let norm = f64::from(i32::MAX);
 
-    if samples.is_empty() {
+    for sample in reader.into_samples::<i32>() {
+        let s = sample.map_err(|e| BlackboxError::Wav(format!("Failed to read sample: {}", e)))?;
+        let normalized = f64::from(s) / norm;
+        sum_of_squares += normalized * normalized;
+        count += 1;
+    }
+
+    if count == 0 {
         return Ok(true); // Empty file is silent
     }
 
-    // Calculate RMS (Root Mean Square) amplitude
-    // RMS is a measure of the average power of the audio signal
-    let sum_of_squares: f64 = samples
-        .iter()
-        .map(|&s| (s as f64 / i32::MAX as f64).powi(2))
-        .sum();
-    let mean_square = sum_of_squares / samples.len() as f64;
-    let rms = mean_square.sqrt();
-
-    // If RMS is below threshold, consider it silent
+    let rms = (sum_of_squares / count as f64).sqrt();
     Ok(rms < threshold_f64)
 }

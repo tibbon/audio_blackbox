@@ -46,6 +46,7 @@ fn main() {
             info!("Menu bar app created successfully");
             info!("Running MenuBarApp...");
             menu_app.run();
+            return;
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -53,8 +54,6 @@ fn main() {
             error!("Menu bar mode is only available on macOS");
             process::exit(1);
         }
-
-        return;
     }
 
     // Check for configuration file

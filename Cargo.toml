@@ -38,7 +38,7 @@ path = "src/bin/main.rs"
 
 [features]
 default = []
-cargo-clippy = []
+cargo-clippy = [] # Required: objc crate macros check this feature internally
 menu-bar = []
 
 # These lints will only be activated when using cargo clippy
