@@ -154,6 +154,14 @@ uninstall:
 	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
 	@echo "Service uninstalled"
 
+# Verify: fmt + clippy + test + build (run before committing)
+.PHONY: verify
+verify:
+	$(CARGO_BIN) fmt --all -- --check
+	$(CARGO_BIN) clippy --no-default-features -- -D warnings
+	$(CARGO_BIN) test
+	$(CARGO_BIN) build
+
 # Help
 .PHONY: help
 help:
@@ -164,6 +172,7 @@ help:
 	@echo "  release         - Build release version"
 	@echo "  test            - Run tests"
 	@echo "  lint            - Run linting checks"
+	@echo "  verify          - Run fmt + clippy + test + build"
 	@echo "  app-bundle      - Create macOS app bundle (release)"
 	@echo "  app-bundle-debug - Create macOS app bundle (debug)"
 	@echo "  sign            - Code sign the macOS app bundle"
@@ -176,4 +185,4 @@ help:
 	@echo "  start           - Start the service"
 	@echo "  stop            - Stop the service"
 	@echo "  uninstall       - Stop and remove the service"
-	@echo "  help            - Show this help" 
+	@echo "  help            - Show this help"
