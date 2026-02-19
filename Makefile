@@ -177,7 +177,8 @@ rust-lib:
 # Swift source files for the menu bar app
 SWIFT_SOURCES = $(SWIFT_APP_DIR)/BlackBoxApp/BlackBoxApp.swift \
                 $(SWIFT_APP_DIR)/BlackBoxApp/RecordingState.swift \
-                $(SWIFT_APP_DIR)/BlackBoxApp/RustBridge.swift
+                $(SWIFT_APP_DIR)/BlackBoxApp/RustBridge.swift \
+                $(SWIFT_APP_DIR)/BlackBoxApp/SettingsView.swift
 SWIFT_APP_BINARY = $(RELEASE_DIR)/BlackBoxApp
 SWIFT_APP_BUNDLE = $(RELEASE_DIR)/BlackBox Audio Recorder.app
 
@@ -187,6 +188,12 @@ swift-app: rust-lib
 	@if command -v xcodebuild >/dev/null 2>&1 && xcodebuild -version >/dev/null 2>&1; then \
 		echo "Building with xcodebuild..."; \
 		xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) build; \
+		BUILT_APP=$$(xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //'); \
+		if [ -d "$$BUILT_APP/BlackBox Audio Recorder.app" ]; then \
+			rm -rf "$(SWIFT_APP_BUNDLE)"; \
+			cp -R "$$BUILT_APP/BlackBox Audio Recorder.app" "$(SWIFT_APP_BUNDLE)"; \
+			echo "Copied app bundle to $(SWIFT_APP_BUNDLE)"; \
+		fi; \
 	else \
 		echo "Building with swiftc (no Xcode)..."; \
 		swiftc -parse-as-library -target arm64-apple-macosx13.0 \

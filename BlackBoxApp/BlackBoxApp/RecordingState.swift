@@ -10,7 +10,7 @@ final class RecordingState: ObservableObject {
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
 
-    private let bridge: RustBridge
+    let bridge: RustBridge
     private var recordingStartTime: Date?
     private var timer: Timer?
 

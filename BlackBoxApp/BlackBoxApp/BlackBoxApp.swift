@@ -45,6 +45,8 @@ struct BlackBoxApp: App {
 
             Divider()
 
+            preferencesButton
+
             Button("Quit") {
                 if recorder.isRecording {
                     recorder.stop()
@@ -52,6 +54,26 @@ struct BlackBoxApp: App {
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q")
+        }
+
+        Settings {
+            SettingsView(recorder: recorder)
+        }
+    }
+
+    @ViewBuilder
+    private var preferencesButton: some View {
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Text("Preferences...")
+            }
+            .keyboardShortcut(",")
+        } else {
+            Button("Preferences...") {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+            .keyboardShortcut(",")
         }
     }
 
