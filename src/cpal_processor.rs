@@ -115,10 +115,7 @@ impl CpalAudioProcessor {
                     return Ok(device);
                 }
             }
-            warn!(
-                "Input device '{}' not found, falling back to default",
-                name
-            );
+            warn!("Input device '{}' not found, falling back to default", name);
         }
         host.default_input_device()
             .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))
@@ -153,8 +150,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         let host = cpal::default_host();
         let app_config = AppConfig::load();
-        let device =
-            Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
+        let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
 
         info!(
             "Using audio device: {}",

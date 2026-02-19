@@ -205,8 +205,7 @@ fn test_free_string_null_is_safe() {
 
 #[test]
 fn test_config_with_input_device() {
-    let json =
-        CString::new(r#"{"input_device": "Nonexistent Device"}"#).unwrap();
+    let json = CString::new(r#"{"input_device": "Nonexistent Device"}"#).unwrap();
     let handle = blackbox_create(json.as_ptr());
 
     let config_ptr = blackbox_get_config_json(handle);
