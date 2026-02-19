@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -198,6 +199,9 @@ struct GeneralSettingsTab: View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _ in
+                        updateLoginItem()
+                    }
                 Toggle("Start recording automatically on launch", isOn: $autoRecord)
             }
 
@@ -215,5 +219,22 @@ struct GeneralSettingsTab: View {
             }
         }
         .padding()
+        .onAppear {
+            // Sync toggle state with actual system registration
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    private func updateLoginItem() {
+        do {
+            if launchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // Revert toggle on failure
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 }

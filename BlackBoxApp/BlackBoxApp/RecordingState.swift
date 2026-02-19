@@ -22,6 +22,14 @@ final class RecordingState: ObservableObject {
         bridge = RustBridge()
         refreshDevices()
         restoreOutputDirBookmark()
+
+        // Auto-record on launch if enabled
+        if UserDefaults.standard.bool(forKey: "autoRecord") {
+            // Delay slightly to let the app finish launching
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.start()
+            }
+        }
     }
 
     // MARK: - Actions
@@ -147,6 +155,16 @@ final class RecordingState: ObservableObject {
     }
 
     private func updateDuration() {
+        // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
+        if isRecording && !bridge.isRecording {
+            stopTimer()
+            isRecording = false
+            recordingStartTime = nil
+            errorMessage = bridge.lastError ?? "Recording stopped unexpectedly"
+            statusText = "Error"
+            return
+        }
+
         guard let start = recordingStartTime else { return }
         let elapsed = Int(Date().timeIntervalSince(start))
         let hours = elapsed / 3600
@@ -156,6 +174,13 @@ final class RecordingState: ObservableObject {
             statusText = String(format: "Recording %d:%02d:%02d", hours, minutes, seconds)
         } else {
             statusText = String(format: "Recording %d:%02d", minutes, seconds)
+        }
+
+        // Check for write errors from Rust engine
+        if let status = bridge.getStatus(),
+           let writeErrors = status["write_errors"] as? Int,
+           writeErrors > 0 {
+            errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
         }
     }
 

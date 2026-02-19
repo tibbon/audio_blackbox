@@ -164,12 +164,43 @@ jobs:
     - name: Smoke test — pipeline mode (64ch, 2s)
       run: target/release/bench-writer --channels 64 --seconds 2 --mode pipeline
 
+  # ── Swift app build (macOS) ────────────────────────────────────────
+  # Builds the Rust static library with FFI exports and the SwiftUI
+  # menu bar app via xcodebuild.
+  swift-app:
+    name: Swift app
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-swift-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-swift-
+
+    - name: Build Rust static library (FFI)
+      run: cargo build --release --features ffi
+
+    - name: Build SwiftUI app
+      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release build
+
   # ── Release ────────────────────────────────────────────────────────
   # Builds release binaries on both Linux and macOS, then creates a
   # GitHub release with both artifacts.
   release:
     name: Release (${{ matrix.os }})
-    needs: [fmt, lint, test, audit]
+    needs: [fmt, lint, test, audit, swift-app]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     permissions:
