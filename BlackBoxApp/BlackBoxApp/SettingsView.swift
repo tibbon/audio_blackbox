@@ -18,10 +18,24 @@ struct SettingsView: View {
 
             GeneralSettingsTab()
                 .tabItem {
-                    Label("General", systemImage: "gear")
+                    Label("General", systemImage: "gearshape")
                 }
         }
-        .frame(minWidth: 480, maxWidth: 480, minHeight: 240)
+        .frame(minWidth: 480, maxWidth: 480, minHeight: 450)
+        .background(SettingsWindowConfigurator())
+    }
+}
+
+/// Disables minimize and zoom buttons on the Settings window per Apple HIG.
+private struct SettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+        }
     }
 }
 
@@ -48,14 +62,10 @@ struct RecordingSettingsTab: View {
                 .accessibilityLabel("Input device")
                 .accessibilityHint("Select the audio input device for recording")
 
-                Button {
+                Button("Refresh Devices") {
                     recorder.refreshDevices()
-                } label: {
-                    Label("Refresh Devices", systemImage: "arrow.clockwise")
-                        .font(.caption)
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Refresh device list")
+                .font(.caption)
                 .accessibilityHint("Scan for newly connected audio devices")
             }
 
@@ -76,7 +86,7 @@ struct RecordingSettingsTab: View {
 
                 if silenceEnabled {
                     VStack(alignment: .leading, spacing: 4) {
-                        Slider(value: $silenceThreshold, in: 0.001...1.0) {
+                        Slider(value: $silenceThreshold, in: 0.001...0.1) {
                             Text("Threshold")
                         }
                         .onChange(of: silenceThreshold) { _ in applyConfig() }
@@ -104,14 +114,15 @@ struct RecordingSettingsTab: View {
     }
 
     private var thresholdDescription: String {
+        let value = String(format: "%.3f", silenceThreshold)
         if silenceThreshold < 0.005 {
-            return "Very sensitive, value \(String(format: "%.3f", silenceThreshold))"
+            return "Very sensitive, \(value)"
+        } else if silenceThreshold < 0.02 {
+            return "Sensitive, \(value)"
         } else if silenceThreshold < 0.05 {
-            return "Sensitive, value \(String(format: "%.3f", silenceThreshold))"
-        } else if silenceThreshold < 0.2 {
-            return "Moderate, value \(String(format: "%.3f", silenceThreshold))"
+            return "Moderate, \(value)"
         } else {
-            return "Aggressive, value \(String(format: "%.3f", silenceThreshold))"
+            return "Aggressive, \(value)"
         }
     }
 
@@ -152,10 +163,13 @@ struct OutputSettingsTab: View {
                     }
                     .accessibilityHint("Opens a file picker to select the output directory")
                 }
-                Button("Open in Finder") {
+                Button {
                     recorder.openOutputDir()
+                } label: {
+                    Label("Open in Finder", systemImage: "folder")
+                        .font(.caption)
                 }
-                .font(.caption)
+                .buttonStyle(.borderless)
                 .accessibilityHint("Opens the output directory in Finder")
             }
 
@@ -169,19 +183,28 @@ struct OutputSettingsTab: View {
                 .onChange(of: outputMode) { _ in applyConfig() }
                 .accessibilityLabel("Output mode")
                 .accessibilityHint("Choose whether to record to a single file or one file per channel")
+                Text("Single combines all channels into one file. Split creates a separate WAV file for each channel.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Continuous Recording") {
                 Toggle("Enable continuous recording", isOn: $continuousMode)
                     .onChange(of: continuousMode) { _ in applyConfig() }
                     .accessibilityHint("When enabled, files are automatically rotated at the specified interval")
+                Text("Automatically saves and starts a new file at regular intervals, so no audio is lost if the app closes unexpectedly.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
                 if continuousMode {
                     HStack {
                         Text("Rotate every:")
                         TextField("seconds", value: $recordingCadence, format: .number)
                             .frame(width: 80)
-                            .onSubmit { applyConfig() }
+                            .onSubmit {
+                                if recordingCadence < 1 { recordingCadence = 1 }
+                                applyConfig()
+                            }
                             .accessibilityLabel("Rotation interval")
                             .accessibilityValue("\(recordingCadence) seconds, \(cadenceDescription)")
                         Text("seconds")
@@ -266,18 +289,6 @@ struct GeneralSettingsTab: View {
                     .foregroundColor(.secondary)
             }
 
-            Section("About") {
-                HStack {
-                    Text("BlackBox Audio Recorder")
-                        .font(.headline)
-                    Spacer()
-                    Text("v1.0")
-                        .foregroundColor(.secondary)
-                }
-                Text("Always-on audio recording for your Mac.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
         .formStyle(.grouped)
         .onAppear {

@@ -208,7 +208,7 @@ swift-app: rust-lib
 		fi; \
 	else \
 		echo "Building with swiftc (no Xcode)..."; \
-		swiftc -parse-as-library -target arm64-apple-macosx13.0 \
+		swiftc -parse-as-library -target arm64-apple-macosx15.0 \
 			-sdk $$(xcrun --show-sdk-path) \
 			-I $(SWIFT_APP_DIR)/bridge \
 			-L $(RELEASE_DIR) \

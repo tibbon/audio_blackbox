@@ -1,7 +1,7 @@
 name: BlackBoxApp
 options:
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "15.0"
   bundleIdPrefix: com.blackbox
   xcodeVersion: "16.0"
 
@@ -34,13 +34,13 @@ targets:
         IMPORT_PATHS: "$(SRCROOT)/bridge"
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: "BlackBox.entitlements"
-        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
     info:
       path: BlackBoxApp/Info.plist
       properties:
         LSUIElement: true
-        LSMinimumSystemVersion: "13.0"
+        LSMinimumSystemVersion: "15.0"
         NSMicrophoneUsageDescription: "BlackBox Audio Recorder needs microphone access to record audio from your input devices."
         NSHumanReadableCopyright: "Copyright © 2026 David Fisher. All rights reserved."

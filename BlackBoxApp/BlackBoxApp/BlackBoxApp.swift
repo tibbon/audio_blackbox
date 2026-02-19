@@ -74,7 +74,7 @@ struct BlackBoxApp: App {
         Window("BlackBox Settings", id: "settings") {
             SettingsView(recorder: recorder)
         }
-        .defaultSize(width: 480, height: 360)
+        .defaultSize(width: 480, height: 500)
         .windowResizability(.contentSize)
     }
 
