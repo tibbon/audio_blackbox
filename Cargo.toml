@@ -30,7 +30,7 @@ libc = "0.2"
 cocoa = "0.25"
 objc = "0.2.7"
 core-foundation = "0.9"
-core-graphics = "0.23"
+core-graphics = "0.25"
 
 [lib]
 name = "blackbox"
