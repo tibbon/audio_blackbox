@@ -7,7 +7,7 @@ struct BlackBoxApp: App {
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
 
     var body: some Scene {
-        MenuBarExtra("BlackBox", systemImage: menuBarIcon) {
+        MenuBarExtra {
             // Status line
             Text(recorder.statusText)
                 .font(.headline)
@@ -74,6 +74,8 @@ struct BlackBoxApp: App {
                 quitApp()
             }
             .keyboardShortcut("q")
+        } label: {
+            Image(nsImage: menuBarNSImage)
         }
 
         Window("BlackBox Settings", id: "settings") {
@@ -89,11 +91,31 @@ struct BlackBoxApp: App {
         .windowResizability(.contentSize)
     }
 
-    private var menuBarIcon: String {
+    private var menuBarNSImage: NSImage {
+        let name: String
+        let description: String
+
         if recorder.errorMessage != nil {
-            return "exclamationmark.circle"
+            name = "exclamationmark.circle"
+            description = "Error"
+        } else if recorder.isRecording {
+            name = "record.circle.fill"
+            description = "Recording"
+        } else {
+            name = "record.circle"
+            description = "BlackBox"
         }
-        return recorder.isRecording ? "record.circle.fill" : "record.circle"
+
+        if recorder.isRecording {
+            let config = NSImage.SymbolConfiguration(paletteColors: [.systemRed])
+            if let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?
+                .withSymbolConfiguration(config) {
+                image.isTemplate = false
+                return image
+            }
+        }
+
+        return NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
     }
 
     private func quitApp() {
