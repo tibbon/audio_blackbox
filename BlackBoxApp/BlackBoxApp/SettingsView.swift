@@ -31,7 +31,7 @@ struct RecordingSettingsTab: View {
     @ObservedObject var recorder: RecordingState
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
-    @AppStorage(SettingsKeys.outputMode) private var outputMode: String = "single"
+    @AppStorage(SettingsKeys.outputMode) private var outputMode: String = "split"
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
 

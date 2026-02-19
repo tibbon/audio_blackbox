@@ -152,9 +152,7 @@ final class RecordingState: ObservableObject {
         if let channels = defaults.string(forKey: SettingsKeys.audioChannels) {
             config["audio_channels"] = channels
         }
-        if let mode = defaults.string(forKey: SettingsKeys.outputMode) {
-            config["output_mode"] = mode
-        }
+        config["output_mode"] = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
 
         // Silence threshold: reconstruct from enabled flag + threshold value
         let silenceEnabled = defaults.object(forKey: SettingsKeys.silenceEnabled) as? Bool ?? true
