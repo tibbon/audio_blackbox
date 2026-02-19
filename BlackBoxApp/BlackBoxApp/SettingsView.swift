@@ -48,6 +48,10 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
 
+    private var channelSpecError: String? {
+        validateChannelSpec(channelSpec)
+    }
+
     var body: some View {
         Form {
             Section("Input Device") {
@@ -71,12 +75,21 @@ struct RecordingSettingsTab: View {
 
             Section("Channels") {
                 TextField("e.g. 0, 0-3, 0,2-4,7", text: $channelSpec)
-                    .onSubmit { applyConfig() }
+                    .onSubmit {
+                        if channelSpecError == nil { applyConfig() }
+                    }
+                    .foregroundColor(channelSpecError != nil ? .red : .primary)
                     .accessibilityLabel("Channel specification")
                     .accessibilityHint("Enter channel numbers or ranges separated by commas")
-                Text("Supports individual channels and ranges")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if let error = channelSpecError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                } else {
+                    Text("Supports individual channels and ranges")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("Silence Detection") {
@@ -127,6 +140,7 @@ struct RecordingSettingsTab: View {
     }
 
     private func applyConfig() {
+        guard channelSpecError == nil else { return }
         var config: [String: Any] = [
             "audio_channels": channelSpec,
             "silence_threshold": silenceEnabled ? silenceThreshold : 0.0,
@@ -136,6 +150,39 @@ struct RecordingSettingsTab: View {
         }
         recorder.bridge.setConfig(config)
     }
+}
+
+/// Validate a channel spec string (e.g. "0", "0-3", "0,2-4,7").
+/// Returns nil if valid, or an error message if invalid.
+private func validateChannelSpec(_ spec: String) -> String? {
+    let trimmed = spec.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty {
+        return "Channel specification cannot be empty"
+    }
+    let parts = trimmed.split(separator: ",")
+    for part in parts {
+        let token = part.trimmingCharacters(in: .whitespaces)
+        if token.contains("-") {
+            let bounds = token.split(separator: "-")
+            if bounds.count != 2 {
+                return "Invalid range: \(token)"
+            }
+            guard let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                  let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
+                  start >= 0, end >= 0, start <= end
+            else {
+                return "Invalid range: \(token)"
+            }
+        } else {
+            guard let num = Int(token), num >= 0 else {
+                return "Invalid channel number: \(token)"
+            }
+            if num > 63 {
+                return "Channel \(num) exceeds maximum (63)"
+            }
+        }
+    }
+    return nil
 }
 
 // MARK: - Output Tab
