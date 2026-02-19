@@ -1,134 +1,142 @@
 # BlackBox Audio Recorder
 
-A macOS audio recording application with menu bar integration.
+[![CI](https://github.com/tibbon/audio_blackbox/actions/workflows/rust.yml/badge.svg)](https://github.com/tibbon/audio_blackbox/actions/workflows/rust.yml)
 
-## Overview
-
-BlackBox Audio Recorder is a Rust application that provides audio recording capabilities with a macOS menu bar interface. The application can record audio in continuous mode or for a specified duration, and provides status updates through the menu bar.
+A cross-platform audio recording application in Rust with macOS menu bar integration. Records from configurable input channels, saves as WAV files, supports silence detection, continuous recording with automatic file rotation, and handles up to 64+ channels with real-time performance.
 
 ## Features
 
-- Audio recording with configurable duration
-- macOS menu bar integration with thread-safe architecture
-- Continuous recording mode
-- Performance monitoring
-- Output directory selection
+- **Multi-channel recording** — record 1 to 64+ channels simultaneously (tested at 121x realtime on Apple Silicon)
+- **Three output modes** — `single` (one multichannel file), `split` (one file per channel), `multichannel` (all channels in one file)
+- **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes
+- **Silence detection** — automatically deletes silent recordings on rotation
+- **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer
+- **macOS menu bar** — optional native menu bar UI (feature-gated)
+- **Flexible configuration** — TOML config file, environment variables, or `BLACKBOX_*` prefixed env vars
 
-## Current Status
-
-The application is currently in development. The core audio recording functionality works well, and we have established a solid foundation for the menu bar integration using a thread-safe architecture.
-
-### Implementation Details
-
-1. **Thread-Safe Architecture**:
-   - Successfully implemented a message-passing architecture for thread safety
-   - Separated UI code into a dedicated thread to avoid Objective-C/Rust threading issues
-   - Created proper communication channels between components
-   - Eliminated issues with Objective-C objects being sent between threads
-
-2. **Safe Cocoa/AppKit Wrappers**:
-   - Created robust wrappers around NSApplication, NSMenu, NSStatusItem, and other AppKit components
-   - Implemented proper exception handling for Objective-C interactions
-   - Designed resource management with Rust's ownership model
-
-3. **Current UI**:
-   - The menu bar implementation currently uses a simplified command-line based interface
-   - File-based control system for interaction (`touch /tmp/blackbox_start`, etc.)
-   - Working toward full graphical menu bar implementation using the safe wrappers
-
-### Known Issues
-
-1. **CFRunLoop Method Calls**: There are some issues with calling methods on `CFRunLoop` objects, specifically the `run_in_mode` method.
-
-2. **Thread Safety in Callbacks**: The menu item callbacks need additional work to ensure thread safety when working with Objective-C objects.
-
-### Recent Improvements
-
-1. **Thread-Safe Menu Bar Architecture**:
-   - Created a robust foundation for safe communication between UI and audio processing
-   - Implemented architecture that prevents thread safety violations with Cocoa objects
-   - Simplified the overall design for better maintainability
-
-2. **Output Mode Validation**:
-   - Added validation for audio output modes
-   - Improved error messages for invalid configurations
-   - Changed default mode to match code expectations
-
-## Configuration
-
-The application is configured through the `blackbox.toml` file. Important settings include:
-
-```toml
-# Output mode: "single" (one file), "split" (one file per channel)
-# IMPORTANT: For multi-channel recording, only use "single" or "split"
-output_mode = "single"
-
-# Audio channels to record (comma-separated list or ranges like 0-2)
-audio_channels = "0"
-
-# Recording duration in seconds (0 for unlimited)
-duration = 5
-
-# Output directory for recordings
-output_dir = "./recordings"
-```
-
-## Building and Running
+## Building
 
 ### Prerequisites
 
-- Rust (nightly toolchain)
-- macOS
-- ImageMagick (optional, for creating placeholder icons)
+- Rust stable toolchain (edition 2024)
+- **macOS**: Xcode command line tools
+- **Linux**: `libasound2-dev` and `pkg-config`
 
-### Building
-
-```bash
-cargo build
-```
-
-### Running
-
-To run the application with the menu bar implementation:
+### Commands
 
 ```bash
-./run_menubar.sh
+cargo build                          # Debug build
+cargo build --release                # Release build
+cargo test                           # Run all tests (108 tests)
+cargo clippy --no-default-features -- -D warnings   # Lint (matches CI)
+cargo fmt --all -- --check           # Format check
 ```
 
-Or manually:
+## Configuration
+
+Configure via `blackbox.toml`, environment variables, or `BLACKBOX_*` prefixed env vars. Environment variables take precedence over the config file.
+
+```toml
+# Output mode: "single", "split", or "multichannel"
+output_mode = "single"
+
+# Audio channels to record (comma-separated or ranges)
+audio_channels = "0"
+
+# Recording duration in seconds
+duration = 30
+
+# Output directory for recordings
+output_dir = "./recordings"
+
+# Silence threshold (0.0 to disable)
+silence_threshold = 0.01
+
+# Continuous recording mode
+continuous_mode = false
+
+# File rotation cadence in seconds (continuous mode)
+recording_cadence = 300
+```
+
+Channel specs support individual channels and ranges: `"0,2-4,7"` records channels 0, 2, 3, 4, and 7.
+
+## Running
 
 ```bash
-cargo run -- --menu-bar
+cargo run                            # Run with defaults
+cargo run -- --menu-bar              # Run with macOS menu bar UI
 ```
 
-## Command-line Control
+## Architecture
 
-The current implementation provides a file-based control system:
+The core recording pipeline uses a lock-free architecture to prevent audio glitches:
 
-- Start recording: `touch /tmp/blackbox_start`
-- Stop recording: `touch /tmp/blackbox_stop`
-- Quit application: `touch /tmp/blackbox_quit`
-- Check status: `cat /tmp/blackbox_status`
+```
+Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer thread → WAV files
+```
 
-## Menu Bar Integration Roadmap
+- **RT callback**: only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
+- **Writer thread**: reads from the ring buffer, converts f32 to i16, writes WAV via hound, handles file rotation (finalize, rename, silence check, create new files).
+- **Ring buffer**: sized for 2 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O.
 
-Our plan for completing the visual menu bar implementation:
+### Key modules
 
-1. **Short-term**:
-   - Integrate the safe_cocoa.rs wrappers with MenuBarApp
-   - Fix remaining thread safety issues in menu item callbacks
-   - Implement proper state update between UI and app threads
+| Module | Purpose |
+|--------|---------|
+| `src/audio_processor.rs` | `AudioProcessor` trait — central abstraction |
+| `src/cpal_processor.rs` | Real audio I/O implementation using cpal |
+| `src/writer_thread.rs` | Writer thread, ring buffer consumer, WAV file management |
+| `src/config.rs` | TOML + env var configuration with `BLACKBOX_*` prefix support |
+| `src/constants.rs` | Default values, type aliases |
+| `src/error.rs` | Custom error type via thiserror |
+| `src/bin/macos/` | macOS menu bar UI (feature-gated) |
 
-2. **Medium-term**:
-   - Add custom icons and improved visual design
-   - Implement configuration dialogs
-   - Add keyboard shortcuts
+## Benchmarking
 
-3. **Long-term**:
-   - Create detailed audio visualization
-   - Implement drag-and-drop for files and configurations
-   - Add support for more advanced recording options
+A standalone benchmark binary is included for profiling:
+
+```bash
+cargo build --release --bin bench-writer
+
+# Direct write throughput (no threading overhead)
+target/release/bench-writer --channels 64 --seconds 30 --mode single
+
+# Split mode (worst case: 64 simultaneous file handles)
+target/release/bench-writer --channels 64 --seconds 30 --mode split
+
+# Full pipeline (producer → ring buffer → writer thread → WAV)
+target/release/bench-writer --channels 64 --seconds 30 --mode pipeline
+```
+
+For flamegraph profiling:
+
+```bash
+cargo install samply
+samply record target/release/bench-writer --channels 64 --seconds 30 --mode pipeline
+```
+
+In-tree benchmark tests (run manually, not in CI):
+
+```bash
+cargo test benchmark -- --ignored --nocapture
+```
+
+## CI
+
+CI runs on every push to `main` and on pull requests. Six parallel jobs:
+
+| Job | What it checks |
+|-----|---------------|
+| **Format** | `cargo fmt --check` |
+| **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
+| **Test (Ubuntu)** | All 108 tests |
+| **Test (macOS)** | All 108 tests |
+| **Security audit** | `cargo audit` against RUSTSEC advisory database |
+| **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
+
+Dependabot is configured for weekly dependency update PRs (both Cargo crates and GitHub Actions).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.

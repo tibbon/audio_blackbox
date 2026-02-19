@@ -504,13 +504,13 @@ mod tests {
         // Test creating system icon
         match MenuBarIcon::from_system_name("NSStatusAvailable") {
             Ok(icon) => assert_ne!(icon.as_id(), nil),
-            Err(e) => println!("Skipping system icon test: {:?}", e),
+            Err(e) => println!("Skipping system icon test: {e:?}"),
         }
 
         // Test creating circle icon
         match MenuBarIcon::circle("green", 16.0) {
             Ok(icon) => assert_ne!(icon.as_id(), nil),
-            Err(e) => println!("Skipping circle icon test: {:?}", e),
+            Err(e) => println!("Skipping circle icon test: {e:?}"),
         }
     }
 
@@ -527,7 +527,7 @@ mod tests {
         // Test creating menu item
         let menu_item_result = MenuItem::new("Test Item");
         if let Err(e) = menu_item_result {
-            println!("Skipping menu item test: {:?}", e);
+            println!("Skipping menu item test: {e:?}");
             return;
         }
 
@@ -563,7 +563,7 @@ mod tests {
         // Test creating menu
         let menu_result = Menu::new();
         if let Err(e) = menu_result {
-            println!("Skipping menu test: {:?}", e);
+            println!("Skipping menu test: {e:?}");
             return;
         }
 
@@ -593,7 +593,7 @@ mod tests {
         // Test creating status item
         let status_item_result = StatusItem::new();
         if let Err(e) = status_item_result {
-            println!("Skipping status item test: {:?}", e);
+            println!("Skipping status item test: {e:?}");
             return;
         }
 
@@ -628,7 +628,7 @@ mod tests {
         // Test creating application
         let app_result = Application::new();
         if let Err(e) = app_result {
-            println!("Skipping application test: {:?}", e);
+            println!("Skipping application test: {e:?}");
             return;
         }
 
@@ -650,9 +650,9 @@ mod tests {
     fn test_errors() {
         // Test error handling (safe to run in any environment)
         let error = CocoaError::NilInstance(());
-        assert!(format!("{:?}", error).contains("NilInstance"));
+        assert!(format!("{error:?}").contains("NilInstance"));
 
         let error = CocoaError::ExceptionThrown(());
-        assert!(format!("{:?}", error).contains("ExceptionThrown"));
+        assert!(format!("{error:?}").contains("ExceptionThrown"));
     }
 }

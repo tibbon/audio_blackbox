@@ -583,18 +583,29 @@ mod tests {
 
     #[test]
     fn test_output_dir_rejects_path_traversal() {
-        let mut config = AppConfig::default();
-        config.output_dir = Some("../../../etc/passwd".to_string());
+        let config = AppConfig {
+            output_dir: Some("../../../etc/passwd".to_string()),
+            ..AppConfig::default()
+        };
         assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
 
-        config.output_dir = Some("recordings/../../../tmp".to_string());
+        let config = AppConfig {
+            output_dir: Some("recordings/../../../tmp".to_string()),
+            ..AppConfig::default()
+        };
         assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
 
         // Normal paths should be fine
-        config.output_dir = Some("my/recordings".to_string());
+        let config = AppConfig {
+            output_dir: Some("my/recordings".to_string()),
+            ..AppConfig::default()
+        };
         assert_eq!(config.get_output_dir(), "my/recordings");
 
-        config.output_dir = Some("/absolute/path/recordings".to_string());
+        let config = AppConfig {
+            output_dir: Some("/absolute/path/recordings".to_string()),
+            ..AppConfig::default()
+        };
         assert_eq!(config.get_output_dir(), "/absolute/path/recordings");
     }
 

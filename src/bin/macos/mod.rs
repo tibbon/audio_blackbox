@@ -434,9 +434,9 @@ mod tests {
             let _app = MenuBarApp::new();
             println!("MenuBarApp created successfully.");
         }) {
-            Ok(_) => (),
+            Ok(()) => (),
             Err(e) => {
-                println!("MenuBarApp creation failed or panicked: {:?}", e);
+                println!("MenuBarApp creation failed or panicked: {e:?}");
                 // Don't fail the test, just note that it didn't work
             }
         }
@@ -450,7 +450,7 @@ mod tests {
         }
 
         // Create with proper error handling
-        let app_result = std::panic::catch_unwind(|| MenuBarApp::new());
+        let app_result = std::panic::catch_unwind(MenuBarApp::new);
         if app_result.is_err() {
             println!("MenuBarApp creation failed, skipping update_status test");
             return;
@@ -475,7 +475,7 @@ mod tests {
         }
 
         // Create with proper error handling
-        let app_result = std::panic::catch_unwind(|| MenuBarApp::new());
+        let app_result = std::panic::catch_unwind(MenuBarApp::new);
         if app_result.is_err() {
             println!("MenuBarApp creation failed, skipping output_dir test");
             return;
@@ -503,7 +503,6 @@ mod tests {
 
         let (_sender, _receiver) = std::sync::mpsc::channel::<ControlMessage>();
 
-        // Just verify we can create the function without crashing
-        assert!(true);
+        // Just verify we can create the state without crashing
     }
 }

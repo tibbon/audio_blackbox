@@ -89,7 +89,7 @@ pub fn generate_interleaved_f32(
     let mut data = vec![0.0_f32; total];
     for &(ch, amp) in channel_amplitudes {
         // Give each channel a different frequency so they're distinguishable
-        let freq = 440.0 + ch as f32 * 110.0;
+        let freq = (ch as f32).mul_add(110.0, 440.0);
         for frame in 0..samples_per_channel {
             let t = frame as f32 / 44100.0;
             data[frame * total_channels + ch] = (2.0 * std::f32::consts::PI * freq * t).sin() * amp;

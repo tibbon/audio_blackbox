@@ -30,7 +30,7 @@ fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
 fn wav_files_in(dir: &Path) -> Vec<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| {
             p.extension().is_some_and(|ext| ext == "wav")
@@ -43,7 +43,7 @@ fn wav_files_in(dir: &Path) -> Vec<std::path::PathBuf> {
 fn recording_wav_files_in(dir: &Path) -> Vec<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.to_str().unwrap_or_default().contains(".recording.wav"))
         .collect()

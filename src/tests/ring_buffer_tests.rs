@@ -12,7 +12,7 @@ use crate::writer_thread::{WriterCommand, WriterThreadState, writer_thread_main}
 fn wav_files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| {
             p.extension().is_some_and(|ext| ext == "wav")
@@ -72,7 +72,7 @@ fn test_ring_buffer_overflow_counted() {
 
         // Fill the ring buffer past capacity
         // First fill it up
-        let data = vec![0.5_f32; 16];
+        let data = [0.5_f32; 16];
         if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
             chunk.fill_from_iter(data.iter().copied());
         }
@@ -107,7 +107,7 @@ fn test_writer_thread_processes_all_samples() {
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
 
-        let ring_size = 44100 * 1 * RING_BUFFER_SECONDS;
+        let ring_size = 44100 * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
 
         let mut state = WriterThreadState::new(
@@ -165,7 +165,7 @@ fn test_writer_thread_rotation() {
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
 
-        let ring_size = 44100 * 1 * RING_BUFFER_SECONDS;
+        let ring_size = 44100 * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
 
         let mut state = WriterThreadState::new(
@@ -240,7 +240,7 @@ fn test_writer_thread_shutdown_drains() {
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
 
-        let ring_size = 44100 * 1 * RING_BUFFER_SECONDS;
+        let ring_size = 44100 * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
 
         let mut state = WriterThreadState::new(
@@ -303,7 +303,7 @@ fn test_writer_thread_silence_on_rotation() {
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
 
-        let ring_size = 44100 * 1 * RING_BUFFER_SECONDS;
+        let ring_size = 44100 * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
 
         let mut state = WriterThreadState::new(

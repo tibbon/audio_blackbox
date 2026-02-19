@@ -23,8 +23,8 @@ fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
 fn generate_bench_data(total_channels: usize, frames: usize) -> Vec<f32> {
     let total = total_channels * frames;
     let mut data = vec![0.0_f32; total];
-    for i in 0..total {
-        data[i] = ((i as f32) * 0.01).sin() * 0.5;
+    for (i, sample) in data.iter_mut().enumerate() {
+        *sample = ((i as f32) * 0.01).sin() * 0.5;
     }
     data
 }
@@ -48,7 +48,7 @@ fn format_rate(samples_per_sec: f64) -> String {
 // ===========================================================================
 
 #[test]
-#[ignore] // Run with: cargo test benchmark -- --ignored --nocapture
+#[ignore = "manual benchmark — run with: cargo test benchmark -- --ignored --nocapture"]
 fn benchmark_direct_write_throughput() {
     let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
     let sample_rate: u32 = 48000;
@@ -76,7 +76,7 @@ fn benchmark_direct_write_throughput() {
 
             let channels: Vec<usize> = (0..ch_count).collect();
             // Use "single" mode for >2 channels (multichannel), split for benchmarking split too
-            let output_mode = if ch_count <= 2 { "single" } else { "single" };
+            let output_mode = "single";
 
             let mut state = WriterThreadState::new(
                 dir,
@@ -144,7 +144,7 @@ fn benchmark_direct_write_throughput() {
 // ===========================================================================
 
 #[test]
-#[ignore]
+#[ignore = "manual benchmark"]
 fn benchmark_split_mode_throughput() {
     let channel_counts: &[usize] = &[2, 8, 16, 32, 64];
     let sample_rate: u32 = 48000;
@@ -222,7 +222,7 @@ fn benchmark_split_mode_throughput() {
 // ===========================================================================
 
 #[test]
-#[ignore]
+#[ignore = "manual benchmark"]
 fn benchmark_ring_buffer_pipeline() {
     let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
     let sample_rate: u32 = 48000;
@@ -285,16 +285,13 @@ fn benchmark_ring_buffer_pipeline() {
             // Simulate audio callback: push chunks at roughly real-time pace
             // (but as fast as possible — we're measuring max throughput)
             for chunk in data.chunks(chunk_samples) {
-                match producer.write_chunk_uninit(chunk.len()) {
-                    Ok(write_chunk) => {
-                        write_chunk.fill_from_iter(chunk.iter().copied());
-                    }
-                    Err(_) => {
-                        // Ring buffer full — count drops like the real callback does
-                        write_errors_cb.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-                        // Brief yield to let writer thread catch up
-                        std::thread::yield_now();
-                    }
+                if let Ok(write_chunk) = producer.write_chunk_uninit(chunk.len()) {
+                    write_chunk.fill_from_iter(chunk.iter().copied());
+                } else {
+                    // Ring buffer full — count drops like the real callback does
+                    write_errors_cb.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                    // Brief yield to let writer thread catch up
+                    std::thread::yield_now();
                 }
             }
 
@@ -334,7 +331,7 @@ fn benchmark_ring_buffer_pipeline() {
 // ===========================================================================
 
 #[test]
-#[ignore]
+#[ignore = "manual benchmark"]
 fn benchmark_rotation_overhead() {
     let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
     let sample_rate: u32 = 48000;
@@ -384,7 +381,7 @@ fn benchmark_rotation_overhead() {
                 let elapsed = start.elapsed();
 
                 let ring_buffer_ms =
-                    (RING_BUFFER_SECONDS as f64 * 1000.0) - elapsed.as_secs_f64() * 1000.0;
+                    (RING_BUFFER_SECONDS as f64).mul_add(1000.0, -elapsed.as_secs_f64() * 1000.0);
 
                 println!(
                     "  {:>4} {:>8} {:>12.2} ms {:>14.0} ms left",

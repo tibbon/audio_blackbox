@@ -12,6 +12,7 @@ use crate::constants::DEFAULT_OUTPUT_MODE;
 
 /// MockAudioProcessor simulates audio processing for testing purposes
 /// without requiring actual audio hardware.
+#[allow(clippy::struct_excessive_bools)]
 pub struct MockAudioProcessor {
     pub channels: Vec<usize>,
     pub output_mode: String,
@@ -62,10 +63,10 @@ impl AudioProcessor for MockAudioProcessor {
         let amplitude = if self.create_silent_file { 0 } else { 50 };
 
         // Make sure the output directory exists
-        if let Some(dir) = Path::new(&self.file_name).parent() {
-            if !dir.exists() {
-                fs::create_dir_all(dir)?;
-            }
+        if let Some(dir) = Path::new(&self.file_name).parent()
+            && !dir.exists()
+        {
+            fs::create_dir_all(dir)?;
         }
 
         // Always create the main file
@@ -98,21 +99,20 @@ impl AudioProcessor for MockAudioProcessor {
             // Create an empty WAV file for each channel
             for &channel in channels {
                 let base_path = Path::new(&self.file_name);
-                let file_name = if let Some(stem) = base_path.file_stem().and_then(|s| s.to_str()) {
-                    if let Some(ext) = base_path.extension().and_then(|s| s.to_str()) {
-                        format!("{}-ch{}.{}", stem, channel, ext)
-                    } else {
-                        format!("{}-ch{}", stem, channel)
-                    }
-                } else {
-                    format!("{}-ch{}", self.file_name, channel)
-                };
+                let file_name = base_path.file_stem().and_then(|s| s.to_str()).map_or_else(
+                    || format!("{}-ch{}", self.file_name, channel),
+                    |stem| {
+                        base_path.extension().and_then(|s| s.to_str()).map_or_else(
+                            || format!("{}-ch{}", stem, channel),
+                            |ext| format!("{}-ch{}.{}", stem, channel, ext),
+                        )
+                    },
+                );
 
-                let file_path = if let Some(parent) = base_path.parent() {
-                    parent.join(file_name)
-                } else {
-                    PathBuf::from(file_name)
-                };
+                let file_path = base_path.parent().map_or_else(
+                    || PathBuf::from(&file_name),
+                    |parent| parent.join(&file_name),
+                );
 
                 self.created_files
                     .push(file_path.to_string_lossy().into_owned());
