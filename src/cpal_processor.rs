@@ -159,6 +159,9 @@ impl AudioProcessor for CpalAudioProcessor {
                 .map_or_else(|_| "unknown".to_string(), |d| d.name().to_string())
         );
 
+        // Use the device's current default config (sample rate, channels, format).
+        // This avoids changing kAudioDevicePropertyNominalSampleRate on macOS,
+        // which would conflict with DAWs and other pro audio apps sharing the device.
         let config = device.default_input_config().map_err(|e| {
             BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
         })?;
@@ -330,18 +333,29 @@ impl AudioProcessor for CpalAudioProcessor {
         // Signal writer thread to drain + shutdown
         if let Some(mut handle) = self.writer_thread.take() {
             let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-            if handle
+            let got_reply = if handle
                 .command_tx
                 .send(WriterCommand::Shutdown(reply_tx))
                 .is_ok()
             {
-                match reply_rx.recv_timeout(Duration::from_secs(30)) {
-                    Ok(result) => result?,
-                    Err(_) => warn!("Writer thread shutdown timed out"),
+                if let Ok(result) = reply_rx.recv_timeout(Duration::from_secs(30)) {
+                    result?;
+                    true
+                } else {
+                    warn!("Writer thread shutdown timed out");
+                    false
                 }
-            }
-            if let Some(jh) = handle.join_handle.take() {
-                let _ = jh.join();
+            } else {
+                false
+            };
+            // Only join if the thread acknowledged shutdown; otherwise let it detach
+            // to avoid hanging the app on quit.
+            if got_reply {
+                if let Some(jh) = handle.join_handle.take() {
+                    let _ = jh.join();
+                }
+            } else {
+                warn!("Writer thread did not respond — detaching to avoid hang");
             }
         }
 
@@ -369,6 +383,10 @@ impl AudioProcessor for CpalAudioProcessor {
 
     fn is_recording(&self) -> bool {
         self.stream.is_some() || self.writer_thread.is_some()
+    }
+
+    fn write_error_count(&self) -> u64 {
+        self.write_errors.load(Ordering::Relaxed)
     }
 }
 

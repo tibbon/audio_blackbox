@@ -24,7 +24,7 @@ struct BlackBoxApp: App {
             Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
                 recorder.toggle()
             }
-            .keyboardShortcut("r")
+            .keyboardShortcut("r", modifiers: [.command, .shift])
 
             Divider()
 
@@ -59,6 +59,11 @@ struct BlackBoxApp: App {
 
             Divider()
 
+            Button("About BlackBox\u{2026}") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "about")
+            }
+
             Button("Settings\u{2026}") {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "settings")
@@ -75,6 +80,12 @@ struct BlackBoxApp: App {
             SettingsView(recorder: recorder)
         }
         .defaultSize(width: 480, height: 500)
+        .windowResizability(.contentSize)
+
+        Window("About BlackBox", id: "about") {
+            AboutView()
+        }
+        .defaultSize(width: 300, height: 200)
         .windowResizability(.contentSize)
     }
 
@@ -102,5 +113,51 @@ struct BlackBoxApp: App {
         }
         recorder.releaseOutputDirAccess()
         NSApplication.shared.terminate(nil)
+    }
+}
+
+// MARK: - About View
+
+struct AboutView: View {
+    private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
+
+            Text("BlackBox Audio Recorder")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Version \(version) (\(build))")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Text("\u{00A9} 2026 David Fisher")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Link("dollhousemediatech.com", destination: URL(string: "https://dollhousemediatech.com")!)
+                .font(.caption)
+        }
+        .padding(24)
+        .frame(minWidth: 280, maxWidth: 280)
+        .background(AboutWindowConfigurator())
+    }
+}
+
+/// Disables minimize and zoom buttons on the About window per Apple HIG.
+private struct AboutWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+        }
     }
 }

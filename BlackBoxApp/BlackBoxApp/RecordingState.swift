@@ -72,7 +72,9 @@ final class RecordingState: ObservableObject {
     private func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
-            completion(true)
+            Task { @MainActor in
+                completion(true)
+            }
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 Task { @MainActor in

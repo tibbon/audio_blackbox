@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.blackbox.audiorecorder</string>
+    <string>com.dollhousemediatech.blackbox</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/blackbox</string>

@@ -112,6 +112,7 @@ fn test_get_status_json() {
 
     let parsed: serde_json::Value = serde_json::from_str(&status).expect("should be valid JSON");
     assert_eq!(parsed["recording"], false);
+    assert_eq!(parsed["write_errors"], 0);
 
     blackbox_destroy(handle);
 }

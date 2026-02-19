@@ -159,7 +159,7 @@
 					"-framework",
 					Security,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.blackbox.audiorecorder;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
 				PRODUCT_NAME = "BlackBox Audio Recorder";
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
@@ -249,7 +249,7 @@
 					"-framework",
 					Security,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.blackbox.audiorecorder;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
 				PRODUCT_NAME = "BlackBox Audio Recorder";
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";

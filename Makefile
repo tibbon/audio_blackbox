@@ -3,7 +3,7 @@
 # Configuration
 APP_NAME = BlackBox Audio Recorder
 APP_VERSION = 0.1.0
-BUNDLE_ID = com.blackbox.audiorecorder
+BUNDLE_ID = com.dollhousemediatech.blackbox
 MACOS_MIN_VERSION = 10.14
 CARGO_BIN = cargo
 RUSTC_BIN = rustc
@@ -122,23 +122,23 @@ install: release
 	@echo "Installing BlackBox service..."
 	@mkdir -p $(LAUNCH_AGENTS_DIR)
 	@mkdir -p $(LOG_DIR)
-	@cp com.blackbox.audiorecorder.plist $(LAUNCH_AGENTS_DIR)/
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
+	@cp com.dollhousemediatech.blackbox.plist $(LAUNCH_AGENTS_DIR)/
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist
 	@echo "Service installed and started. Check logs at $(LOG_DIR)/"
 
 # Start the service
 .PHONY: start
 start:
 	@echo "Starting BlackBox service..."
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@launchctl load $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist 2>/dev/null || true
 	@echo "Service started. Check logs at $(LOG_DIR)/"
 
 # Stop the service
 .PHONY: stop
 stop:
 	@echo "Gracefully stopping BlackBox service..."
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist 2>/dev/null || true
 	@echo "Waiting for service to finalize files..."
 	@sleep 5
 	@echo "Service stopped"
@@ -147,11 +147,11 @@ stop:
 .PHONY: uninstall
 uninstall:
 	@echo "Gracefully stopping BlackBox service..."
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
+	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist 2>/dev/null || true
 	@echo "Waiting for service to finalize files..."
 	@sleep 5
 	@echo "Removing service files..."
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
+	@rm -f $(LAUNCH_AGENTS_DIR)/com.dollhousemediatech.blackbox.plist
 	@echo "Service uninstalled"
 
 # Verify: fmt + clippy + test + build (run before committing)
@@ -222,7 +222,7 @@ swift-app: rust-lib
 		cp $(SWIFT_APP_DIR)/BlackBoxApp/Info.plist "$(SWIFT_APP_BUNDLE)/Contents/"; \
 		plutil -replace CFBundleExecutable -string "BlackBox Audio Recorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
 		plutil -replace CFBundleName -string "BlackBox Audio Recorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
-		plutil -replace CFBundleIdentifier -string "com.blackbox.audiorecorder" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
+		plutil -replace CFBundleIdentifier -string "com.dollhousemediatech.blackbox" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
 		plutil -replace CFBundleDevelopmentRegion -string "en" "$(SWIFT_APP_BUNDLE)/Contents/Info.plist"; \
 		echo "APPL????" > "$(SWIFT_APP_BUNDLE)/Contents/PkgInfo"; \
 		echo "App bundle created at $(SWIFT_APP_BUNDLE)"; \

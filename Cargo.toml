@@ -65,10 +65,10 @@ pkg-config = "0.3.30"
 
 [package.metadata.bundle]
 name = "BlackBox Audio Recorder"
-identifier = "com.blackbox.audiorecorder"
+identifier = "com.dollhousemediatech.blackbox"
 icon = ["images/App.icns"]
 version = "0.1.0"
-copyright = "Copyright (c) 2023 David Fisher. All rights reserved."
+copyright = "Copyright (c) 2026 David Fisher. All rights reserved."
 category = "public.app-category.utilities"
 short_description = "Audio recording application"
 long_description = """

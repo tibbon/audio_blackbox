@@ -9,7 +9,7 @@
     <key>CFBundleIconFile</key>
     <string>App.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>com.blackbox.audiorecorder</string>
+    <string>com.dollhousemediatech.blackbox</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -29,6 +29,6 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>BlackBox Audio Recorder needs access to the microphone to record audio.</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2023 David Fisher. All rights reserved.</string>
+    <string>Copyright © 2026 David Fisher. All rights reserved.</string>
 </dict>
 </plist> 

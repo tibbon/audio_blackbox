@@ -2,7 +2,7 @@ name: BlackBoxApp
 options:
   deploymentTarget:
     macOS: "15.0"
-  bundleIdPrefix: com.blackbox
+  bundleIdPrefix: com.dollhousemediatech
   xcodeVersion: "16.0"
 
 settings:
@@ -16,7 +16,7 @@ targets:
       - BlackBoxApp
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.blackbox.audiorecorder
+        PRODUCT_BUNDLE_IDENTIFIER: com.dollhousemediatech.blackbox
         PRODUCT_NAME: "BlackBox Audio Recorder"
         SWIFT_OBJC_BRIDGING_HEADER: ""
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/bridge"

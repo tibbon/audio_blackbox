@@ -27,13 +27,21 @@ use crate::cpal_processor::CpalAudioProcessor;
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
 // ---------------------------------------------------------------------------
 
+/// Magic number to detect use-after-free or corrupted handles.
+const HANDLE_MAGIC: u64 = 0xB1AC_B015_A11D_1000;
+
 pub struct BlackboxHandle {
+    magic: u64,
     config: Mutex<AppConfig>,
     recorder: Mutex<Option<AudioRecorder<CpalAudioProcessor>>>,
     last_error: Mutex<Option<String>>,
 }
 
 impl BlackboxHandle {
+    fn is_valid(&self) -> bool {
+        self.magic == HANDLE_MAGIC
+    }
+
     fn set_error(&self, msg: String) {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(msg);
@@ -65,6 +73,16 @@ fn to_c_string(s: &str) -> *mut c_char {
     CString::new(s).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
+/// Validate a handle pointer: non-null and magic number matches.
+/// Returns `None` if invalid.
+fn validate_handle(handle: *const BlackboxHandle) -> Option<&'static BlackboxHandle> {
+    if handle.is_null() {
+        return None;
+    }
+    let h = unsafe { &*handle };
+    if h.is_valid() { Some(h) } else { None }
+}
+
 // ---------------------------------------------------------------------------
 // FFI functions
 // ---------------------------------------------------------------------------
@@ -88,6 +106,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
         };
 
         let handle = Box::new(BlackboxHandle {
+            magic: HANDLE_MAGIC,
             config: Mutex::new(config),
             recorder: Mutex::new(None),
             last_error: Mutex::new(None),
@@ -108,7 +127,13 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
         return;
     }
     let _ = catch_unwind(|| {
-        let handle = unsafe { Box::from_raw(handle) };
+        let h = unsafe { &*handle };
+        if !h.is_valid() {
+            return;
+        }
+        let mut handle = unsafe { Box::from_raw(handle) };
+        // Invalidate magic before cleanup so concurrent calls fail fast
+        handle.magic = 0;
         // Stop recording if active — AudioRecorder's Drop will finalize via the processor.
         if let Ok(mut guard) = handle.recorder.lock() {
             drop(guard.take());
@@ -124,11 +149,10 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
 /// Returns 0 on success, -1 on error (retrieve with `blackbox_get_last_error`).
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
-    if handle.is_null() {
-        return -1;
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
         handle.clear_error();
 
         let config = match handle.config.lock() {
@@ -173,11 +197,10 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
 /// Returns 0 on success, -1 on error.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
-    if handle.is_null() {
-        return -1;
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
         handle.clear_error();
 
         match handle.recorder.lock() {
@@ -202,11 +225,10 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
 /// Check whether recording is currently active.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
-    if handle.is_null() {
-        return false;
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return false;
+        };
         handle
             .recorder
             .lock()
@@ -219,24 +241,28 @@ pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
 
 /// Return a JSON object with the current status.
 ///
-/// Example: `{"recording": true, "input_device": "MacBook Pro Microphone"}`
+/// Example: `{"recording": true, "input_device": "MacBook Pro Microphone", "write_errors": 0}`
 ///
 /// The caller must free the returned string with `blackbox_free_string`.
 /// Returns null on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mut c_char {
-    if handle.is_null() {
-        return std::ptr::null_mut();
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return std::ptr::null_mut();
+        };
 
-        let is_recording = handle
+        let (is_recording, write_errors) = handle
             .recorder
             .lock()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().is_recording()))
-            .unwrap_or(false);
+            .and_then(|guard| {
+                guard.as_ref().map(|r| {
+                    let p = r.get_processor();
+                    (p.is_recording(), p.write_error_count())
+                })
+            })
+            .unwrap_or((false, 0));
 
         let input_device = handle
             .config
@@ -248,6 +274,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
         let status = serde_json::json!({
             "recording": is_recording,
             "input_device": input_device,
+            "write_errors": write_errors,
         });
 
         to_c_string(&status.to_string())
@@ -280,11 +307,13 @@ pub extern "C" fn blackbox_set_config_json(
     handle: *mut BlackboxHandle,
     json: *const c_char,
 ) -> i32 {
-    if handle.is_null() || json.is_null() {
+    if json.is_null() {
         return -1;
     }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
         handle.clear_error();
 
         let Some(json_str) = (unsafe { cstr_to_str(json) }) else {
@@ -319,11 +348,10 @@ pub extern "C" fn blackbox_set_config_json(
 /// The caller must free the returned string with `blackbox_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_last_error(handle: *const BlackboxHandle) -> *mut c_char {
-    if handle.is_null() {
-        return std::ptr::null_mut();
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return std::ptr::null_mut();
+        };
         handle
             .last_error
             .lock()
@@ -353,11 +381,10 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
 /// Returns null on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_config_json(handle: *const BlackboxHandle) -> *mut c_char {
-    if handle.is_null() {
-        return std::ptr::null_mut();
-    }
     catch_unwind(|| {
-        let handle = unsafe { &*handle };
+        let Some(handle) = validate_handle(handle) else {
+            return std::ptr::null_mut();
+        };
         handle.config.lock().map_or(std::ptr::null_mut(), |guard| {
             let json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".to_string());
             to_c_string(&json)

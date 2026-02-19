@@ -19,4 +19,9 @@ pub trait AudioProcessor {
     fn start_recording(&mut self) -> Result<(), BlackboxError>;
     fn stop_recording(&mut self) -> Result<(), BlackboxError>;
     fn is_recording(&self) -> bool;
+
+    /// Return the number of audio samples lost due to write errors or buffer overflows.
+    fn write_error_count(&self) -> u64 {
+        0
+    }
 }
