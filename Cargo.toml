@@ -16,6 +16,7 @@ log = "0.4"
 tempfile = "3.9.0"
 ctrlc = "3.4.1"
 sysinfo = "0.38"
+rtrb = "0.3"
 thiserror = "2"
 toml = "1"
 serde = { version = "1.0.185", features = ["derive"] }

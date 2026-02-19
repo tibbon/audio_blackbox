@@ -1,8 +1,6 @@
 use std::fs::File;
 use std::io::BufWriter;
-use std::sync::{Arc, Mutex};
 
-pub const INTERMEDIATE_BUFFER_SIZE: usize = 512;
 pub const DEFAULT_CHANNELS: &str = "0";
 pub const DEFAULT_DEBUG: bool = false;
 pub const DEFAULT_DURATION: u64 = 30;
@@ -17,9 +15,14 @@ pub const DEFAULT_OUTPUT_DIR: &str = "recordings";
 pub const DEFAULT_PERFORMANCE_LOGGING: bool = false;
 pub const PERFORMANCE_LOG_INTERVAL: u64 = 3600; // 1 hour in seconds
 
+// Ring buffer constants
+/// How many seconds of audio the ring buffer can hold (at device sample rate * channels).
+pub const RING_BUFFER_SECONDS: usize = 2;
+/// How many f32 samples the writer thread reads per iteration.
+pub const WRITER_THREAD_READ_CHUNK: usize = 4096;
+
 // Type definitions to make complex types more readable
 pub type WavWriterType = hound::WavWriter<BufWriter<File>>;
-pub type MultiChannelWriters = Arc<Mutex<Vec<Option<WavWriterType>>>>;
 
 // Environment variable names
 pub const ENV_OUTPUT_DIR: &str = "OUTPUT_DIR";

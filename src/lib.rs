@@ -42,6 +42,7 @@ pub mod error;
 #[cfg(test)]
 mod mock_processor;
 mod utils;
+mod writer_thread;
 
 // Only include test_utils in test builds
 #[cfg(test)]
@@ -72,8 +73,10 @@ mod tests {
     // Include test submodules
     mod channel_tests;
     mod config_tests;
+    mod cpal_integration_tests;
     mod performance_tests;
     mod recorder_tests;
+    mod ring_buffer_tests;
     mod shutdown_tests;
     mod silence_tests;
 
