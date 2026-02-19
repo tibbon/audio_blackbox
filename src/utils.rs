@@ -91,7 +91,9 @@ pub fn check_alsa_availability() -> Result<(), String> {
     match output {
         Ok(o) if o.status.success() => Ok(()),
         _ => {
-            eprintln!("WARNING: ALSA libraries not found. Audio recording might not work correctly on Linux.");
+            eprintln!(
+                "WARNING: ALSA libraries not found. Audio recording might not work correctly on Linux."
+            );
             eprintln!("Try installing libasound2-dev package: sudo apt-get install libasound2-dev");
             // Continue execution anyway, as cpal might fall back to another backend
             Ok(())

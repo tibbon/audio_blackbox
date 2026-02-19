@@ -15,7 +15,7 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use cocoa::appkit::NSApplicationActivationPolicy;
 #[cfg(target_os = "macos")]
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{NO, YES, id, nil};
 #[cfg(target_os = "macos")]
 use cocoa::foundation::{NSAutoreleasePool, NSSize, NSString};
 #[cfg(target_os = "macos")]
@@ -412,7 +412,7 @@ impl Application {
 }
 
 // C functions for exception handling
-extern "C" {
+unsafe extern "C" {
     fn objc_setUncaughtExceptionHandler(handler: extern "C" fn(*mut c_void));
 }
 
@@ -435,7 +435,9 @@ unsafe fn nsstring_to_string(ns_string: id) -> String {
     if utf8_string.is_null() {
         return String::new();
     }
-    CStr::from_ptr(utf8_string).to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(utf8_string) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 // Set up exception handling

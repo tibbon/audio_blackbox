@@ -31,7 +31,7 @@ use crate::CpalAudioProcessor;
 // Import the safe Cocoa wrappers
 #[cfg(target_os = "macos")]
 use self::safe_cocoa::{
-    setup_exception_handling, Application, AutoreleasePool, CocoaResult, Menu, MenuItem, StatusItem,
+    Application, AutoreleasePool, CocoaResult, Menu, MenuItem, StatusItem, setup_exception_handling,
 };
 
 // Simple struct for thread-safe shared state
@@ -169,39 +169,34 @@ impl MenuBarApp {
 
             // Update recorder if state has changed
             if is_recording {
-                if let Ok(mut rec_guard) = self.recorder.lock() {
-                    if let Some(ref mut rec) = *rec_guard {
-                        if !rec.get_processor().is_recording() {
-                            match rec.start_recording() {
-                                Ok(_) => {
-                                    println!("Recording started!");
-                                    Self::send_notification(
-                                        "BlackBox Audio Recorder",
-                                        "Recording started",
-                                    );
-                                }
-                                Err(e) => {
-                                    eprintln!("Failed to start recording: {e}");
-                                    Self::send_notification(
-                                        "BlackBox Audio Recorder",
-                                        &format!("Failed to start recording: {e}"),
-                                    );
-                                }
-                            }
+                if let Ok(mut rec_guard) = self.recorder.lock()
+                    && let Some(ref mut rec) = *rec_guard
+                    && !rec.get_processor().is_recording()
+                {
+                    match rec.start_recording() {
+                        Ok(_) => {
+                            println!("Recording started!");
+                            Self::send_notification("BlackBox Audio Recorder", "Recording started");
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to start recording: {e}");
+                            Self::send_notification(
+                                "BlackBox Audio Recorder",
+                                &format!("Failed to start recording: {e}"),
+                            );
                         }
                     }
                 }
-            } else if let Ok(mut rec_guard) = self.recorder.lock() {
-                if let Some(ref mut rec) = *rec_guard {
-                    if rec.get_processor().is_recording() {
-                        // Use the processor's stop_recording method directly
-                        if let Err(e) = rec.processor.stop_recording() {
-                            eprintln!("Error stopping recording: {e:?}");
-                        } else {
-                            println!("Recording stopped");
-                            Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
-                        }
-                    }
+            } else if let Ok(mut rec_guard) = self.recorder.lock()
+                && let Some(ref mut rec) = *rec_guard
+                && rec.get_processor().is_recording()
+            {
+                // Use the processor's stop_recording method directly
+                if let Err(e) = rec.processor.stop_recording() {
+                    eprintln!("Error stopping recording: {e:?}");
+                } else {
+                    println!("Recording stopped");
+                    Self::send_notification("BlackBox Audio Recorder", "Recording stopped");
                 }
             }
 
@@ -242,13 +237,12 @@ impl MenuBarApp {
         }
 
         // Send a message to the control channel if it exists
-        if let Some(ref sender) = self.control_sender {
-            if sender
+        if let Some(ref sender) = self.control_sender
+            && sender
                 .send(ControlMessage::UpdateOutputDir(dir.to_string()))
                 .is_err()
-            {
-                eprintln!("Failed to send UpdateOutputDir message");
-            }
+        {
+            eprintln!("Failed to send UpdateOutputDir message");
         }
     }
 

@@ -12,8 +12,8 @@ use std::fs;
 use std::path::Path;
 #[cfg(not(target_os = "macos"))]
 use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -30,11 +30,6 @@ mod macos;
 use crate::macos::MenuBarApp;
 
 fn main() {
-    // For test purposes, set this to skip all GUI-dependent tests
-    if cfg!(test) {
-        std::env::set_var("BLACKBOX_SKIP_GUI_TESTS", "1");
-    }
-
     // Check if we should run the macOS menu bar app
     let args: Vec<String> = env::args().collect();
     if args.contains(&"--menu-bar".to_string()) {
@@ -162,14 +157,14 @@ fn main() {
         elapsed += 1;
 
         // Check system resources if performance monitoring is enabled
-        if let Some(ref tracker) = perf_tracker {
-            if let Some(metrics) = tracker.get_current_metrics() {
-                if metrics.cpu_usage > 80.0 {
-                    eprintln!("Warning: High CPU usage: {:.1}%", metrics.cpu_usage);
-                }
-                if metrics.memory_percent > 80.0 {
-                    eprintln!("Warning: High memory usage: {:.1}%", metrics.memory_percent);
-                }
+        if let Some(ref tracker) = perf_tracker
+            && let Some(metrics) = tracker.get_current_metrics()
+        {
+            if metrics.cpu_usage > 80.0 {
+                eprintln!("Warning: High CPU usage: {:.1}%", metrics.cpu_usage);
+            }
+            if metrics.memory_percent > 80.0 {
+                eprintln!("Warning: High memory usage: {:.1}%", metrics.memory_percent);
             }
         }
 

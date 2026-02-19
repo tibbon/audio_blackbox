@@ -49,7 +49,7 @@ pub mod test_utils;
 // Re-exports for public API
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
-pub use benchmarking::{measure_execution_time, PerformanceMetrics, PerformanceTracker};
+pub use benchmarking::{PerformanceMetrics, PerformanceTracker, measure_execution_time};
 pub use config::AppConfig;
 pub use constants::*;
 pub use cpal_processor::CpalAudioProcessor;

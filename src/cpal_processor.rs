@@ -6,13 +6,13 @@ use std::time::{Duration, Instant};
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
 use crate::constants::{
-    MultiChannelWriters, WavWriterType, INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS,
+    INTERMEDIATE_BUFFER_SIZE, MAX_CHANNELS, MultiChannelWriters, WavWriterType,
 };
 use crate::utils::{check_alsa_availability, is_silent, parse_channel_string};
 
 use chrono::prelude::*;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::env;
 
 /// Returns a timestamp string like "2024-01-15-14-30" from the current local time.
@@ -690,18 +690,18 @@ impl AudioProcessor for CpalAudioProcessor {
                                 for frame in frames {
                                     // Extract and write the selected channels
                                     for (idx, &channel) in channels_owned.iter().enumerate() {
-                                        if channel < frame.len() {
-                                            if let Some(writer) = &mut writers[idx] {
-                                                // Convert f32 to i16 range
-                                                let sample = (frame[channel] * 32767.0) as i32;
-                                                let _ = writer.write_sample(sample);
+                                        if channel < frame.len()
+                                            && let Some(writer) = &mut writers[idx]
+                                        {
+                                            // Convert f32 to i16 range
+                                            let sample = (frame[channel] * 32767.0) as i32;
+                                            let _ = writer.write_sample(sample);
 
-                                                // Also store in the buffer for later processing
-                                                if idx < buffers.len() {
-                                                    buffers[idx].push(sample);
-                                                    if buffers[idx].len() >= INTERMEDIATE_BUFFER_SIZE {
-                                                        buffers[idx].clear();
-                                                    }
+                                            // Also store in the buffer for later processing
+                                            if idx < buffers.len() {
+                                                buffers[idx].push(sample);
+                                                if buffers[idx].len() >= INTERMEDIATE_BUFFER_SIZE {
+                                                    buffers[idx].clear();
                                                 }
                                             }
                                         }
@@ -854,19 +854,15 @@ impl AudioProcessor for CpalAudioProcessor {
         // Check if the files are in the output directory and move them if needed
         for file_path in &created_files {
             let path = Path::new(file_path);
-            if let Some(file_name) = path.file_name() {
-                if let Some(file_name_str) = file_name.to_str() {
-                    if let Some(parent_dir) = path.parent() {
-                        if let Some(parent_dir_str) = parent_dir.to_str() {
-                            // If the file is not in the output directory, move it there
-                            if parent_dir_str != self.output_dir {
-                                let new_path = format!("{}/{}", self.output_dir, file_name_str);
-                                println!("Moving file from {} to {}", file_path, new_path);
-                                fs::rename(file_path, &new_path)?;
-                            }
-                        }
-                    }
-                }
+            if let Some(file_name) = path.file_name()
+                && let Some(file_name_str) = file_name.to_str()
+                && let Some(parent_dir) = path.parent()
+                && let Some(parent_dir_str) = parent_dir.to_str()
+                && parent_dir_str != self.output_dir
+            {
+                let new_path = format!("{}/{}", self.output_dir, file_name_str);
+                println!("Moving file from {} to {}", file_path, new_path);
+                fs::rename(file_path, &new_path)?;
             }
         }
 
@@ -933,10 +929,10 @@ impl AudioProcessor for CpalAudioProcessor {
 impl Drop for CpalAudioProcessor {
     fn drop(&mut self) {
         // Try to finalize if we're still recording
-        if self.is_recording() {
-            if let Err(e) = self.finalize() {
-                eprintln!("Error during cleanup: {}", e);
-            }
+        if self.is_recording()
+            && let Err(e) = self.finalize()
+        {
+            eprintln!("Error during cleanup: {}", e);
         }
     }
 }

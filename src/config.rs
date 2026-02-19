@@ -344,11 +344,10 @@ performance_logging = {}
         let config_content = Self::generate_sample_config();
 
         // Ensure parent directories exist
-        if let Some(parent) = Path::new(path).parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create directory: {}", e))?;
-            }
+        if let Some(parent) = Path::new(path).parent()
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
         }
 
         // Write the file
@@ -419,36 +418,33 @@ mod tests {
 
     #[test]
     fn test_env_vars_override() {
-        // Set up environment variables
-        env::set_var("AUDIO_CHANNELS", "0,2,3");
-        env::set_var("DEBUG", "true");
+        temp_env::with_vars(
+            vec![("AUDIO_CHANNELS", Some("0,2,3")), ("DEBUG", Some("true"))],
+            || {
+                let mut config = AppConfig {
+                    audio_channels: Some(DEFAULT_CHANNELS.to_string()),
+                    debug: Some(false),
+                    duration: None,
+                    output_mode: None,
+                    silence_threshold: None,
+                    continuous_mode: None,
+                    recording_cadence: None,
+                    output_dir: None,
+                    performance_logging: None,
+                };
 
-        let mut config = AppConfig {
-            audio_channels: Some(DEFAULT_CHANNELS.to_string()),
-            debug: Some(false),
-            duration: None,
-            output_mode: None,
-            silence_threshold: None,
-            continuous_mode: None,
-            recording_cadence: None,
-            output_dir: None,
-            performance_logging: None,
-        };
+                // Apply environment variables directly
+                config.apply_env_vars();
 
-        // Apply environment variables directly
-        config.apply_env_vars();
+                // Verify environment variables were applied correctly
+                assert_eq!(config.audio_channels, Some("0,2,3".to_string()));
+                assert!(config.get_debug());
 
-        // Verify environment variables were applied correctly
-        assert_eq!(config.audio_channels, Some("0,2,3".to_string()));
-        assert!(config.get_debug());
-
-        // Test the getter methods
-        assert_eq!(config.get_audio_channels(), "0,2,3");
-        assert!(config.get_debug());
-
-        // Clean up environment variables
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
+                // Test the getter methods
+                assert_eq!(config.get_audio_channels(), "0,2,3");
+                assert!(config.get_debug());
+            },
+        );
     }
 
     #[test]

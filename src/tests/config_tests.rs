@@ -50,7 +50,8 @@ fn test_config_loading() {
             fs::write(&config_path, config_content).unwrap();
 
             // Point to our test config file
-            env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap());
+            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
+            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
 
             // Load the configuration
             let config = AppConfig::load();
@@ -228,7 +229,8 @@ fn test_config_env_vars() {
             fs::write(&config_path, config_content).unwrap();
 
             // Point to our test config file and ONLY this config file
-            env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap());
+            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
+            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
 
             // Load configuration and verify it uses values from the config file
             let config = AppConfig::load();
@@ -292,7 +294,8 @@ fn test_config_env_vars_precedence() {
             fs::write(&config_path, config_content).unwrap();
 
             // Point to our test config file
-            env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap());
+            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
+            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
 
             // Verify the environment variables are set correctly
             println!("Environment variables:");
@@ -398,7 +401,8 @@ fn test_config_invalid_env_vars() {
             fs::write(&config_path, config_content).unwrap();
 
             // Point to our test config file and ONLY this config file
-            env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap());
+            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
+            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
 
             // Load configuration and verify it uses values from the config file
             let config = AppConfig::load();

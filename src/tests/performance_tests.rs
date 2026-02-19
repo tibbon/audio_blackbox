@@ -1,4 +1,4 @@
-use crate::benchmarking::{measure_execution_time, PerformanceTracker};
+use crate::benchmarking::{PerformanceTracker, measure_execution_time};
 use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
