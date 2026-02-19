@@ -923,7 +923,7 @@ mod tests {
 fn start_status_update_thread(is_recording: Arc<Mutex<bool>>, _update_status_text: Arc<dyn Fn()>) {
     // Create a channel to communicate with the main thread
     let (tx, _rx) = channel();
-    
+
     // Spawn a thread that doesn't use Objective-C objects
     thread::spawn(move || {
         while {
@@ -947,13 +947,13 @@ fn start_status_update_thread(is_recording: Arc<Mutex<bool>>, _update_status_tex
 fn update_status_text_in_thread(_status_item: id, menu: id) {
     unsafe {
         let pool = NSAutoreleasePool::new(nil);
-        
+
         // Update status text
         let status_item_menu: id = msg_send![menu, itemWithTag:10];
         let status_text = "Not recording";
         let ns_status = NSString::alloc(nil).init_str(status_text);
         let _: () = msg_send![status_item_menu, setTitle:ns_status];
-        
+
         pool.drain();
     }
 }

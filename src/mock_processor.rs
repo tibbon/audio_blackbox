@@ -152,10 +152,7 @@ impl AudioProcessor for MockAudioProcessor {
         self.finalized = true;
 
         if self.should_fail_finalize {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Simulated finalize failure",
-            ));
+            return Err(std::io::Error::other("Simulated finalize failure"));
         }
 
         // Check if we should apply the silence threshold using AppConfig
@@ -171,10 +168,7 @@ impl AudioProcessor for MockAudioProcessor {
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
                     eprintln!("Failed to delete silent file in test: {}", e);
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e.to_string(),
-                    ));
+                    return Err(std::io::Error::other(e.to_string()));
                 } else {
                     println!("Deleted silent test file: {}", file_path);
                 }

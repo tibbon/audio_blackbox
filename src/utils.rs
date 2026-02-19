@@ -112,7 +112,7 @@ pub fn check_alsa_availability() -> Result<(), String> {
 /// Parameters:
 /// - file_path: Path to the WAV file to analyze
 /// - threshold: RMS amplitude threshold. If the file's RMS is below this value, it's considered silent.
-///              A threshold of 0 or negative disables silence detection.
+///   A threshold of 0 or negative disables silence detection.
 ///
 /// Returns:
 /// - Ok(true) if the file is silent (RMS < threshold)
@@ -151,42 +151,4 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, String> {
 
     // If RMS is below threshold, consider it silent
     Ok(rms < threshold_f64)
-}
-
-// Parse a string like "0,1,2" into a vector of usize values
-pub fn parse_channel_string_old(channels_str: &str) -> Vec<usize> {
-    channels_str
-        .split(',')
-        .filter_map(|s| s.trim().parse::<usize>().ok())
-        .collect()
-}
-
-// Check if an audio buffer is silent based on a threshold
-pub fn is_silent_old(buffer: &[f32], threshold: f32) -> bool {
-    if threshold <= 0.0 {
-        return false;
-    }
-
-    buffer.iter().all(|&sample| sample.abs() < threshold)
-}
-
-// Check if ALSA is available on the system (Linux only)
-#[cfg(target_os = "linux")]
-pub fn check_alsa_availability_old() -> bool {
-    // Check if ALSA library is available
-    let alsa_check = Command::new("sh")
-        .arg("-c")
-        .arg("ldconfig -p | grep -q libasound")
-        .status();
-
-    match alsa_check {
-        Ok(status) => status.success(),
-        Err(_) => false,
-    }
-}
-
-// For non-Linux systems, ALSA is not relevant
-#[cfg(not(target_os = "linux"))]
-pub fn check_alsa_availability_old() -> bool {
-    true // Not applicable on non-Linux systems
 }

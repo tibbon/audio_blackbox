@@ -200,7 +200,7 @@ fn main() {
                 }
             }
 
-            if remaining % 5 == 0 && remaining > 0 {
+            if remaining > 0 && remaining.is_multiple_of(5) {
                 println!("{remaining} seconds remaining...");
             }
         }

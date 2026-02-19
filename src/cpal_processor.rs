@@ -896,10 +896,7 @@ impl AudioProcessor for CpalAudioProcessor {
             // Finalize the writer
             if let Err(e) = writer.finalize() {
                 eprintln!("Error finalizing WAV file: {}", e);
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                ));
+                return Err(std::io::Error::other(e.to_string()));
             }
             created_files.push(file_path.clone());
         }
@@ -924,10 +921,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
                 if let Err(e) = writer.finalize() {
                     eprintln!("Error finalizing channel WAV file: {}", e);
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e.to_string(),
-                    ));
+                    return Err(std::io::Error::other(e.to_string()));
                 }
             }
         }
@@ -968,10 +962,7 @@ impl AudioProcessor for CpalAudioProcessor {
                         );
                         if let Err(e) = fs::remove_file(&file_path) {
                             eprintln!("Error deleting silent file: {}", e);
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                e.to_string(),
-                            ));
+                            return Err(std::io::Error::other(e.to_string()));
                         }
                     }
                     Ok(false) => {
@@ -982,7 +973,7 @@ impl AudioProcessor for CpalAudioProcessor {
                     }
                     Err(e) => {
                         eprintln!("Error checking for silence: {}", e);
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                        return Err(std::io::Error::other(e));
                     }
                 }
             }
