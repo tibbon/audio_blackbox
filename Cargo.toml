@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["David Fisher <tibbon@gmail.com>"]
 description = "An audio blackbox for your recording needs"
+default-run = "blackbox"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
