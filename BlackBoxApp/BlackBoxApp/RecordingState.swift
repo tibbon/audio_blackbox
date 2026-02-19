@@ -219,6 +219,13 @@ final class RecordingState: ObservableObject {
 
         // Check status from Rust engine
         if let status = bridge.getStatus() {
+            // Audio stream error — device disconnected or driver failure
+            if let streamError = status["stream_error"] as? Bool, streamError {
+                stop()
+                errorMessage = "Recording stopped: audio device disconnected or encountered an error"
+                statusText = "Error"
+                return
+            }
             // Disk space low — stop recording gracefully
             if let diskLow = status["disk_space_low"] as? Bool, diskLow {
                 stop()

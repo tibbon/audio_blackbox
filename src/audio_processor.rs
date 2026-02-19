@@ -29,4 +29,9 @@ pub trait AudioProcessor {
     fn disk_space_low(&self) -> bool {
         false
     }
+
+    /// Whether the audio stream has encountered an error (e.g., device disconnected).
+    fn stream_error(&self) -> bool {
+        false
+    }
 }

@@ -38,6 +38,8 @@ pub struct CpalAudioProcessor {
     write_errors: Arc<AtomicU64>,
     /// Set by the writer thread when disk space drops below threshold.
     disk_space_low: Arc<AtomicBool>,
+    /// Set by the cpal error callback when the audio stream encounters an error.
+    stream_error: Arc<AtomicBool>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
     writer_thread: Option<WriterThreadHandle>,
     /// Test-only: bypass ring buffer and writer thread, write directly.
@@ -96,6 +98,7 @@ impl CpalAudioProcessor {
             debug: false,
             write_errors: Arc::new(AtomicU64::new(0)),
             disk_space_low: Arc::new(AtomicBool::new(false)),
+            stream_error: Arc::new(AtomicBool::new(false)),
             writer_thread: None,
             #[cfg(test)]
             direct_state: None,
@@ -256,9 +259,11 @@ impl AudioProcessor for CpalAudioProcessor {
         let recording_cadence = self.recording_cadence;
         let rotation_needed_cb = Arc::clone(&rotation_needed);
 
-        // Error callback
+        // Error callback — set atomic flag so Swift UI can detect device disconnects
+        let stream_error = Arc::clone(&self.stream_error);
         let err_fn = move |err| {
             error!("an error occurred on stream: {}", err);
+            stream_error.store(true, Ordering::Release);
         };
 
         // Local rotation timer for the callback (plain variable, not Arc<Mutex>)
@@ -406,6 +411,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn disk_space_low(&self) -> bool {
         self.disk_space_low.load(Ordering::Relaxed)
     }
+
+    fn stream_error(&self) -> bool {
+        self.stream_error.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for CpalAudioProcessor {
@@ -461,6 +470,7 @@ impl CpalAudioProcessor {
             debug: false,
             write_errors,
             disk_space_low,
+            stream_error: Arc::new(AtomicBool::new(false)),
             writer_thread: None,
             direct_state: Some(state),
         })
