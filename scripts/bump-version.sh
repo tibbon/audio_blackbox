@@ -6,10 +6,9 @@
 #   ./scripts/bump-version.sh 0.2.0
 #
 # Updates version in:
-#   - Cargo.toml (package version + bundle metadata)
+#   - Cargo.toml (package version)
 #   - Makefile (APP_VERSION)
-#   - Info.plist (CFBundleShortVersionString)
-#   - BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString)
+#   - BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString + CFBundleVersion)
 
 set -euo pipefail
 
@@ -31,7 +30,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Bumping version to $NEW_VERSION..."
 
-# 1. Cargo.toml — package version (line 3)
+# 1. Cargo.toml — package version
 sed -i '' "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$NEW_VERSION\"/" "$REPO_ROOT/Cargo.toml"
 echo "  Updated Cargo.toml"
 
@@ -39,21 +38,15 @@ echo "  Updated Cargo.toml"
 sed -i '' "s/^APP_VERSION = .*/APP_VERSION = $NEW_VERSION/" "$REPO_ROOT/Makefile"
 echo "  Updated Makefile"
 
-# 3. Info.plist (Cocoa app)
-sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$REPO_ROOT/Info.plist"
-echo "  Updated Info.plist"
+# 3. BlackBoxApp Info.plist — version string
+PLIST="$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
+sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST"
+echo "  Updated CFBundleShortVersionString"
 
-# 4. BlackBoxApp Info.plist (SwiftUI app) — version string
-sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
-echo "  Updated BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString)"
-
-# 5. Auto-increment CFBundleVersion (build number) in both plists
-SWIFTUI_PLIST="$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
-CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$SWIFTUI_PLIST" 2>/dev/null || echo "0")
+# 4. Auto-increment CFBundleVersion (build number)
+CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST" 2>/dev/null || echo "0")
 NEW_BUILD=$((CURRENT_BUILD + 1))
-
-sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$SWIFTUI_PLIST"
-sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$REPO_ROOT/Info.plist"
+sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST"
 echo "  Updated CFBundleVersion: $CURRENT_BUILD → $NEW_BUILD"
 
 echo ""
