@@ -62,7 +62,13 @@ struct OnboardingView: View {
                         step = 1
                     }
                     .keyboardShortcut(.defaultAction)
-                case 1, 2:
+                case 1:
+                    Button("Continue") {
+                        step += 1
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!micGranted && !micDenied)
+                case 2:
                     Button("Continue") {
                         step += 1
                     }
