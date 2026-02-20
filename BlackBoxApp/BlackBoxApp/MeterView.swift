@@ -20,6 +20,8 @@ struct MeterView: View {
                         Text("Not recording")
                             .foregroundColor(.secondary)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Level meter: Not recording")
                     Spacer()
                 }
                 Spacer()
@@ -98,7 +100,7 @@ private struct MeterBar: View {
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Channel \(channel)")
-        .accessibilityValue(dBLabel)
+        .accessibilityValue("\(dBLabel)\(dBFS > -3 ? ", clipping" : dBFS > -12 ? ", caution" : "")")
     }
 }
 

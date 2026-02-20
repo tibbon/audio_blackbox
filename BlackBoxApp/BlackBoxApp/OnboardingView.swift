@@ -27,6 +27,8 @@ struct OnboardingView: View {
                         .frame(width: 8, height: 8)
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(step + 1) of 4")
             .padding(.top, 20)
 
             Spacer()
@@ -98,6 +100,7 @@ struct OnboardingView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 80, height: 80)
+                .accessibilityHidden(true)
 
             Text("Welcome to BlackBox")
                 .font(.title)
@@ -116,6 +119,7 @@ struct OnboardingView: View {
             Image(systemName: "mic.circle.fill")
                 .font(.system(size: 56))
                 .foregroundColor(.accentColor)
+                .accessibilityHidden(true)
 
             Text("Microphone Access")
                 .font(.title2)
@@ -155,6 +159,7 @@ struct OnboardingView: View {
             Image(systemName: "folder.circle.fill")
                 .font(.system(size: 56))
                 .foregroundColor(.accentColor)
+                .accessibilityHidden(true)
 
             Text("Choose Output Directory")
                 .font(.title2)
@@ -176,6 +181,7 @@ struct OnboardingView: View {
                 Button("Choose\u{2026}") {
                     chooseDirectory()
                 }
+                .accessibilityHint("Opens a file picker to select the output directory")
             }
             .frame(maxWidth: 360)
 
@@ -191,6 +197,7 @@ struct OnboardingView: View {
             Image(systemName: "recordingtape.circle.fill")
                 .font(.system(size: 56))
                 .foregroundColor(.accentColor)
+                .accessibilityHidden(true)
 
             Text("Recording Mode")
                 .font(.title2)
@@ -256,6 +263,7 @@ struct OnboardingView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     // MARK: - Actions
