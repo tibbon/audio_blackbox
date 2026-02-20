@@ -115,26 +115,33 @@ app: swift-app
 run-app: swift-app
 	@open "$(SWIFT_APP_BUNDLE)"
 
-# Code sign the SwiftUI app
-.PHONY: sign
-sign: swift-app
-	@echo "Signing app bundle..."
-	@codesign --force --deep --sign "Developer ID Application: $(TEAM_ID)" --options runtime "$(SWIFT_APP_BUNDLE)"
-	@echo "App signed."
+# Archive for App Store submission (uses Xcode's automatic signing)
+ARCHIVE_PATH = $(TARGET_DIR)/BlackBoxApp.xcarchive
+.PHONY: archive
+archive: rust-lib
+	@echo "Archiving for distribution..."
+	xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration Release \
+		-archivePath "$(ARCHIVE_PATH)" \
+		DEVELOPMENT_TEAM="$(TEAM_ID)" \
+		archive
+	@echo "Archive created at $(ARCHIVE_PATH)"
 
-# Create DMG installer from the SwiftUI app
+# Export signed app from archive (for direct distribution)
+.PHONY: export
+export: archive
+	@echo "Exporting signed app..."
+	xcodebuild -exportArchive \
+		-archivePath "$(ARCHIVE_PATH)" \
+		-exportPath "$(TARGET_DIR)/export" \
+		-exportOptionsPlist ExportOptions.plist
+	@echo "Exported to $(TARGET_DIR)/export/"
+
+# Create DMG installer from exported app
 .PHONY: dmg
-dmg: sign
+dmg: export
 	@echo "Creating DMG installer..."
-	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(SWIFT_APP_BUNDLE)" -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/BlackBox Audio Recorder.app" -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
 	@echo "DMG created at $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg"
-
-# Notarize macOS app (requires Apple Developer account)
-.PHONY: notarize
-notarize: dmg
-	@echo "Notarizing DMG..."
-	@xcrun notarytool submit $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg --apple-id "YOUR_APPLE_ID" --password "YOUR_APP_PASSWORD" --team-id "$(TEAM_ID)" --wait
-	@echo "Notarization complete"
 
 # Regenerate Xcode project from project.yml (requires xcodegen)
 .PHONY: xcodegen
@@ -161,8 +168,8 @@ help:
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
-	@echo "  sign            - Code sign the app"
+	@echo "  archive         - Create Xcode archive for distribution"
+	@echo "  export          - Export signed app from archive"
 	@echo "  dmg             - Create DMG installer"
-	@echo "  notarize        - Notarize the app with Apple"
 	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
 	@echo "  help            - Show this help"
