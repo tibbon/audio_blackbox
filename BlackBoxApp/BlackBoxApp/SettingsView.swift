@@ -183,6 +183,26 @@ struct RecordingSettingsTab: View {
     }
 }
 
+/// Count the number of unique channels in a spec string (e.g. "0,2-4,7" → 5).
+private func countChannels(_ spec: String) -> Int {
+    var channels = Set<Int>()
+    for part in spec.split(separator: ",") {
+        let token = part.trimmingCharacters(in: .whitespaces)
+        if token.contains("-") {
+            let bounds = token.split(separator: "-")
+            if bounds.count == 2,
+               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
+               start >= 0, end >= start {
+                for ch in start...end { channels.insert(ch) }
+            }
+        } else if let num = Int(token), num >= 0 {
+            channels.insert(num)
+        }
+    }
+    return channels.count
+}
+
 /// Validate a channel spec string (e.g. "0", "0-3", "0,2-4,7").
 /// Returns nil if valid, or an error message if invalid.
 private func validateChannelSpec(_ spec: String) -> String? {
@@ -227,6 +247,8 @@ struct OutputSettingsTab: View {
     @AppStorage(SettingsKeys.continuousMode) private var continuousMode: Bool = false
     @AppStorage(SettingsKeys.recordingCadence) private var recordingCadence: Int = 300
     @AppStorage(SettingsKeys.minDiskSpaceMB) private var minDiskSpaceMB: Int = 500
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
+    @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var outputDir: String = "recordings"
 
     var body: some View {
@@ -296,6 +318,12 @@ struct OutputSettingsTab: View {
                                 .font(.caption)
                         }
                     }
+
+                    if let estimate = fileSizeEstimate {
+                        Text("Estimated file size per chunk: \(estimate)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
@@ -320,6 +348,31 @@ struct OutputSettingsTab: View {
         .formStyle(.grouped)
         .onAppear(perform: loadOutputDir)
         .onDisappear { applyConfig() }
+    }
+
+    private var channelCount: Int {
+        countChannels(channelSpec)
+    }
+
+    /// Estimated file size per rotation chunk (assumes 48 kHz sample rate).
+    private var fileSizeEstimate: String? {
+        let channels = channelCount
+        guard channels > 0, recordingCadence > 0 else { return nil }
+        let sampleRate = 48000
+        let bytesPerSample = bitDepth / 8
+        let fileCount = outputMode == "split" ? channels : 1
+        let channelsPerFile = outputMode == "split" ? 1 : channels
+        let bytesPerFile = channelsPerFile * bytesPerSample * sampleRate * recordingCadence
+        let totalBytes = bytesPerFile * fileCount
+        return formatBytes(bytesPerFile) + (fileCount > 1 ? " per file (\(formatBytes(totalBytes)) total across \(fileCount) files)" : "")
+    }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        if bytes >= 1_073_741_824 {
+            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+        } else {
+            return String(format: "%.0f MB", Double(bytes) / 1_048_576)
+        }
     }
 
     private var cadenceDescription: String {
