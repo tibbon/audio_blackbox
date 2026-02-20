@@ -243,7 +243,7 @@ final class RecordingState: ObservableObject {
 
     private func startMeterTimer() {
         guard meterTimer == nil else { return }
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updatePeakLevels()
             }
