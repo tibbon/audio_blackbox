@@ -354,17 +354,19 @@ struct OutputSettingsTab: View {
         countChannels(channelSpec)
     }
 
-    /// Estimated file size per rotation chunk (assumes 48 kHz sample rate).
+    /// Estimated file size per rotation chunk. Uses actual sample rate from the
+    /// audio device when available, falls back to 48 kHz.
     private var fileSizeEstimate: String? {
         let channels = channelCount
         guard channels > 0, recordingCadence > 0 else { return nil }
-        let sampleRate = 48000
+        let sampleRate = recorder.sampleRate > 0 ? recorder.sampleRate : 48000
         let bytesPerSample = bitDepth / 8
         let fileCount = outputMode == "split" ? channels : 1
         let channelsPerFile = outputMode == "split" ? 1 : channels
         let bytesPerFile = channelsPerFile * bytesPerSample * sampleRate * recordingCadence
         let totalBytes = bytesPerFile * fileCount
-        return formatBytes(bytesPerFile) + (fileCount > 1 ? " per file (\(formatBytes(totalBytes)) total across \(fileCount) files)" : "")
+        let rateNote = recorder.sampleRate > 0 ? "" : " (assuming 48 kHz)"
+        return formatBytes(bytesPerFile) + (fileCount > 1 ? " per file (\(formatBytes(totalBytes)) total across \(fileCount) files)" : "") + rateNote
     }
 
     private func formatBytes(_ bytes: Int) -> String {

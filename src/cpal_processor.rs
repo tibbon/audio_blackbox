@@ -25,7 +25,6 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 /// pushes raw f32 samples into a lock-free SPSC ring buffer (via `rtrb`),
 /// keeping the real-time thread free of blocking operations.
 pub struct CpalAudioProcessor {
-    #[allow(dead_code)]
     sample_rate: u32,
     stream: Option<Box<dyn StreamTrait>>,
     continuous_mode: bool,
@@ -440,6 +439,10 @@ impl AudioProcessor for CpalAudioProcessor {
             .iter()
             .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
             .collect()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
     }
 }
 

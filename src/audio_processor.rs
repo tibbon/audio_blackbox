@@ -39,4 +39,9 @@ pub trait AudioProcessor {
     fn peak_levels(&self) -> Vec<f32> {
         Vec::new()
     }
+
+    /// Return the sample rate of the active audio stream (0 if unknown).
+    fn sample_rate(&self) -> u32 {
+        0
+    }
 }

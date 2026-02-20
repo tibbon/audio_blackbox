@@ -12,6 +12,7 @@ final class RecordingState: ObservableObject {
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
     @Published var peakLevels: [Double] = []
+    @Published var sampleRate: Int = 0
     @Published var isMeterWindowOpen: Bool = false {
         didSet {
             if isMeterWindowOpen {
@@ -338,6 +339,10 @@ final class RecordingState: ObservableObject {
                 }
             }
 
+            // Sample rate — update for file size estimates in settings
+            if let rate = status["sample_rate"] as? Int, rate > 0 {
+                sampleRate = rate
+            }
         } else if debugLogging {
             Self.log.debug("getStatus() returned nil")
         }
