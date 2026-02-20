@@ -153,6 +153,7 @@ struct RecordingSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .onDisappear { applyConfig() }
     }
 
     private var thresholdDescription: String {
@@ -315,6 +316,7 @@ struct OutputSettingsTab: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: loadOutputDir)
+        .onDisappear { applyConfig() }
     }
 
     private var cadenceDescription: String {
