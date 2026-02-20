@@ -6,3 +6,5 @@
 /recordings
 .claude
 CLAUDE.md
+*.app/
+profile.json.gz
