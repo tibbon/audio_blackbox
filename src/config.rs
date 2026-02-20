@@ -487,7 +487,10 @@ bits_per_sample = {}
     }
 
     pub fn get_bits_per_sample(&self) -> u16 {
-        self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE)
+        match self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE) {
+            16 | 24 | 32 => self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE),
+            _ => DEFAULT_BITS_PER_SAMPLE,
+        }
     }
 }
 
@@ -726,5 +729,33 @@ mod tests {
         assert_eq!(base_config.recording_cadence, Some(300)); // Unchanged
         assert_eq!(base_config.output_dir, Some("./recordings".to_string())); // Unchanged
         assert_eq!(base_config.performance_logging, Some(false)); // Unchanged
+    }
+
+    #[test]
+    fn test_bits_per_sample_validation() {
+        // Valid values pass through
+        for valid in [16, 24, 32] {
+            let config = AppConfig {
+                bits_per_sample: Some(valid),
+                ..AppConfig::default()
+            };
+            assert_eq!(config.get_bits_per_sample(), valid);
+        }
+
+        // Invalid values fall back to default (24)
+        for invalid in [0, 8, 12, 48, 64, 128] {
+            let config = AppConfig {
+                bits_per_sample: Some(invalid),
+                ..AppConfig::default()
+            };
+            assert_eq!(config.get_bits_per_sample(), DEFAULT_BITS_PER_SAMPLE);
+        }
+
+        // None falls back to default
+        let config = AppConfig {
+            bits_per_sample: None,
+            ..AppConfig::default()
+        };
+        assert_eq!(config.get_bits_per_sample(), DEFAULT_BITS_PER_SAMPLE);
     }
 }
