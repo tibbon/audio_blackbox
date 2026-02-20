@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use log::{error, info, warn};
@@ -57,6 +57,7 @@ pub struct WriterThreadState {
     pub total_device_channels: usize,
     pub output_dir: String,
     pub sample_rate: u32,
+    pub bits_per_sample: u16,
     pub current_spec: hound::WavSpec,
     pub writer: Option<WavWriterType>,
     pub multichannel_writers: Vec<Option<WavWriterType>>,
@@ -70,9 +71,27 @@ pub struct WriterThreadState {
     /// Shared flag: set when disk space drops below threshold.
     pub disk_space_low: Arc<AtomicBool>,
     /// When true, writing is paused because disk space is low.
-    disk_stopped: bool,
+    pub disk_stopped: bool,
     /// Last time we checked disk space.
-    last_disk_check: Instant,
+    pub last_disk_check: Instant,
+    /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
+    pub peak_levels: Arc<Vec<AtomicU32>>,
+    /// Pre-allocated peak accumulator buffer (avoids heap alloc in hot path).
+    peak_scratch: Vec<f32>,
+    /// Cached scale factor for f32-to-WAV conversion (avoids match per sample).
+    sample_scale: f32,
+}
+
+/// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
+/// Used by tests; the hot path uses the pre-cached `sample_scale` field instead.
+#[cfg(test)]
+pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
+    let scale = match bits_per_sample {
+        16 => f32::from(i16::MAX), // 32767.0
+        24 => 8_388_607.0_f32,     // 2^23 - 1
+        _ => i32::MAX as f32,      // 2^31 - 1
+    };
+    (sample * scale) as i32
 }
 
 impl WriterThreadState {
@@ -87,6 +106,8 @@ impl WriterThreadState {
         write_errors: Arc<AtomicU64>,
         min_disk_space_mb: u64,
         disk_space_low: Arc<AtomicBool>,
+        bits_per_sample: u16,
+        peak_levels: Arc<Vec<AtomicU32>>,
     ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
             fs::create_dir_all(output_dir)?;
@@ -104,16 +125,23 @@ impl WriterThreadState {
             ))));
         }
 
+        let sample_scale = match bits_per_sample {
+            16 => f32::from(i16::MAX),
+            24 => 8_388_607.0_f32,
+            _ => i32::MAX as f32,
+        };
+
         let mut state = WriterThreadState {
             output_mode: output_mode.to_string(),
             channels: channels.to_vec(),
             total_device_channels: 0, // set by caller or process_audio
             output_dir: output_dir.to_string(),
             sample_rate,
+            bits_per_sample,
             current_spec: hound::WavSpec {
                 channels: 1,
                 sample_rate,
-                bits_per_sample: 16,
+                bits_per_sample,
                 sample_format: hound::SampleFormat::Int,
             },
             writer: None,
@@ -126,6 +154,9 @@ impl WriterThreadState {
             disk_space_low,
             disk_stopped: false,
             last_disk_check: Instant::now(),
+            peak_levels,
+            peak_scratch: vec![0.0_f32; channels.len()],
+            sample_scale,
         };
 
         // Set up writers based on output mode
@@ -164,7 +195,7 @@ impl WriterThreadState {
             let spec = hound::WavSpec {
                 channels: 1,
                 sample_rate: self.sample_rate,
-                bits_per_sample: 16,
+                bits_per_sample: self.bits_per_sample,
                 sample_format: hound::SampleFormat::Int,
             };
 
@@ -180,7 +211,7 @@ impl WriterThreadState {
         self.current_spec = hound::WavSpec {
             channels: 1,
             sample_rate: self.sample_rate,
-            bits_per_sample: 16,
+            bits_per_sample: self.bits_per_sample,
             sample_format: hound::SampleFormat::Int,
         };
 
@@ -201,7 +232,7 @@ impl WriterThreadState {
         let spec = hound::WavSpec {
             channels: self.channels.len() as u16,
             sample_rate: self.sample_rate,
-            bits_per_sample: 16,
+            bits_per_sample: self.bits_per_sample,
             sample_format: hound::SampleFormat::Int,
         };
 
@@ -233,7 +264,7 @@ impl WriterThreadState {
         let spec = hound::WavSpec {
             channels: num_channels as u16,
             sample_rate: self.sample_rate,
-            bits_per_sample: 16,
+            bits_per_sample: self.bits_per_sample,
             sample_format: hound::SampleFormat::Int,
         };
 
@@ -284,6 +315,7 @@ impl WriterThreadState {
     ///
     /// Handles partial frames: if `data` doesn't divide evenly by `total_device_channels`,
     /// leftover samples are stored in `frame_remainder` and prepended to the next call.
+    /// Also tracks per-channel peak levels for metering.
     pub fn write_samples(&mut self, data: &[f32]) {
         // If total_device_channels is 0 or disk stopped, skip writing
         if self.total_device_channels == 0 || self.disk_stopped {
@@ -311,16 +343,27 @@ impl WriterThreadState {
 
         let frame_data = &work_data[..used];
 
+        // Reset pre-allocated peak scratch buffer (no heap alloc)
+        for p in &mut self.peak_scratch {
+            *p = 0.0;
+        }
+
+        // Cache scale factor on the stack for the inner loop
+        let scale = self.sample_scale;
+
         match self.output_mode.as_str() {
             "split" => {
-                let frames = frame_data.chunks(frame_size);
-                for frame in frames {
+                for frame in frame_data.chunks(frame_size) {
                     for (idx, &channel) in self.channels.iter().enumerate() {
-                        if channel < frame.len()
-                            && let Some(w) = &mut self.multichannel_writers[idx]
-                        {
-                            let sample = (frame[channel] * 32767.0) as i32;
-                            if w.write_sample(sample).is_err() {
+                        if channel < frame.len() {
+                            let s = frame[channel];
+                            let abs = s.abs();
+                            if abs > self.peak_scratch[idx] {
+                                self.peak_scratch[idx] = abs;
+                            }
+                            if let Some(w) = &mut self.multichannel_writers[idx]
+                                && w.write_sample((s * scale) as i32).is_err()
+                            {
                                 self.write_errors.fetch_add(1, Ordering::Relaxed);
                             }
                         }
@@ -329,12 +372,15 @@ impl WriterThreadState {
             }
             "single" if self.channels.len() > 2 => {
                 if let Some(w) = &mut self.writer {
-                    let frames = frame_data.chunks(frame_size);
-                    for frame in frames {
-                        for &channel in &self.channels {
+                    for frame in frame_data.chunks(frame_size) {
+                        for (idx, &channel) in self.channels.iter().enumerate() {
                             if channel < frame.len() {
-                                let sample = (frame[channel] * 32767.0) as i32;
-                                if w.write_sample(sample).is_err() {
+                                let s = frame[channel];
+                                let abs = s.abs();
+                                if abs > self.peak_scratch[idx] {
+                                    self.peak_scratch[idx] = abs;
+                                }
+                                if w.write_sample((s * scale) as i32).is_err() {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
@@ -344,18 +390,28 @@ impl WriterThreadState {
             }
             _ => {
                 if let Some(w) = &mut self.writer {
-                    let frames = frame_data.chunks(frame_size);
-                    for frame in frames {
-                        for &channel in &self.channels {
+                    for frame in frame_data.chunks(frame_size) {
+                        for (idx, &channel) in self.channels.iter().enumerate() {
                             if channel < frame.len() {
-                                let sample = (frame[channel] * 32767.0) as i32;
-                                if w.write_sample(sample).is_err() {
+                                let s = frame[channel];
+                                let abs = s.abs();
+                                if abs > self.peak_scratch[idx] {
+                                    self.peak_scratch[idx] = abs;
+                                }
+                                if w.write_sample((s * scale) as i32).is_err() {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // Publish peaks to shared atomics
+        for (idx, &peak) in self.peak_scratch.iter().enumerate() {
+            if idx < self.peak_levels.len() {
+                self.peak_levels[idx].store(peak.to_bits(), Ordering::Relaxed);
             }
         }
     }
@@ -418,7 +474,7 @@ impl WriterThreadState {
                     let spec = hound::WavSpec {
                         channels: 1,
                         sample_rate: self.sample_rate,
-                        bits_per_sample: 16,
+                        bits_per_sample: self.bits_per_sample,
                         sample_format: hound::SampleFormat::Int,
                     };
                     match hound::WavWriter::create(&tmp, spec) {
@@ -440,7 +496,7 @@ impl WriterThreadState {
                 let spec = hound::WavSpec {
                     channels: self.channels.len() as u16,
                     sample_rate: self.sample_rate,
-                    bits_per_sample: 16,
+                    bits_per_sample: self.bits_per_sample,
                     sample_format: hound::SampleFormat::Int,
                 };
                 match hound::WavWriter::create(&tmp, spec) {

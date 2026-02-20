@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use log::{debug, error, info, warn};
@@ -40,6 +40,8 @@ pub struct CpalAudioProcessor {
     disk_space_low: Arc<AtomicBool>,
     /// Set by the cpal error callback when the audio stream encounters an error.
     stream_error: Arc<AtomicBool>,
+    /// Per-channel peak levels (f32 as u32 bits). Shared with writer thread.
+    peak_levels: Arc<Vec<AtomicU32>>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
     writer_thread: Option<WriterThreadHandle>,
     /// Test-only: bypass ring buffer and writer thread, write directly.
@@ -99,6 +101,7 @@ impl CpalAudioProcessor {
             write_errors: Arc::new(AtomicU64::new(0)),
             disk_space_low: Arc::new(AtomicBool::new(false)),
             stream_error: Arc::new(AtomicBool::new(false)),
+            peak_levels: Arc::new(Vec::new()),
             writer_thread: None,
             #[cfg(test)]
             direct_state: None,
@@ -212,6 +215,15 @@ impl AudioProcessor for CpalAudioProcessor {
         // Capture config values before entering the closure
         let silence_threshold = app_config.get_silence_threshold();
         let min_disk_space_mb = app_config.get_min_disk_space_mb();
+        let bits_per_sample = app_config.get_bits_per_sample();
+
+        // Create per-channel peak levels for metering
+        let peak_levels: Arc<Vec<AtomicU32>> = Arc::new(
+            (0..actual_channels.len())
+                .map(|_| AtomicU32::new(0))
+                .collect(),
+        );
+        self.peak_levels = Arc::clone(&peak_levels);
 
         // Create writer thread state with initial WAV writers
         let mut state = WriterThreadState::new(
@@ -223,6 +235,8 @@ impl AudioProcessor for CpalAudioProcessor {
             Arc::clone(&self.write_errors),
             min_disk_space_mb,
             Arc::clone(&self.disk_space_low),
+            bits_per_sample,
+            peak_levels,
         )?;
         state.total_device_channels = total_channels;
 
@@ -415,6 +429,13 @@ impl AudioProcessor for CpalAudioProcessor {
     fn stream_error(&self) -> bool {
         self.stream_error.load(Ordering::Relaxed)
     }
+
+    fn peak_levels(&self) -> Vec<f32> {
+        self.peak_levels
+            .iter()
+            .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
+            .collect()
+    }
 }
 
 impl Drop for CpalAudioProcessor {
@@ -438,6 +459,17 @@ impl CpalAudioProcessor {
         channels: &[usize],
         output_mode: &str,
     ) -> Result<Self, BlackboxError> {
+        Self::new_for_test_with_bits(output_dir, sample_rate, channels, output_mode, 16)
+    }
+
+    /// Like `new_for_test` but with configurable bit depth.
+    pub fn new_for_test_with_bits(
+        output_dir: &str,
+        sample_rate: u32,
+        channels: &[usize],
+        output_mode: &str,
+        bits_per_sample: u16,
+    ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
             fs::create_dir_all(output_dir)?;
         }
@@ -445,6 +477,9 @@ impl CpalAudioProcessor {
         let write_errors = Arc::new(AtomicU64::new(0));
 
         let disk_space_low = Arc::new(AtomicBool::new(false));
+
+        let peak_levels: Arc<Vec<AtomicU32>> =
+            Arc::new((0..channels.len()).map(|_| AtomicU32::new(0)).collect());
 
         let mut state = WriterThreadState::new(
             output_dir,
@@ -455,6 +490,8 @@ impl CpalAudioProcessor {
             Arc::clone(&write_errors),
             0, // disable disk check in tests
             Arc::clone(&disk_space_low),
+            bits_per_sample,
+            Arc::clone(&peak_levels),
         )?;
         // For tests, total_device_channels is set per feed_test_data call
         state.total_device_channels = 0;
@@ -471,6 +508,7 @@ impl CpalAudioProcessor {
             write_errors,
             disk_space_low,
             stream_error: Arc::new(AtomicBool::new(false)),
+            peak_levels,
             writer_thread: None,
             direct_state: Some(state),
         })

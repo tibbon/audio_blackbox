@@ -252,7 +252,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             return std::ptr::null_mut();
         };
 
-        let (is_recording, write_errors, disk_space_low, stream_error) = handle
+        let (is_recording, write_errors, disk_space_low, stream_error, peak_levels) = handle
             .recorder
             .lock()
             .ok()
@@ -264,10 +264,11 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
                         p.write_error_count(),
                         p.disk_space_low(),
                         p.stream_error(),
+                        p.peak_levels(),
                     )
                 })
             })
-            .unwrap_or((false, 0, false, false));
+            .unwrap_or((false, 0, false, false, Vec::new()));
 
         let input_device = handle
             .config
@@ -282,6 +283,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             "write_errors": write_errors,
             "disk_space_low": disk_space_low,
             "stream_error": stream_error,
+            "peak_levels": peak_levels,
         });
 
         to_c_string(&status.to_string())

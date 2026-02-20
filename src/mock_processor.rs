@@ -73,7 +73,7 @@ impl AudioProcessor for MockAudioProcessor {
         let spec = hound::WavSpec {
             channels: if output_mode == "split" { 1 } else { 2 },
             sample_rate: 44100,
-            bits_per_sample: 16,
+            bits_per_sample: 24,
             sample_format: hound::SampleFormat::Int,
         };
 
@@ -120,7 +120,7 @@ impl AudioProcessor for MockAudioProcessor {
                 let spec = hound::WavSpec {
                     channels: 1,
                     sample_rate: 44100,
-                    bits_per_sample: 16,
+                    bits_per_sample: 24,
                     sample_format: hound::SampleFormat::Int,
                 };
 

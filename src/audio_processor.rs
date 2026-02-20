@@ -34,4 +34,9 @@ pub trait AudioProcessor {
     fn stream_error(&self) -> bool {
         false
     }
+
+    /// Return per-channel peak levels (0.0..1.0) for metering.
+    fn peak_levels(&self) -> Vec<f32> {
+        Vec::new()
+    }
 }

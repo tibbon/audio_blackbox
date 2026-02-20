@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
@@ -61,6 +61,8 @@ fn test_ring_buffer_overflow_counted() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -122,6 +124,8 @@ fn test_writer_thread_processes_all_samples() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -181,6 +185,8 @@ fn test_writer_thread_rotation() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -257,6 +263,8 @@ fn test_writer_thread_shutdown_drains() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -321,6 +329,8 @@ fn test_writer_thread_silence_on_rotation() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -464,6 +474,8 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             Arc::clone(&write_errors),
             0,
             Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -541,6 +553,8 @@ fn test_new_fails_when_disk_space_low() {
             Arc::clone(&write_errors),
             999_000_000, // 999 TB in MB
             Arc::clone(&disk_space_low),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         );
 
         let err = result
@@ -577,6 +591,8 @@ fn test_new_succeeds_when_disk_check_disabled() {
             Arc::clone(&write_errors),
             0,
             Arc::clone(&disk_space_low),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
         );
 
         assert!(result.is_ok(), "Should succeed when disk check is disabled");
@@ -584,5 +600,95 @@ fn test_new_succeeds_when_disk_check_disabled() {
             !disk_space_low.load(Ordering::Relaxed),
             "disk_space_low should not be set"
         );
+    });
+}
+
+// ===========================================================================
+// Disk space check behavior
+// ===========================================================================
+
+#[test]
+fn test_writer_thread_disk_space_check_sets_flag() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let disk_space_low = Arc::new(AtomicBool::new(false));
+
+        // Create state with absurdly high threshold — will trigger on first check
+        let mut state = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            "single",
+            0.0,
+            Arc::clone(&write_errors),
+            0, // Disable in constructor — we'll set it manually after creation
+            Arc::clone(&disk_space_low),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+
+        // Override disk threshold to something absurd, and reset the timer
+        // so check_disk_space() actually runs on the next call.
+        state.min_disk_space_mb = 999_000_000;
+        state.last_disk_check = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(20))
+            .unwrap();
+
+        let can_write = state.check_disk_space();
+        assert!(
+            !can_write,
+            "check_disk_space should return false when disk is low"
+        );
+        assert!(
+            disk_space_low.load(Ordering::Relaxed),
+            "disk_space_low flag should be set"
+        );
+    });
+}
+
+#[test]
+fn test_disk_stopped_skips_writes() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let disk_space_low = Arc::new(AtomicBool::new(false));
+
+        let mut state = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            "single",
+            0.0,
+            Arc::clone(&write_errors),
+            0,
+            Arc::clone(&disk_space_low),
+            16,
+            Arc::new(vec![AtomicU32::new(0)]),
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+
+        // Write some data first
+        let data = vec![0.5_f32; 100];
+        state.write_samples(&data);
+
+        // Simulate disk_stopped by setting min_disk_space_mb high and triggering check
+        state.min_disk_space_mb = 999_000_000;
+        state.last_disk_check = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(20))
+            .unwrap();
+        state.check_disk_space(); // This sets disk_stopped = true and finalizes files
+
+        // Now write_samples should be a no-op
+        let more_data = vec![0.5_f32; 200];
+        state.write_samples(&more_data);
+
+        // The state should still have no errors from the skipped writes
+        assert_eq!(write_errors.load(Ordering::Relaxed), 0);
     });
 }

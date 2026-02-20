@@ -225,7 +225,7 @@ fn test_recorder_wav_file_valid() {
         let spec = reader.spec();
         assert_eq!(spec.channels, 2);
         assert_eq!(spec.sample_rate, 44100);
-        assert_eq!(spec.bits_per_sample, 16);
+        assert_eq!(spec.bits_per_sample, 24);
 
         // Verify it has actual samples
         let sample_count = reader.len();

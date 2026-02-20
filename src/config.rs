@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::constants::{
-    DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG, DEFAULT_DURATION,
-    DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
+    DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG,
+    DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
     DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_THRESHOLD,
 };
 use crate::error::BlackboxError;
@@ -40,6 +40,8 @@ pub struct AppConfig {
     pub input_device: Option<String>,
     /// Minimum free disk space in MB before stopping recording (0 = disabled)
     pub min_disk_space_mb: Option<u64>,
+    /// Bits per sample for WAV output: 16, 24, or 32 (default: 24)
+    pub bits_per_sample: Option<u16>,
 }
 
 impl Default for AppConfig {
@@ -56,6 +58,7 @@ impl Default for AppConfig {
             performance_logging: Some(DEFAULT_PERFORMANCE_LOGGING),
             input_device: None,
             min_disk_space_mb: Some(DEFAULT_MIN_DISK_SPACE_MB),
+            bits_per_sample: Some(DEFAULT_BITS_PER_SAMPLE),
         }
     }
 }
@@ -173,6 +176,9 @@ impl AppConfig {
         }
         if other.min_disk_space_mb.is_some() {
             self.min_disk_space_mb = other.min_disk_space_mb;
+        }
+        if other.bits_per_sample.is_some() {
+            self.bits_per_sample = other.bits_per_sample;
         }
     }
 
@@ -299,6 +305,18 @@ impl AppConfig {
         if let Some(val) = min_disk {
             self.min_disk_space_mb = Some(val);
         }
+
+        let bits = std::env::var("BLACKBOX_BITS_PER_SAMPLE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("BITS_PER_SAMPLE")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = bits {
+            self.bits_per_sample = Some(val);
+        }
     }
 
     /// Generate a sample configuration file with comments
@@ -347,6 +365,10 @@ output_dir = "{}"
 # Default: {}
 performance_logging = {}
 
+# Bits per sample for WAV output (16, 24, or 32)
+# Default: {}
+bits_per_sample = {}
+
 # Input device name (leave commented out for system default)
 # input_device = "MacBook Pro Microphone"
 "#,
@@ -367,7 +389,9 @@ performance_logging = {}
             DEFAULT_OUTPUT_DIR,
             default_config.get_output_dir(),
             DEFAULT_PERFORMANCE_LOGGING,
-            default_config.get_performance_logging()
+            default_config.get_performance_logging(),
+            DEFAULT_BITS_PER_SAMPLE,
+            default_config.get_bits_per_sample()
         );
 
         // We don't need to convert to TOML since we're creating a template with comments
@@ -461,6 +485,10 @@ performance_logging = {}
     pub fn get_min_disk_space_mb(&self) -> u64 {
         self.min_disk_space_mb.unwrap_or(DEFAULT_MIN_DISK_SPACE_MB)
     }
+
+    pub fn get_bits_per_sample(&self) -> u16 {
+        self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE)
+    }
 }
 
 #[cfg(test)]
@@ -492,6 +520,7 @@ mod tests {
                     performance_logging: None,
                     input_device: None,
                     min_disk_space_mb: None,
+                    bits_per_sample: None,
                 };
 
                 // Apply environment variables directly
@@ -667,6 +696,7 @@ mod tests {
             performance_logging: Some(false),
             input_device: None,
             min_disk_space_mb: Some(500),
+            bits_per_sample: Some(24),
         };
 
         let override_config = AppConfig {
@@ -681,6 +711,7 @@ mod tests {
             performance_logging: None, // This shouldn't override
             input_device: None,
             min_disk_space_mb: None, // This shouldn't override
+            bits_per_sample: None,   // This shouldn't override
         };
 
         base_config.merge(override_config);

@@ -47,6 +47,7 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
+    @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
 
     private var channelSpecError: String? {
         validateChannelSpec(channelSpec)
@@ -90,6 +91,22 @@ struct RecordingSettingsTab: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+            }
+
+            Section("Bit Depth") {
+                Picker("Bit Depth", selection: $bitDepth) {
+                    Text("16-bit").tag(16)
+                    Text("24-bit (Recommended)").tag(24)
+                    Text("32-bit").tag(32)
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+                .onChange(of: bitDepth) { _ in applyConfig() }
+                .accessibilityLabel("Bit depth")
+                .accessibilityHint("Select the bit depth for WAV recordings")
+                Text("24-bit is the professional standard. 16-bit saves space. 32-bit provides maximum headroom.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Silence Detection") {
@@ -144,6 +161,7 @@ struct RecordingSettingsTab: View {
         var config: [String: Any] = [
             "audio_channels": channelSpec,
             "silence_threshold": silenceEnabled ? silenceThreshold : 0.0,
+            "bits_per_sample": bitDepth,
         ]
         if !selectedDevice.isEmpty {
             config["input_device"] = selectedDevice
@@ -340,6 +358,7 @@ struct OutputSettingsTab: View {
 struct GeneralSettingsTab: View {
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
+    @AppStorage("debugLogging") private var debugLogging = false
 
     var body: some View {
         Form {
@@ -356,6 +375,13 @@ struct GeneralSettingsTab: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Diagnostics") {
+                Toggle("Enable debug logging", isOn: $debugLogging)
+                    .accessibilityHint("Log detailed status information to macOS Console")
+                Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -391,4 +417,5 @@ enum SettingsKeys {
     static let autoRecord = "autoRecord"
     static let minDiskSpaceMB = "minDiskSpaceMB"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
+    static let bitDepth = "bitDepth"
 }

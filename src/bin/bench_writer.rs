@@ -127,7 +127,7 @@ fn run_direct(
             let spec = hound::WavSpec {
                 channels: 1,
                 sample_rate,
-                bits_per_sample: 16,
+                bits_per_sample: 24,
                 sample_format: hound::SampleFormat::Int,
             };
             writers.push(Some(hound::WavWriter::create(&path, spec).unwrap()));
@@ -150,7 +150,7 @@ fn run_direct(
                     if channel < frame.len()
                         && let Some(w) = &mut writers[idx]
                     {
-                        let sample = (frame[channel] * 32767.0) as i32;
+                        let sample = (frame[channel] * 8_388_607.0) as i32;
                         if w.write_sample(sample).is_err() {
                             write_errors.fetch_add(1, Ordering::Relaxed);
                         }
@@ -200,7 +200,7 @@ fn run_direct(
             for frame in data.chunks(num_channels) {
                 for &channel in &channel_indices {
                     if channel < frame.len() {
-                        let sample = (frame[channel] * 32767.0) as i32;
+                        let sample = (frame[channel] * 8_388_607.0) as i32;
                         if writer.write_sample(sample).is_err() {
                             write_errors.fetch_add(1, Ordering::Relaxed);
                         }
@@ -270,7 +270,7 @@ fn run_pipeline(
                             for frame in slice.chunks(num_channels) {
                                 for &channel in &channel_indices {
                                     if channel < frame.len() {
-                                        let sample = (frame[channel] * 32767.0) as i32;
+                                        let sample = (frame[channel] * 8_388_607.0) as i32;
                                         if writer.write_sample(sample).is_err() {
                                             write_errors_writer.fetch_add(1, Ordering::Relaxed);
                                         }

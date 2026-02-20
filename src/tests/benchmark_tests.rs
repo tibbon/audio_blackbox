@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use tempfile::tempdir;
@@ -87,6 +87,8 @@ fn benchmark_direct_write_throughput() {
                 Arc::clone(&write_errors),
                 0,
                 Arc::new(AtomicBool::new(false)),
+                16,
+                Arc::new((0..ch_count).map(|_| AtomicU32::new(0)).collect()),
             )
             .unwrap();
             state.total_device_channels = ch_count;
@@ -181,6 +183,8 @@ fn benchmark_split_mode_throughput() {
                 Arc::clone(&write_errors),
                 0,
                 Arc::new(AtomicBool::new(false)),
+                16,
+                Arc::new((0..ch_count).map(|_| AtomicU32::new(0)).collect()),
             )
             .unwrap();
             state.total_device_channels = ch_count;
@@ -260,6 +264,8 @@ fn benchmark_ring_buffer_pipeline() {
                 Arc::clone(&write_errors),
                 0,
                 Arc::new(AtomicBool::new(false)),
+                16,
+                Arc::new((0..ch_count).map(|_| AtomicU32::new(0)).collect()),
             )
             .unwrap();
             state.total_device_channels = ch_count;
@@ -368,6 +374,8 @@ fn benchmark_rotation_overhead() {
                     Arc::clone(&write_errors),
                     0,
                     Arc::new(AtomicBool::new(false)),
+                    16,
+                    Arc::new((0..ch_count).map(|_| AtomicU32::new(0)).collect()),
                 )
                 .unwrap();
                 state.total_device_channels = ch_count;

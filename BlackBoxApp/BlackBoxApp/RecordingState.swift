@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import AVFoundation
 import Combine
+import os.log
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
 @MainActor
@@ -10,13 +11,20 @@ final class RecordingState: ObservableObject {
     @Published var statusText = "Ready"
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
+    // Peak levels are tracked in Rust (zero-cost) and available via FFI status JSON,
+    // but not displayed in the menu — NSMenu can't do real-time metering.
 
     let bridge: RustBridge
     private var recordingStartTime: Date?
     private var timer: Timer?
     private var securityScopedURL: URL?
+    private var lastReportedWriteErrors: Int = 0
 
     private static let bookmarkKey = "outputDirBookmark"
+    private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
+
+    /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
+    private var debugLogging: Bool { UserDefaults.standard.bool(forKey: "debugLogging") }
 
     init() {
         bridge = RustBridge()
@@ -62,10 +70,14 @@ final class RecordingState: ObservableObject {
             isRecording = true
             recordingStartTime = Date()
             statusText = "Recording..."
+            lastReportedWriteErrors = 0
             startTimer()
+            Self.log.info("Recording started")
         } else {
-            errorMessage = bridge.lastError ?? "Failed to start recording"
+            let err = bridge.lastError ?? "Failed to start recording"
+            errorMessage = err
             statusText = "Error"
+            Self.log.error("Failed to start recording: \(err)")
         }
     }
 
@@ -123,8 +135,11 @@ final class RecordingState: ObservableObject {
             isRecording = false
             recordingStartTime = nil
             statusText = "Ready"
+            Self.log.info("Recording stopped")
         } else {
-            errorMessage = bridge.lastError ?? "Failed to stop recording"
+            let err = bridge.lastError ?? "Failed to stop recording"
+            errorMessage = err
+            Self.log.error("Failed to stop recording: \(err)")
         }
     }
 
@@ -188,6 +203,12 @@ final class RecordingState: ObservableObject {
             config["min_disk_space_mb"] = minDisk
         }
 
+        // Bit depth (0 means not yet set — use Rust default)
+        let bitDepth = defaults.integer(forKey: SettingsKeys.bitDepth)
+        if bitDepth > 0 {
+            config["bits_per_sample"] = bitDepth
+        }
+
         if !config.isEmpty {
             bridge.setConfig(config)
         }
@@ -217,6 +238,7 @@ final class RecordingState: ObservableObject {
             let msg = bridge.lastError ?? "Recording stopped unexpectedly"
             errorMessage = msg
             statusText = "Error"
+            Self.log.error("Recording stopped unexpectedly: \(msg)")
             showCriticalAlert(title: "Recording Stopped", message: msg)
             return
         }
@@ -234,12 +256,17 @@ final class RecordingState: ObservableObject {
 
         // Check status from Rust engine
         if let status = bridge.getStatus() {
+            if debugLogging {
+                Self.log.debug("Status poll: \(String(describing: status))")
+            }
+
             // Audio stream error — device disconnected or driver failure
             if let streamError = status["stream_error"] as? Bool, streamError {
                 stop()
                 let msg = "Audio device disconnected or encountered an error."
                 errorMessage = msg
                 statusText = "Error"
+                Self.log.error("Stream error detected, stopping recording")
                 showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
@@ -249,20 +276,37 @@ final class RecordingState: ObservableObject {
                 let msg = "Disk space is low. Free up space and try again."
                 errorMessage = msg
                 statusText = "Disk Full"
+                Self.log.error("Disk space low, stopping recording")
                 showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
-            // Write errors — auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
-            if let writeErrors = status["write_errors"] as? Int, writeErrors > 48_000 {
-                stop()
-                let msg = "Excessive audio data loss (\(writeErrors) samples dropped). Your system may be under heavy load."
-                errorMessage = msg
-                statusText = "Error"
-                showCriticalAlert(title: "Recording Stopped", message: msg)
-                return
-            } else if let writeErrors = status["write_errors"] as? Int, writeErrors > 0 {
-                errorMessage = "\(writeErrors) audio samples dropped (buffer overflow or write error)"
+            // Write errors — cumulative counter from Rust engine
+            if let writeErrors = status["write_errors"] as? Int {
+                let newDrops = writeErrors - lastReportedWriteErrors
+
+                if writeErrors > 48_000 {
+                    // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
+                    stop()
+                    let msg = "Excessive audio data loss (\(writeErrors) samples dropped). Your system may be under heavy load."
+                    errorMessage = msg
+                    statusText = "Error"
+                    Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
+                    showCriticalAlert(title: "Recording Stopped", message: msg)
+                    return
+                } else if newDrops > 0 {
+                    // Only log/display when NEW drops occur (counter is cumulative)
+                    lastReportedWriteErrors = writeErrors
+                    Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
+                    if writeErrors > 500 {
+                        errorMessage = "\(writeErrors) audio samples dropped"
+                    }
+                }
             }
+
+            // Peak levels available in status["peak_levels"] but not displayed —
+            // NSMenu can't do real-time metering. Data kept for future use.
+        } else if debugLogging {
+            Self.log.debug("getStatus() returned nil")
         }
     }
 
@@ -284,14 +328,20 @@ final class RecordingState: ObservableObject {
 
             // Update Rust config with the chosen path
             bridge.setConfig(["output_dir": url.path])
+            Self.log.info("Saved output directory bookmark: \(url.path)")
         } catch {
-            errorMessage = "Failed to save directory bookmark: \(error.localizedDescription)"
+            let err = "Failed to save directory bookmark: \(error.localizedDescription)"
+            errorMessage = err
+            Self.log.error("\(err)")
         }
     }
 
     /// Restore the security-scoped bookmark on launch.
     private func restoreOutputDirBookmark() {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return }
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
+            Self.log.info("No saved output directory bookmark")
+            return
+        }
         do {
             var isStale = false
             let url = try URL(
@@ -303,11 +353,15 @@ final class RecordingState: ObservableObject {
             if url.startAccessingSecurityScopedResource() {
                 securityScopedURL = url
                 bridge.setConfig(["output_dir": url.path])
+                Self.log.info("Restored output directory: \(url.path)\(isStale ? " (stale, refreshing)" : "")")
+            } else {
+                Self.log.warning("Failed to access security-scoped resource: \(url.path)")
             }
             if isStale {
                 saveOutputDirBookmark(for: url)
             }
         } catch {
+            Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         }
     }

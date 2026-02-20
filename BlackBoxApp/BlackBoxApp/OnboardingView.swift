@@ -10,6 +10,7 @@ struct OnboardingView: View {
     @State private var micGranted = false
     @State private var micDenied = false
     @State private var outputDir: String = ""
+    @State private var chosenURL: URL?
 
     private let defaultDir: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Music")
@@ -198,7 +199,9 @@ struct OnboardingView: View {
         }
     }
 
-    private func chooseDirectory() {
+    /// Open NSOpenPanel and return the chosen URL (with security scope), or nil if cancelled.
+    @discardableResult
+    private func chooseDirectory() -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -209,12 +212,24 @@ struct OnboardingView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             outputDir = url.path
+            chosenURL = url
+            return url
         }
+        return nil
     }
 
     private func completeOnboarding() {
-        // Save the chosen output directory with security-scoped bookmark
-        let url = URL(fileURLWithPath: outputDir)
+        // In a sandboxed app, we need a URL from NSOpenPanel for security scope.
+        // If the user didn't explicitly choose, open the panel now.
+        let url: URL
+        if let chosen = chosenURL {
+            url = chosen
+        } else if let chosen = chooseDirectory() {
+            url = chosen
+        } else {
+            return // User cancelled the panel — stay on this step
+        }
+
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         recorder.saveOutputDirBookmark(for: url)
 
