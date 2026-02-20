@@ -115,15 +115,17 @@ app: swift-app
 run-app: swift-app
 	@open "$(SWIFT_APP_BUNDLE)"
 
-# Archive for App Store submission (universal binary, automatic signing)
+# Archive for App Store submission (Apple Silicon only, automatic signing)
 ARCHIVE_PATH = $(TARGET_DIR)/BlackBoxApp.xcarchive
 .PHONY: archive
-archive: rust-lib-universal
+archive: rust-lib
 	@echo "Archiving for distribution..."
 	xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration Release \
 		-archivePath "$(ARCHIVE_PATH)" \
+		-arch arm64 \
 		DEVELOPMENT_TEAM="$(TEAM_ID)" \
-		LIBRARY_SEARCH_PATHS="$(CURDIR)/$(TARGET_DIR)/universal" \
+		ARCHS=arm64 \
+		ONLY_ACTIVE_ARCH=NO \
 		archive
 	@echo "Archive created at $(ARCHIVE_PATH)"
 
