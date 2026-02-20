@@ -197,7 +197,8 @@ jobs:
 
   # ── Release ────────────────────────────────────────────────────────
   # Builds release binaries on both Linux and macOS, then creates a
-  # GitHub release with both artifacts.
+  # GitHub release with artifacts. macOS includes both the CLI binary
+  # and the SwiftUI .app bundle as a zip.
   release:
     name: Release (${{ matrix.os }})
     needs: [fmt, lint, test, audit, swift-app]
@@ -210,10 +211,8 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: blackbox-linux-amd64
-            binary: target/release/blackbox
           - os: macos-latest
             artifact: blackbox-macos-arm64
-            binary: target/release/blackbox
 
     steps:
     - uses: actions/checkout@v4
@@ -238,16 +237,35 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libasound2-dev pkg-config
 
-    - name: Build release
+    - name: Build CLI release
       run: cargo build --release
 
-    - name: Rename binary
-      run: cp ${{ matrix.binary }} ${{ matrix.artifact }}
+    - name: Copy CLI binary
+      run: cp target/release/blackbox ${{ matrix.artifact }}
 
-    - name: Upload release artifact
+    - name: Build SwiftUI app (macOS only)
+      if: matrix.os == 'macos-latest'
+      run: |
+        cargo build --release --features ffi
+        xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release build
+        BUILT_APP=$(xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //')
+        cp -R "$BUILT_APP/BlackBox Audio Recorder.app" "BlackBox Audio Recorder.app"
+        ditto -c -k --keepParent "BlackBox Audio Recorder.app" "BlackBox-Audio-Recorder.app.zip"
+
+    - name: Upload CLI binary
       uses: softprops/action-gh-release@v2
       with:
         files: ${{ matrix.artifact }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload macOS app bundle
+      if: matrix.os == 'macos-latest'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: BlackBox-Audio-Recorder.app.zip
         draft: false
         prerelease: false
       env:
