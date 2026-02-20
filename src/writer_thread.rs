@@ -26,7 +26,10 @@ pub fn timestamp_now() -> String {
 
 /// Returns a `.recording.wav` temporary path for the given final `.wav` path.
 fn tmp_wav_path(final_path: &str) -> String {
-    final_path.replace(".wav", ".recording.wav")
+    final_path.strip_suffix(".wav").map_or_else(
+        || format!("{final_path}.recording"),
+        |stem| format!("{stem}.recording.wav"),
+    )
 }
 
 // ---------------------------------------------------------------------------
