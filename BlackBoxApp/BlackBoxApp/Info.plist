@@ -28,5 +28,7 @@
 	<string>BlackBox Audio Recorder needs microphone access to record audio from your input devices.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
