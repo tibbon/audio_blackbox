@@ -44,3 +44,4 @@ targets:
         LSMinimumSystemVersion: "15.0"
         NSMicrophoneUsageDescription: "BlackBox Audio Recorder needs microphone access to record audio from your input devices."
         NSHumanReadableCopyright: "Copyright © 2026 David Fisher. All rights reserved."
+        LSApplicationCategoryType: public.app-category.music
