@@ -193,7 +193,7 @@ jobs:
       run: cargo build --release --features ffi
 
     - name: Build SwiftUI app
-      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release build
+      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
 
   # ── Release ────────────────────────────────────────────────────────
   # Builds release binaries on both Linux and macOS, then creates a
@@ -247,8 +247,8 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         cargo build --release --features ffi
-        xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release build
-        BUILT_APP=$(xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //')
+        xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
+        BUILT_APP=$(xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //')
         cp -R "$BUILT_APP/BlackBox Audio Recorder.app" "BlackBox Audio Recorder.app"
         ditto -c -k --keepParent "BlackBox Audio Recorder.app" "BlackBox-Audio-Recorder.app.zip"
 

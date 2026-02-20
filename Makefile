@@ -13,8 +13,8 @@ RELEASE_DIR = $(TARGET_DIR)/release
 # Binary
 BIN_NAME = blackbox
 
-# Development team ID for code signing (replace with your own)
-TEAM_ID = YOURDEVELOPMENTTEAMID
+# Development team ID for code signing (set via env: export TEAM_ID=...)
+TEAM_ID ?= $(DEVELOPMENT_TEAM)
 
 # --- Rust ---
 
