@@ -8,3 +8,4 @@
 CLAUDE.md
 *.app/
 profile.json.gz
+.env
