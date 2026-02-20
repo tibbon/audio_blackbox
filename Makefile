@@ -31,8 +31,8 @@ build:
 	$(CARGO_BIN) build
 
 # Build Rust in release mode
-.PHONY: release
-release:
+.PHONY: release-build
+release-build:
 	$(CARGO_BIN) build --release
 
 # Run tests
@@ -127,6 +127,18 @@ archive: rust-lib-universal
 		archive
 	@echo "Archive created at $(ARCHIVE_PATH)"
 
+# Full release: verify, bump build, archive, open in Xcode Organizer
+.PHONY: release
+release: verify
+	@echo "Bumping build number..."
+	@./scripts/bump-version.sh
+	@$(MAKE) archive
+	@echo "Opening archive in Xcode Organizer..."
+	@mkdir -p "$(HOME)/Library/Developer/Xcode/Archives/$$(date +%Y-%m-%d)"
+	@cp -R "$(ARCHIVE_PATH)" "$(HOME)/Library/Developer/Xcode/Archives/$$(date +%Y-%m-%d)/"
+	@open "$(ARCHIVE_PATH)"
+	@echo "Ready to upload — click 'Distribute App' in Xcode Organizer."
+
 # Export signed app from archive (for direct distribution)
 .PHONY: export
 export: archive
@@ -156,7 +168,7 @@ help:
 	@echo ""
 	@echo "Rust:"
 	@echo "  build           - Build debug version"
-	@echo "  release         - Build release version"
+	@echo "  release-build   - Build release version"
 	@echo "  test            - Run tests"
 	@echo "  lint            - Run linting checks (matches CI)"
 	@echo "  verify          - Run fmt + clippy + test + build"
@@ -169,6 +181,7 @@ help:
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
+	@echo "  release         - Verify, bump build, archive, open Organizer"
 	@echo "  archive         - Create Xcode archive for distribution"
 	@echo "  export          - Export signed app from archive"
 	@echo "  dmg             - Create DMG installer"
