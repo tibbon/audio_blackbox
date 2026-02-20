@@ -204,6 +204,9 @@ private func validateChannelSpec(_ spec: String) -> String? {
             else {
                 return "Invalid range: \(token)"
             }
+            if end > 63 {
+                return "Channel \(end) exceeds maximum (63)"
+            }
         } else {
             guard let num = Int(token), num >= 0 else {
                 return "Invalid channel number: \(token)"
