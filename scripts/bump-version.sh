@@ -43,10 +43,19 @@ echo "  Updated Makefile"
 sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$REPO_ROOT/Info.plist"
 echo "  Updated Info.plist"
 
-# 4. BlackBoxApp Info.plist (SwiftUI app)
+# 4. BlackBoxApp Info.plist (SwiftUI app) — version string
 sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
-echo "  Updated BlackBoxApp/BlackBoxApp/Info.plist"
+echo "  Updated BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString)"
+
+# 5. Auto-increment CFBundleVersion (build number) in both plists
+SWIFTUI_PLIST="$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
+CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$SWIFTUI_PLIST" 2>/dev/null || echo "0")
+NEW_BUILD=$((CURRENT_BUILD + 1))
+
+sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$SWIFTUI_PLIST"
+sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$REPO_ROOT/Info.plist"
+echo "  Updated CFBundleVersion: $CURRENT_BUILD → $NEW_BUILD"
 
 echo ""
-echo "Version bumped to $NEW_VERSION in all files."
+echo "Version bumped to $NEW_VERSION (build $NEW_BUILD) in all files."
 echo "Remember to commit: git add -A && git commit -m 'Bump version to $NEW_VERSION'"
