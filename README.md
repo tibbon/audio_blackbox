@@ -6,12 +6,15 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 
 ## Features
 
-- **Multi-channel recording** — record 1 to 64+ channels simultaneously (tested at 121x realtime on Apple Silicon)
+- **Multi-channel recording** — record 1 to 64+ channels simultaneously
+- **Configurable bit depth** — 16-bit, 24-bit (default, pro standard), or 32-bit WAV
 - **Two output modes** — `single` (one file, automatically multichannel for 3+ channels), `split` (one file per channel)
 - **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes
 - **Silence detection** — automatically deletes silent recordings on rotation
+- **Disk space monitoring** — automatically stops recording when free space drops below a configurable threshold
 - **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer
-- **macOS menu bar** — optional native menu bar UI (feature-gated)
+- **Per-channel peak metering** — tracked on the writer thread at zero extra cost, exposed via FFI
+- **macOS menu bar app** — native SwiftUI menu bar app with onboarding, settings, and security-scoped bookmarks
 - **Flexible configuration** — TOML config file, environment variables, or `BLACKBOX_*` prefixed env vars
 
 ## Building
@@ -27,7 +30,7 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ```bash
 cargo build                          # Debug build
 cargo build --release                # Release build
-cargo test                           # Run all tests (112 total)
+cargo test                           # Run all tests (125 total)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 ```
@@ -43,6 +46,9 @@ output_mode = "single"
 # Audio channels to record (comma-separated or ranges)
 audio_channels = "0"
 
+# Bit depth: 16, 24 (default), or 32
+bits_per_sample = 24
+
 # Recording duration in seconds
 duration = 30
 
@@ -57,6 +63,9 @@ continuous_mode = false
 
 # File rotation cadence in seconds (continuous mode)
 recording_cadence = 300
+
+# Minimum free disk space in MB (0 to disable)
+min_disk_space_mb = 500
 ```
 
 Channel specs support individual channels and ranges: `"0,2-4,7"` records channels 0, 2, 3, 4, and 7.
@@ -78,8 +87,8 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 ```
 
 - **RT callback**: only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
-- **Writer thread**: reads from the ring buffer, converts f32 to i16, writes WAV via hound, handles file rotation (finalize, rename, silence check, create new files).
-- **Ring buffer**: sized for 2 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O.
+- **Writer thread**: reads from the ring buffer, converts f32 to the configured bit depth, writes WAV via hound, tracks per-channel peak levels, handles file rotation and disk space monitoring.
+- **Ring buffer**: sized for 5 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O even at high channel counts.
 
 ### Key modules
 
@@ -123,6 +132,34 @@ In-tree benchmark tests (run manually, not in CI):
 cargo test benchmark -- --ignored --nocapture
 ```
 
+### Performance (Apple Silicon, release build, 24-bit)
+
+Measured on an M-series Mac with NVMe storage:
+
+| Config | Mode | Throughput | Real-time headroom |
+|--------|------|-----------|-------------------|
+| 2ch / 48kHz | pipeline | 205M samples/s | **2,139x** |
+| 32ch / 48kHz | single | 473M samples/s | **308x** |
+| 32ch / 48kHz | split (32 files) | 259M samples/s | **169x** |
+| 64ch / 48kHz | split (64 files) | 243M samples/s | **79x** |
+| 32ch / 192kHz | single | 538M samples/s | **87x** |
+| 64ch / 192kHz | single | 551M samples/s | **45x** |
+| 64ch / 192kHz | split (64 files) | 236M samples/s | **19x** |
+
+Even the worst case (64 channels, 192kHz, 24-bit, split mode with 64 simultaneous WAV files) runs at 19x real-time. The writer thread uses ~5% of its available capacity, leaving substantial headroom for disk I/O variability.
+
+**Memory usage** scales with channel count and sample rate (ring buffer sizing):
+
+| Config | Ring buffer | Total app |
+|--------|-----------|-----------|
+| 2ch / 48kHz | ~1.8 MB | ~20 MB |
+| 32ch / 48kHz | ~29 MB | ~50 MB |
+| 64ch / 192kHz | ~234 MB | ~280 MB |
+
+**Disk throughput** at 64ch / 192kHz / 24-bit is ~36 MB/s, well within any modern SSD.
+
+File rotation overhead is <1ms in single mode and ~10ms in 64-channel split mode, with 4,990ms+ of ring buffer runway remaining.
+
 ## CI
 
 CI runs on every push to `main` and on pull requests. Six parallel jobs:
@@ -131,8 +168,8 @@ CI runs on every push to `main` and on pull requests. Six parallel jobs:
 |-----|---------------|
 | **Format** | `cargo fmt --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **Test (Ubuntu)** | 100 lib tests |
-| **Test (macOS)** | 100 lib + 12 macOS binary tests |
+| **Test (Ubuntu)** | 113 lib tests |
+| **Test (macOS)** | 113 lib + 12 macOS binary tests |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
 
