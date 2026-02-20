@@ -78,6 +78,18 @@ final class RustBridge {
         return readString { blackbox_get_last_error(handle) }
     }
 
+    // MARK: - Peak Levels (lightweight, no JSON)
+
+    /// Read peak levels directly into a float buffer — no JSON overhead.
+    /// Returns an array of per-channel peak values (0.0–1.0), or empty if not recording.
+    func getPeakLevels(maxChannels: Int = 64) -> [Float] {
+        guard let handle = handle else { return [] }
+        var buffer = [Float](repeating: 0, count: maxChannels)
+        let count = blackbox_get_peak_levels(handle, &buffer, Int32(maxChannels))
+        guard count > 0 else { return [] }
+        return Array(buffer.prefix(Int(count)))
+    }
+
     // MARK: - Device Enumeration
 
     /// List available input device names.

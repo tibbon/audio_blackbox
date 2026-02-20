@@ -72,6 +72,14 @@ char *blackbox_list_input_devices(void);
 int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
 
 /*
+ * Write current peak levels into a caller-provided float buffer.
+ * out must point to an array of at least max_channels floats.
+ * Returns the number of channels written, or -1 on error.
+ * Lightweight alternative to blackbox_get_status_json for meter UIs.
+ */
+int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
+
+/*
  * Return the current configuration as a JSON string.
  * Caller must free the returned string with blackbox_free_string().
  * Returns NULL on failure.

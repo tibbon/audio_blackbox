@@ -384,6 +384,44 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
     });
 }
 
+/// Write current peak levels into a caller-provided buffer.
+///
+/// `out` must point to a float array of at least `max_channels` elements.
+/// Returns the number of channels actually written (may be less than `max_channels`),
+/// or -1 on error.
+///
+/// This is a lightweight alternative to `blackbox_get_status_json` for meter UIs —
+/// no JSON serialization, no string allocation, just atomic reads into the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_get_peak_levels(
+    handle: *const BlackboxHandle,
+    out: *mut f32,
+    max_channels: i32,
+) -> i32 {
+    catch_unwind(|| {
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
+        if out.is_null() || max_channels <= 0 {
+            return 0;
+        }
+
+        let peaks = handle
+            .recorder
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().peak_levels()))
+            .unwrap_or_default();
+
+        let count = peaks.len().min(max_channels as usize);
+        for i in 0..count {
+            unsafe { *out.add(i) = peaks[i] };
+        }
+        count as i32
+    })
+    .unwrap_or(-1)
+}
+
 /// Return the current configuration as a JSON string.
 ///
 /// The caller must free the returned string with `blackbox_free_string`.

@@ -86,7 +86,7 @@ private struct MeterBar: View {
                         .fill(barColor)
                         .frame(width: max(0, geo.size.width * barFraction), height: 14)
                         .cornerRadius(3)
-                        .animation(.linear(duration: 0.1), value: barFraction)
+                        .animation(.linear(duration: 0.05), value: barFraction)
                 }
             }
             .frame(height: 14)
