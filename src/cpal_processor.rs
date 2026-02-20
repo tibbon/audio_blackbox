@@ -157,6 +157,11 @@ impl AudioProcessor for CpalAudioProcessor {
         self.output_mode = output_mode.to_string();
         self.debug = debug;
 
+        // Reset counters from any prior recording session
+        self.write_errors.store(0, Ordering::Relaxed);
+        self.disk_space_low.store(false, Ordering::Relaxed);
+        self.stream_error.store(false, Ordering::Relaxed);
+
         let host = cpal::default_host();
         let app_config = AppConfig::load();
         let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;

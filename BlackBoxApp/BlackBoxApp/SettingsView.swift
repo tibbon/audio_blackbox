@@ -43,6 +43,7 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
 
 struct RecordingSettingsTab: View {
     @ObservedObject var recorder: RecordingState
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
@@ -138,6 +139,17 @@ struct RecordingSettingsTab: View {
                         }
                     }
                 }
+            }
+
+            Section("Monitoring") {
+                Button("Open Level Meter\u{2026}") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "meter")
+                }
+                .accessibilityHint("Opens a window showing real-time audio levels per channel")
+                Text("View real-time audio input levels per channel during recording.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)

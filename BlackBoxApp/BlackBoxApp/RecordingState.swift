@@ -11,12 +11,21 @@ final class RecordingState: ObservableObject {
     @Published var statusText = "Ready"
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
-    // Peak levels are tracked in Rust (zero-cost) and available via FFI status JSON,
-    // but not displayed in the menu — NSMenu can't do real-time metering.
+    @Published var peakLevels: [Double] = []
+    @Published var isMeterWindowOpen: Bool = false {
+        didSet {
+            if isMeterWindowOpen {
+                startMeterTimer()
+            } else {
+                stopMeterTimer()
+            }
+        }
+    }
 
     let bridge: RustBridge
     private var recordingStartTime: Date?
     private var timer: Timer?
+    private var meterTimer: Timer?
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
 
@@ -134,6 +143,7 @@ final class RecordingState: ObservableObject {
         if bridge.stopRecording() {
             isRecording = false
             recordingStartTime = nil
+            peakLevels = []
             statusText = "Ready"
             Self.log.info("Recording stopped")
         } else {
@@ -229,6 +239,31 @@ final class RecordingState: ObservableObject {
         timer = nil
     }
 
+    // MARK: - Meter Timer (fast polling for level meter window)
+
+    private func startMeterTimer() {
+        guard meterTimer == nil else { return }
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updatePeakLevels()
+            }
+        }
+    }
+
+    private func stopMeterTimer() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+    }
+
+    private func updatePeakLevels() {
+        guard isRecording, let status = bridge.getStatus(),
+              let peaks = status["peak_levels"] as? [Double] else {
+            if !isRecording { peakLevels = [] }
+            return
+        }
+        peakLevels = peaks
+    }
+
     private func updateDuration() {
         // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
         if isRecording && !bridge.isRecording {
@@ -303,8 +338,6 @@ final class RecordingState: ObservableObject {
                 }
             }
 
-            // Peak levels available in status["peak_levels"] but not displayed —
-            // NSMenu can't do real-time metering. Data kept for future use.
         } else if debugLogging {
             Self.log.debug("getStatus() returned nil")
         }

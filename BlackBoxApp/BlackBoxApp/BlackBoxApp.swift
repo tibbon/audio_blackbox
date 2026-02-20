@@ -52,6 +52,12 @@ struct BlackBoxApp: App {
         .defaultSize(width: 480, height: 500)
         .windowResizability(.contentSize)
 
+        Window("Level Meter", id: "meter") {
+            MeterView(recorder: recorder)
+        }
+        .defaultSize(width: 340, height: 200)
+        .windowResizability(.contentSize)
+
         Window("About BlackBox", id: "about") {
             AboutView()
         }
@@ -108,6 +114,11 @@ struct BlackBoxApp: App {
 
         Button("Show Recordings in Finder") {
             recorder.openOutputDir()
+        }
+
+        Button("Level Meter\u{2026}") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "meter")
         }
 
         Divider()
