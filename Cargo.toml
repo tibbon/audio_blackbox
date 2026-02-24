@@ -17,7 +17,7 @@ chrono = "0.4.31"
 log = "0.4"
 tempfile = "3.9.0"
 ctrlc = "3.4.1"
-sysinfo = "0.38"
+sysinfo = { version = "0.38", optional = true }
 rtrb = "0.3"
 thiserror = "2"
 toml = "1"
@@ -46,7 +46,8 @@ name = "bench-writer"
 path = "src/bin/bench_writer.rs"
 
 [features]
-default = []
+default = ["benchmarking"]
+benchmarking = ["dep:sysinfo"]
 cargo-clippy = [] # Required: objc crate macros check this feature internally
 menu-bar = []
 ffi = []

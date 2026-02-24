@@ -17,12 +17,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use log::{error, info, warn};
+#[cfg(feature = "benchmarking")]
+use log::warn;
+use log::{error, info};
 
 use blackbox::AppConfig;
 use blackbox::AudioProcessor;
 use blackbox::AudioRecorder;
 use blackbox::CpalAudioProcessor;
+#[cfg(feature = "benchmarking")]
 use blackbox::PerformanceTracker;
 
 #[cfg(target_os = "macos")]
@@ -82,6 +85,7 @@ fn main() {
     }
 
     // Set up performance monitoring using the real PerformanceTracker
+    #[cfg(feature = "benchmarking")]
     let perf_tracker = if config.get_performance_logging() {
         info!("Performance monitoring enabled");
         let log_path = format!("{output_dir}/performance.log");
@@ -160,6 +164,7 @@ fn main() {
         elapsed += 1;
 
         // Check system resources if performance monitoring is enabled
+        #[cfg(feature = "benchmarking")]
         if let Some(ref tracker) = perf_tracker
             && let Some(metrics) = tracker.get_current_metrics()
         {
@@ -196,6 +201,7 @@ fn main() {
     }
 
     // Stop performance tracking
+    #[cfg(feature = "benchmarking")]
     if let Some(ref tracker) = perf_tracker {
         tracker.stop();
     }

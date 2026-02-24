@@ -34,6 +34,7 @@
 // Modular organization of code
 mod audio_processor;
 mod audio_recorder;
+#[cfg(feature = "benchmarking")]
 mod benchmarking;
 mod config;
 mod constants;
@@ -53,6 +54,7 @@ pub mod test_utils;
 // Re-exports for public API
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
+#[cfg(feature = "benchmarking")]
 pub use benchmarking::{PerformanceMetrics, PerformanceTracker, measure_execution_time};
 pub use config::AppConfig;
 pub use constants::{
@@ -87,6 +89,7 @@ mod tests {
     mod cpal_integration_tests;
     #[cfg(feature = "ffi")]
     mod ffi_tests;
+    #[cfg(feature = "benchmarking")]
     mod performance_tests;
     mod recorder_tests;
     mod ring_buffer_tests;

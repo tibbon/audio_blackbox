@@ -75,13 +75,13 @@ SWIFT_APP_BUNDLE = $(RELEASE_DIR)/BlackBox Audio Recorder.app
 # Build the Rust static library with FFI exports
 .PHONY: rust-lib
 rust-lib:
-	$(CARGO_BIN) build --release --features ffi
+	$(CARGO_BIN) build --release --no-default-features --features ffi
 
 # Build universal (fat) Rust static library for aarch64 + x86_64
 .PHONY: rust-lib-universal
 rust-lib-universal:
-	$(CARGO_BIN) build --release --features ffi --target=aarch64-apple-darwin
-	$(CARGO_BIN) build --release --features ffi --target=x86_64-apple-darwin
+	$(CARGO_BIN) build --release --no-default-features --features ffi --target=aarch64-apple-darwin
+	$(CARGO_BIN) build --release --no-default-features --features ffi --target=x86_64-apple-darwin
 	@mkdir -p $(TARGET_DIR)/universal
 	lipo -create \
 		$(TARGET_DIR)/aarch64-apple-darwin/release/libblackbox.a \
