@@ -77,6 +77,7 @@ struct RecordingSettingsTab: View {
 
             Section("Channels") {
                 TextField("e.g. 1, 1-4, 1,3-5,8", text: $channelSpec)
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         if channelSpecError == nil { applyConfig() }
                     }
@@ -361,6 +362,7 @@ struct OutputSettingsTab: View {
                     HStack {
                         Text("Rotate every:")
                         TextField("seconds", value: $recordingCadence, format: .number)
+                            .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                             .onSubmit {
                                 if recordingCadence < 1 { recordingCadence = 1 }
@@ -388,6 +390,7 @@ struct OutputSettingsTab: View {
                 HStack {
                     Text("Minimum free space:")
                     TextField("MB", value: $minDiskSpaceMB, format: .number)
+                        .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                         .onSubmit {
                             if minDiskSpaceMB < 0 { minDiskSpaceMB = 0 }
