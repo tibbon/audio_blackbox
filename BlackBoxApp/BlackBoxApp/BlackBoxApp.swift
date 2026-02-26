@@ -6,8 +6,11 @@ struct BlackBoxApp: App {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
+    @State private var didAutoOpenOnboarding = false
 
     var body: some Scene {
+        // Auto-open onboarding on first launch
+        let _ = autoOpenOnboardingIfNeeded()
         MenuBarExtra {
             if !hasCompletedOnboarding {
                 // Onboarding-required menu
@@ -143,6 +146,17 @@ struct BlackBoxApp: App {
             quitApp()
         }
         .keyboardShortcut("q")
+    }
+
+    /// Auto-open the onboarding window on first launch. Called as a side effect
+    /// during body evaluation — uses asyncAfter to avoid modifying state during render.
+    private func autoOpenOnboardingIfNeeded() {
+        guard !hasCompletedOnboarding, !didAutoOpenOnboarding else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            didAutoOpenOnboarding = true
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "onboarding")
+        }
     }
 
     private var menuBarNSImage: NSImage {
