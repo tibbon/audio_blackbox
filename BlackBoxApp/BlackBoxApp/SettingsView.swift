@@ -45,7 +45,7 @@ struct RecordingSettingsTab: View {
     @ObservedObject var recorder: RecordingState
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
-    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
@@ -76,19 +76,19 @@ struct RecordingSettingsTab: View {
             }
 
             Section("Channels") {
-                TextField("e.g. 0, 0-3, 0,2-4,7", text: $channelSpec)
+                TextField("e.g. 1, 1-4, 1,3-5,8", text: $channelSpec)
                     .onSubmit {
                         if channelSpecError == nil { applyConfig() }
                     }
                     .foregroundColor(channelSpecError != nil ? .red : .primary)
                     .accessibilityLabel("Channel specification")
-                    .accessibilityHint("Enter channel numbers or ranges separated by commas")
+                    .accessibilityHint("Enter channel numbers or ranges separated by commas, starting from 1")
                 if let error = channelSpecError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundColor(.red)
                 } else {
-                    Text("Supports individual channels and ranges")
+                    Text("Channels start at 1. Supports individual channels and ranges.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -172,7 +172,7 @@ struct RecordingSettingsTab: View {
     private func applyConfig() {
         guard channelSpecError == nil else { return }
         var config: [String: Any] = [
-            "audio_channels": channelSpec,
+            "audio_channels": channelSpecToZeroBased(channelSpec),
             "silence_threshold": silenceEnabled ? silenceThreshold : 0.0,
             "bits_per_sample": bitDepth,
         ]
@@ -183,7 +183,7 @@ struct RecordingSettingsTab: View {
     }
 }
 
-/// Count the number of unique channels in a spec string (e.g. "0,2-4,7" → 5).
+/// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
 private func countChannels(_ spec: String) -> Int {
     var channels = Set<Int>()
     for part in spec.split(separator: ",") {
@@ -193,17 +193,17 @@ private func countChannels(_ spec: String) -> Int {
             if bounds.count == 2,
                let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
                let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
-               start >= 0, end >= start {
+               start >= 1, end >= start {
                 for ch in start...end { channels.insert(ch) }
             }
-        } else if let num = Int(token), num >= 0 {
+        } else if let num = Int(token), num >= 1 {
             channels.insert(num)
         }
     }
     return channels.count
 }
 
-/// Validate a channel spec string (e.g. "0", "0-3", "0,2-4,7").
+/// Validate a 1-based channel spec string (e.g. "1", "1-4", "1,3-5,8").
 /// Returns nil if valid, or an error message if invalid.
 private func validateChannelSpec(_ spec: String) -> String? {
     let trimmed = spec.trimmingCharacters(in: .whitespaces)
@@ -220,23 +220,80 @@ private func validateChannelSpec(_ spec: String) -> String? {
             }
             guard let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
                   let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
-                  start >= 0, end >= 0, start <= end
+                  start >= 1, end >= 1, start <= end
             else {
                 return "Invalid range: \(token)"
             }
-            if end > 63 {
-                return "Channel \(end) exceeds maximum (63)"
+            if end > 64 {
+                return "Channel \(end) exceeds maximum (64)"
             }
         } else {
-            guard let num = Int(token), num >= 0 else {
+            guard let num = Int(token), num >= 1 else {
                 return "Invalid channel number: \(token)"
             }
-            if num > 63 {
-                return "Channel \(num) exceeds maximum (63)"
+            if num > 64 {
+                return "Channel \(num) exceeds maximum (64)"
             }
         }
     }
     return nil
+}
+
+/// Convert a 1-based channel spec string to 0-based for the Rust engine.
+/// e.g. "1,3-5,8" → "0,2-4,7"
+func channelSpecToZeroBased(_ spec: String) -> String {
+    spec.split(separator: ",").map { part in
+        let token = part.trimmingCharacters(in: .whitespaces)
+        if token.contains("-") {
+            let bounds = token.split(separator: "-")
+            if bounds.count == 2,
+               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)) {
+                return "\(start - 1)-\(end - 1)"
+            }
+            return token
+        } else if let num = Int(token) {
+            return "\(num - 1)"
+        }
+        return token
+    }.joined(separator: ",")
+}
+
+/// Convert a 0-based channel spec string to 1-based for the UI.
+/// e.g. "0,2-4,7" → "1,3-5,8"
+func channelSpecToOneBased(_ spec: String) -> String {
+    spec.split(separator: ",").map { part in
+        let token = part.trimmingCharacters(in: .whitespaces)
+        if token.contains("-") {
+            let bounds = token.split(separator: "-")
+            if bounds.count == 2,
+               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)) {
+                return "\(start + 1)-\(end + 1)"
+            }
+            return token
+        } else if let num = Int(token) {
+            return "\(num + 1)"
+        }
+        return token
+    }.joined(separator: ",")
+}
+
+/// Check if a channel spec uses legacy 0-based numbering (contains a "0" channel).
+func isLegacyZeroBasedSpec(_ spec: String) -> Bool {
+    for part in spec.split(separator: ",") {
+        let token = part.trimmingCharacters(in: .whitespaces)
+        if token.contains("-") {
+            let bounds = token.split(separator: "-")
+            if let start = Int(bounds.first?.trimmingCharacters(in: .whitespaces) ?? ""),
+               start == 0 {
+                return true
+            }
+        } else if let num = Int(token), num == 0 {
+            return true
+        }
+    }
+    return false
 }
 
 // MARK: - Output Tab
@@ -247,7 +304,7 @@ struct OutputSettingsTab: View {
     @AppStorage(SettingsKeys.continuousMode) private var continuousMode: Bool = false
     @AppStorage(SettingsKeys.recordingCadence) private var recordingCadence: Int = 300
     @AppStorage(SettingsKeys.minDiskSpaceMB) private var minDiskSpaceMB: Int = 500
-    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "0"
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var outputDir: String = "recordings"
 

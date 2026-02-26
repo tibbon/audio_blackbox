@@ -191,7 +191,14 @@ final class RecordingState: ObservableObject {
             config["input_device"] = device
         }
         if let channels = defaults.string(forKey: SettingsKeys.audioChannels) {
-            config["audio_channels"] = channels
+            if isLegacyZeroBasedSpec(channels) {
+                // Migrate old 0-based spec to 1-based for UserDefaults
+                let migrated = channelSpecToOneBased(channels)
+                defaults.set(migrated, forKey: SettingsKeys.audioChannels)
+                config["audio_channels"] = channels  // Already 0-based, pass directly
+            } else {
+                config["audio_channels"] = channelSpecToZeroBased(channels)
+            }
         }
         config["output_mode"] = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
 
