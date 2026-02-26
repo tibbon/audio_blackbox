@@ -92,6 +92,19 @@ final class RustBridge {
 
     // MARK: - Device Enumeration
 
+    /// Get the input channel count for a device by name.
+    /// Pass empty string for the system default device.
+    /// Returns nil on error.
+    static func getDeviceChannelCount(deviceName: String) -> Int? {
+        let count: Int32
+        if deviceName.isEmpty {
+            count = blackbox_get_device_channel_count(nil)
+        } else {
+            count = deviceName.withCString { blackbox_get_device_channel_count($0) }
+        }
+        return count > 0 ? Int(count) : nil
+    }
+
     /// List available input device names.
     static func listInputDevices() -> [String] {
         guard let ptr = blackbox_list_input_devices() else { return [] }

@@ -65,6 +65,13 @@ char *blackbox_get_status_json(const BlackboxHandle *handle);
 char *blackbox_list_input_devices(void);
 
 /*
+ * Get the input channel count for a device by name.
+ * Pass NULL or "" for the system default device.
+ * Returns the channel count (>= 1), or -1 on error.
+ */
+int32_t blackbox_get_device_channel_count(const char *device_name);
+
+/*
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
  * Returns 0 on success, -1 on error.

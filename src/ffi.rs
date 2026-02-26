@@ -310,6 +310,23 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Get the input channel count for a device by name.
+///
+/// Pass an empty string or null for the system default device.
+/// Returns the channel count (>= 1), or -1 on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) -> i32 {
+    catch_unwind(|| {
+        let name = if device_name.is_null() {
+            ""
+        } else {
+            unsafe { cstr_to_str(device_name) }.unwrap_or("")
+        };
+        CpalAudioProcessor::get_device_channel_count(name).map_or(-1, |ch| i32::from(ch))
+    })
+    .unwrap_or(-1)
+}
+
 /// Update the configuration from a JSON string.
 ///
 /// Only fields present (non-null) in the JSON are updated; others are left unchanged.

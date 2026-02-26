@@ -50,10 +50,8 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
-
-    private var channelSpecError: String? {
-        validateChannelSpec(channelSpec)
-    }
+    @State private var deviceChannelCount: Int = 0
+    @State private var selectedChannels: Set<Int> = [1]
 
     var body: some View {
         Form {
@@ -65,32 +63,26 @@ struct RecordingSettingsTab: View {
                     }
                 }
                 .labelsHidden()
-                .onChange(of: selectedDevice) { _ in applyConfig() }
+                .onChange(of: selectedDevice) { _ in
+                    refreshChannelCount()
+                    applyConfig()
+                }
                 .accessibilityLabel("Input device")
                 .accessibilityHint("Select the audio input device for recording")
 
                 Button("Refresh Devices") {
                     recorder.refreshDevices()
+                    refreshChannelCount()
                 }
                 .font(.caption)
                 .accessibilityHint("Scan for newly connected audio devices")
             }
 
             Section("Channels") {
-                TextField("e.g. 1, 1-4, 1,3-5,8", text: $channelSpec)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: channelSpec) { _ in
-                        if channelSpecError == nil { applyConfig() }
-                    }
-                    .foregroundColor(channelSpecError != nil ? .red : .primary)
-                    .accessibilityLabel("Channel specification")
-                    .accessibilityHint("Enter channel numbers or ranges separated by commas, starting from 1")
-                if let error = channelSpecError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
+                if deviceChannelCount > 0 {
+                    channelCheckboxes
                 } else {
-                    Text("Channels start at 1. Supports individual channels and ranges.")
+                    Text("Select an input device to see available channels.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -155,6 +147,97 @@ struct RecordingSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            refreshChannelCount()
+            syncCheckboxesFromChannelSpec()
+        }
+    }
+
+    @ViewBuilder
+    private var channelCheckboxes: some View {
+        let columns = deviceChannelCount <= 8 ? 1 : 2
+        let gridItems = Array(repeating: GridItem(.flexible(), alignment: .leading), count: columns)
+
+        ScrollView {
+            LazyVGrid(columns: gridItems, alignment: .leading, spacing: 4) {
+                ForEach(1...deviceChannelCount, id: \.self) { ch in
+                    Toggle(isOn: Binding(
+                        get: { selectedChannels.contains(ch) },
+                        set: { isOn in
+                            if isOn {
+                                selectedChannels.insert(ch)
+                            } else if selectedChannels.count > 1 {
+                                // Prevent deselecting the last channel
+                                selectedChannels.remove(ch)
+                            }
+                            syncChannelSpecFromCheckboxes()
+                        }
+                    )) {
+                        Text("Channel \(ch)")
+                            .font(.body)
+                    }
+                    .toggleStyle(.checkbox)
+                    .accessibilityLabel("Channel \(ch)")
+                }
+            }
+        }
+        .frame(maxHeight: deviceChannelCount > 8 ? 160 : CGFloat(deviceChannelCount * 24 + 8))
+
+        HStack {
+            Button("All") {
+                selectedChannels = Set(1...deviceChannelCount)
+                syncChannelSpecFromCheckboxes()
+            }
+            .font(.caption)
+            Button("None") {
+                selectedChannels = [1]  // Keep at least channel 1
+                syncChannelSpecFromCheckboxes()
+            }
+            .font(.caption)
+            Spacer()
+            Text("\(selectedChannels.count) of \(deviceChannelCount) selected")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    /// Parse the channel spec string into the checkbox state.
+    private func syncCheckboxesFromChannelSpec() {
+        var channels = Set<Int>()
+        for part in channelSpec.split(separator: ",") {
+            let token = part.trimmingCharacters(in: .whitespaces)
+            if token.contains("-") {
+                let bounds = token.split(separator: "-")
+                if bounds.count == 2,
+                   let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                   let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
+                   start >= 1, end >= start {
+                    for ch in start...end { channels.insert(ch) }
+                }
+            } else if let num = Int(token), num >= 1 {
+                channels.insert(num)
+            }
+        }
+        if channels.isEmpty { channels = [1] }
+        selectedChannels = channels
+    }
+
+    /// Write the checkbox state back to the channel spec string.
+    private func syncChannelSpecFromCheckboxes() {
+        let sorted = selectedChannels.sorted()
+        channelSpec = sorted.map { String($0) }.joined(separator: ",")
+        applyConfig()
+    }
+
+    /// Query the device for its channel count and refresh checkboxes.
+    private func refreshChannelCount() {
+        deviceChannelCount = RustBridge.getDeviceChannelCount(deviceName: selectedDevice) ?? 0
+        // Clamp selected channels to what the device supports
+        if deviceChannelCount > 0 {
+            selectedChannels = selectedChannels.filter { $0 <= deviceChannelCount }
+            if selectedChannels.isEmpty { selectedChannels = [1] }
+            syncChannelSpecFromCheckboxes()
+        }
     }
 
     private var thresholdDescription: String {
@@ -171,7 +254,6 @@ struct RecordingSettingsTab: View {
     }
 
     private func applyConfig() {
-        guard channelSpecError == nil else { return }
         var config: [String: Any] = [
             "audio_channels": channelSpecToZeroBased(channelSpec),
             "silence_threshold": silenceEnabled ? silenceThreshold : 0.0,
@@ -202,42 +284,6 @@ private func countChannels(_ spec: String) -> Int {
         }
     }
     return channels.count
-}
-
-/// Validate a 1-based channel spec string (e.g. "1", "1-4", "1,3-5,8").
-/// Returns nil if valid, or an error message if invalid.
-private func validateChannelSpec(_ spec: String) -> String? {
-    let trimmed = spec.trimmingCharacters(in: .whitespaces)
-    if trimmed.isEmpty {
-        return "Channel specification cannot be empty"
-    }
-    let parts = trimmed.split(separator: ",")
-    for part in parts {
-        let token = part.trimmingCharacters(in: .whitespaces)
-        if token.contains("-") {
-            let bounds = token.split(separator: "-")
-            if bounds.count != 2 {
-                return "Invalid range: \(token)"
-            }
-            guard let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
-                  let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
-                  start >= 1, end >= 1, start <= end
-            else {
-                return "Invalid range: \(token)"
-            }
-            if end > 64 {
-                return "Channel \(end) exceeds maximum (64)"
-            }
-        } else {
-            guard let num = Int(token), num >= 1 else {
-                return "Invalid channel number: \(token)"
-            }
-            if num > 64 {
-                return "Channel \(num) exceeds maximum (64)"
-            }
-        }
-    }
-    return nil
 }
 
 /// Convert a 1-based channel spec string to 0-based for the Rust engine.

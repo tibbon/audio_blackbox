@@ -143,6 +143,41 @@ impl CpalAudioProcessor {
         }
         Ok(names)
     }
+
+    /// Get the input channel count for a named device.
+    /// Returns the channel count from the device's default input config.
+    pub fn get_device_channel_count(device_name: &str) -> Result<u16, BlackboxError> {
+        let host = cpal::default_host();
+
+        // Empty name means system default device
+        let device = if device_name.is_empty() {
+            host.default_input_device()
+                .ok_or_else(|| BlackboxError::AudioDevice("No default input device".to_string()))?
+        } else {
+            let devices = host.input_devices().map_err(|e| {
+                BlackboxError::AudioDevice(format!("Failed to enumerate devices: {e}"))
+            })?;
+            let mut found = None;
+            for d in devices {
+                if let Ok(desc) = d.description()
+                    && desc.name() == device_name
+                {
+                    found = Some(d);
+                    break;
+                }
+            }
+            found.ok_or_else(|| {
+                BlackboxError::AudioDevice(format!("Device '{device_name}' not found"))
+            })?
+        };
+
+        device
+            .default_input_config()
+            .map(|cfg| cfg.channels())
+            .map_err(|e| {
+                BlackboxError::AudioDevice(format!("Failed to get config for '{device_name}': {e}"))
+            })
+    }
 }
 
 impl AudioProcessor for CpalAudioProcessor {
