@@ -41,6 +41,7 @@ final class RecordingState: ObservableObject {
         refreshDevices()
         restoreOutputDirBookmark()
         restoreSavedSettings()
+        restoreGlobalHotkey()
 
         // Auto-record on launch if enabled (skip if onboarding not complete)
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
@@ -49,6 +50,19 @@ final class RecordingState: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.start()
             }
+        }
+    }
+
+    // MARK: - Global Hotkey
+
+    /// Restore and register the saved global keyboard shortcut.
+    private func restoreGlobalHotkey() {
+        let manager = GlobalHotkeyManager.shared
+        manager.action = { [weak self] in
+            self?.toggle()
+        }
+        if let shortcut = manager.loadSaved() {
+            manager.register(shortcut)
         }
     }
 

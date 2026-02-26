@@ -12,21 +12,23 @@
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
-		8A1F2C3D4E5B6A7890123456 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */; };
-		8B2F3D4E5F6A7B8901234567 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2F3D4E5F6A7B8901234568 /* MeterView.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
+		D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAA96D336F9106E336A98A7 /* MeterView.swift */; };
+		E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C515ABD54DB00D283F73A524 /* OnboardingView.swift */; };
+		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
+		3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
-		8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
-		8B2F3D4E5F6A7B8901234568 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
+		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
+		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
 		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -52,9 +54,10 @@
 			children = (
 				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
+				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
-				8B2F3D4E5F6A7B8901234568 /* MeterView.swift */,
-				8A1F2C3D4E5B6A7890123457 /* OnboardingView.swift */,
+				FCAA96D336F9106E336A98A7 /* MeterView.swift */,
+				C515ABD54DB00D283F73A524 /* OnboardingView.swift */,
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
@@ -92,6 +95,11 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					DD8280819EC1745861DD709C = {
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
 			buildConfigurationList = A270336424195CA52B515B29 /* Build configuration list for PBXProject "BlackBoxApp" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -130,9 +138,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
+				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
+				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
+				E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */,
 				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
-				8B2F3D4E5F6A7B8901234567 /* MeterView.swift in Sources */,
-				8A1F2C3D4E5B6A7890123456 /* OnboardingView.swift in Sources */,
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
 				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
 			);
@@ -144,6 +153,7 @@
 		139D29AA7006551DD1983958 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -167,6 +177,8 @@
 					AudioToolbox,
 					"-framework",
 					Security,
+					"-framework",
+					Carbon,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
 				PRODUCT_NAME = "BlackBox Audio Recorder";
@@ -235,6 +247,7 @@
 		29F230D58F45C00BB97780A1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -258,6 +271,8 @@
 					AudioToolbox,
 					"-framework",
 					Security,
+					"-framework",
+					Carbon,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
 				PRODUCT_NAME = "BlackBox Audio Recorder";

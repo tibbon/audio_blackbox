@@ -31,6 +31,8 @@ targets:
           - "AudioToolbox"
           - "-framework"
           - "Security"
+          - "-framework"
+          - "Carbon"
         IMPORT_PATHS: "$(SRCROOT)/bridge"
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: "BlackBox.entitlements"

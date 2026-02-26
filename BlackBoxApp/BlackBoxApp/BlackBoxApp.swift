@@ -86,7 +86,6 @@ struct BlackBoxApp: App {
         Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
             recorder.toggle()
         }
-        .keyboardShortcut("r", modifiers: [.command, .shift])
 
         Divider()
 

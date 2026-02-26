@@ -1,3 +1,4 @@
+import Carbon
 import ServiceManagement
 import SwiftUI
 
@@ -495,6 +496,8 @@ struct GeneralSettingsTab: View {
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
     @AppStorage("debugLogging") private var debugLogging = false
+    @State private var shortcutLabel: String = "None"
+    @State private var isRecordingShortcut = false
 
     var body: some View {
         Form {
@@ -511,6 +514,27 @@ struct GeneralSettingsTab: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Global Shortcut") {
+                HStack {
+                    Text("Toggle Recording:")
+                    Spacer()
+                    ShortcutRecorderButton(
+                        shortcutLabel: $shortcutLabel,
+                        isRecording: $isRecordingShortcut
+                    )
+                    if shortcutLabel != "None" {
+                        Button("Clear") {
+                            clearShortcut()
+                        }
+                        .font(.caption)
+                    }
+                }
+                .accessibilityLabel("Global keyboard shortcut for toggling recording")
+                Text("Works from any app. Click the button and press your desired key combination.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Diagnostics") {
                 Toggle("Enable debug logging", isOn: $debugLogging)
                     .accessibilityHint("Log detailed status information to macOS Console")
@@ -522,7 +546,16 @@ struct GeneralSettingsTab: View {
         .formStyle(.grouped)
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
+            if let shortcut = GlobalHotkeyManager.shared.loadSaved() {
+                shortcutLabel = shortcut.displayString
+            }
         }
+    }
+
+    private func clearShortcut() {
+        GlobalHotkeyManager.shared.unregister()
+        GlobalHotkeyManager.shared.save(nil)
+        shortcutLabel = "None"
     }
 
     private func updateLoginItem() {
@@ -534,6 +567,99 @@ struct GeneralSettingsTab: View {
             }
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+}
+
+// MARK: - Shortcut Recorder
+
+/// A button that captures a keyboard shortcut when clicked.
+struct ShortcutRecorderButton: NSViewRepresentable {
+    @Binding var shortcutLabel: String
+    @Binding var isRecording: Bool
+
+    func makeNSView(context: Context) -> ShortcutRecorderNSButton {
+        let button = ShortcutRecorderNSButton()
+        button.coordinator = context.coordinator
+        button.title = shortcutLabel
+        button.bezelStyle = .rounded
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return button
+    }
+
+    func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
+        nsView.title = isRecording ? "Press shortcut\u{2026}" : shortcutLabel
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    class Coordinator {
+        let parent: ShortcutRecorderButton
+        var localMonitor: Any?
+
+        init(parent: ShortcutRecorderButton) {
+            self.parent = parent
+        }
+
+        func startRecording() {
+            parent.isRecording = true
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.handleKeyEvent(event)
+                return nil // Consume the event
+            }
+        }
+
+        func stopRecording() {
+            parent.isRecording = false
+            if let monitor = localMonitor {
+                NSEvent.removeMonitor(monitor)
+                localMonitor = nil
+            }
+        }
+
+        private func handleKeyEvent(_ event: NSEvent) {
+            // Escape cancels recording
+            if event.keyCode == UInt16(kVK_Escape) {
+                stopRecording()
+                return
+            }
+
+            // Require at least one modifier (Cmd, Ctrl, Opt)
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let hasModifier = mods.contains(.command) || mods.contains(.control) || mods.contains(.option)
+            guard hasModifier else { return }
+
+            let carbonMods = GlobalHotkeyManager.carbonModifiers(from: UInt(mods.rawValue))
+            let shortcut = GlobalHotkeyManager.Shortcut(
+                keyCode: UInt32(event.keyCode),
+                carbonModifiers: carbonMods
+            )
+
+            // Register and save
+            let manager = GlobalHotkeyManager.shared
+            manager.register(shortcut)
+            manager.save(shortcut)
+
+            parent.shortcutLabel = shortcut.displayString
+            stopRecording()
+        }
+    }
+}
+
+/// Custom NSButton that becomes first responder to capture key events.
+class ShortcutRecorderNSButton: NSButton {
+    weak var coordinator: ShortcutRecorderButton.Coordinator?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if coordinator?.parent.isRecording == true {
+            coordinator?.stopRecording()
+        } else {
+            coordinator?.startRecording()
+            window?.makeFirstResponder(self)
         }
     }
 }
