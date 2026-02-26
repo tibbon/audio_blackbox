@@ -80,7 +80,7 @@ struct OnboardingView: View {
                         completeOnboarding()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(outputDir.isEmpty)
+                    .disabled(chosenURL == nil)
                 }
             }
             .padding(.horizontal, 32)
@@ -172,7 +172,7 @@ struct OnboardingView: View {
                 Text(outputDir)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(chosenURL != nil ? .primary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(Color(nsColor: .controlBackgroundColor))
@@ -181,13 +181,20 @@ struct OnboardingView: View {
                 Button("Choose\u{2026}") {
                     chooseDirectory()
                 }
+                .controlSize(.large)
                 .accessibilityHint("Opens a file picker to select the output directory")
             }
             .frame(maxWidth: 360)
 
-            Text("Default: ~/Music/BlackBox Recordings/")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if chosenURL == nil {
+                Text("Select a folder to continue. BlackBox will create it if it doesn't exist.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            } else {
+                Label("Folder selected", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            }
         }
         .padding(.horizontal, 32)
     }
@@ -308,16 +315,8 @@ struct OnboardingView: View {
     }
 
     private func completeOnboarding() {
-        // In a sandboxed app, we need a URL from NSOpenPanel for security scope.
-        // If the user didn't explicitly choose, open the panel now.
-        let url: URL
-        if let chosen = chosenURL {
-            url = chosen
-        } else if let chosen = chooseDirectory() {
-            url = chosen
-        } else {
-            return // User cancelled the panel — stay on this step
-        }
+        // chosenURL is guaranteed non-nil — button is disabled until user picks a folder.
+        guard let url = chosenURL else { return }
 
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         recorder.saveOutputDirBookmark(for: url)
