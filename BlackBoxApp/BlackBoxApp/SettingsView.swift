@@ -337,17 +337,23 @@ struct OutputSettingsTab: View {
 
             Section("Output Mode") {
                 Picker("Output Mode", selection: $outputMode) {
-                    Text("Single File").tag("single")
                     Text("Split (one file per channel)").tag("split")
+                    Text("Combined (Advanced)").tag("single")
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
                 .onChange(of: outputMode) { _ in applyConfig() }
                 .accessibilityLabel("Output mode")
-                .accessibilityHint("Choose whether to record to a single file or one file per channel")
-                Text("Single combines all channels into one file. Split creates a separate WAV file for each channel.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .accessibilityHint("Choose whether to record one file per channel or a combined multichannel file")
+                if outputMode == "single" {
+                    Text("Creates a single multichannel WAV file. Some DAWs (e.g. Ableton) may not import multichannel files with more than 2 channels correctly.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else {
+                    Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("Continuous Recording") {

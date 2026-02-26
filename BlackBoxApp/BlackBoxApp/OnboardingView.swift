@@ -223,8 +223,8 @@ struct OnboardingView: View {
                 }
 
                 recordingModeOption(
-                    title: "Single File",
-                    description: "Records everything into one file until you stop. Simpler, but you lose unsaved audio if the app quits.",
+                    title: "Single Session",
+                    description: "Records into one file until you stop. Simpler, but you lose unsaved audio if the app quits.",
                     isSelected: !continuousMode
                 ) {
                     continuousMode = false
