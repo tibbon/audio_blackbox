@@ -78,7 +78,7 @@ struct RecordingSettingsTab: View {
             Section("Channels") {
                 TextField("e.g. 1, 1-4, 1,3-5,8", text: $channelSpec)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit {
+                    .onChange(of: channelSpec) { _ in
                         if channelSpecError == nil { applyConfig() }
                     }
                     .foregroundColor(channelSpecError != nil ? .red : .primary)
@@ -154,7 +154,6 @@ struct RecordingSettingsTab: View {
             }
         }
         .formStyle(.grouped)
-        .onDisappear { applyConfig() }
     }
 
     private var thresholdDescription: String {
@@ -370,8 +369,8 @@ struct OutputSettingsTab: View {
                         TextField("seconds", value: $recordingCadence, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
-                            .onSubmit {
-                                if recordingCadence < 1 { recordingCadence = 1 }
+                            .onChange(of: recordingCadence) { newValue in
+                                if newValue < 1 { recordingCadence = 1 }
                                 applyConfig()
                             }
                             .accessibilityLabel("Rotation interval")
@@ -398,8 +397,8 @@ struct OutputSettingsTab: View {
                     TextField("MB", value: $minDiskSpaceMB, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                        .onSubmit {
-                            if minDiskSpaceMB < 0 { minDiskSpaceMB = 0 }
+                        .onChange(of: minDiskSpaceMB) { newValue in
+                            if newValue < 0 { minDiskSpaceMB = 0 }
                             applyConfig()
                         }
                         .accessibilityLabel("Minimum free disk space")
@@ -413,7 +412,6 @@ struct OutputSettingsTab: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: loadOutputDir)
-        .onDisappear { applyConfig() }
     }
 
     private var channelCount: Int {
