@@ -2,7 +2,7 @@
 
 # Configuration
 APP_NAME = BlackBox Audio Recorder
-APP_VERSION = 0.2.0
+APP_VERSION = 1.0.0
 BUNDLE_ID = com.dollhousemediatech.blackbox
 CARGO_BIN = cargo
 
@@ -170,27 +170,29 @@ dmg: export
 xcodegen:
 	cd $(SWIFT_APP_DIR) && xcodegen generate
 
-# --- Fastlane ---
+# --- Fastlane (sources .env for API key) ---
+
+FL_ENV = set -a && . ./.env && set +a &&
 
 # Upload metadata to App Store Connect
 .PHONY: fl-metadata
 fl-metadata:
-	cd $(SWIFT_APP_DIR) && fastlane metadata
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane metadata
 
 # Download current metadata from App Store Connect
 .PHONY: fl-fetch
 fl-fetch:
-	cd $(SWIFT_APP_DIR) && fastlane fetch_metadata
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane fetch_metadata
 
 # Submit latest build for App Store review
 .PHONY: fl-submit
 fl-submit:
-	cd $(SWIFT_APP_DIR) && fastlane submit_review
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane submit_review
 
 # Check metadata for common rejection reasons
 .PHONY: fl-check
 fl-check:
-	cd $(SWIFT_APP_DIR) && fastlane check
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane check
 
 # Help
 .PHONY: help
