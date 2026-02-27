@@ -99,7 +99,7 @@ struct RecordingSettingsTab: View {
                 .onChange(of: bitDepth) { _ in applyConfig() }
                 .accessibilityLabel("Bit depth")
                 .accessibilityHint("Select the bit depth for WAV recordings")
-                Text("24-bit is the professional standard. 16-bit saves space. 32-bit provides maximum headroom.")
+                Text("24-bit is the professional standard. 16-bit saves space. 32-bit only offers additional quality in specialized circumstances and should generally not be used.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -123,9 +123,9 @@ struct RecordingSettingsTab: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(String(format: "%.3f", silenceThreshold))
+                            Text(thresholdPresetLabel)
                                 .font(.caption)
-                                .monospacedDigit()
+                                .fontWeight(.medium)
                             Spacer()
                             Text("Aggressive")
                                 .font(.caption)
@@ -178,6 +178,7 @@ struct RecordingSettingsTab: View {
                     }
                     .toggleStyle(.checkbox)
                     .accessibilityLabel("Channel \(ch)")
+                    .accessibilityHint("Include this channel in recordings")
                 }
             }
         }
@@ -189,7 +190,7 @@ struct RecordingSettingsTab: View {
                 syncChannelSpecFromCheckboxes()
             }
             .font(.caption)
-            Button("None") {
+            Button("Reset") {
                 selectedChannels = [1]  // Keep at least channel 1
                 syncChannelSpecFromCheckboxes()
             }
@@ -240,17 +241,21 @@ struct RecordingSettingsTab: View {
         }
     }
 
+    private var thresholdPresetLabel: String {
+        if silenceThreshold < 0.005 {
+            return "Studio Quiet"
+        } else if silenceThreshold < 0.02 {
+            return "Home Office"
+        } else if silenceThreshold < 0.05 {
+            return "Moderate"
+        } else {
+            return "Noisy Environment"
+        }
+    }
+
     private var thresholdDescription: String {
         let value = String(format: "%.3f", silenceThreshold)
-        if silenceThreshold < 0.005 {
-            return "Very sensitive, \(value)"
-        } else if silenceThreshold < 0.02 {
-            return "Sensitive, \(value)"
-        } else if silenceThreshold < 0.05 {
-            return "Moderate, \(value)"
-        } else {
-            return "Aggressive, \(value)"
-        }
+        return "\(thresholdPresetLabel), \(value)"
     }
 
     private func applyConfig() {
@@ -267,7 +272,7 @@ struct RecordingSettingsTab: View {
 }
 
 /// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
-private func countChannels(_ spec: String) -> Int {
+func countChannels(_ spec: String) -> Int {
     var channels = Set<Int>()
     for part in spec.split(separator: ",") {
         let token = part.trimmingCharacters(in: .whitespaces)
@@ -354,6 +359,7 @@ struct OutputSettingsTab: View {
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var outputDir: String = "recordings"
+    @State private var cadenceSelection: Int = 300
 
     var body: some View {
         Form {
@@ -384,7 +390,7 @@ struct OutputSettingsTab: View {
             Section("Output Mode") {
                 Picker("Output Mode", selection: $outputMode) {
                     Text("Split (one file per channel)").tag("split")
-                    Text("Combined (Advanced)").tag("single")
+                    Text("Multichannel (single file)").tag("single")
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
@@ -392,7 +398,7 @@ struct OutputSettingsTab: View {
                 .accessibilityLabel("Output mode")
                 .accessibilityHint("Choose whether to record one file per channel or a combined multichannel file")
                 if outputMode == "single" {
-                    Text("Creates a single multichannel WAV file. Some DAWs (e.g. Ableton) may not import multichannel files with more than 2 channels correctly.")
+                    Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
                         .font(.caption)
                         .foregroundColor(.orange)
                 } else {
@@ -411,22 +417,39 @@ struct OutputSettingsTab: View {
                     .foregroundColor(.secondary)
 
                 if continuousMode {
-                    HStack {
-                        Text("Rotate every:")
-                        TextField("seconds", value: $recordingCadence, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                            .onChange(of: recordingCadence) { newValue in
-                                if newValue < 1 { recordingCadence = 1 }
-                                applyConfig()
+                    Picker("Rotate every:", selection: $cadenceSelection) {
+                        Text("5 minutes").tag(300)
+                        Text("15 minutes").tag(900)
+                        Text("30 minutes").tag(1800)
+                        Text("1 hour").tag(3600)
+                        Text("2 hours").tag(7200)
+                        Text("Custom").tag(-1)
+                    }
+                    .onChange(of: cadenceSelection) { newValue in
+                        if newValue > 0 {
+                            recordingCadence = newValue
+                            applyConfig()
+                        }
+                    }
+                    .accessibilityLabel("Rotation interval")
+
+                    if cadenceSelection == -1 {
+                        HStack {
+                            TextField("", value: $recordingCadence, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                                .onChange(of: recordingCadence) { newValue in
+                                    if newValue < 1 { recordingCadence = 1 }
+                                    applyConfig()
+                                }
+                                .accessibilityLabel("Custom rotation interval")
+                                .accessibilityValue("\(recordingCadence) seconds")
+                            Text("seconds")
+                            if recordingCadence > 0 {
+                                Text("(\(cadenceDescription))")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
                             }
-                            .accessibilityLabel("Rotation interval")
-                            .accessibilityValue("\(recordingCadence) seconds, \(cadenceDescription)")
-                        Text("seconds")
-                        if recordingCadence > 0 {
-                            Text("(\(cadenceDescription))")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
                         }
                     }
 
@@ -439,26 +462,26 @@ struct OutputSettingsTab: View {
             }
 
             Section("Disk Space") {
-                HStack {
-                    Text("Minimum free space:")
-                    TextField("MB", value: $minDiskSpaceMB, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .onChange(of: minDiskSpaceMB) { newValue in
-                            if newValue < 0 { minDiskSpaceMB = 0 }
-                            applyConfig()
-                        }
-                        .accessibilityLabel("Minimum free disk space")
-                        .accessibilityValue("\(minDiskSpaceMB) megabytes")
-                    Text("MB")
+                Picker("Minimum free space:", selection: $minDiskSpaceMB) {
+                    Text("Disabled").tag(0)
+                    Text("500 MB").tag(500)
+                    Text("1 GB").tag(1000)
+                    Text("2 GB").tag(2000)
+                    Text("5 GB").tag(5000)
+                    Text("10 GB").tag(10000)
                 }
-                Text("Recording stops automatically when free disk space drops below this threshold. Set to 0 to disable.")
+                .onChange(of: minDiskSpaceMB) { _ in applyConfig() }
+                .accessibilityLabel("Minimum free disk space")
+                Text("Recording stops automatically when free disk space drops below this threshold.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)
-        .onAppear(perform: loadOutputDir)
+        .onAppear {
+            loadOutputDir()
+            syncCadenceSelection()
+        }
     }
 
     private var channelCount: Int {
@@ -505,6 +528,12 @@ struct OutputSettingsTab: View {
         }
     }
 
+    private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]
+
+    private func syncCadenceSelection() {
+        cadenceSelection = Self.cadencePresets.contains(recordingCadence) ? recordingCadence : -1
+    }
+
     private func loadOutputDir() {
         if let config = recorder.bridge.getConfig() {
             outputDir = config["output_dir"] as? String ?? "recordings"
@@ -526,7 +555,7 @@ struct OutputSettingsTab: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Choose"
+        panel.prompt = "Select"
         panel.message = "Select output directory for recordings"
 
         if panel.runModal() == .OK, let url = panel.url {
@@ -665,6 +694,12 @@ struct ShortcutRecorderButton: NSViewRepresentable {
             }
         }
 
+        private static let reservedShortcuts: Set<String> = [
+            "⌘Q", "⌘W", "⌘H", "⌘M", "⌘,", "⌘`",
+            "⌘Z", "⌘X", "⌘C", "⌘V", "⌘A", "⌘S",
+            "⌘Tab", "⌘Space",
+        ]
+
         private func handleKeyEvent(_ event: NSEvent) {
             // Escape cancels recording
             if event.keyCode == UInt16(kVK_Escape) {
@@ -682,6 +717,12 @@ struct ShortcutRecorderButton: NSViewRepresentable {
                 keyCode: UInt32(event.keyCode),
                 carbonModifiers: carbonMods
             )
+
+            // Reject reserved system shortcuts
+            if Self.reservedShortcuts.contains(shortcut.displayString) {
+                stopRecording()
+                return
+            }
 
             // Register and save
             let manager = GlobalHotkeyManager.shared

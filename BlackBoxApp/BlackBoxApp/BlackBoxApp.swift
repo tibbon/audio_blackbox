@@ -5,6 +5,7 @@ struct BlackBoxApp: App {
     @StateObject private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @State private var didAutoOpenOnboarding = false
 
@@ -74,10 +75,19 @@ struct BlackBoxApp: App {
         Text(recorder.statusText)
             .font(.headline)
 
+        if recorder.isRecording {
+            let device = selectedDevice.isEmpty ? "System Default" : selectedDevice
+            let chCount = countChannels(channelSpec)
+            Text("\(device) \u{00B7} \(chCount) ch")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+
         if let error = recorder.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .foregroundColor(.red)
                 .font(.caption)
+                .accessibilityLabel("Error: \(error)")
         }
 
         Divider()
@@ -86,6 +96,7 @@ struct BlackBoxApp: App {
         Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
             recorder.toggle()
         }
+        .keyboardShortcut("r")
 
         Divider()
 
@@ -112,9 +123,13 @@ struct BlackBoxApp: App {
             }
 
             Divider()
+        } else {
+            Text("No Input Devices")
+
+            Divider()
         }
 
-        Button("Show Recordings in Finder") {
+        Button("Reveal Recordings in Finder") {
             recorder.openOutputDir()
         }
 
@@ -130,16 +145,20 @@ struct BlackBoxApp: App {
             openWindow(id: "about")
         }
 
-        Menu("Help") {
-            Link("BlackBox Support", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
-            Link("Privacy Policy", destination: URL(string: "https://dollhousemediatech.com/blackbox/privacy")!)
-        }
-
         Button("Settings\u{2026}") {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "settings")
         }
         .keyboardShortcut(",")
+
+        Divider()
+
+        Menu("Help") {
+            Link("BlackBox Support", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
+            Link("Privacy Policy", destination: URL(string: "https://dollhousemediatech.com/blackbox/privacy")!)
+        }
+
+        Divider()
 
         Button("Quit") {
             quitApp()
@@ -247,6 +266,9 @@ struct AboutView: View {
                 .foregroundColor(.secondary)
 
             Link("dollhousemediatech.com", destination: URL(string: "https://dollhousemediatech.com")!)
+                .font(.caption)
+
+            Link("Release Notes", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
                 .font(.caption)
         }
         .padding(24)
