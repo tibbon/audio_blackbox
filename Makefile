@@ -2,7 +2,7 @@
 
 # Configuration
 APP_NAME = BlackBox Audio Recorder
-APP_VERSION = 0.1.0
+APP_VERSION = 0.2.0
 BUNDLE_ID = com.dollhousemediatech.blackbox
 CARGO_BIN = cargo
 
@@ -129,17 +129,24 @@ archive: rust-lib
 		archive
 	@echo "Archive created at $(ARCHIVE_PATH)"
 
-# Full release: verify, bump build, archive, open in Xcode Organizer
+# Upload archive to App Store Connect (TestFlight)
+.PHONY: upload
+upload: archive
+	@echo "Uploading to App Store Connect..."
+	xcodebuild -exportArchive \
+		-archivePath "$(ARCHIVE_PATH)" \
+		-exportPath "$(TARGET_DIR)/export" \
+		-exportOptionsPlist ExportOptions.plist \
+		-allowProvisioningUpdates
+	@echo "Upload complete — build should appear in App Store Connect shortly."
+
+# Full release: verify, bump build, archive, upload to App Store Connect
 .PHONY: release
 release: verify
 	@echo "Bumping build number..."
 	@./scripts/bump-version.sh
-	@$(MAKE) archive
-	@echo "Opening archive in Xcode Organizer..."
-	@mkdir -p "$(HOME)/Library/Developer/Xcode/Archives/$$(date +%Y-%m-%d)"
-	@cp -R "$(ARCHIVE_PATH)" "$(HOME)/Library/Developer/Xcode/Archives/$$(date +%Y-%m-%d)/"
-	@open "$(ARCHIVE_PATH)"
-	@echo "Ready to upload — click 'Distribute App' in Xcode Organizer."
+	@$(MAKE) upload
+	@echo "Release done — check App Store Connect for the new build."
 
 # Export signed app from archive (for direct distribution)
 .PHONY: export
@@ -183,7 +190,8 @@ help:
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
-	@echo "  release         - Verify, bump build, archive, open Organizer"
+	@echo "  release         - Verify, bump build, archive, upload to App Store Connect"
+	@echo "  upload          - Archive and upload to App Store Connect"
 	@echo "  archive         - Create Xcode archive for distribution"
 	@echo "  export          - Export signed app from archive"
 	@echo "  dmg             - Create DMG installer"

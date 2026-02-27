@@ -15,9 +15,13 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>5</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
 	<key>LSUIElement</key>
@@ -26,9 +30,5 @@
 	<string>Copyright © 2026 David Fisher. All rights reserved.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>BlackBox Audio Recorder needs microphone access to record audio from your input devices.</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.music</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>

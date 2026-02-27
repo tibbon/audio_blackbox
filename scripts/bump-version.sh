@@ -10,16 +10,19 @@
 #   - Cargo.toml (package version) — only when version argument given
 #   - Makefile (APP_VERSION) — only when version argument given
 #   - BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString + CFBundleVersion)
+#   - BlackBoxApp/project.yml (CFBundleShortVersionString + CFBundleVersion)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
+PROJECT_YML="$REPO_ROOT/BlackBoxApp/project.yml"
 
 # Always increment CFBundleVersion (build number)
 CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST" 2>/dev/null || echo "0")
 NEW_BUILD=$((CURRENT_BUILD + 1))
 sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST"
+sed -i '' "s/CFBundleVersion: \"[^\"]*\"/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
 echo "  CFBundleVersion: $CURRENT_BUILD → $NEW_BUILD"
 
 # Optionally update marketing version if argument provided
@@ -44,7 +47,11 @@ if [[ $# -ge 1 ]]; then
 
     # Info.plist — CFBundleShortVersionString
     sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST"
-    echo "  Updated CFBundleShortVersionString to $NEW_VERSION"
+    echo "  Updated Info.plist"
+
+    # project.yml — CFBundleShortVersionString
+    sed -i '' "s/CFBundleShortVersionString: \"[^\"]*\"/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
+    echo "  Updated project.yml"
 
     echo ""
     echo "Version $NEW_VERSION (build $NEW_BUILD)"
