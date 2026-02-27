@@ -1,0 +1,71 @@
+default_platform(:mac)
+
+platform :mac do
+  desc "Build Rust lib, archive, and upload to TestFlight"
+  lane :beta do
+    # Build Rust static library
+    sh("cd ../.. && make rust-lib")
+
+    # Build and archive
+    build_app(
+      project: "BlackBoxApp.xcodeproj",
+      scheme: "BlackBoxApp",
+      configuration: "Release",
+      export_method: "app-store-connect",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "FB8QBNNT6D",
+        uploadSymbols: true
+      },
+      output_directory: "../target/fastlane",
+      clean: true,
+      xcargs: "DEVELOPMENT_TEAM=FB8QBNNT6D ARCHS=arm64"
+    )
+
+    # Upload to TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Upload metadata and screenshots to App Store Connect"
+  lane :metadata do
+    deliver(
+      skip_binary_upload: true,
+      force: true,
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots"
+    )
+  end
+
+  desc "Download current metadata from App Store Connect"
+  lane :fetch_metadata do
+    deliver(
+      skip_binary_upload: true,
+      skip_metadata: false,
+      skip_screenshots: true,
+      run_precheck_before_submit: false,
+      force: true,
+      metadata_path: "./fastlane/metadata"
+    )
+  end
+
+  desc "Submit latest build for App Store review"
+  lane :submit_review do
+    deliver(
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      automatic_release: false,
+      submission_information: {
+        add_id_info_uses_idfa: false
+      }
+    )
+  end
+
+  desc "Check metadata for common rejection reasons"
+  lane :check do
+    precheck
+  end
+end

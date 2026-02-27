@@ -170,6 +170,28 @@ dmg: export
 xcodegen:
 	cd $(SWIFT_APP_DIR) && xcodegen generate
 
+# --- Fastlane ---
+
+# Upload metadata to App Store Connect
+.PHONY: fl-metadata
+fl-metadata:
+	cd $(SWIFT_APP_DIR) && fastlane metadata
+
+# Download current metadata from App Store Connect
+.PHONY: fl-fetch
+fl-fetch:
+	cd $(SWIFT_APP_DIR) && fastlane fetch_metadata
+
+# Submit latest build for App Store review
+.PHONY: fl-submit
+fl-submit:
+	cd $(SWIFT_APP_DIR) && fastlane submit_review
+
+# Check metadata for common rejection reasons
+.PHONY: fl-check
+fl-check:
+	cd $(SWIFT_APP_DIR) && fastlane check
+
 # Help
 .PHONY: help
 help:
@@ -196,4 +218,11 @@ help:
 	@echo "  export          - Export signed app from archive"
 	@echo "  dmg             - Create DMG installer"
 	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
+	@echo ""
+	@echo "Fastlane:"
+	@echo "  fl-metadata     - Upload metadata to App Store Connect"
+	@echo "  fl-fetch        - Download current metadata from App Store Connect"
+	@echo "  fl-submit       - Submit latest build for App Store review"
+	@echo "  fl-check        - Check metadata for common rejection reasons"
+	@echo ""
 	@echo "  help            - Show this help"

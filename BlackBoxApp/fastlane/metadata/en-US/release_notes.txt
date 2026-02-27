@@ -1,0 +1,7 @@
+- Improved onboarding experience with step-by-step setup wizard
+- Channel selection now uses checkboxes with hardware detection
+- Settings auto-apply on change (no more manual save)
+- 1-based channel numbering for clarity
+- Configurable global keyboard shortcut
+- Real-time level meter window
+- Various UI improvements and bug fixes
