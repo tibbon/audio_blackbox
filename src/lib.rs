@@ -74,6 +74,45 @@ pub use utils::{
 #[cfg(test)]
 pub use mock_processor::MockAudioProcessor;
 
+// ---------------------------------------------------------------------------
+// Test-only allocation counter — wraps the system allocator with atomic
+// counters so we can prove the hot path does zero heap allocations.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod alloc_counter {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
+
+    pub struct CountingAllocator;
+
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    /// Snapshot the current global allocation count.
+    pub fn snapshot() -> u64 {
+        ALLOC_COUNT.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+#[global_allocator]
+static COUNTING_ALLOCATOR: alloc_counter::CountingAllocator = alloc_counter::CountingAllocator;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +122,7 @@ mod tests {
     use tempfile::tempdir;
 
     // Include test submodules
+    mod alloc_tests;
     mod benchmark_tests;
     mod channel_tests;
     mod config_tests;
