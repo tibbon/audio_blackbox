@@ -1,14 +1,14 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use log::{debug, error, info, warn};
 
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
-use crate::constants::RING_BUFFER_SECONDS;
+use crate::constants::{CacheAlignedPeak, RING_BUFFER_SECONDS};
 use crate::error::BlackboxError;
 use crate::utils::{check_alsa_availability, parse_channel_string};
 use crate::writer_thread::{
@@ -40,9 +40,11 @@ pub struct CpalAudioProcessor {
     /// Set by the cpal error callback when the audio stream encounters an error.
     stream_error: Arc<AtomicBool>,
     /// Per-channel peak levels (f32 as u32 bits). Shared with writer thread.
-    peak_levels: Arc<Vec<AtomicU32>>,
+    peak_levels: Arc<Vec<CacheAlignedPeak>>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
     writer_thread: Option<WriterThreadHandle>,
+    /// Whether monitoring mode is active (levels without recording).
+    monitoring: bool,
     /// Test-only: bypass ring buffer and writer thread, write directly.
     #[cfg(test)]
     direct_state: Option<WriterThreadState>,
@@ -102,6 +104,7 @@ impl CpalAudioProcessor {
             stream_error: Arc::new(AtomicBool::new(false)),
             peak_levels: Arc::new(Vec::new()),
             writer_thread: None,
+            monitoring: false,
             #[cfg(test)]
             direct_state: None,
         })
@@ -187,6 +190,11 @@ impl AudioProcessor for CpalAudioProcessor {
         output_mode: &str,
         debug: bool,
     ) -> Result<(), BlackboxError> {
+        // Stop monitoring first if active, so recording seamlessly replaces it
+        if self.monitoring {
+            self.stop_monitoring()?;
+        }
+
         self.channels = channels.to_vec();
         self.output_mode = output_mode.to_string();
         self.debug = debug;
@@ -257,9 +265,9 @@ impl AudioProcessor for CpalAudioProcessor {
         let bits_per_sample = app_config.get_bits_per_sample();
 
         // Create per-channel peak levels for metering
-        let peak_levels: Arc<Vec<AtomicU32>> = Arc::new(
+        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
             (0..actual_channels.len())
-                .map(|_| AtomicU32::new(0))
+                .map(|_| CacheAlignedPeak::new(0))
                 .collect(),
         );
         self.peak_levels = Arc::clone(&peak_levels);
@@ -454,7 +462,7 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn is_recording(&self) -> bool {
-        self.stream.is_some() || self.writer_thread.is_some()
+        !self.monitoring && (self.stream.is_some() || self.writer_thread.is_some())
     }
 
     fn write_error_count(&self) -> u64 {
@@ -472,18 +480,192 @@ impl AudioProcessor for CpalAudioProcessor {
     fn peak_levels(&self) -> Vec<f32> {
         self.peak_levels
             .iter()
-            .map(|a| f32::from_bits(a.load(Ordering::Relaxed)))
+            .map(|a| f32::from_bits(a.value.load(Ordering::Relaxed)))
             .collect()
     }
 
     fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
+
+    fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
+        // If already monitoring, nothing to do
+        if self.monitoring {
+            return Ok(());
+        }
+
+        // Reset counters
+        self.write_errors.store(0, Ordering::Relaxed);
+        self.stream_error.store(false, Ordering::Relaxed);
+
+        let host = cpal::default_host();
+        let app_config = AppConfig::load();
+        let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
+
+        let config = device.default_input_config().map_err(|e| {
+            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
+        })?;
+
+        let total_channels = config.channels() as usize;
+        let sample_rate = config.sample_rate();
+
+        // Determine which channels to monitor
+        let channels_str = app_config.get_audio_channels();
+        let requested_channels = parse_channel_string(&channels_str)?;
+        let mut actual_channels: Vec<usize> = Vec::new();
+        for &channel in &requested_channels {
+            if channel < total_channels {
+                actual_channels.push(channel);
+            }
+        }
+        if actual_channels.is_empty() {
+            actual_channels = (0..total_channels).collect();
+        }
+
+        info!(
+            "Starting audio monitoring on channels: {:?}",
+            actual_channels
+        );
+
+        // Create per-channel peak levels for metering
+        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
+            (0..actual_channels.len())
+                .map(|_| CacheAlignedPeak::new(0))
+                .collect(),
+        );
+        self.peak_levels = Arc::clone(&peak_levels);
+
+        // Create monitor-only writer thread state (no file I/O)
+        let mut state = WriterThreadState::new_monitor(sample_rate, &actual_channels, peak_levels);
+        state.total_device_channels = total_channels;
+
+        // Create ring buffer
+        let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
+        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
+
+        // Monitor mode doesn't need rotation, but writer_thread_main expects it
+        let rotation_needed = Arc::new(AtomicBool::new(false));
+        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+
+        let rotation_needed_writer = Arc::clone(&rotation_needed);
+
+        let join_handle = std::thread::Builder::new()
+            .name("blackbox-monitor".to_string())
+            .spawn(move || {
+                writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
+            })
+            .map_err(|e| {
+                BlackboxError::AudioDevice(format!("Failed to spawn monitor thread: {}", e))
+            })?;
+
+        self.writer_thread = Some(WriterThreadHandle {
+            command_tx,
+            join_handle: Some(join_handle),
+        });
+
+        // Clone write_errors for the callback
+        let write_errors = Arc::clone(&self.write_errors);
+
+        let stream_error = Arc::clone(&self.stream_error);
+        let err_fn = move |err| {
+            error!("an error occurred on stream: {}", err);
+            stream_error.store(true, Ordering::Release);
+        };
+
+        let stream = match config.sample_format() {
+            SampleFormat::F32 => {
+                device
+                    .build_input_stream(
+                        &config.into(),
+                        move |data: &[f32], _: &_| {
+                            if producer.write_chunk_uninit(data.len()).is_ok_and(|chunk| {
+                                chunk.fill_from_iter(data.iter().copied());
+                                true
+                            }) {
+                                // Wrote everything
+                            } else {
+                                let available = producer.slots();
+                                if available > 0
+                                    && let Ok(chunk) = producer.write_chunk_uninit(available)
+                                {
+                                    chunk.fill_from_iter(data[..available].iter().copied());
+                                }
+                                let dropped = data.len() - available;
+                                if dropped > 0 {
+                                    write_errors.fetch_add(dropped as u64, Ordering::Relaxed);
+                                }
+                            }
+                        },
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|e| {
+                        BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
+                    })?
+            }
+            _ => {
+                return Err(BlackboxError::AudioDevice(format!(
+                    "Unsupported sample format: {:?}",
+                    config.sample_format()
+                )));
+            }
+        };
+
+        stream
+            .play()
+            .map_err(|e| BlackboxError::AudioDevice(format!("Failed to play stream: {}", e)))?;
+
+        self.stream = Some(Box::new(stream));
+        self.monitoring = true;
+
+        Ok(())
+    }
+
+    fn stop_monitoring(&mut self) -> Result<(), BlackboxError> {
+        if !self.monitoring {
+            return Ok(());
+        }
+
+        info!("Stopping audio monitoring");
+
+        // Drop stream first
+        self.stream = None;
+
+        // Shut down writer thread
+        if let Some(mut handle) = self.writer_thread.take() {
+            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+            if handle
+                .command_tx
+                .send(WriterCommand::Shutdown(reply_tx))
+                .is_ok()
+            {
+                // Monitor mode finalize is a no-op (no files), but wait for thread
+                if let Ok(_result) = reply_rx.recv_timeout(Duration::from_secs(5))
+                    && let Some(jh) = handle.join_handle.take()
+                {
+                    let _ = jh.join();
+                }
+            }
+        }
+
+        self.monitoring = false;
+        self.peak_levels = Arc::new(Vec::new());
+
+        Ok(())
+    }
+
+    fn is_monitoring(&self) -> bool {
+        self.monitoring
+    }
 }
 
 impl Drop for CpalAudioProcessor {
     fn drop(&mut self) {
-        if self.is_recording()
+        if self.monitoring {
+            if let Err(e) = self.stop_monitoring() {
+                error!("Error stopping monitoring during cleanup: {}", e);
+            }
+        } else if self.is_recording()
             && let Err(e) = self.finalize()
         {
             error!("Error during cleanup: {}", e);
@@ -521,8 +703,11 @@ impl CpalAudioProcessor {
 
         let disk_space_low = Arc::new(AtomicBool::new(false));
 
-        let peak_levels: Arc<Vec<AtomicU32>> =
-            Arc::new((0..channels.len()).map(|_| AtomicU32::new(0)).collect());
+        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
+            (0..channels.len())
+                .map(|_| CacheAlignedPeak::new(0))
+                .collect(),
+        );
 
         let mut state = WriterThreadState::new(
             output_dir,
@@ -553,6 +738,7 @@ impl CpalAudioProcessor {
             stream_error: Arc::new(AtomicBool::new(false)),
             peak_levels,
             writer_thread: None,
+            monitoring: false,
             direct_state: Some(state),
         })
     }

@@ -5,7 +5,7 @@ struct MeterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if recorder.isRecording && !recorder.peakLevels.isEmpty {
+            if (recorder.isRecording || recorder.isMonitoring) && !recorder.peakLevels.isEmpty {
                 ForEach(Array(recorder.peakLevels.enumerated()), id: \.offset) { index, peak in
                     MeterBar(channel: index + 1, peak: peak)
                 }
@@ -17,11 +17,11 @@ struct MeterView: View {
                         Image(systemName: "waveform")
                             .font(.system(size: 32))
                             .foregroundColor(.secondary)
-                        Text("Not recording")
+                        Text("No audio input")
                             .foregroundColor(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Level meter: Not recording")
+                    .accessibilityLabel("Level meter: No audio input")
                     Spacer()
                 }
                 Spacer()

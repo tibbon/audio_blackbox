@@ -46,6 +46,28 @@ final class RustBridge {
         return blackbox_is_recording(handle)
     }
 
+    // MARK: - Monitoring Control
+
+    /// Start audio monitoring (levels without recording). Returns true on success.
+    @discardableResult
+    func startMonitoring() -> Bool {
+        guard let handle = handle else { return false }
+        return blackbox_start_monitoring(handle) == 0
+    }
+
+    /// Stop audio monitoring. Returns true on success.
+    @discardableResult
+    func stopMonitoring() -> Bool {
+        guard let handle = handle else { return false }
+        return blackbox_stop_monitoring(handle) == 0
+    }
+
+    /// Whether audio monitoring is currently active.
+    var isMonitoring: Bool {
+        guard let handle = handle else { return false }
+        return blackbox_is_monitoring(handle)
+    }
+
     // MARK: - Status & Configuration
 
     /// Get the current status as a dictionary.

@@ -252,25 +252,33 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             return std::ptr::null_mut();
         };
 
-        let (is_recording, write_errors, disk_space_low, stream_error, peak_levels, sample_rate) =
-            handle
-                .recorder
-                .lock()
-                .ok()
-                .and_then(|guard| {
-                    guard.as_ref().map(|r| {
-                        let p = r.get_processor();
-                        (
-                            p.is_recording(),
-                            p.write_error_count(),
-                            p.disk_space_low(),
-                            p.stream_error(),
-                            p.peak_levels(),
-                            p.sample_rate(),
-                        )
-                    })
+        let (
+            is_recording,
+            is_monitoring,
+            write_errors,
+            disk_space_low,
+            stream_error,
+            peak_levels,
+            sample_rate,
+        ) = handle
+            .recorder
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard.as_ref().map(|r| {
+                    let p = r.get_processor();
+                    (
+                        p.is_recording(),
+                        p.is_monitoring(),
+                        p.write_error_count(),
+                        p.disk_space_low(),
+                        p.stream_error(),
+                        p.peak_levels(),
+                        p.sample_rate(),
+                    )
                 })
-                .unwrap_or((false, 0, false, false, Vec::new(), 0));
+            })
+            .unwrap_or((false, false, 0, false, false, Vec::new(), 0));
 
         let input_device = handle
             .config
@@ -281,6 +289,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
 
         let status = serde_json::json!({
             "recording": is_recording,
+            "monitoring": is_monitoring,
             "input_device": input_device,
             "write_errors": write_errors,
             "disk_space_low": disk_space_low,
@@ -440,6 +449,111 @@ pub extern "C" fn blackbox_get_peak_levels(
         count as i32
     })
     .unwrap_or(-1)
+}
+
+/// Start audio monitoring (peak levels without recording to disk).
+///
+/// Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`, and begins
+/// monitoring using the current configuration.
+///
+/// Returns 0 on success, -1 on error (retrieve with `blackbox_get_last_error`).
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 {
+    catch_unwind(|| {
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
+        handle.clear_error();
+
+        let config = match handle.config.lock() {
+            Ok(c) => c.clone(),
+            Err(e) => {
+                handle.set_error(format!("Config lock poisoned: {}", e));
+                return -1;
+            }
+        };
+
+        // Create a processor if we don't already have a recorder
+        let mut guard = match handle.recorder.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                handle.set_error(format!("Recorder lock poisoned: {}", e));
+                return -1;
+            }
+        };
+
+        if guard.is_none() {
+            let processor = match CpalAudioProcessor::with_config(&config) {
+                Ok(p) => p,
+                Err(e) => {
+                    handle.set_error(format!("Failed to create audio processor: {}", e));
+                    return -1;
+                }
+            };
+            *guard = Some(AudioRecorder::with_config(processor, config));
+        }
+
+        if let Some(recorder) = guard.as_mut() {
+            if let Err(e) = recorder.processor_mut().start_monitoring() {
+                handle.set_error(format!("Failed to start monitoring: {}", e));
+                return -1;
+            }
+        }
+
+        0
+    })
+    .unwrap_or(-1)
+}
+
+/// Stop audio monitoring.
+///
+/// Returns 0 on success, -1 on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
+    catch_unwind(|| {
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
+        handle.clear_error();
+
+        match handle.recorder.lock() {
+            Ok(mut guard) => {
+                if let Some(recorder) = guard.as_mut() {
+                    if let Err(e) = recorder.processor_mut().stop_monitoring() {
+                        handle.set_error(format!("Failed to stop monitoring: {}", e));
+                        return -1;
+                    }
+                    // If not recording, drop the recorder to release resources
+                    if !recorder.get_processor().is_recording() {
+                        drop(guard.take());
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                handle.set_error(format!("Recorder lock poisoned: {}", e));
+                -1
+            }
+        }
+    })
+    .unwrap_or(-1)
+}
+
+/// Check whether audio monitoring is currently active.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_is_monitoring(handle: *const BlackboxHandle) -> bool {
+    catch_unwind(|| {
+        let Some(handle) = validate_handle(handle) else {
+            return false;
+        };
+        handle
+            .recorder
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().is_monitoring()))
+            .unwrap_or(false)
+    })
+    .unwrap_or(false)
 }
 
 /// Return the current configuration as a JSON string.

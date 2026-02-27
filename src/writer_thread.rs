@@ -1,14 +1,12 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 use log::{error, info, warn};
 
-use crate::constants::{
-    DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, WRITER_THREAD_READ_CHUNK, WavWriterType,
-};
+use crate::constants::{CacheAlignedPeak, MAX_CHANNELS, WRITER_THREAD_READ_CHUNK, WavWriterType};
 use crate::error::BlackboxError;
 use crate::utils::{available_disk_space_mb, is_silent};
 
@@ -75,14 +73,19 @@ pub struct WriterThreadState {
     pub disk_space_low: Arc<AtomicBool>,
     /// When true, writing is paused because disk space is low.
     pub disk_stopped: bool,
-    /// Last time we checked disk space.
-    pub last_disk_check: Instant,
     /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
-    pub peak_levels: Arc<Vec<AtomicU32>>,
+    /// Each element is cache-line-aligned to prevent false sharing with the UI reader thread.
+    pub peak_levels: Arc<Vec<CacheAlignedPeak>>,
     /// Pre-allocated peak accumulator buffer (avoids heap alloc in hot path).
     peak_scratch: Vec<f32>,
     /// Cached scale factor for f32-to-WAV conversion (avoids match per sample).
     sample_scale: f32,
+    /// When true, only track peak levels without writing to disk.
+    pub monitor_only: bool,
+    /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
+    combined_buf: Vec<f32>,
+    /// Iteration counter for amortizing disk space checks (avoids syscall per loop iteration).
+    pub disk_check_counter: u32,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -110,7 +113,7 @@ impl WriterThreadState {
         min_disk_space_mb: u64,
         disk_space_low: Arc<AtomicBool>,
         bits_per_sample: u16,
-        peak_levels: Arc<Vec<AtomicU32>>,
+        peak_levels: Arc<Vec<CacheAlignedPeak>>,
     ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
             fs::create_dir_all(output_dir)?;
@@ -156,10 +159,13 @@ impl WriterThreadState {
             min_disk_space_mb,
             disk_space_low,
             disk_stopped: false,
-            last_disk_check: Instant::now(),
+
             peak_levels,
             peak_scratch: vec![0.0_f32; channels.len()],
             sample_scale,
+            monitor_only: false,
+            combined_buf: Vec::new(),
+            disk_check_counter: 0,
         };
 
         // Set up writers based on output mode
@@ -176,6 +182,50 @@ impl WriterThreadState {
         }
 
         Ok(state)
+    }
+
+    /// Create a monitor-only `WriterThreadState` that tracks peak levels without writing files.
+    pub fn new_monitor(
+        sample_rate: u32,
+        channels: &[usize],
+        peak_levels: Arc<Vec<CacheAlignedPeak>>,
+    ) -> Self {
+        let sample_scale = match 24_u16 {
+            16 => f32::from(i16::MAX),
+            24 => 8_388_607.0_f32,
+            _ => i32::MAX as f32,
+        };
+
+        WriterThreadState {
+            output_mode: String::new(),
+            channels: channels.to_vec(),
+            total_device_channels: 0,
+            output_dir: String::new(),
+            sample_rate,
+            bits_per_sample: 24,
+            current_spec: hound::WavSpec {
+                channels: 1,
+                sample_rate,
+                bits_per_sample: 24,
+                sample_format: hound::SampleFormat::Int,
+            },
+            writer: None,
+            multichannel_writers: Vec::new(),
+            pending_files: Vec::new(),
+            silence_threshold: 0.0,
+            write_errors: Arc::new(AtomicU64::new(0)),
+            frame_remainder: Vec::new(),
+            min_disk_space_mb: 0,
+            disk_space_low: Arc::new(AtomicBool::new(false)),
+            disk_stopped: false,
+
+            peak_levels,
+            peak_scratch: vec![0.0_f32; channels.len()],
+            sample_scale,
+            monitor_only: true,
+            combined_buf: Vec::new(),
+            disk_check_counter: 0,
+        }
     }
 
     fn setup_split_mode(&mut self) -> Result<(), BlackboxError> {
@@ -284,17 +334,22 @@ impl WriterThreadState {
 
     /// Check available disk space and stop writing if below threshold.
     /// Returns true if writing should continue, false if disk is low.
+    ///
+    /// Uses an iteration counter to amortize the cost: only performs the actual
+    /// `statvfs` syscall every 10,000 calls (~4 seconds at typical throughput),
+    /// avoiding a `clock_gettime` syscall on every writer thread loop iteration.
     pub fn check_disk_space(&mut self) -> bool {
-        if self.min_disk_space_mb == 0 || self.disk_stopped {
+        if self.monitor_only || self.min_disk_space_mb == 0 || self.disk_stopped {
             return !self.disk_stopped;
         }
 
-        let now = Instant::now();
-        if now.duration_since(self.last_disk_check) < Duration::from_secs(DISK_CHECK_INTERVAL_SECS)
-        {
+        // Check every 10,000 iterations (~4 seconds at typical throughput)
+        // instead of calling Instant::now() every iteration.
+        self.disk_check_counter += 1;
+        if self.disk_check_counter < 10_000 {
             return true;
         }
-        self.last_disk_check = now;
+        self.disk_check_counter = 0;
 
         if let Some(available_mb) = available_disk_space_mb(&self.output_dir)
             && available_mb < self.min_disk_space_mb
@@ -325,14 +380,15 @@ impl WriterThreadState {
             return;
         }
 
-        // Prepend any leftover samples from the previous call
-        let combined: Vec<f32>;
+        // Prepend any leftover samples from the previous call using a pre-allocated buffer
         let work_data: &[f32] = if self.frame_remainder.is_empty() {
             data
         } else {
-            combined = [self.frame_remainder.as_slice(), data].concat();
+            self.combined_buf.clear();
+            self.combined_buf.extend_from_slice(&self.frame_remainder);
+            self.combined_buf.extend_from_slice(data);
             self.frame_remainder.clear();
-            &combined
+            &self.combined_buf
         };
 
         let frame_size = self.total_device_channels;
@@ -354,55 +410,58 @@ impl WriterThreadState {
         // Cache scale factor on the stack for the inner loop
         let scale = self.sample_scale;
 
-        match self.output_mode.as_str() {
-            "split" => {
-                for frame in frame_data.chunks(frame_size) {
-                    for (idx, &channel) in self.channels.iter().enumerate() {
-                        if channel < frame.len() {
-                            let s = frame[channel];
-                            let abs = s.abs();
-                            if abs > self.peak_scratch[idx] {
-                                self.peak_scratch[idx] = abs;
-                            }
-                            if let Some(w) = &mut self.multichannel_writers[idx]
-                                && w.write_sample((s * scale) as i32).is_err()
-                            {
-                                self.write_errors.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
+        if self.monitor_only {
+            // Monitor mode: only track peaks, no disk writes
+            for frame in frame_data.chunks(frame_size) {
+                for (idx, &channel) in self.channels.iter().enumerate() {
+                    if channel < frame.len() {
+                        let abs = frame[channel].abs();
+                        self.peak_scratch[idx] = self.peak_scratch[idx].max(abs);
                     }
                 }
             }
-            "single" if self.channels.len() > 2 => {
-                if let Some(w) = &mut self.writer {
+        } else {
+            match self.output_mode.as_str() {
+                "split" => {
                     for frame in frame_data.chunks(frame_size) {
                         for (idx, &channel) in self.channels.iter().enumerate() {
                             if channel < frame.len() {
                                 let s = frame[channel];
-                                let abs = s.abs();
-                                if abs > self.peak_scratch[idx] {
-                                    self.peak_scratch[idx] = abs;
-                                }
-                                if w.write_sample((s * scale) as i32).is_err() {
+                                self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                if let Some(w) = &mut self.multichannel_writers[idx]
+                                    && w.write_sample((s * scale) as i32).is_err()
+                                {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
                         }
                     }
                 }
-            }
-            _ => {
-                if let Some(w) = &mut self.writer {
-                    for frame in frame_data.chunks(frame_size) {
-                        for (idx, &channel) in self.channels.iter().enumerate() {
-                            if channel < frame.len() {
-                                let s = frame[channel];
-                                let abs = s.abs();
-                                if abs > self.peak_scratch[idx] {
-                                    self.peak_scratch[idx] = abs;
+                "single" if self.channels.len() > 2 => {
+                    if let Some(w) = &mut self.writer {
+                        for frame in frame_data.chunks(frame_size) {
+                            for (idx, &channel) in self.channels.iter().enumerate() {
+                                if channel < frame.len() {
+                                    let s = frame[channel];
+                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                    if w.write_sample((s * scale) as i32).is_err() {
+                                        self.write_errors.fetch_add(1, Ordering::Relaxed);
+                                    }
                                 }
-                                if w.write_sample((s * scale) as i32).is_err() {
-                                    self.write_errors.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(w) = &mut self.writer {
+                        for frame in frame_data.chunks(frame_size) {
+                            for (idx, &channel) in self.channels.iter().enumerate() {
+                                if channel < frame.len() {
+                                    let s = frame[channel];
+                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                    if w.write_sample((s * scale) as i32).is_err() {
+                                        self.write_errors.fetch_add(1, Ordering::Relaxed);
+                                    }
                                 }
                             }
                         }
@@ -414,7 +473,9 @@ impl WriterThreadState {
         // Publish peaks to shared atomics
         for (idx, &peak) in self.peak_scratch.iter().enumerate() {
             if idx < self.peak_levels.len() {
-                self.peak_levels[idx].store(peak.to_bits(), Ordering::Relaxed);
+                self.peak_levels[idx]
+                    .value
+                    .store(peak.to_bits(), Ordering::Relaxed);
             }
         }
     }

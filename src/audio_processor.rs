@@ -44,4 +44,19 @@ pub trait AudioProcessor {
     fn sample_rate(&self) -> u32 {
         0
     }
+
+    /// Start monitoring audio levels without recording to disk.
+    fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
+        Ok(())
+    }
+
+    /// Stop monitoring audio levels.
+    fn stop_monitoring(&mut self) -> Result<(), BlackboxError> {
+        Ok(())
+    }
+
+    /// Whether audio monitoring is currently active.
+    fn is_monitoring(&self) -> bool {
+        false
+    }
 }

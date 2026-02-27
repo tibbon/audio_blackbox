@@ -87,6 +87,23 @@ int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
 int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
 
 /*
+ * Start audio monitoring (peak levels without recording to disk).
+ * Returns 0 on success, -1 on error.
+ */
+int32_t blackbox_start_monitoring(BlackboxHandle *handle);
+
+/*
+ * Stop audio monitoring.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t blackbox_stop_monitoring(BlackboxHandle *handle);
+
+/*
+ * Check whether audio monitoring is currently active.
+ */
+bool blackbox_is_monitoring(const BlackboxHandle *handle);
+
+/*
  * Return the current configuration as a JSON string.
  * Caller must free the returned string with blackbox_free_string().
  * Returns NULL on failure.

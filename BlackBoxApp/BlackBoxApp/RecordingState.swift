@@ -8,6 +8,7 @@ import os.log
 @MainActor
 final class RecordingState: ObservableObject {
     @Published var isRecording = false
+    @Published var isMonitoring = false
     @Published var statusText = "Ready"
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
@@ -17,8 +18,14 @@ final class RecordingState: ObservableObject {
         didSet {
             if isMeterWindowOpen {
                 startMeterTimer()
+                if !isRecording {
+                    startMonitoring()
+                }
             } else {
                 stopMeterTimer()
+                if isMonitoring {
+                    stopMonitoring()
+                }
             }
         }
     }
@@ -90,6 +97,11 @@ final class RecordingState: ObservableObject {
     }
 
     private func startRecordingInternal() {
+        // Stop monitoring first — recording will take over the audio stream
+        if isMonitoring {
+            stopMonitoring()
+        }
+
         if bridge.startRecording() {
             isRecording = true
             recordingStartTime = Date()
@@ -102,6 +114,30 @@ final class RecordingState: ObservableObject {
             errorMessage = err
             statusText = "Error"
             Self.log.error("Failed to start recording: \(err)")
+        }
+    }
+
+    // MARK: - Monitoring
+
+    func startMonitoring() {
+        checkMicrophonePermission { [weak self] granted in
+            guard let self else { return }
+            if granted {
+                if self.bridge.startMonitoring() {
+                    self.isMonitoring = true
+                    Self.log.info("Audio monitoring started")
+                } else {
+                    Self.log.error("Failed to start monitoring: \(self.bridge.lastError ?? "unknown")")
+                }
+            }
+        }
+    }
+
+    func stopMonitoring() {
+        if bridge.stopMonitoring() {
+            isMonitoring = false
+            peakLevels = []
+            Self.log.info("Audio monitoring stopped")
         }
     }
 
@@ -161,6 +197,11 @@ final class RecordingState: ObservableObject {
             peakLevels = []
             statusText = "Ready"
             Self.log.info("Recording stopped")
+
+            // Resume monitoring if the meter window is still open
+            if isMeterWindowOpen {
+                startMonitoring()
+            }
         } else {
             let err = bridge.lastError ?? "Failed to stop recording"
             errorMessage = err
@@ -278,7 +319,7 @@ final class RecordingState: ObservableObject {
     }
 
     private func updatePeakLevels() {
-        guard isRecording else {
+        guard isRecording || isMonitoring else {
             peakLevels = []
             return
         }

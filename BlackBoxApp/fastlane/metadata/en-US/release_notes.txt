@@ -1,7 +1,5 @@
-- Improved onboarding experience with step-by-step setup wizard
-- Channel selection now uses checkboxes with hardware detection
-- Settings auto-apply on change (no more manual save)
-- 1-based channel numbering for clarity
-- Configurable global keyboard shortcut
-- Real-time level meter window
-- Various UI improvements and bug fixes
+- Level meter now shows live audio levels before recording starts
+- Open the Level Meter window to preview signal and verify your device/channels
+- Monitoring auto-starts when the meter opens and stops when you close it
+- Recording seamlessly takes over from monitoring, and monitoring resumes when you stop
+- Various bug fixes and improvements

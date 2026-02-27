@@ -28,7 +28,7 @@ platform :mac do
       project: "BlackBoxApp.xcodeproj",
       scheme: "BlackBoxApp",
       configuration: "Release",
-      export_method: "app-store-connect",
+      export_method: "app-store",
       export_options: {
         signingStyle: "automatic",
         teamID: "FB8QBNNT6D",
@@ -85,6 +85,7 @@ platform :mac do
       skip_screenshots: true,
       submit_for_review: true,
       automatic_release: false,
+      precheck_include_in_app_purchases: false,
       submission_information: {
         add_id_info_uses_idfa: false
       }
