@@ -285,7 +285,7 @@ impl AudioProcessor for CpalAudioProcessor {
             bits_per_sample,
             peak_levels,
         )?;
-        state.total_device_channels = total_channels;
+        state.total_device_channels = total_channels as u16;
 
         // Create ring buffer
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
@@ -537,7 +537,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Create monitor-only writer thread state (no file I/O)
         let mut state = WriterThreadState::new_monitor(sample_rate, &actual_channels, peak_levels);
-        state.total_device_channels = total_channels;
+        state.total_device_channels = total_channels as u16;
 
         // Create ring buffer
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
@@ -746,7 +746,7 @@ impl CpalAudioProcessor {
     /// Feed interleaved f32 audio data as if it came from a cpal callback.
     pub fn feed_test_data(&mut self, data: &[f32], total_device_channels: usize) {
         if let Some(ref mut state) = self.direct_state {
-            state.total_device_channels = total_device_channels;
+            state.total_device_channels = total_device_channels as u16;
             state.write_samples(data);
         }
     }

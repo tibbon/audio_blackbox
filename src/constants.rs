@@ -45,5 +45,36 @@ impl CacheAlignedPeak {
     }
 }
 
+/// Output mode for recording.
+///
+/// Stored as a 1-byte enum instead of a heap-allocated `String` so the hot-path
+/// match in `write_samples()` compiles to a jump table (single integer comparison)
+/// rather than a string comparison per frame chunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputMode {
+    /// Single file: mono/stereo for ≤2 channels, interleaved multichannel for >2.
+    Single,
+    /// One WAV file per channel.
+    Split,
+}
+
+impl OutputMode {
+    /// Parse from a config string. Returns `None` for invalid values.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "single" => Some(Self::Single),
+            "split" => Some(Self::Split),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Single => "single",
+            Self::Split => "split",
+        }
+    }
+}
+
 // Type definitions to make complex types more readable
 pub type WavWriterType = hound::WavWriter<BufWriter<File>>;

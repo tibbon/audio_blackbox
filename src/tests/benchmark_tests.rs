@@ -101,7 +101,7 @@ fn benchmark_direct_write_throughput() {
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
             )
             .unwrap();
-            state.total_device_channels = ch_count;
+            state.total_device_channels = ch_count as u16;
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -198,7 +198,7 @@ fn benchmark_split_mode_throughput() {
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
             )
             .unwrap();
-            state.total_device_channels = ch_count;
+            state.total_device_channels = ch_count as u16;
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -280,7 +280,7 @@ fn benchmark_ring_buffer_pipeline() {
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
             )
             .unwrap();
-            state.total_device_channels = ch_count;
+            state.total_device_channels = ch_count as u16;
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
             let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -391,7 +391,7 @@ fn benchmark_rotation_overhead() {
                     Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
                 )
                 .unwrap();
-                state.total_device_channels = ch_count;
+                state.total_device_channels = ch_count as u16;
 
                 // Write some data first so the files have content
                 let data = generate_bench_data(ch_count, sample_rate as usize * 5);
@@ -466,7 +466,7 @@ fn benchmark_monitor_vs_recording() {
                 &(0..ch_count).collect::<Vec<_>>(),
                 peak_levels,
             );
-            monitor_state.total_device_channels = ch_count;
+            monitor_state.total_device_channels = ch_count as u16;
 
             // Warm up
             let warmup = generate_bench_data(ch_count, 1000);
@@ -497,7 +497,7 @@ fn benchmark_monitor_vs_recording() {
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
             )
             .unwrap();
-            record_state.total_device_channels = ch_count;
+            record_state.total_device_channels = ch_count as u16;
 
             // Warm up
             record_state.write_samples(&warmup);
@@ -566,7 +566,7 @@ fn benchmark_monitor_pipeline() {
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
             let mut state =
                 WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-            state.total_device_channels = ch_count;
+            state.total_device_channels = ch_count as u16;
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
             let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -672,7 +672,7 @@ fn benchmark_write_samples_overhead() {
             &(0..ch_count).collect::<Vec<_>>(),
             peak_levels,
         );
-        monitor_state.total_device_channels = ch_count;
+        monitor_state.total_device_channels = ch_count as u16;
 
         let warmup = generate_bench_data(ch_count, 1000);
         monitor_state.write_samples(&warmup);
@@ -702,7 +702,7 @@ fn benchmark_write_samples_overhead() {
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
         )
         .unwrap();
-        record_state.total_device_channels = ch_count;
+        record_state.total_device_channels = ch_count as u16;
 
         record_state.write_samples(&warmup);
 
@@ -781,7 +781,7 @@ fn benchmark_ring_buffer_latency() {
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
         )
         .unwrap();
-        state.total_device_channels = total_channels;
+        state.total_device_channels = total_channels as u16;
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -890,7 +890,7 @@ fn benchmark_monitor_cpu_idle() {
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
         let mut state =
             WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-        state.total_device_channels = total_channels;
+        state.total_device_channels = total_channels as u16;
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);

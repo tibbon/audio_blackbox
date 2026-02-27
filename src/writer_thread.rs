@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 
-use crate::constants::{CacheAlignedPeak, MAX_CHANNELS, WRITER_THREAD_READ_CHUNK, WavWriterType};
+use crate::constants::{
+    CacheAlignedPeak, MAX_CHANNELS, OutputMode, WRITER_THREAD_READ_CHUNK, WavWriterType,
+};
 use crate::error::BlackboxError;
 use crate::utils::{available_disk_space_mb, is_silent};
 
@@ -53,39 +55,51 @@ pub struct WriterThreadHandle {
 // ---------------------------------------------------------------------------
 
 pub struct WriterThreadState {
-    pub output_mode: String,
-    pub channels: Vec<usize>,
-    pub total_device_channels: usize,
-    pub output_dir: String,
-    pub sample_rate: u32,
-    pub bits_per_sample: u16,
-    pub current_spec: hound::WavSpec,
-    pub writer: Option<WavWriterType>,
-    pub multichannel_writers: Vec<Option<WavWriterType>>,
-    pub pending_files: Vec<(String, String)>,
-    pub silence_threshold: f32,
-    pub write_errors: Arc<AtomicU64>,
-    /// Partial frames carried over between ring buffer reads.
-    frame_remainder: Vec<f32>,
-    /// Minimum free disk space in MB before stopping writes (0 = disabled).
-    pub min_disk_space_mb: u64,
-    /// Shared flag: set when disk space drops below threshold.
-    pub disk_space_low: Arc<AtomicBool>,
-    /// When true, writing is paused because disk space is low.
-    pub disk_stopped: bool,
-    /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
-    /// Each element is cache-line-aligned to prevent false sharing with the UI reader thread.
-    pub peak_levels: Arc<Vec<CacheAlignedPeak>>,
-    /// Pre-allocated peak accumulator buffer (avoids heap alloc in hot path).
-    peak_scratch: Vec<f32>,
+    // --- Hot fields: accessed every write_samples() call, grouped for cache locality ---
     /// Cached scale factor for f32-to-WAV conversion (avoids match per sample).
     sample_scale: f32,
     /// When true, only track peak levels without writing to disk.
     pub monitor_only: bool,
+    /// When true, writing is paused because disk space is low.
+    pub disk_stopped: bool,
+    /// Output mode as a 1-byte enum — eliminates string comparison in the hot-path match.
+    pub output_mode: OutputMode,
+    /// Number of active channels (indexes into `channels` array).
+    pub channel_count: u8,
+    /// Total interleaved channels from the audio device.
+    pub total_device_channels: u16,
+    /// Iteration counter for amortizing disk space checks (avoids syscall per loop iteration).
+    pub disk_check_counter: u16,
+    /// Channel indices as a fixed inline array — no heap indirection, always in cache.
+    /// Only the first `channel_count` entries are valid.
+    pub channels: [u8; MAX_CHANNELS],
+    /// Per-frame peak accumulator — fixed inline array, no heap pointer chase.
+    /// Only the first `channel_count` entries are used.
+    peak_scratch: [f32; MAX_CHANNELS],
+
+    // --- Warm fields: accessed frequently but not per-sample ---
+    pub writer: Option<WavWriterType>,
+    pub multichannel_writers: Vec<Option<WavWriterType>>,
+    pub write_errors: Arc<AtomicU64>,
+    /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
+    /// Each element is cache-line-aligned to prevent false sharing with the UI reader thread.
+    pub peak_levels: Arc<Vec<CacheAlignedPeak>>,
+    /// Partial frames carried over between ring buffer reads.
+    frame_remainder: Vec<f32>,
     /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
     combined_buf: Vec<f32>,
-    /// Iteration counter for amortizing disk space checks (avoids syscall per loop iteration).
-    pub disk_check_counter: u32,
+
+    // --- Cold fields: only accessed during setup, rotation, or shutdown ---
+    pub output_dir: String,
+    pub sample_rate: u32,
+    pub bits_per_sample: u16,
+    pub current_spec: hound::WavSpec,
+    pub pending_files: Vec<(String, String)>,
+    pub silence_threshold: f32,
+    /// Minimum free disk space in MB before stopping writes (0 = disabled).
+    pub min_disk_space_mb: u64,
+    /// Shared flag: set when disk space drops below threshold.
+    pub disk_space_low: Arc<AtomicBool>,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -131,16 +145,39 @@ impl WriterThreadState {
             ))));
         }
 
+        let mode = OutputMode::parse(output_mode).ok_or_else(|| {
+            BlackboxError::Config(format!("Invalid output mode: '{}'", output_mode))
+        })?;
+
         let sample_scale = match bits_per_sample {
             16 => f32::from(i16::MAX),
             24 => 8_388_607.0_f32,
             _ => i32::MAX as f32,
         };
 
+        // Pack channel indices into a fixed inline array (u8 fits MAX_CHANNELS=64)
+        let mut ch_arr = [0_u8; MAX_CHANNELS];
+        let channel_count = channels.len().min(MAX_CHANNELS);
+        for (i, &ch) in channels.iter().take(MAX_CHANNELS).enumerate() {
+            ch_arr[i] = ch as u8;
+        }
+
         let mut state = WriterThreadState {
-            output_mode: output_mode.to_string(),
-            channels: channels.to_vec(),
+            sample_scale,
+            monitor_only: false,
+            disk_stopped: false,
+            output_mode: mode,
+            channel_count: channel_count as u8,
             total_device_channels: 0, // set by caller or process_audio
+            disk_check_counter: 0,
+            channels: ch_arr,
+            peak_scratch: [0.0_f32; MAX_CHANNELS],
+            writer: None,
+            multichannel_writers: Vec::new(),
+            write_errors,
+            peak_levels,
+            frame_remainder: Vec::new(),
+            combined_buf: Vec::new(),
             output_dir: output_dir.to_string(),
             sample_rate,
             bits_per_sample,
@@ -150,35 +187,17 @@ impl WriterThreadState {
                 bits_per_sample,
                 sample_format: hound::SampleFormat::Int,
             },
-            writer: None,
-            multichannel_writers: Vec::new(),
             pending_files: Vec::new(),
             silence_threshold,
-            write_errors,
-            frame_remainder: Vec::new(),
             min_disk_space_mb,
             disk_space_low,
-            disk_stopped: false,
-
-            peak_levels,
-            peak_scratch: vec![0.0_f32; channels.len()],
-            sample_scale,
-            monitor_only: false,
-            combined_buf: Vec::new(),
-            disk_check_counter: 0,
         };
 
         // Set up writers based on output mode
-        match output_mode {
-            "split" => state.setup_split_mode()?,
-            "single" if channels.len() <= 2 => state.setup_standard_mode()?,
-            "single" => state.setup_multichannel_mode()?,
-            other => {
-                return Err(BlackboxError::Config(format!(
-                    "Invalid output mode: '{}'",
-                    other
-                )));
-            }
+        match mode {
+            OutputMode::Split => state.setup_split_mode()?,
+            OutputMode::Single if channels.len() <= 2 => state.setup_standard_mode()?,
+            OutputMode::Single => state.setup_multichannel_mode()?,
         }
 
         Ok(state)
@@ -196,10 +215,29 @@ impl WriterThreadState {
             _ => i32::MAX as f32,
         };
 
+        // Pack channel indices into inline array
+        let mut ch_arr = [0_u8; MAX_CHANNELS];
+        let channel_count = channels.len().min(MAX_CHANNELS);
+        for (i, &ch) in channels.iter().take(MAX_CHANNELS).enumerate() {
+            ch_arr[i] = ch as u8;
+        }
+
         WriterThreadState {
-            output_mode: String::new(),
-            channels: channels.to_vec(),
+            sample_scale,
+            monitor_only: true,
+            disk_stopped: false,
+            output_mode: OutputMode::Single, // unused in monitor mode
+            channel_count: channel_count as u8,
             total_device_channels: 0,
+            disk_check_counter: 0,
+            channels: ch_arr,
+            peak_scratch: [0.0_f32; MAX_CHANNELS],
+            writer: None,
+            multichannel_writers: Vec::new(),
+            write_errors: Arc::new(AtomicU64::new(0)),
+            peak_levels,
+            frame_remainder: Vec::new(),
+            combined_buf: Vec::new(),
             output_dir: String::new(),
             sample_rate,
             bits_per_sample: 24,
@@ -209,39 +247,25 @@ impl WriterThreadState {
                 bits_per_sample: 24,
                 sample_format: hound::SampleFormat::Int,
             },
-            writer: None,
-            multichannel_writers: Vec::new(),
             pending_files: Vec::new(),
             silence_threshold: 0.0,
-            write_errors: Arc::new(AtomicU64::new(0)),
-            frame_remainder: Vec::new(),
             min_disk_space_mb: 0,
             disk_space_low: Arc::new(AtomicBool::new(false)),
-            disk_stopped: false,
-
-            peak_levels,
-            peak_scratch: vec![0.0_f32; channels.len()],
-            sample_scale,
-            monitor_only: true,
-            combined_buf: Vec::new(),
-            disk_check_counter: 0,
         }
     }
 
     fn setup_split_mode(&mut self) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
+        let ch_count = self.channel_count as usize;
 
-        info!(
-            "Setting up split mode with {} channels",
-            self.channels.len()
-        );
+        info!("Setting up split mode with {} channels", ch_count);
 
         self.multichannel_writers.clear();
         for _ in 0..MAX_CHANNELS {
             self.multichannel_writers.push(None);
         }
 
-        for (idx, &channel) in self.channels.iter().enumerate() {
+        for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
             let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
             let tmp_path = tmp_wav_path(&final_path);
 
@@ -273,17 +297,15 @@ impl WriterThreadState {
 
     fn setup_multichannel_mode(&mut self) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
+        let ch_count = self.channel_count as usize;
 
         let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
         let tmp_path = tmp_wav_path(&final_path);
 
-        info!(
-            "Setting up multichannel mode with {} channels",
-            self.channels.len()
-        );
+        info!("Setting up multichannel mode with {} channels", ch_count);
 
         let spec = hound::WavSpec {
-            channels: self.channels.len() as u16,
+            channels: self.channel_count as u16,
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
             sample_format: hound::SampleFormat::Int,
@@ -303,13 +325,11 @@ impl WriterThreadState {
 
     fn setup_standard_mode(&mut self) -> Result<(), BlackboxError> {
         let date_str = timestamp_now();
+        let ch_count = self.channel_count as usize;
 
-        info!(
-            "Setting up standard mode with {} channels",
-            self.channels.len()
-        );
+        info!("Setting up standard mode with {} channels", ch_count);
 
-        let num_channels = if self.channels.len() == 1 { 1 } else { 2 };
+        let num_channels = if ch_count == 1 { 1 } else { 2 };
 
         let final_path = format!("{}/{}.wav", self.output_dir, date_str);
         let tmp_path = tmp_wav_path(&final_path);
@@ -391,7 +411,7 @@ impl WriterThreadState {
             &self.combined_buf
         };
 
-        let frame_size = self.total_device_channels;
+        let frame_size = self.total_device_channels as usize;
         let full_frames = work_data.len() / frame_size;
         let used = full_frames * frame_size;
 
@@ -410,23 +430,28 @@ impl WriterThreadState {
         // Cache scale factor on the stack for the inner loop
         let scale = self.sample_scale;
 
+        let ch_count = self.channel_count as usize;
+        let ch_slice = &self.channels[..ch_count];
+
         if self.monitor_only {
             // Monitor mode: only track peaks, no disk writes
             for frame in frame_data.chunks(frame_size) {
-                for (idx, &channel) in self.channels.iter().enumerate() {
-                    if channel < frame.len() {
-                        let abs = frame[channel].abs();
+                for (idx, &channel) in ch_slice.iter().enumerate() {
+                    let ch = channel as usize;
+                    if ch < frame.len() {
+                        let abs = frame[ch].abs();
                         self.peak_scratch[idx] = self.peak_scratch[idx].max(abs);
                     }
                 }
             }
         } else {
-            match self.output_mode.as_str() {
-                "split" => {
+            match self.output_mode {
+                OutputMode::Split => {
                     for frame in frame_data.chunks(frame_size) {
-                        for (idx, &channel) in self.channels.iter().enumerate() {
-                            if channel < frame.len() {
-                                let s = frame[channel];
+                        for (idx, &channel) in ch_slice.iter().enumerate() {
+                            let ch = channel as usize;
+                            if ch < frame.len() {
+                                let s = frame[ch];
                                 self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                 if let Some(w) = &mut self.multichannel_writers[idx]
                                     && w.write_sample((s * scale) as i32).is_err()
@@ -437,12 +462,13 @@ impl WriterThreadState {
                         }
                     }
                 }
-                "single" if self.channels.len() > 2 => {
+                OutputMode::Single if ch_count > 2 => {
                     if let Some(w) = &mut self.writer {
                         for frame in frame_data.chunks(frame_size) {
-                            for (idx, &channel) in self.channels.iter().enumerate() {
-                                if channel < frame.len() {
-                                    let s = frame[channel];
+                            for (idx, &channel) in ch_slice.iter().enumerate() {
+                                let ch = channel as usize;
+                                if ch < frame.len() {
+                                    let s = frame[ch];
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                     if w.write_sample((s * scale) as i32).is_err() {
                                         self.write_errors.fetch_add(1, Ordering::Relaxed);
@@ -452,12 +478,13 @@ impl WriterThreadState {
                         }
                     }
                 }
-                _ => {
+                OutputMode::Single => {
                     if let Some(w) = &mut self.writer {
                         for frame in frame_data.chunks(frame_size) {
-                            for (idx, &channel) in self.channels.iter().enumerate() {
-                                if channel < frame.len() {
-                                    let s = frame[channel];
+                            for (idx, &channel) in ch_slice.iter().enumerate() {
+                                let ch = channel as usize;
+                                if ch < frame.len() {
+                                    let s = frame[ch];
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                     if w.write_sample((s * scale) as i32).is_err() {
                                         self.write_errors.fetch_add(1, Ordering::Relaxed);
@@ -470,8 +497,8 @@ impl WriterThreadState {
             }
         }
 
-        // Publish peaks to shared atomics
-        for (idx, &peak) in self.peak_scratch.iter().enumerate() {
+        // Publish peaks to shared atomics (only active channels, not full array)
+        for (idx, &peak) in self.peak_scratch[..ch_count].iter().enumerate() {
             if idx < self.peak_levels.len() {
                 self.peak_levels[idx]
                     .value
@@ -529,9 +556,10 @@ impl WriterThreadState {
         }
 
         // Create new files for the next recording period
-        match self.output_mode.as_str() {
-            "split" => {
-                for (idx, &channel) in self.channels.iter().enumerate() {
+        let ch_count = self.channel_count as usize;
+        match self.output_mode {
+            OutputMode::Split => {
+                for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
                     let final_path =
                         format!("{}/{}-ch{}.wav", self.output_dir, timestamp_now(), channel);
                     let tmp = tmp_wav_path(&final_path);
@@ -553,12 +581,12 @@ impl WriterThreadState {
                     }
                 }
             }
-            "single" if self.channels.len() > 2 => {
+            OutputMode::Single if ch_count > 2 => {
                 let final_path =
                     format!("{}/{}-multichannel.wav", self.output_dir, timestamp_now());
                 let tmp = tmp_wav_path(&final_path);
                 let spec = hound::WavSpec {
-                    channels: self.channels.len() as u16,
+                    channels: self.channel_count as u16,
                     sample_rate: self.sample_rate,
                     bits_per_sample: self.bits_per_sample,
                     sample_format: hound::SampleFormat::Int,
@@ -574,7 +602,7 @@ impl WriterThreadState {
                     }
                 }
             }
-            _ => {
+            OutputMode::Single => {
                 let final_path = format!("{}/{}.wav", self.output_dir, timestamp_now());
                 let tmp = tmp_wav_path(&final_path);
                 match hound::WavWriter::create(&tmp, self.current_spec) {
