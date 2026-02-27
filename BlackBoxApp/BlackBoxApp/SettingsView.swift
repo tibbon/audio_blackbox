@@ -99,7 +99,7 @@ struct RecordingSettingsTab: View {
                 .onChange(of: bitDepth) { _ in applyConfig() }
                 .accessibilityLabel("Bit depth")
                 .accessibilityHint("Select the bit depth for WAV recordings")
-                Text("24-bit is the professional standard. 16-bit saves space. 32-bit only offers additional quality in specialized circumstances and should generally not be used.")
+                Text("24-bit is the professional standard. 16-bit saves space. 32-bit float offers maximum precision with larger files.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -131,6 +131,14 @@ struct RecordingSettingsTab: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    }
+
+                    if abs(silenceThreshold - 0.01) > 0.001 {
+                        Button("Reset to Default") {
+                            silenceThreshold = 0.01
+                            applyConfig()
+                        }
+                        .font(.caption)
                     }
                 }
             }
