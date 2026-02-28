@@ -46,6 +46,7 @@ struct OnboardingView: View {
                     directoryStep
                 }
             }
+            .transition(.opacity)
             .frame(maxWidth: .infinity)
 
             Spacer()
@@ -54,25 +55,31 @@ struct OnboardingView: View {
             HStack {
                 if step > 0 {
                     Button("Back") {
-                        step -= 1
+                        withAnimation { step -= 1 }
                     }
+                } else {
+                    Button("Skip Setup") {
+                        skipOnboarding()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
                 Spacer()
                 switch step {
                 case 0:
                     Button("Get Started") {
-                        step = 1
+                        withAnimation { step = 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                 case 1:
                     Button("Continue") {
-                        step += 1
+                        withAnimation { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!micGranted && !micDenied)
                 case 2:
                     Button("Continue") {
-                        step += 1
+                        withAnimation { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                 default:
@@ -89,6 +96,7 @@ struct OnboardingView: View {
         .frame(width: 460, height: 380)
         .onAppear {
             outputDir = defaultDir.path
+            chosenURL = defaultDir
             checkMicStatus()
         }
     }
@@ -156,6 +164,14 @@ struct OnboardingView: View {
 
     private var directoryStep: some View {
         VStack(spacing: 16) {
+            if micDenied {
+                Label("Microphone access denied \u{2014} recording won't work until you grant access in System Settings.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+                    .frame(maxWidth: 360)
+            }
+
             Image(systemName: "folder.circle.fill")
                 .font(.system(size: 56))
                 .foregroundColor(.accentColor)
@@ -186,6 +202,13 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: 360)
 
+            Button("Use Default Location") {
+                chosenURL = defaultDir
+                outputDir = defaultDir.path
+            }
+            .font(.caption)
+            .accessibilityHint("Saves recordings to ~/Music/BlackBox Recordings")
+
             if chosenURL == nil {
                 Text("Select a folder to continue. BlackBox will create it if it doesn't exist.")
                     .font(.caption)
@@ -206,25 +229,25 @@ struct OnboardingView: View {
                 .foregroundColor(.accentColor)
                 .accessibilityHidden(true)
 
-            Text("Recording Mode")
+            Text("Safety Saves")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("How should BlackBox handle long recordings?")
+            Text("How should BlackBox protect your recordings?")
                 .foregroundColor(.secondary)
 
             VStack(spacing: 12) {
                 recordingModeOption(
-                    title: "Continuous (Recommended)",
-                    description: "Automatically saves and starts a new file every hour. No audio is lost if the app closes unexpectedly.",
+                    title: "Automatic Safety Saves (Recommended)",
+                    description: "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly.",
                     isSelected: continuousMode
                 ) {
                     continuousMode = true
                 }
 
                 recordingModeOption(
-                    title: "Single Session",
-                    description: "Records into one file until you stop. Simpler, but you lose unsaved audio if the app quits.",
+                    title: "Manual Saves Only",
+                    description: "Records into one file until you stop. Simpler, but unsaved audio is lost if the app quits.",
                     isSelected: !continuousMode
                 ) {
                     continuousMode = false
@@ -270,6 +293,8 @@ struct OnboardingView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(description)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
@@ -302,7 +327,7 @@ struct OnboardingView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Choose"
+        panel.prompt = "Select"
         panel.message = "Select output directory for recordings"
         panel.directoryURL = URL(fileURLWithPath: outputDir)
 
@@ -312,6 +337,24 @@ struct OnboardingView: View {
             return url
         }
         return nil
+    }
+
+    /// Skip onboarding with default settings (experienced users).
+    private func skipOnboarding() {
+        let url = defaultDir
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        recorder.saveOutputDirBookmark(for: url)
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: SettingsKeys.continuousMode)
+        defaults.set(3600, forKey: SettingsKeys.recordingCadence)
+        recorder.bridge.setConfig([
+            "continuous_mode": true,
+            "recording_cadence": 3600,
+        ])
+
+        hasCompletedOnboarding = true
+        dismiss()
     }
 
     private func completeOnboarding() {
