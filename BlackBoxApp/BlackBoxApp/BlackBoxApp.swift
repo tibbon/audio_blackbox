@@ -265,11 +265,15 @@ struct AboutView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Link("dollhousemediatech.com", destination: URL(string: "https://dollhousemediatech.com")!)
+            Link("dollhousemediatech.com/blackbox", destination: URL(string: "https://dollhousemediatech.com/blackbox/")!)
                 .font(.caption)
 
-            Link("Release Notes", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
-                .font(.caption)
+            HStack(spacing: 12) {
+                Link("Release Notes", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
+                Link("Licenses", destination: URL(string: "https://dollhousemediatech.com/blackbox/licenses")!)
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
         }
         .padding(24)
         .frame(minWidth: 280, maxWidth: 280)
