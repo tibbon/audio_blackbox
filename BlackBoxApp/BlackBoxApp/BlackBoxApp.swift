@@ -1,7 +1,23 @@
 import SwiftUI
 
+/// Handles system-initiated termination (logout, restart, shutdown) by gracefully
+/// finalizing any active recording before allowing the app to quit.
+class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var recorder: RecordingState?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let recorder, recorder.isRecording else { return .terminateNow }
+        // System is shutting down — gracefully finalize files without prompting.
+        // The user already confirmed at the OS level (logout/restart/shutdown).
+        recorder.stop()
+        recorder.releaseOutputDirAccess()
+        return .terminateNow
+    }
+}
+
 @main
 struct BlackBoxApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
@@ -10,6 +26,8 @@ struct BlackBoxApp: App {
     @State private var didAutoOpenOnboarding = false
 
     var body: some Scene {
+        // Wire up delegate so applicationShouldTerminate can finalize recordings
+        let _ = { appDelegate.recorder = recorder }()
         // Auto-open onboarding on first launch
         let _ = autoOpenOnboardingIfNeeded()
         MenuBarExtra {
