@@ -35,9 +35,24 @@ pub trait AudioProcessor {
         false
     }
 
+    /// Whether the audio device's sample rate has changed since recording started.
+    fn sample_rate_changed(&self) -> bool {
+        false
+    }
+
     /// Return per-channel peak levels (0.0..1.0) for metering.
     fn peak_levels(&self) -> Vec<f32> {
         Vec::new()
+    }
+
+    /// Write per-channel peak levels into a caller-provided buffer.
+    /// Returns the number of channels written (may be less than `buf.len()`).
+    /// Default implementation delegates to `peak_levels()`.
+    fn fill_peak_levels(&self, buf: &mut [f32]) -> usize {
+        let peaks = self.peak_levels();
+        let count = peaks.len().min(buf.len());
+        buf[..count].copy_from_slice(&peaks[..count]);
+        count
     }
 
     /// Return the sample rate of the active audio stream (0 if unknown).

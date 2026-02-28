@@ -258,6 +258,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             write_errors,
             disk_space_low,
             stream_error,
+            sample_rate_changed,
             peak_levels,
             sample_rate,
         ) = handle
@@ -273,12 +274,13 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
                         p.write_error_count(),
                         p.disk_space_low(),
                         p.stream_error(),
+                        p.sample_rate_changed(),
                         p.peak_levels(),
                         p.sample_rate(),
                     )
                 })
             })
-            .unwrap_or((false, false, 0, false, false, Vec::new(), 0));
+            .unwrap_or((false, false, 0, false, false, false, Vec::new(), 0));
 
         let input_device = handle
             .config
@@ -294,6 +296,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             "write_errors": write_errors,
             "disk_space_low": disk_space_low,
             "stream_error": stream_error,
+            "sample_rate_changed": sample_rate_changed,
             "peak_levels": peak_levels,
             "sample_rate": sample_rate,
         });
@@ -435,18 +438,18 @@ pub extern "C" fn blackbox_get_peak_levels(
             return 0;
         }
 
-        let peaks = handle
+        let buf = unsafe { std::slice::from_raw_parts_mut(out, max_channels as usize) };
+
+        handle
             .recorder
             .lock()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().peak_levels()))
-            .unwrap_or_default();
-
-        let count = peaks.len().min(max_channels as usize);
-        for i in 0..count {
-            unsafe { *out.add(i) = peaks[i] };
-        }
-        count as i32
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|r| r.get_processor().fill_peak_levels(buf) as i32)
+            })
+            .unwrap_or(0)
     })
     .unwrap_or(-1)
 }

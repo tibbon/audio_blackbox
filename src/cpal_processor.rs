@@ -18,6 +18,276 @@ use crate::writer_thread::{
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+// ---------------------------------------------------------------------------
+// macOS CoreAudio sample rate change listener
+// ---------------------------------------------------------------------------
+
+/// Registers a CoreAudio property listener on `kAudioDevicePropertyNominalSampleRate`
+/// for the active input device. When the sample rate changes, sets an `AtomicBool`
+/// flag that the Swift UI polling loop can detect and restart the recording with
+/// the correct sample rate in the new WAV header.
+#[cfg(target_os = "macos")]
+mod sample_rate_listener {
+    use std::ffi::c_void;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use core_foundation::base::TCFType;
+    use core_foundation::string::{CFString, CFStringRef};
+    use log::{info, warn};
+
+    type AudioObjectID = u32;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct PropAddr {
+        selector: u32,
+        scope: u32,
+        element: u32,
+    }
+
+    // CoreAudio FourCC constants
+    const SYSTEM_OBJECT: AudioObjectID = 1;
+    const SEL_DEVICES: u32 = u32::from_be_bytes(*b"dev#");
+    const SEL_DEFAULT_INPUT: u32 = u32::from_be_bytes(*b"dIn ");
+    const SEL_NAME: u32 = u32::from_be_bytes(*b"lnam");
+    const SEL_NOMINAL_RATE: u32 = u32::from_be_bytes(*b"nsrt");
+    const SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
+    const ELEMENT_MAIN: u32 = 0;
+
+    type ListenerProc =
+        unsafe extern "C" fn(AudioObjectID, u32, *const PropAddr, *mut c_void) -> i32;
+
+    #[link(name = "CoreAudio", kind = "framework")]
+    unsafe extern "C" {
+        unsafe fn AudioObjectGetPropertyDataSize(
+            id: AudioObjectID,
+            addr: *const PropAddr,
+            qual_size: u32,
+            qual: *const c_void,
+            out_size: *mut u32,
+        ) -> i32;
+
+        unsafe fn AudioObjectGetPropertyData(
+            id: AudioObjectID,
+            addr: *const PropAddr,
+            qual_size: u32,
+            qual: *const c_void,
+            io_size: *mut u32,
+            out_data: *mut c_void,
+        ) -> i32;
+
+        unsafe fn AudioObjectAddPropertyListener(
+            id: AudioObjectID,
+            addr: *const PropAddr,
+            listener: ListenerProc,
+            client_data: *mut c_void,
+        ) -> i32;
+
+        unsafe fn AudioObjectRemovePropertyListener(
+            id: AudioObjectID,
+            addr: *const PropAddr,
+            listener: ListenerProc,
+            client_data: *mut c_void,
+        ) -> i32;
+    }
+
+    /// RAII guard: registers a CoreAudio property listener on creation, removes on drop.
+    pub(super) struct SampleRateListener {
+        device_id: AudioObjectID,
+        /// Raw pointer to an `Arc<AtomicBool>` — we own one strong reference.
+        client_data: *mut c_void,
+    }
+
+    // SAFETY: `client_data` points to an `AtomicBool` (Send+Sync), `device_id` is Copy.
+    unsafe impl Send for SampleRateListener {}
+
+    impl SampleRateListener {
+        /// Register a CoreAudio listener for sample rate changes on the given device.
+        /// Returns `None` if the device can't be found or registration fails.
+        pub fn new(device_name: Option<&str>, flag: Arc<AtomicBool>) -> Option<Self> {
+            let device_id = find_device_id(device_name)?;
+            let client_data = Arc::into_raw(Arc::clone(&flag)) as *mut c_void;
+
+            let status = unsafe {
+                AudioObjectAddPropertyListener(
+                    device_id,
+                    &rate_addr(),
+                    on_rate_changed,
+                    client_data,
+                )
+            };
+
+            if status != 0 {
+                // Reclaim the Arc since registration failed
+                unsafe {
+                    drop(Arc::from_raw(client_data as *const AtomicBool));
+                }
+                warn!(
+                    "Failed to register sample rate listener (status {})",
+                    status
+                );
+                return None;
+            }
+
+            info!("Registered sample rate listener on device {}", device_id);
+            Some(Self {
+                device_id,
+                client_data,
+            })
+        }
+    }
+
+    impl Drop for SampleRateListener {
+        fn drop(&mut self) {
+            let status = unsafe {
+                AudioObjectRemovePropertyListener(
+                    self.device_id,
+                    &rate_addr(),
+                    on_rate_changed,
+                    self.client_data,
+                )
+            };
+            if status == 0 {
+                // Successfully removed — safe to reclaim the Arc
+                unsafe {
+                    drop(Arc::from_raw(self.client_data as *const AtomicBool));
+                }
+            } else {
+                // Listener still registered — leak the Arc to avoid use-after-free
+                warn!(
+                    "Failed to remove sample rate listener (status {})",
+                    status
+                );
+            }
+        }
+    }
+
+    fn rate_addr() -> PropAddr {
+        PropAddr {
+            selector: SEL_NOMINAL_RATE,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        }
+    }
+
+    /// CoreAudio callback — runs on an internal CoreAudio thread.
+    unsafe extern "C" fn on_rate_changed(
+        _id: AudioObjectID,
+        _count: u32,
+        _addrs: *const PropAddr,
+        client_data: *mut c_void,
+    ) -> i32 {
+        if !client_data.is_null() {
+            let flag = unsafe { &*(client_data as *const AtomicBool) };
+            flag.store(true, Ordering::Release);
+        }
+        0
+    }
+
+    // --- Device lookup helpers ---
+
+    fn find_device_id(name: Option<&str>) -> Option<AudioObjectID> {
+        match name {
+            Some(n) if !n.is_empty() => device_by_name(n).or_else(default_input_device),
+            _ => default_input_device(),
+        }
+    }
+
+    fn default_input_device() -> Option<AudioObjectID> {
+        let addr = PropAddr {
+            selector: SEL_DEFAULT_INPUT,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        let mut device_id: AudioObjectID = 0;
+        let mut size = size_of::<AudioObjectID>() as u32;
+
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                SYSTEM_OBJECT,
+                &raw const addr,
+                0,
+                std::ptr::null(),
+                &raw mut size,
+                (&raw mut device_id).cast::<c_void>(),
+            )
+        };
+        (status == 0 && device_id != 0).then_some(device_id)
+    }
+
+    fn device_by_name(name: &str) -> Option<AudioObjectID> {
+        let addr = PropAddr {
+            selector: SEL_DEVICES,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+
+        let mut size: u32 = 0;
+        let status = unsafe {
+            AudioObjectGetPropertyDataSize(
+                SYSTEM_OBJECT,
+                &raw const addr,
+                0,
+                std::ptr::null(),
+                &raw mut size,
+            )
+        };
+        if status != 0 || size == 0 {
+            return None;
+        }
+
+        let count = size as usize / size_of::<AudioObjectID>();
+        let mut ids = vec![0u32; count];
+
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                SYSTEM_OBJECT,
+                &raw const addr,
+                0,
+                std::ptr::null(),
+                &raw mut size,
+                ids.as_mut_ptr().cast::<c_void>(),
+            )
+        };
+        if status != 0 {
+            return None;
+        }
+
+        ids.iter()
+            .copied()
+            .find(|&id| device_name(id).is_some_and(|n| n == name))
+    }
+
+    fn device_name(device_id: AudioObjectID) -> Option<String> {
+        let addr = PropAddr {
+            selector: SEL_NAME,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        let mut name_ref: CFStringRef = std::ptr::null();
+        let mut size = size_of::<CFStringRef>() as u32;
+
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                device_id,
+                &raw const addr,
+                0,
+                std::ptr::null(),
+                &raw mut size,
+                (&raw mut name_ref).cast::<c_void>(),
+            )
+        };
+        if status != 0 || name_ref.is_null() {
+            return None;
+        }
+
+        // Caller owns the returned CFString (AudioObject API contract).
+        let cf = unsafe { CFString::wrap_under_create_rule(name_ref) };
+        Some(cf.to_string())
+    }
+}
+
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 ///
@@ -39,6 +309,11 @@ pub struct CpalAudioProcessor {
     disk_space_low: Arc<AtomicBool>,
     /// Set by the cpal error callback when the audio stream encounters an error.
     stream_error: Arc<AtomicBool>,
+    /// CoreAudio listener for sample rate changes (dropped before sample_rate_changed).
+    #[cfg(target_os = "macos")]
+    rate_listener: Option<sample_rate_listener::SampleRateListener>,
+    /// Set by the CoreAudio listener when the device's sample rate changes mid-recording.
+    sample_rate_changed: Arc<AtomicBool>,
     /// Per-channel peak levels (f32 as u32 bits). Shared with writer thread.
     peak_levels: Arc<Vec<CacheAlignedPeak>>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
@@ -102,6 +377,9 @@ impl CpalAudioProcessor {
             write_errors: Arc::new(AtomicU64::new(0)),
             disk_space_low: Arc::new(AtomicBool::new(false)),
             stream_error: Arc::new(AtomicBool::new(false)),
+            #[cfg(target_os = "macos")]
+            rate_listener: None,
+            sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels: Arc::new(Vec::new()),
             writer_thread: None,
             monitoring: false,
@@ -203,6 +481,7 @@ impl AudioProcessor for CpalAudioProcessor {
         self.write_errors.store(0, Ordering::Relaxed);
         self.disk_space_low.store(false, Ordering::Relaxed);
         self.stream_error.store(false, Ordering::Relaxed);
+        self.sample_rate_changed.store(false, Ordering::Relaxed);
 
         let host = cpal::default_host();
         let app_config = AppConfig::load();
@@ -395,6 +674,15 @@ impl AudioProcessor for CpalAudioProcessor {
 
         self.stream = Some(Box::new(stream));
 
+        // Register sample rate change listener (macOS only)
+        #[cfg(target_os = "macos")]
+        {
+            self.rate_listener = sample_rate_listener::SampleRateListener::new(
+                app_config.get_input_device().as_deref(),
+                Arc::clone(&self.sample_rate_changed),
+            );
+        }
+
         Ok(())
     }
 
@@ -405,6 +693,12 @@ impl AudioProcessor for CpalAudioProcessor {
                 "{} sample write/overflow errors occurred during recording",
                 errors
             );
+        }
+
+        // Remove sample rate listener before tearing down the stream
+        #[cfg(target_os = "macos")]
+        {
+            self.rate_listener = None;
         }
 
         // Drop stream first — no more data will be pushed to the ring buffer
@@ -477,11 +771,23 @@ impl AudioProcessor for CpalAudioProcessor {
         self.stream_error.load(Ordering::Relaxed)
     }
 
+    fn sample_rate_changed(&self) -> bool {
+        self.sample_rate_changed.load(Ordering::Relaxed)
+    }
+
     fn peak_levels(&self) -> Vec<f32> {
         self.peak_levels
             .iter()
             .map(|a| f32::from_bits(a.value.load(Ordering::Relaxed)))
             .collect()
+    }
+
+    fn fill_peak_levels(&self, buf: &mut [f32]) -> usize {
+        let count = self.peak_levels.len().min(buf.len());
+        for (dst, src) in buf[..count].iter_mut().zip(self.peak_levels.iter()) {
+            *dst = f32::from_bits(src.value.load(Ordering::Relaxed));
+        }
+        count
     }
 
     fn sample_rate(&self) -> u32 {
@@ -736,6 +1042,9 @@ impl CpalAudioProcessor {
             write_errors,
             disk_space_low,
             stream_error: Arc::new(AtomicBool::new(false)),
+            #[cfg(target_os = "macos")]
+            rate_listener: None,
+            sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels,
             writer_thread: None,
             monitoring: false,

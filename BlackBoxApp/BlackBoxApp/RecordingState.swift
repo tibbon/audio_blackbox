@@ -115,6 +115,8 @@ final class RecordingState: ObservableObject {
             startTimer()
             Self.log.info("Recording started")
         } else {
+            isRecording = false
+            recordingStartTime = nil
             let err = bridge.lastError ?? "Failed to start recording"
             errorMessage = err
             statusText = "Error"
@@ -425,6 +427,16 @@ final class RecordingState: ObservableObject {
         if let status = bridge.getStatus() {
             if debugLogging {
                 Self.log.debug("Status poll: \(String(describing: status))")
+            }
+
+            // Sample rate changed on the audio device — restart to pick up new rate
+            // so the WAV header matches the actual audio data.
+            if let rateChanged = status["sample_rate_changed"] as? Bool, rateChanged {
+                Self.log.warning("Sample rate changed on device — finalizing and restarting")
+                restartIfRecording(reason: "sample rate changed")
+                postNotification(title: "Sample Rate Changed",
+                                 body: "Your audio device's sample rate changed. Recording was restarted automatically.")
+                return
             }
 
             // Audio stream error — device disconnected or driver failure.
