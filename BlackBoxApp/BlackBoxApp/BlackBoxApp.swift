@@ -250,11 +250,11 @@ struct BlackBoxApp: App {
             alert.messageText = "Recording in Progress"
             alert.informativeText = "BlackBox is currently recording. Do you want to stop recording and quit?"
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Stop & Quit")
             alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Stop & Quit")
 
             NSApp.activate(ignoringOtherApps: true)
-            if alert.runModal() != .alertFirstButtonReturn {
+            if alert.runModal() == .alertFirstButtonReturn {
                 return
             }
             recorder.stop()
