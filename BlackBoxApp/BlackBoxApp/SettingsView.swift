@@ -82,6 +82,7 @@ struct RecordingSettingsTab: View {
                 .onChange(of: selectedDevice) { _ in
                     refreshChannelCount()
                     applyConfig()
+                    recorder.selectDevice(selectedDevice)
                 }
                 .accessibilityLabel("Input device")
                 .accessibilityHint("Select the audio input device")

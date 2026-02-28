@@ -251,8 +251,18 @@ final class RecordingState: ObservableObject {
     }
 
     func selectDevice(_ name: String) {
+        let wasRecording = isRecording
         UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
         bridge.setConfig(["input_device": name])
+
+        if wasRecording {
+            Self.log.info("Device changed while recording — finalizing and restarting")
+            stopTimer()
+            _ = bridge.stopRecording()
+            peakLevels = []
+            lastReportedWriteErrors = 0
+            startRecordingInternal()
+        }
     }
 
     // MARK: - Settings Persistence
@@ -414,15 +424,33 @@ final class RecordingState: ObservableObject {
                 Self.log.debug("Status poll: \(String(describing: status))")
             }
 
-            // Audio stream error — device disconnected or driver failure
+            // Audio stream error — device disconnected or driver failure.
+            // Finalize current files, then try to restart on the next available device.
             if let streamError = status["stream_error"] as? Bool, streamError {
-                stop()
-                let msg = "Your audio device was disconnected or stopped responding. Check your connections and try again."
-                errorMessage = msg
-                statusText = "Error"
-                Self.log.error("Stream error detected, stopping recording")
-                postNotification(title: "Recording Stopped", body: msg)
-                showCriticalAlert(title: "Recording Stopped", message: msg)
+                Self.log.error("Stream error detected — finalizing files and attempting restart")
+                stopTimer()
+                _ = bridge.stopRecording()
+                peakLevels = []
+                lastReportedWriteErrors = 0
+
+                if bridge.startRecording() {
+                    // Restarted successfully (e.g., System Default fell back to built-in mic)
+                    recordingStartTime = Date()
+                    statusText = "Recording..."
+                    startTimer()
+                    Self.log.info("Recording restarted on available device")
+                    postNotification(title: "Device Changed",
+                                     body: "Your audio device changed. Recording continued on the next available device.")
+                } else {
+                    // No device available — stop for real
+                    isRecording = false
+                    recordingStartTime = nil
+                    let msg = "Your audio device was disconnected and no alternative is available. Check your connections and try again."
+                    errorMessage = msg
+                    statusText = "Error"
+                    postNotification(title: "Recording Stopped", body: msg)
+                    showCriticalAlert(title: "Recording Stopped", message: msg)
+                }
                 return
             }
             // Disk space low — stop recording gracefully
