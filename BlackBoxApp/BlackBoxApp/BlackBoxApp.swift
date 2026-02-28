@@ -153,7 +153,7 @@ struct BlackBoxApp: App {
             Divider()
         }
 
-        Button("Reveal Recordings in Finder") {
+        Button("Show in Finder") {
             recorder.openOutputDir()
         }
 
