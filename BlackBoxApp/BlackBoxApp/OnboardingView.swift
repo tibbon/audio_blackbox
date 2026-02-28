@@ -193,7 +193,7 @@ struct OnboardingView: View {
                 .foregroundColor(.secondary)
 
             HStack {
-                Text(outputDir)
+                Text(abbreviatePath(outputDir))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundColor(chosenURL != nil ? .primary : .secondary)
@@ -314,6 +314,12 @@ struct OnboardingView: View {
         } else {
             withAnimation { body() }
         }
+    }
+
+    private func abbreviatePath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) { return "~" + path.dropFirst(home.count) }
+        return path
     }
 
     private func checkMicStatus() {

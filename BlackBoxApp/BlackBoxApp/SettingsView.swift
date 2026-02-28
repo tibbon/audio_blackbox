@@ -415,7 +415,7 @@ struct OutputSettingsTab: View {
         Form {
             Section("Output Directory") {
                 HStack {
-                    Text(outputDir)
+                    Text(displayPath)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundColor(.secondary)
@@ -542,6 +542,15 @@ struct OutputSettingsTab: View {
             loadOutputDir()
             syncCadenceSelection()
         }
+    }
+
+    /// Abbreviate home directory paths with ~ for readability.
+    private var displayPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if outputDir.hasPrefix(home) {
+            return "~" + outputDir.dropFirst(home.count)
+        }
+        return outputDir
     }
 
     private var channelCount: Int {
