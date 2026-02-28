@@ -56,7 +56,7 @@ struct BlackBoxApp: App {
         .defaultSize(width: 480, height: 500)
         .windowResizability(.contentSize)
 
-        Window("Level Meter", id: "meter") {
+        Window("BlackBox Level Meter", id: "meter") {
             MeterView(recorder: recorder)
         }
         .defaultSize(width: 340, height: 200)
