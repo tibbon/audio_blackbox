@@ -19,7 +19,7 @@ struct SettingsView: View {
                     Label("Output", systemImage: "folder")
                 }
 
-            GeneralSettingsTab()
+            GeneralSettingsTab(recorder: recorder)
                 .tabItem {
                     Label("General", systemImage: "slider.horizontal.3")
                 }
@@ -655,6 +655,7 @@ struct OutputSettingsTab: View {
 // MARK: - General Tab
 
 struct GeneralSettingsTab: View {
+    @ObservedObject var recorder: RecordingState
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
@@ -753,7 +754,9 @@ struct GeneralSettingsTab: View {
     private func confirmResetAllSettings() {
         let alert = NSAlert()
         alert.messageText = "Reset All Settings?"
+        let recording = recorder.isRecording
         alert.informativeText = "This will restore all settings to their defaults. Your recordings will not be affected."
+            + (recording ? " The current recording will be stopped." : "")
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Reset")
@@ -764,6 +767,11 @@ struct GeneralSettingsTab: View {
     }
 
     private func resetAllSettings() {
+        // Stop recording first — we're about to change the engine config
+        if recorder.isRecording {
+            recorder.stop()
+        }
+
         let defaults = UserDefaults.standard
         // Reset all settings keys except onboarding completion and output dir bookmark
         let keysToReset = [
@@ -785,6 +793,18 @@ struct GeneralSettingsTab: View {
         launchAtLogin = false
         autoRecord = false
         debugLogging = false
+
+        // Push default config to Rust engine so it takes effect immediately
+        recorder.bridge.setConfig([
+            "input_device": "",
+            "audio_channels": "0",
+            "output_mode": "split",
+            "silence_threshold": 0.01,
+            "continuous_mode": false,
+            "recording_cadence": 300,
+            "min_disk_space_mb": 500,
+            "bits_per_sample": 24,
+        ])
     }
 
     private func updateLoginItem() {
