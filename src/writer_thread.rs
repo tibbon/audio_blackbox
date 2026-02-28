@@ -70,6 +70,8 @@ pub struct WriterThreadState {
     pub total_device_channels: u16,
     /// Iteration counter for amortizing disk space checks (avoids syscall per loop iteration).
     pub disk_check_counter: u16,
+    /// Iteration counter for periodic WAV flush (crash-safe headers every ~10 seconds).
+    flush_counter: u16,
     /// Channel indices as a fixed inline array — no heap indirection, always in cache.
     /// Only the first `channel_count` entries are valid.
     pub channels: [u8; MAX_CHANNELS],
@@ -170,6 +172,7 @@ impl WriterThreadState {
             channel_count: channel_count as u8,
             total_device_channels: 0, // set by caller or process_audio
             disk_check_counter: 0,
+            flush_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
             writer: None,
@@ -230,6 +233,7 @@ impl WriterThreadState {
             channel_count: channel_count as u8,
             total_device_channels: 0,
             disk_check_counter: 0,
+            flush_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
             writer: None,
@@ -387,6 +391,35 @@ impl WriterThreadState {
             return false;
         }
         true
+    }
+
+    /// Flush all active WAV writers to make files crash-recoverable.
+    ///
+    /// `hound::WavWriter::flush()` rewrites the WAV header with the correct data
+    /// size and flushes the underlying `BufWriter` to the OS. After a flush, the
+    /// file is a valid WAV playable up to that point — even after a force-quit or
+    /// SIGKILL. Uses a counter (~25,000 iterations ≈ 10 seconds) to amortize cost.
+    pub fn flush_writers(&mut self) {
+        if self.monitor_only || self.disk_stopped {
+            return;
+        }
+
+        self.flush_counter += 1;
+        if self.flush_counter < 25_000 {
+            return;
+        }
+        self.flush_counter = 0;
+
+        if let Some(w) = &mut self.writer
+            && let Err(e) = w.flush()
+        {
+            error!("Error flushing WAV writer: {}", e);
+        }
+        for w in self.multichannel_writers.iter_mut().flatten() {
+            if let Err(e) = w.flush() {
+                error!("Error flushing channel WAV writer: {}", e);
+            }
+        }
     }
 
     /// Write interleaved f32 samples to WAV writers.
@@ -742,7 +775,12 @@ pub fn writer_thread_main(
         }
 
         // 4. Read available samples from ring buffer
-        if read_available(&mut consumer, &mut state) == 0 {
+        let read = read_available(&mut consumer, &mut state);
+
+        // 5. Periodic flush — writes valid WAV headers for crash recovery
+        state.flush_writers();
+
+        if read == 0 {
             // Ring buffer empty — sleep briefly to avoid busy-wait
             std::thread::sleep(Duration::from_millis(1));
         }
