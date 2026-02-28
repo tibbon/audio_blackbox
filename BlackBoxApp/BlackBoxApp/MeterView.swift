@@ -86,8 +86,8 @@ private struct MeterBar: View {
     /// Gradient stops matching the green-yellow-red meter convention
     private static let meterGradient = LinearGradient(
         stops: [
-            .init(color: .green, location: 0.0),
-            .init(color: .green, location: 0.7),    // -60 to -18 dB
+            .init(color: Color(nsColor: .systemGreen), location: 0.0),
+            .init(color: Color(nsColor: .systemGreen), location: 0.7),    // -60 to -18 dB
             .init(color: .yellow, location: 0.8),    // -12 dB
             .init(color: .yellow, location: 0.92),   // -5 dB
             .init(color: .red, location: 0.95),      // -3 dB
