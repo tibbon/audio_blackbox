@@ -65,6 +65,13 @@ private struct MeterBar: View {
         CGFloat((peakHold + 60) / 60)
     }
 
+    private var meterAccessibilityValue: String {
+        if dBFS > -3 { return "Clipping: signal is too loud and may distort" }
+        if dBFS > -12 { return "Hot: signal is high, reduce input gain" }
+        if dBFS <= -60 { return "Silent" }
+        return "\(Int(dBFS)) decibels"
+    }
+
     private var dBLabel: String {
         if dBFS > -3 {
             return "CLIP"
@@ -149,7 +156,7 @@ private struct MeterBar: View {
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Channel \(channel)")
-        .accessibilityValue("\(dBLabel)\(dBFS > -3 ? ", clipping" : dBFS > -12 ? ", caution" : "")")
+        .accessibilityValue(meterAccessibilityValue)
         .onChange(of: peak) { _ in
             updatePeakHold()
         }
