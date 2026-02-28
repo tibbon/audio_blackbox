@@ -237,7 +237,7 @@ struct OnboardingView: View {
                 .foregroundColor(.accentColor)
                 .accessibilityHidden(true)
 
-            Text("Safety Saves")
+            Text("Continuous Recording")
                 .font(.title2)
                 .fontWeight(.semibold)
 

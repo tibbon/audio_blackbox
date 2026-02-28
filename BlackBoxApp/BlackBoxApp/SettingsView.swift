@@ -21,7 +21,7 @@ struct SettingsView: View {
 
             GeneralSettingsTab()
                 .tabItem {
-                    Label("General", systemImage: "gearshape")
+                    Label("General", systemImage: "slider.horizontal.3")
                 }
         }
         .frame(minWidth: 480, maxWidth: 480, minHeight: 450)

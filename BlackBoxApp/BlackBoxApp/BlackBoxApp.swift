@@ -68,13 +68,13 @@ struct BlackBoxApp: App {
         .defaultSize(width: 460, height: 380)
         .windowResizability(.contentSize)
 
-        Window("BlackBox Settings", id: "settings") {
+        Window("Settings", id: "settings") {
             SettingsView(recorder: recorder)
         }
         .defaultSize(width: 480, height: 500)
         .windowResizability(.contentSize)
 
-        Window("BlackBox Level Meter", id: "meter") {
+        Window("Level Meter", id: "meter") {
             MeterView(recorder: recorder)
         }
         .defaultSize(width: 340, height: 200)
@@ -149,6 +149,7 @@ struct BlackBoxApp: App {
             Divider()
         } else {
             Text("No Input Devices")
+                .accessibilityLabel("No input devices available")
 
             Divider()
         }
