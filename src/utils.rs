@@ -115,6 +115,7 @@ pub fn available_disk_space_mb(path: &str) -> Option<u64> {
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
     if result == 0 {
+        #[allow(clippy::unnecessary_cast)] // f_bavail is u32 on some platforms, u64 on others
         Some(stat.f_bavail as u64 * stat.f_frsize / (1024 * 1024))
     } else {
         None
