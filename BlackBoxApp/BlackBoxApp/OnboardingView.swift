@@ -26,6 +26,10 @@ struct OnboardingView: View {
                     Circle()
                         .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
                         .frame(width: 8, height: 8)
+                        .contentShape(Circle())
+                        .onTapGesture {
+                            if i < step { animateStep { step = i } }
+                        }
                 }
             }
             .accessibilityElement(children: .ignore)

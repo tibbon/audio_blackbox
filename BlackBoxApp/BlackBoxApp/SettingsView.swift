@@ -67,6 +67,8 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var deviceChannelCount: Int = 0
     @State private var selectedChannels: Set<Int> = [1]
+    @State private var prevBitDepth: Int = 24
+    @State private var prevChannelSpec: String = "1"
 
     var body: some View {
         Form {
@@ -113,9 +115,19 @@ struct RecordingSettingsTab: View {
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
                 .onChange(of: bitDepth) { _ in
-                    applyConfig()
-                    confirmRestartIfRecording(reason: "bit depth") {
+                    let old = prevBitDepth
+                    guard bitDepth != old else { return }
+                    prevBitDepth = bitDepth
+                    guard recorder.isRecording else {
+                        applyConfig()
+                        return
+                    }
+                    confirmSettingsChange(reason: "bit depth") {
+                        applyConfig()
                         recorder.restartIfRecording(reason: "bit depth changed")
+                    } onCancel: {
+                        prevBitDepth = old
+                        bitDepth = old
                     }
                 }
                 .accessibilityLabel("Bit depth")
@@ -179,6 +191,8 @@ struct RecordingSettingsTab: View {
         .onAppear {
             refreshChannelCount()
             syncCheckboxesFromChannelSpec()
+            prevBitDepth = bitDepth
+            prevChannelSpec = channelSpec
         }
     }
 
@@ -255,21 +269,38 @@ struct RecordingSettingsTab: View {
     /// Write the checkbox state back to the channel spec string.
     private func syncChannelSpecFromCheckboxes() {
         let sorted = selectedChannels.sorted()
-        channelSpec = sorted.map { String($0) }.joined(separator: ",")
-        applyConfig()
-        confirmRestartIfRecording(reason: "channels") {
+        let newSpec = sorted.map { String($0) }.joined(separator: ",")
+        let old = prevChannelSpec
+        guard newSpec != old else { return }
+        channelSpec = newSpec
+        prevChannelSpec = newSpec
+        guard recorder.isRecording else {
+            applyConfig()
+            return
+        }
+        confirmSettingsChange(reason: "channels") {
+            applyConfig()
             recorder.restartIfRecording(reason: "channels changed")
+        } onCancel: {
+            prevChannelSpec = old
+            channelSpec = old
+            syncCheckboxesFromChannelSpec()
         }
     }
 
     /// Query the device for its channel count and refresh checkboxes.
+    /// Clamps selected channels to what the device supports and applies config
+    /// directly (no confirmation dialog — device-initiated, not user-initiated).
     private func refreshChannelCount() {
         deviceChannelCount = RustBridge.getDeviceChannelCount(deviceName: selectedDevice) ?? 0
-        // Clamp selected channels to what the device supports
         if deviceChannelCount > 0 {
             selectedChannels = selectedChannels.filter { $0 <= deviceChannelCount }
             if selectedChannels.isEmpty { selectedChannels = [1] }
-            syncChannelSpecFromCheckboxes()
+            let sorted = selectedChannels.sorted()
+            let newSpec = sorted.map { String($0) }.joined(separator: ",")
+            channelSpec = newSpec
+            prevChannelSpec = newSpec
+            applyConfig()
         }
     }
 
@@ -302,23 +333,6 @@ struct RecordingSettingsTab: View {
         recorder.bridge.setConfig(config)
     }
 
-    /// Confirm before restarting an active recording due to a settings change.
-    private func confirmRestartIfRecording(reason: String, action: () -> Void) {
-        guard recorder.isRecording else {
-            action()
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Restart Recording?"
-        alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Restart")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            action()
-        }
-    }
 }
 
 /// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
@@ -398,6 +412,27 @@ func isLegacyZeroBasedSpec(_ spec: String) -> Bool {
     return false
 }
 
+/// Show a confirmation dialog before changing settings during an active recording.
+/// Calls `onRestart` if the user confirms, or `onCancel` if they dismiss.
+private func confirmSettingsChange(
+    reason: String,
+    onRestart: () -> Void,
+    onCancel: (() -> Void)? = nil
+) {
+    let alert = NSAlert()
+    alert.messageText = "Restart Recording?"
+    alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
+    alert.alertStyle = .informational
+    alert.addButton(withTitle: "Restart")
+    alert.addButton(withTitle: "Cancel")
+    NSApp.activate(ignoringOtherApps: true)
+    if alert.runModal() == .alertFirstButtonReturn {
+        onRestart()
+    } else {
+        onCancel?()
+    }
+}
+
 // MARK: - Output Tab
 
 struct OutputSettingsTab: View {
@@ -410,6 +445,7 @@ struct OutputSettingsTab: View {
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var outputDir: String = "recordings"
     @State private var cadenceSelection: Int = 300
+    @State private var prevOutputMode: String = "split"
 
     var body: some View {
         Form {
@@ -445,9 +481,19 @@ struct OutputSettingsTab: View {
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
                 .onChange(of: outputMode) { _ in
-                    applyConfig()
-                    confirmRestartIfRecording(reason: "output mode") {
+                    let old = prevOutputMode
+                    guard outputMode != old else { return }
+                    prevOutputMode = outputMode
+                    guard recorder.isRecording else {
+                        applyConfig()
+                        return
+                    }
+                    confirmSettingsChange(reason: "output mode") {
+                        applyConfig()
                         recorder.restartIfRecording(reason: "output mode changed")
+                    } onCancel: {
+                        prevOutputMode = old
+                        outputMode = old
                     }
                 }
                 .accessibilityLabel("Output mode")
@@ -541,6 +587,7 @@ struct OutputSettingsTab: View {
         .onAppear {
             loadOutputDir()
             syncCadenceSelection()
+            prevOutputMode = outputMode
         }
     }
 
@@ -633,23 +680,6 @@ struct OutputSettingsTab: View {
         }
     }
 
-    /// Confirm before restarting an active recording due to a settings change.
-    private func confirmRestartIfRecording(reason: String, action: () -> Void) {
-        guard recorder.isRecording else {
-            action()
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = "Restart Recording?"
-        alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Restart")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            action()
-        }
-    }
 }
 
 // MARK: - General Tab

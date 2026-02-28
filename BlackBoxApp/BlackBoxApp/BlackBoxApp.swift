@@ -60,6 +60,7 @@ struct BlackBoxApp: App {
         } label: {
             Image(nsImage: menuBarNSImage)
                 .accessibilityLabel(menuBarAccessibilityLabel)
+                .background(StatusItemTooltip(tooltip: menuBarTooltip))
         }
 
         Window("Welcome to BlackBox", id: "onboarding") {
@@ -232,6 +233,16 @@ struct BlackBoxApp: App {
         return NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
     }
 
+    private var menuBarTooltip: String {
+        if !hasCompletedOnboarding {
+            return "BlackBox — Setup required"
+        }
+        if recorder.isRecording {
+            return "BlackBox — \(recorder.statusText)"
+        }
+        return "BlackBox"
+    }
+
     private var menuBarAccessibilityLabel: String {
         if !hasCompletedOnboarding {
             return "BlackBox: Setup required"
@@ -270,6 +281,8 @@ struct BlackBoxApp: App {
 struct AboutView: View {
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    private let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
+        ?? "\u{00A9} 2026 David Fisher"
 
     var body: some View {
         VStack(spacing: 12) {
@@ -286,7 +299,7 @@ struct AboutView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Text("\u{00A9} 2026 David Fisher")
+            Text(copyright)
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -303,6 +316,27 @@ struct AboutView: View {
         .padding(24)
         .frame(minWidth: 280, maxWidth: 280)
         .background(AboutWindowConfigurator())
+    }
+}
+
+/// Sets a tooltip on the menu bar status item by walking up the view hierarchy
+/// to find the NSStatusBarButton parent.
+private struct StatusItemTooltip: NSViewRepresentable {
+    let tooltip: String
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            var view = nsView.superview
+            while let v = view {
+                if let button = v as? NSStatusBarButton {
+                    button.toolTip = tooltip
+                    return
+                }
+                view = v.superview
+            }
+        }
     }
 }
 
