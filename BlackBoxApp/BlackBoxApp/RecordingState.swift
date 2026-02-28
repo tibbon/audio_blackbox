@@ -225,6 +225,7 @@ final class RecordingState: ObservableObject {
     }
 
     func stop() {
+        let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
         if bridge.stopRecording() {
             isRecording = false
@@ -232,6 +233,12 @@ final class RecordingState: ObservableObject {
             peakLevels = []
             statusText = "Ready"
             Self.log.info("Recording stopped")
+
+            // Track successful sessions >5 min for App Store review prompt
+            if sessionDuration > 300 {
+                let key = "successfulRecordingSessions"
+                UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
+            }
 
             // Resume monitoring if the meter window is still open
             if isMeterWindowOpen {

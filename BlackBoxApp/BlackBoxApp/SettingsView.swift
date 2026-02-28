@@ -32,13 +32,12 @@ struct SettingsView: View {
     }
 
     private func promptForReviewIfReady() {
-        let key = "settingsOpenCount"
-        let count = UserDefaults.standard.integer(forKey: key) + 1
-        UserDefaults.standard.set(count, forKey: key)
-        if count == 5 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                requestReview()
-            }
+        let sessions = UserDefaults.standard.integer(forKey: "successfulRecordingSessions")
+        guard sessions >= 3 else { return }
+        guard !UserDefaults.standard.bool(forKey: "hasPromptedForReview") else { return }
+        UserDefaults.standard.set(true, forKey: "hasPromptedForReview")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            requestReview()
         }
     }
 }
