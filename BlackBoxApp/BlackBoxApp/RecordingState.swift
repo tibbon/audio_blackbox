@@ -12,7 +12,7 @@ final class RecordingState: ObservableObject {
     @Published var statusText = "Ready"
     @Published var errorMessage: String?
     @Published var availableDevices: [String] = []
-    @Published var peakLevels: [Double] = []
+    @Published var peakLevels: [Float] = []
     @Published var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
     @Published var isMeterWindowOpen: Bool = false {
         didSet {
@@ -36,6 +36,9 @@ final class RecordingState: ObservableObject {
     private var meterTimer: Timer?
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
+    private var peakBuffer = [Float](repeating: 0, count: 64)
+    private var meterPollCount: Int = 0
+    private var meterPollTotalNs: UInt64 = 0
 
     private static let bookmarkKey = "outputDirBookmark"
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
@@ -319,12 +322,46 @@ final class RecordingState: ObservableObject {
     }
 
     private func updatePeakLevels() {
+        let debug = debugLogging
+        let start: ContinuousClock.Instant? = debug ? .now : nil
+
         guard isRecording || isMonitoring else {
-            peakLevels = []
+            if !peakLevels.isEmpty { peakLevels = [] }
             return
         }
-        let peaks = bridge.getPeakLevels()
-        peakLevels = peaks.map { Double($0) }
+
+        let count = bridge.fillPeakLevels(into: &peakBuffer)
+
+        // Only publish when values have visibly changed (avoids SwiftUI diffing overhead)
+        let needsUpdate: Bool
+        if peakLevels.count != count {
+            needsUpdate = true
+        } else {
+            var changed = false
+            for i in 0..<count {
+                if abs(peakBuffer[i] - peakLevels[i]) > 0.001 {
+                    changed = true
+                    break
+                }
+            }
+            needsUpdate = changed
+        }
+
+        if needsUpdate {
+            peakLevels = Array(peakBuffer.prefix(count))
+        }
+
+        if let start {
+            let elapsed = ContinuousClock.now - start
+            meterPollTotalNs += UInt64(elapsed.components.attoseconds / 1_000_000_000)
+            meterPollCount += 1
+            if meterPollCount >= 30 {
+                let avgNs = meterPollTotalNs / UInt64(meterPollCount)
+                Self.log.info("[MeterPerf] avg=\(avgNs)ns over \(self.meterPollCount) ticks, ch=\(count)")
+                meterPollCount = 0
+                meterPollTotalNs = 0
+            }
+        }
     }
 
     private func updateDuration() {
@@ -361,7 +398,7 @@ final class RecordingState: ObservableObject {
             // Audio stream error — device disconnected or driver failure
             if let streamError = status["stream_error"] as? Bool, streamError {
                 stop()
-                let msg = "Audio device disconnected or encountered an error."
+                let msg = "Your audio device was disconnected or stopped responding. Check your connections and try again."
                 errorMessage = msg
                 statusText = "Error"
                 Self.log.error("Stream error detected, stopping recording")
@@ -371,7 +408,7 @@ final class RecordingState: ObservableObject {
             // Disk space low — stop recording gracefully
             if let diskLow = status["disk_space_low"] as? Bool, diskLow {
                 stop()
-                let msg = "Disk space is low. Free up space and try again."
+                let msg = "Your disk is almost full. Free up space and try again."
                 errorMessage = msg
                 statusText = "Disk Full"
                 Self.log.error("Disk space low, stopping recording")
@@ -385,7 +422,7 @@ final class RecordingState: ObservableObject {
                 if writeErrors > 48_000 {
                     // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
                     stop()
-                    let msg = "Excessive audio data loss (\(writeErrors) samples dropped). Your system may be under heavy load."
+                    let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
                     errorMessage = msg
                     statusText = "Error"
                     Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
@@ -396,7 +433,7 @@ final class RecordingState: ObservableObject {
                     lastReportedWriteErrors = writeErrors
                     Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
                     if writeErrors > 500 {
-                        errorMessage = "\(writeErrors) audio samples dropped"
+                        errorMessage = "Audio quality degraded \u{2014} some data was lost"
                     }
                 }
             }
