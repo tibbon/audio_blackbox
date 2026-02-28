@@ -114,7 +114,9 @@ struct RecordingSettingsTab: View {
                 .pickerStyle(.radioGroup)
                 .onChange(of: bitDepth) { _ in
                     applyConfig()
-                    recorder.restartIfRecording(reason: "bit depth changed")
+                    confirmRestartIfRecording(reason: "bit depth") {
+                        recorder.restartIfRecording(reason: "bit depth changed")
+                    }
                 }
                 .accessibilityLabel("Bit depth")
                 .accessibilityHint("Precision of WAV recordings")
@@ -255,7 +257,9 @@ struct RecordingSettingsTab: View {
         let sorted = selectedChannels.sorted()
         channelSpec = sorted.map { String($0) }.joined(separator: ",")
         applyConfig()
-        recorder.restartIfRecording(reason: "channels changed")
+        confirmRestartIfRecording(reason: "channels") {
+            recorder.restartIfRecording(reason: "channels changed")
+        }
     }
 
     /// Query the device for its channel count and refresh checkboxes.
@@ -296,6 +300,24 @@ struct RecordingSettingsTab: View {
             config["input_device"] = selectedDevice
         }
         recorder.bridge.setConfig(config)
+    }
+
+    /// Confirm before restarting an active recording due to a settings change.
+    private func confirmRestartIfRecording(reason: String, action: () -> Void) {
+        guard recorder.isRecording else {
+            action()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Restart Recording?"
+        alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            action()
+        }
     }
 }
 
@@ -424,7 +446,9 @@ struct OutputSettingsTab: View {
                 .pickerStyle(.radioGroup)
                 .onChange(of: outputMode) { _ in
                     applyConfig()
-                    recorder.restartIfRecording(reason: "output mode changed")
+                    confirmRestartIfRecording(reason: "output mode") {
+                        recorder.restartIfRecording(reason: "output mode changed")
+                    }
                 }
                 .accessibilityLabel("Output mode")
                 .accessibilityHint("One file per channel or one multichannel file")
@@ -597,6 +621,24 @@ struct OutputSettingsTab: View {
         if panel.runModal() == .OK, let url = panel.url {
             outputDir = url.path
             recorder.saveOutputDirBookmark(for: url)
+        }
+    }
+
+    /// Confirm before restarting an active recording due to a settings change.
+    private func confirmRestartIfRecording(reason: String, action: () -> Void) {
+        guard recorder.isRecording else {
+            action()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Restart Recording?"
+        alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            action()
         }
     }
 }
