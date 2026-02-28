@@ -6,6 +6,7 @@ struct OnboardingView: View {
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
     @State private var micGranted = false
     @State private var micDenied = false
@@ -55,7 +56,7 @@ struct OnboardingView: View {
             HStack {
                 if step > 0 {
                     Button("Back") {
-                        withAnimation { step -= 1 }
+                        animateStep { step -= 1 }
                     }
                 } else {
                     Button("Skip Setup") {
@@ -68,18 +69,18 @@ struct OnboardingView: View {
                 switch step {
                 case 0:
                     Button("Get Started") {
-                        withAnimation { step = 1 }
+                        animateStep { step = 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                 case 1:
                     Button("Continue") {
-                        withAnimation { step += 1 }
+                        animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!micGranted && !micDenied)
                 case 2:
                     Button("Continue") {
-                        withAnimation { step += 1 }
+                        animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                 default:
@@ -299,6 +300,14 @@ struct OnboardingView: View {
     }
 
     // MARK: - Actions
+
+    private func animateStep(_ body: () -> Void) {
+        if reduceMotion {
+            body()
+        } else {
+            withAnimation { body() }
+        }
+    }
 
     private func checkMicStatus() {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {

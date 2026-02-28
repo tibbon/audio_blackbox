@@ -68,7 +68,7 @@ struct RecordingSettingsTab: View {
                     applyConfig()
                 }
                 .accessibilityLabel("Input device")
-                .accessibilityHint("Select the audio input device for recording")
+                .accessibilityHint("Select the audio input device")
 
                 Button("Refresh Devices") {
                     recorder.refreshDevices()
@@ -98,7 +98,7 @@ struct RecordingSettingsTab: View {
                 .pickerStyle(.radioGroup)
                 .onChange(of: bitDepth) { _ in applyConfig() }
                 .accessibilityLabel("Bit depth")
-                .accessibilityHint("Select the bit depth for WAV recordings")
+                .accessibilityHint("Precision of WAV recordings")
                 Text("24-bit is the professional standard. 16-bit saves space. 32-bit float offers maximum precision with larger files.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -107,7 +107,7 @@ struct RecordingSettingsTab: View {
             Section("Silence Detection") {
                 Toggle("Enable silence detection", isOn: $silenceEnabled)
                     .onChange(of: silenceEnabled) { _ in applyConfig() }
-                    .accessibilityHint("When enabled, silent recordings are automatically deleted")
+                    .accessibilityHint("Automatically delete silent recordings")
 
                 if silenceEnabled {
                     VStack(alignment: .leading, spacing: 4) {
@@ -148,7 +148,7 @@ struct RecordingSettingsTab: View {
                     NSApp.activate(ignoringOtherApps: true)
                     openWindow(id: "meter")
                 }
-                .accessibilityHint("Opens a window showing real-time audio levels per channel")
+                .accessibilityHint("Opens real-time audio level meter")
                 Text("View real-time audio input levels per channel during recording.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -404,7 +404,7 @@ struct OutputSettingsTab: View {
                 .pickerStyle(.radioGroup)
                 .onChange(of: outputMode) { _ in applyConfig() }
                 .accessibilityLabel("Output mode")
-                .accessibilityHint("Choose whether to record one file per channel or a combined multichannel file")
+                .accessibilityHint("One file per channel or one multichannel file")
                 if outputMode == "single" {
                     Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
                         .font(.caption)
@@ -419,7 +419,7 @@ struct OutputSettingsTab: View {
             Section("Continuous Recording") {
                 Toggle("Enable continuous recording", isOn: $continuousMode)
                     .onChange(of: continuousMode) { _ in applyConfig() }
-                    .accessibilityHint("When enabled, files are automatically rotated at the specified interval")
+                    .accessibilityHint("Automatically rotate files at regular intervals")
                 Text("Automatically saves and starts a new file at regular intervals, so no audio is lost if the app closes unexpectedly.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -590,7 +590,7 @@ struct GeneralSettingsTab: View {
                     .onChange(of: launchAtLogin) { _ in
                         updateLoginItem()
                     }
-                    .accessibilityHint("Automatically start BlackBox when you log in to your Mac")
+                    .accessibilityHint("Start BlackBox when you log in")
                 Toggle("Start recording on launch", isOn: $autoRecord)
                     .accessibilityHint("Begin recording immediately when BlackBox starts")
                 Text("When auto-record is enabled, recording begins with your saved settings.")
@@ -629,7 +629,7 @@ struct GeneralSettingsTab: View {
 
             Section("Diagnostics") {
                 Toggle("Enable debug logging", isOn: $debugLogging)
-                    .accessibilityHint("Log detailed status information to macOS Console")
+                    .accessibilityHint("Log detailed info to macOS Console")
                 Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
                     .font(.caption)
                     .foregroundColor(.secondary)
