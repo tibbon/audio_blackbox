@@ -263,6 +263,7 @@ final class RecordingState: ObservableObject {
             isRecording = false
             recordingStartTime = nil
             peakLevels = []
+            errorMessage = nil
             statusText = "Ready"
             Self.log.info("Recording stopped")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
