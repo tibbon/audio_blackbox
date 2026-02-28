@@ -95,6 +95,7 @@ struct OnboardingView: View {
             .padding(.bottom, 24)
         }
         .frame(width: 460, height: 380)
+        .background(OnboardingWindowConfigurator())
         .onAppear {
             outputDir = defaultDir.path
             chosenURL = defaultDir
@@ -141,7 +142,7 @@ struct OnboardingView: View {
 
             if micGranted {
                 Label("Microphone access granted", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(Color(nsColor: .systemGreen))
             } else if micDenied {
                 VStack(spacing: 8) {
                     Label("Microphone access denied", systemImage: "xmark.circle.fill")
@@ -217,7 +218,7 @@ struct OnboardingView: View {
             } else {
                 Label("Folder selected", systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundColor(.green)
+                    .foregroundColor(Color(nsColor: .systemGreen))
             }
         }
         .padding(.horizontal, 32)
@@ -386,5 +387,18 @@ struct OnboardingView: View {
 
         hasCompletedOnboarding = true
         dismiss()
+    }
+}
+
+/// Disables minimize and zoom buttons on the Onboarding window per Apple HIG.
+private struct OnboardingWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+        }
     }
 }
