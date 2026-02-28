@@ -295,7 +295,7 @@ struct AboutView: View {
 
             HStack(spacing: 12) {
                 Link("Release Notes", destination: URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")!)
-                Link("Licenses", destination: URL(string: "https://dollhousemediatech.com/blackbox/licenses")!)
+                Link("License", destination: URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/LICENSE")!)
             }
             .font(.caption2)
             .foregroundColor(.secondary)
