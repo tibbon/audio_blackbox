@@ -237,7 +237,7 @@ final class RecordingState: ObservableObject {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.alertStyle = .critical
+        alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
