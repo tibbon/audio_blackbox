@@ -408,7 +408,7 @@ struct OutputSettingsTab: View {
                 if outputMode == "single" {
                     Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Color(nsColor: .systemOrange))
                 } else {
                     Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
                         .font(.caption)

@@ -168,7 +168,7 @@ struct OnboardingView: View {
             if micDenied {
                 Label("Microphone access denied \u{2014} recording won't work until you grant access in System Settings.",
                       systemImage: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color(nsColor: .systemOrange))
                     .font(.caption)
                     .frame(maxWidth: 360)
             }
@@ -213,7 +213,7 @@ struct OnboardingView: View {
             if chosenURL == nil {
                 Text("Select a folder to continue. BlackBox will create it if it doesn't exist.")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color(nsColor: .systemOrange))
             } else {
                 Label("Folder selected", systemImage: "checkmark.circle.fill")
                     .font(.caption)
