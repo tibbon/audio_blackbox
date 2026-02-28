@@ -564,8 +564,10 @@ final class RecordingState: ObservableObject {
     // MARK: - Security-Scoped Bookmarks
 
     /// Save a security-scoped bookmark for the chosen output directory.
+    /// Creates the directory if it doesn't exist.
     func saveOutputDirBookmark(for url: URL) {
         do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             let bookmarkData = try url.bookmarkData(
                 options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
