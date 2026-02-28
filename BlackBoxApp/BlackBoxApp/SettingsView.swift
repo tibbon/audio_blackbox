@@ -689,7 +689,7 @@ struct GeneralSettingsTab: View {
                 if let shortcutError {
                     Text(shortcutError)
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(Color(nsColor: .systemRed))
                 } else {
                     Text("Works from any app. Click the button and press your desired key combination.")
                         .font(.caption)

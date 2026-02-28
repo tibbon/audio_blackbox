@@ -88,10 +88,10 @@ private struct MeterBar: View {
         stops: [
             .init(color: Color(nsColor: .systemGreen), location: 0.0),
             .init(color: Color(nsColor: .systemGreen), location: 0.7),    // -60 to -18 dB
-            .init(color: .yellow, location: 0.8),    // -12 dB
-            .init(color: .yellow, location: 0.92),   // -5 dB
-            .init(color: .red, location: 0.95),      // -3 dB
-            .init(color: .red, location: 1.0),
+            .init(color: Color(nsColor: .systemYellow), location: 0.8),    // -12 dB
+            .init(color: Color(nsColor: .systemYellow), location: 0.92),   // -5 dB
+            .init(color: Color(nsColor: .systemRed), location: 0.95),      // -3 dB
+            .init(color: Color(nsColor: .systemRed), location: 1.0),
         ],
         startPoint: .leading,
         endPoint: .trailing
@@ -130,7 +130,7 @@ private struct MeterBar: View {
                     // Peak hold indicator
                     if peakHold > -60 {
                         Rectangle()
-                            .fill(peakHold > -3 ? Color.red : Color.primary.opacity(0.6))
+                            .fill(peakHold > -3 ? Color(nsColor: .systemRed) : Color.primary.opacity(0.6))
                             .frame(width: 2, height: barHeight)
                             .position(
                                 x: min(geo.size.width * peakHoldFraction, geo.size.width - 1),
@@ -144,7 +144,7 @@ private struct MeterBar: View {
             Text(dBLabel)
                 .font(.system(.caption, design: .monospaced))
                 .frame(width: dBLabelWidth, alignment: .trailing)
-                .foregroundColor(dBFS > -3 ? .red : dBFS > -12 ? .yellow : .secondary)
+                .foregroundColor(dBFS > -3 ? Color(nsColor: .systemRed) : dBFS > -12 ? Color(nsColor: .systemYellow) : .secondary)
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)

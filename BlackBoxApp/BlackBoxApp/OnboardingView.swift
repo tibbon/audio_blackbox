@@ -146,7 +146,7 @@ struct OnboardingView: View {
             } else if micDenied {
                 VStack(spacing: 8) {
                     Label("Microphone access denied", systemImage: "xmark.circle.fill")
-                        .foregroundColor(.red)
+                        .foregroundColor(Color(nsColor: .systemRed))
                     Button("Open System Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                             NSWorkspace.shared.open(url)

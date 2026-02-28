@@ -103,7 +103,7 @@ struct BlackBoxApp: App {
 
         if let error = recorder.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
-                .foregroundColor(.red)
+                .foregroundColor(Color(nsColor: .systemRed))
                 .font(.caption)
                 .accessibilityLabel("Error: \(error)")
         }
