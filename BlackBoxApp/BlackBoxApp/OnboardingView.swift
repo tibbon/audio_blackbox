@@ -375,6 +375,13 @@ struct OnboardingView: View {
             "recording_cadence": 3600,
         ])
 
+        // Warn if mic permission hasn't been granted yet
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if micStatus == .denied || micStatus == .restricted {
+            recorder.errorMessage = "Microphone access denied. Open System Settings to grant permission."
+            recorder.statusText = "Error"
+        }
+
         hasCompletedOnboarding = true
         dismiss()
     }
