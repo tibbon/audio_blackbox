@@ -49,7 +49,7 @@ struct BlackBoxApp: App {
 
                 Divider()
 
-                Button("Quit") {
+                Button("Quit BlackBox") {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q")
@@ -185,7 +185,7 @@ struct BlackBoxApp: App {
 
         Divider()
 
-        Button("Quit") {
+        Button("Quit BlackBox") {
             quitApp()
         }
         .keyboardShortcut("q")
@@ -294,7 +294,7 @@ struct AboutView: View {
                 .font(.caption)
 
             HStack(spacing: 12) {
-                Link("Release Notes", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
+                Link("Release Notes", destination: URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")!)
                 Link("Licenses", destination: URL(string: "https://dollhousemediatech.com/blackbox/licenses")!)
             }
             .font(.caption2)
