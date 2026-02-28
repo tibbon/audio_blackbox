@@ -183,4 +183,4 @@ Dependabot is configured for weekly dependency update PRs (both Cargo crates and
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [Business Source License 1.1](LICENSE). Personal, non-commercial use is permitted. Commercial use requires a license from the author. On 2030-03-01, the code converts to Apache License 2.0.
