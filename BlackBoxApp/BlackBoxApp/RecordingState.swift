@@ -114,6 +114,8 @@ final class RecordingState: ObservableObject {
             lastReportedWriteErrors = 0
             startTimer()
             Self.log.info("Recording started")
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: "Recording started"])
         } else {
             isRecording = false
             recordingStartTime = nil
@@ -252,6 +254,8 @@ final class RecordingState: ObservableObject {
             peakLevels = []
             statusText = "Ready"
             Self.log.info("Recording stopped")
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: "Recording stopped"])
 
             // Track successful sessions >5 min for App Store review prompt
             if sessionDuration > 300 {
