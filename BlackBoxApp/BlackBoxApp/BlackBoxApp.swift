@@ -180,8 +180,8 @@ struct BlackBoxApp: App {
         Divider()
 
         Menu("Help") {
-            Link("BlackBox Support", destination: URL(string: "https://dollhousemediatech.com/blackbox/support")!)
-            Link("Privacy Policy", destination: URL(string: "https://dollhousemediatech.com/blackbox/privacy")!)
+            if let url = AppURL.support { Link("BlackBox Support", destination: url) }
+            if let url = AppURL.privacy { Link("Privacy Policy", destination: url) }
         }
 
         Divider()
@@ -276,6 +276,16 @@ struct BlackBoxApp: App {
     }
 }
 
+// MARK: - URLs
+
+private enum AppURL {
+    static let support = URL(string: "https://dollhousemediatech.com/blackbox/support")
+    static let privacy = URL(string: "https://dollhousemediatech.com/blackbox/privacy")
+    static let website = URL(string: "https://dollhousemediatech.com/blackbox/")
+    static let releaseNotes = URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")
+    static let license = URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/LICENSE")
+}
+
 // MARK: - About View
 
 struct AboutView: View {
@@ -303,12 +313,14 @@ struct AboutView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Link("dollhousemediatech.com/blackbox", destination: URL(string: "https://dollhousemediatech.com/blackbox/")!)
-                .font(.caption)
+            if let url = AppURL.website {
+                Link("dollhousemediatech.com/blackbox", destination: url)
+                    .font(.caption)
+            }
 
             HStack(spacing: 12) {
-                Link("Release Notes", destination: URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")!)
-                Link("License", destination: URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/LICENSE")!)
+                if let url = AppURL.releaseNotes { Link("Release Notes", destination: url) }
+                if let url = AppURL.license { Link("License", destination: url) }
             }
             .font(.caption2)
             .foregroundColor(.secondary)
