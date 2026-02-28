@@ -122,6 +122,11 @@ struct BlackBoxApp: App {
             }
         }
 
+        Button("Level Meter\u{2026}") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "meter")
+        }
+
         Divider()
 
         // Input device submenu with checkmarks
@@ -156,11 +161,6 @@ struct BlackBoxApp: App {
 
         Button("Show in Finder") {
             recorder.openOutputDir()
-        }
-
-        Button("Level Meter\u{2026}") {
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "meter")
         }
 
         Divider()
