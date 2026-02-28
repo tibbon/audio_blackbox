@@ -646,8 +646,10 @@ struct OutputSettingsTab: View {
 // MARK: - General Tab
 
 struct GeneralSettingsTab: View {
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
+    @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @AppStorage("debugLogging") private var debugLogging = false
     @State private var shortcutLabel: String = "None"
     @State private var isRecordingShortcut = false
@@ -701,6 +703,18 @@ struct GeneralSettingsTab: View {
                 Toggle("Enable debug logging", isOn: $debugLogging)
                     .accessibilityHint("Log detailed info to macOS Console")
                 Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Setup") {
+                Button("Run Setup Again\u{2026}") {
+                    hasCompletedOnboarding = false
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "onboarding")
+                }
+                .accessibilityHint("Re-run the initial setup wizard")
+                Text("Re-run the setup wizard to change your output directory or recording mode.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
