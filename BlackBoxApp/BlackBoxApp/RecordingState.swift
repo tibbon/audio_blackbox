@@ -201,6 +201,17 @@ final class RecordingState: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// Notify the user of a critical event using the appropriate channel:
+    /// modal alert if the app is in the foreground, notification if backgrounded.
+    /// Avoids showing both simultaneously.
+    private func notifyUser(title: String, message: String) {
+        if NSApp.isActive {
+            showCriticalAlert(title: title, message: message)
+        } else {
+            postNotification(title: title, body: message)
+        }
+    }
+
     /// Show an NSAlert for critical errors that require the user's attention.
     private func showCriticalAlert(title: String, message: String) {
         let alert = NSAlert()
@@ -407,8 +418,7 @@ final class RecordingState: ObservableObject {
             errorMessage = msg
             statusText = "Error"
             Self.log.error("Recording stopped unexpectedly: \(msg)")
-            postNotification(title: "Recording Stopped", body: msg)
-            showCriticalAlert(title: "Recording Stopped", message: msg)
+            notifyUser(title: "Recording Stopped", message: msg)
             return
         }
 
@@ -463,8 +473,7 @@ final class RecordingState: ObservableObject {
                     let msg = "Your audio device was disconnected and no alternative is available. Check your connections and try again."
                     errorMessage = msg
                     statusText = "Error"
-                    postNotification(title: "Recording Stopped", body: msg)
-                    showCriticalAlert(title: "Recording Stopped", message: msg)
+                    notifyUser(title: "Recording Stopped", message: msg)
                 }
                 return
             }
@@ -475,8 +484,7 @@ final class RecordingState: ObservableObject {
                 errorMessage = msg
                 statusText = "Disk Full"
                 Self.log.error("Disk space low, stopping recording")
-                postNotification(title: "Recording Stopped", body: msg)
-                showCriticalAlert(title: "Recording Stopped", message: msg)
+                notifyUser(title: "Recording Stopped", message: msg)
                 return
             }
             // Write errors — cumulative counter from Rust engine
@@ -490,8 +498,7 @@ final class RecordingState: ObservableObject {
                     errorMessage = msg
                     statusText = "Error"
                     Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
-                    postNotification(title: "Recording Stopped", body: msg)
-                    showCriticalAlert(title: "Recording Stopped", message: msg)
+                    notifyUser(title: "Recording Stopped", message: msg)
                     return
                 } else if newDrops > 0 {
                     // Only log/display when NEW drops occur (counter is cumulative)
