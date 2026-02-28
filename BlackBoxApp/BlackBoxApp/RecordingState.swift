@@ -120,8 +120,7 @@ final class RecordingState: ObservableObject {
             isRecording = false
             recordingStartTime = nil
             let err = bridge.lastError ?? "Failed to start recording"
-            errorMessage = err
-            statusText = "Error"
+            setTransientError(err)
             Self.log.error("Failed to start recording: \(err)")
         }
     }
@@ -234,6 +233,18 @@ final class RecordingState: ObservableObject {
         }
     }
 
+    /// Set a transient error that auto-clears after 30 seconds.
+    /// Use for errors that don't require ongoing user action (device disconnect, disk full, etc.).
+    private func setTransientError(_ message: String) {
+        errorMessage = message
+        statusText = "Error"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.errorMessage == message else { return }
+            self.errorMessage = nil
+            if !self.isRecording { self.statusText = "Ready" }
+        }
+    }
+
     /// Show an NSAlert for critical errors that require the user's attention.
     private func showCriticalAlert(title: String, message: String) {
         let alert = NSAlert()
@@ -269,7 +280,7 @@ final class RecordingState: ObservableObject {
             }
         } else {
             let err = bridge.lastError ?? "Failed to stop recording"
-            errorMessage = err
+            setTransientError(err)
             Self.log.error("Failed to stop recording: \(err)")
         }
     }
@@ -446,8 +457,7 @@ final class RecordingState: ObservableObject {
             isRecording = false
             recordingStartTime = nil
             let msg = bridge.lastError ?? "Recording stopped unexpectedly"
-            errorMessage = msg
-            statusText = "Error"
+            setTransientError(msg)
             Self.log.error("Recording stopped unexpectedly: \(msg)")
             notifyUser(title: "Recording Stopped", message: msg)
             return
@@ -504,8 +514,7 @@ final class RecordingState: ObservableObject {
                     isRecording = false
                     recordingStartTime = nil
                     let msg = "Your audio device was disconnected and no alternative is available. Check your connections and try again."
-                    errorMessage = msg
-                    statusText = "Error"
+                    setTransientError(msg)
                     notifyUser(title: "Recording Stopped", message: msg)
                 }
                 return
@@ -514,8 +523,7 @@ final class RecordingState: ObservableObject {
             if let diskLow = status["disk_space_low"] as? Bool, diskLow {
                 stop()
                 let msg = "Your disk is almost full. Free up space and try again."
-                errorMessage = msg
-                statusText = "Disk Full"
+                setTransientError(msg)
                 Self.log.error("Disk space low, stopping recording")
                 notifyUser(title: "Recording Stopped", message: msg)
                 return
@@ -528,8 +536,7 @@ final class RecordingState: ObservableObject {
                     // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
                     stop()
                     let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
-                    errorMessage = msg
-                    statusText = "Error"
+                    setTransientError(msg)
                     Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
                     notifyUser(title: "Recording Stopped", message: msg)
                     return
