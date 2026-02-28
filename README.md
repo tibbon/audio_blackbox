@@ -30,7 +30,7 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ```bash
 cargo build                          # Debug build
 cargo build --release                # Release build
-cargo test                           # Run all tests (125 total)
+cargo test                           # Run all tests (139 total: 127 lib + 12 binary)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 ```
@@ -66,6 +66,9 @@ recording_cadence = 300
 
 # Minimum free disk space in MB (0 to disable)
 min_disk_space_mb = 500
+
+# Input device name (leave unset for system default)
+# input_device = "MacBook Pro Microphone"
 ```
 
 Channel specs support individual channels and ranges: `"0,2-4,7"` records channels 0, 2, 3, 4, and 7.
@@ -99,8 +102,10 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 | `src/writer_thread.rs` | Writer thread, ring buffer consumer, WAV file management |
 | `src/config.rs` | TOML + env var configuration with `BLACKBOX_*` prefix support |
 | `src/constants.rs` | Default values, type aliases |
+| `src/ffi.rs` | C FFI layer for Swift/SwiftUI frontend |
 | `src/error.rs` | Custom error type via thiserror |
-| `src/bin/macos/` | macOS menu bar UI (feature-gated) |
+| `src/bin/macos/` | Cocoa-based macOS menu bar UI (feature-gated) |
+| `BlackBoxApp/` | SwiftUI menu bar app (Xcode project, calls Rust via FFI) |
 
 ## Benchmarking
 
@@ -162,16 +167,17 @@ File rotation overhead is <1ms in single mode and ~10ms in 64-channel split mode
 
 ## CI
 
-CI runs on every push to `main` and on pull requests. Six parallel jobs:
+CI runs on every push to `main` and on pull requests. Seven parallel jobs:
 
 | Job | What it checks |
 |-----|---------------|
 | **Format** | `cargo fmt --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **Test (Ubuntu)** | 113 lib tests |
-| **Test (macOS)** | 113 lib + 12 macOS binary tests |
+| **Test (Ubuntu)** | 115 lib tests (12 benchmarks ignored) |
+| **Test (macOS)** | 115 lib + 12 macOS binary tests (12 benchmarks ignored) |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
+| **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
 
 Dependabot is configured for weekly dependency update PRs (both Cargo crates and GitHub Actions).
 

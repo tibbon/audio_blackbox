@@ -112,6 +112,14 @@ final class RustBridge {
         return Array(buffer.prefix(Int(count)))
     }
 
+    /// Write peak levels into a caller-provided buffer. Returns the channel count.
+    /// Zero-allocation path for the meter polling loop.
+    func fillPeakLevels(into buffer: inout [Float]) -> Int {
+        guard let handle = handle else { return 0 }
+        let count = blackbox_get_peak_levels(handle, &buffer, Int32(buffer.count))
+        return max(Int(count), 0)
+    }
+
     // MARK: - Device Enumeration
 
     /// Get the input channel count for a device by name.
