@@ -726,6 +726,13 @@ struct GeneralSettingsTab: View {
                 Text("Re-run the setup wizard to change your output directory or recording mode.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+
+                Button("Reset All Settings\u{2026}") {
+                    confirmResetAllSettings()
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityHint("Restore all settings to their defaults")
             }
         }
         .formStyle(.grouped)
@@ -741,6 +748,43 @@ struct GeneralSettingsTab: View {
         GlobalHotkeyManager.shared.unregister()
         GlobalHotkeyManager.shared.save(nil)
         shortcutLabel = "None"
+    }
+
+    private func confirmResetAllSettings() {
+        let alert = NSAlert()
+        alert.messageText = "Reset All Settings?"
+        alert.informativeText = "This will restore all settings to their defaults. Your recordings will not be affected."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Reset")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() != .alertFirstButtonReturn {
+            resetAllSettings()
+        }
+    }
+
+    private func resetAllSettings() {
+        let defaults = UserDefaults.standard
+        // Reset all settings keys except onboarding completion and output dir bookmark
+        let keysToReset = [
+            SettingsKeys.inputDevice, SettingsKeys.audioChannels, SettingsKeys.outputMode,
+            SettingsKeys.silenceEnabled, SettingsKeys.silenceThreshold,
+            SettingsKeys.continuousMode, SettingsKeys.recordingCadence,
+            SettingsKeys.launchAtLogin, SettingsKeys.autoRecord,
+            SettingsKeys.minDiskSpaceMB, SettingsKeys.bitDepth,
+            "debugLogging",
+        ]
+        for key in keysToReset {
+            defaults.removeObject(forKey: key)
+        }
+        // Clear global shortcut
+        clearShortcut()
+        // Update launch-at-login to match (now off)
+        try? SMAppService.mainApp.unregister()
+        // Refresh local state
+        launchAtLogin = false
+        autoRecord = false
+        debugLogging = false
     }
 
     private func updateLoginItem() {
