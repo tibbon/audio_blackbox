@@ -1,9 +1,11 @@
 import Carbon
 import ServiceManagement
+import StoreKit
 import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var recorder: RecordingState
+    @Environment(\.requestReview) private var requestReview
 
     var body: some View {
         TabView {
@@ -24,6 +26,20 @@ struct SettingsView: View {
         }
         .frame(minWidth: 480, maxWidth: 480, minHeight: 450)
         .background(SettingsWindowConfigurator())
+        .onAppear {
+            promptForReviewIfReady()
+        }
+    }
+
+    private func promptForReviewIfReady() {
+        let key = "settingsOpenCount"
+        let count = UserDefaults.standard.integer(forKey: key) + 1
+        UserDefaults.standard.set(count, forKey: key)
+        if count == 5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                requestReview()
+            }
+        }
     }
 }
 

@@ -92,11 +92,17 @@ struct BlackBoxApp: App {
 
         Divider()
 
-        // Primary action
-        Button(recorder.isRecording ? "Stop Recording" : "Start Recording") {
+        // Primary action — show the user's configured global shortcut if set
+        Button {
             recorder.toggle()
+        } label: {
+            let action = recorder.isRecording ? "Stop Recording" : "Start Recording"
+            if let shortcut = GlobalHotkeyManager.shared.currentShortcut {
+                Text("\(action)  \(shortcut.displayString)")
+            } else {
+                Text(action)
+            }
         }
-        .keyboardShortcut("r")
 
         Divider()
 
