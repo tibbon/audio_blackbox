@@ -132,7 +132,7 @@ struct RecordingSettingsTab: View {
 
                 if silenceEnabled {
                     VStack(alignment: .leading, spacing: 4) {
-                        Slider(value: $silenceThreshold, in: 0.001...0.1) {
+                        Slider(value: $silenceThreshold, in: 0.001...0.1, step: 0.005) {
                             Text("Threshold")
                         }
                         .onChange(of: silenceThreshold) { _ in applyConfig() }
