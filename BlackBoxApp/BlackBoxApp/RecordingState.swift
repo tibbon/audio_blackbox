@@ -3,6 +3,7 @@ import AppKit
 import AVFoundation
 import Combine
 import os.log
+import UserNotifications
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
 @MainActor
@@ -52,6 +53,7 @@ final class RecordingState: ObservableObject {
         restoreOutputDirBookmark()
         restoreSavedSettings()
         restoreGlobalHotkey()
+        requestNotificationAuth()
 
         // Auto-record on launch if enabled (skip if onboarding not complete)
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
@@ -179,6 +181,22 @@ final class RecordingState: ObservableObject {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+
+    // MARK: - Notifications
+
+    private func requestNotificationAuth() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    /// Post a notification to Notification Center for events that occur while the app is in the background.
+    private func postNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     /// Show an NSAlert for critical errors that require the user's attention.
@@ -374,6 +392,7 @@ final class RecordingState: ObservableObject {
             errorMessage = msg
             statusText = "Error"
             Self.log.error("Recording stopped unexpectedly: \(msg)")
+            postNotification(title: "Recording Stopped", body: msg)
             showCriticalAlert(title: "Recording Stopped", message: msg)
             return
         }
@@ -402,6 +421,7 @@ final class RecordingState: ObservableObject {
                 errorMessage = msg
                 statusText = "Error"
                 Self.log.error("Stream error detected, stopping recording")
+                postNotification(title: "Recording Stopped", body: msg)
                 showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
@@ -412,6 +432,7 @@ final class RecordingState: ObservableObject {
                 errorMessage = msg
                 statusText = "Disk Full"
                 Self.log.error("Disk space low, stopping recording")
+                postNotification(title: "Recording Stopped", body: msg)
                 showCriticalAlert(title: "Recording Stopped", message: msg)
                 return
             }
@@ -426,6 +447,7 @@ final class RecordingState: ObservableObject {
                     errorMessage = msg
                     statusText = "Error"
                     Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
+                    postNotification(title: "Recording Stopped", body: msg)
                     showCriticalAlert(title: "Recording Stopped", message: msg)
                     return
                 } else if newDrops > 0 {
