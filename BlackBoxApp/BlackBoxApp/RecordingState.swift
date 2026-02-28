@@ -192,23 +192,24 @@ final class RecordingState: ObservableObject {
     }
 
     /// Post a notification to Notification Center for events that occur while the app is in the background.
-    private func postNotification(title: String, body: String) {
+    /// Uses a fixed identifier so new notifications of the same type replace old ones instead of stacking.
+    private func postNotification(title: String, body: String, identifier: String = "blackbox-info") {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 
     /// Notify the user of a critical event using the appropriate channel:
     /// modal alert if the app is in the foreground, notification if backgrounded.
     /// Avoids showing both simultaneously.
-    private func notifyUser(title: String, message: String) {
+    private func notifyUser(title: String, message: String, identifier: String = "recording-stopped") {
         if NSApp.isActive {
             showCriticalAlert(title: title, message: message)
         } else {
-            postNotification(title: title, body: message)
+            postNotification(title: title, body: message, identifier: identifier)
         }
     }
 
@@ -445,7 +446,8 @@ final class RecordingState: ObservableObject {
                 Self.log.warning("Sample rate changed on device — finalizing and restarting")
                 restartIfRecording(reason: "sample rate changed")
                 postNotification(title: "Sample Rate Changed",
-                                 body: "Your audio device's sample rate changed. Recording was restarted automatically.")
+                                 body: "Your audio device's sample rate changed. Recording was restarted automatically.",
+                                 identifier: "sample-rate-changed")
                 return
             }
 
@@ -465,7 +467,8 @@ final class RecordingState: ObservableObject {
                     startTimer()
                     Self.log.info("Recording restarted on available device")
                     postNotification(title: "Device Changed",
-                                     body: "Your audio device changed. Recording continued on the next available device.")
+                                     body: "Your audio device changed. Recording continued on the next available device.",
+                                     identifier: "device-changed")
                 } else {
                     // No device available — stop for real
                     isRecording = false
