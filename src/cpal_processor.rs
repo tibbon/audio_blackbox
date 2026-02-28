@@ -155,10 +155,7 @@ mod sample_rate_listener {
                 }
             } else {
                 // Listener still registered — leak the Arc to avoid use-after-free
-                warn!(
-                    "Failed to remove sample rate listener (status {})",
-                    status
-                );
+                warn!("Failed to remove sample rate listener (status {})", status);
             }
         }
     }
