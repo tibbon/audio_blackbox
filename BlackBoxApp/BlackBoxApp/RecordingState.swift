@@ -188,8 +188,24 @@ final class RecordingState: ObservableObject {
     // MARK: - Notifications
 
     private func requestNotificationAuth() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+        // Register "Restart Recording" action on recording-stopped notifications
+        let restartAction = UNNotificationAction(
+            identifier: "restart-recording",
+            title: "Restart Recording")
+        let category = UNNotificationCategory(
+            identifier: "recording-stopped",
+            actions: [restartAction],
+            intentIdentifiers: [])
+        center.setNotificationCategories([category])
+        center.delegate = notificationDelegate
     }
+
+    /// Delegate that handles notification action responses (e.g. "Restart Recording").
+    /// Stored as an instance property to keep the delegate alive.
+    private let notificationDelegate = NotificationDelegate()
 
     /// Post a notification to Notification Center for events that occur while the app is in the background.
     /// Uses a fixed identifier so new notifications of the same type replace old ones instead of stacking.
@@ -198,6 +214,9 @@ final class RecordingState: ObservableObject {
         content.title = title
         content.body = body
         content.sound = isRecording ? nil : .default
+        if identifier == "recording-stopped" {
+            content.categoryIdentifier = "recording-stopped"
+        }
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
@@ -590,5 +609,37 @@ final class RecordingState: ObservableObject {
     func releaseOutputDirAccess() {
         securityScopedURL?.stopAccessingSecurityScopedResource()
         securityScopedURL = nil
+    }
+}
+
+// MARK: - Notification Action Handler
+
+/// Handles notification action responses (e.g. "Restart Recording" button).
+/// Separate class because UNUserNotificationCenterDelegate requires NSObject conformance.
+private class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler handler: @escaping () -> Void
+    ) {
+        if response.actionIdentifier == "restart-recording" {
+            Task { @MainActor in
+                // Find the RecordingState — it's the source of truth for the app
+                if let app = NSApp.delegate as? AppDelegate, let recorder = app.recorder {
+                    recorder.start()
+                }
+            }
+        }
+        handler()
+    }
+
+    /// Show notifications even when the app is in the foreground (needed for
+    /// notification actions to be accessible).
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        handler([.banner])
     }
 }
