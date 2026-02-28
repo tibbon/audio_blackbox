@@ -581,6 +581,7 @@ struct GeneralSettingsTab: View {
     @AppStorage("debugLogging") private var debugLogging = false
     @State private var shortcutLabel: String = "None"
     @State private var isRecordingShortcut = false
+    @State private var shortcutError: String?
 
     var body: some View {
         Form {
@@ -603,7 +604,8 @@ struct GeneralSettingsTab: View {
                     Spacer()
                     ShortcutRecorderButton(
                         shortcutLabel: $shortcutLabel,
-                        isRecording: $isRecordingShortcut
+                        isRecording: $isRecordingShortcut,
+                        error: $shortcutError
                     )
                     if shortcutLabel != "None" {
                         Button("Clear") {
@@ -613,9 +615,16 @@ struct GeneralSettingsTab: View {
                     }
                 }
                 .accessibilityLabel("Global keyboard shortcut for toggling recording")
-                Text("Works from any app. Click the button and press your desired key combination.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                if let shortcutError {
+                    Text(shortcutError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                } else {
+                    Text("Works from any app. Click the button and press your desired key combination.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("Diagnostics") {
@@ -660,6 +669,7 @@ struct GeneralSettingsTab: View {
 struct ShortcutRecorderButton: NSViewRepresentable {
     @Binding var shortcutLabel: String
     @Binding var isRecording: Bool
+    @Binding var error: String?
 
     func makeNSView(context: Context) -> ShortcutRecorderNSButton {
         let button = ShortcutRecorderNSButton()
@@ -688,6 +698,7 @@ struct ShortcutRecorderButton: NSViewRepresentable {
 
         func startRecording() {
             parent.isRecording = true
+            parent.error = nil
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 self?.handleKeyEvent(event)
                 return nil // Consume the event
@@ -728,11 +739,13 @@ struct ShortcutRecorderButton: NSViewRepresentable {
 
             // Reject reserved system shortcuts
             if Self.reservedShortcuts.contains(shortcut.displayString) {
+                parent.error = "\(shortcut.displayString) is reserved by macOS"
                 stopRecording()
                 return
             }
 
             // Register and save
+            parent.error = nil
             let manager = GlobalHotkeyManager.shared
             manager.register(shortcut)
             manager.save(shortcut)
