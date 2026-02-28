@@ -246,7 +246,7 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 recordingModeOption(
-                    title: "Automatic Safety Saves (Recommended)",
+                    title: "Continuous Recording (Recommended)",
                     description: "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly.",
                     isSelected: continuousMode
                 ) {
