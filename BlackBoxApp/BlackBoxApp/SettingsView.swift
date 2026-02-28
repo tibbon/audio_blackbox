@@ -471,12 +471,17 @@ struct OutputSettingsTab: View {
                                 .frame(width: 80)
                                 .onChange(of: recordingCadence) { newValue in
                                     if newValue < 1 { recordingCadence = 1 }
+                                    else if newValue > 86400 { recordingCadence = 86400 }
                                     applyConfig()
                                 }
                                 .accessibilityLabel("Custom rotation interval")
                                 .accessibilityValue("\(recordingCadence) seconds")
                             Text("seconds")
-                            if recordingCadence > 0 {
+                            if recordingCadence >= 86400 {
+                                Text("Maximum: 24 hours")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if recordingCadence > 0 {
                                 Text("(\(cadenceDescription))")
                                     .foregroundColor(.secondary)
                                     .font(.caption)
