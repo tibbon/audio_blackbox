@@ -113,7 +113,10 @@ struct RecordingSettingsTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
-                .onChange(of: bitDepth) { _ in applyConfig() }
+                .onChange(of: bitDepth) { _ in
+                    applyConfig()
+                    recorder.restartIfRecording(reason: "bit depth changed")
+                }
                 .accessibilityLabel("Bit depth")
                 .accessibilityHint("Precision of WAV recordings")
                 Text("24-bit is the professional standard. 16-bit saves space. 32-bit float offers maximum precision with larger files.")
@@ -253,6 +256,7 @@ struct RecordingSettingsTab: View {
         let sorted = selectedChannels.sorted()
         channelSpec = sorted.map { String($0) }.joined(separator: ",")
         applyConfig()
+        recorder.restartIfRecording(reason: "channels changed")
     }
 
     /// Query the device for its channel count and refresh checkboxes.
@@ -419,7 +423,10 @@ struct OutputSettingsTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
-                .onChange(of: outputMode) { _ in applyConfig() }
+                .onChange(of: outputMode) { _ in
+                    applyConfig()
+                    recorder.restartIfRecording(reason: "output mode changed")
+                }
                 .accessibilityLabel("Output mode")
                 .accessibilityHint("One file per channel or one multichannel file")
                 if outputMode == "single" {

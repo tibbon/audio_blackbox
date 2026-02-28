@@ -251,18 +251,21 @@ final class RecordingState: ObservableObject {
     }
 
     func selectDevice(_ name: String) {
-        let wasRecording = isRecording
         UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
         bridge.setConfig(["input_device": name])
+        restartIfRecording(reason: "device changed")
+    }
 
-        if wasRecording {
-            Self.log.info("Device changed while recording — finalizing and restarting")
-            stopTimer()
-            _ = bridge.stopRecording()
-            peakLevels = []
-            lastReportedWriteErrors = 0
-            startRecordingInternal()
-        }
+    /// Finalize current WAV files and immediately start a new recording session
+    /// with the updated config. No-op if not currently recording.
+    func restartIfRecording(reason: String) {
+        guard isRecording else { return }
+        Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
+        stopTimer()
+        _ = bridge.stopRecording()
+        peakLevels = []
+        lastReportedWriteErrors = 0
+        startRecordingInternal()
     }
 
     // MARK: - Settings Persistence
