@@ -284,6 +284,7 @@ private enum AppURL {
     static let website = URL(string: "https://dollhousemediatech.com/blackbox/")
     static let releaseNotes = URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")
     static let license = URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/LICENSE")
+    static let acknowledgments = URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/ACKNOWLEDGMENTS.md")
 }
 
 // MARK: - About View
@@ -321,6 +322,7 @@ struct AboutView: View {
             HStack(spacing: 12) {
                 if let url = AppURL.releaseNotes { Link("Release Notes", destination: url) }
                 if let url = AppURL.license { Link("License", destination: url) }
+                if let url = AppURL.acknowledgments { Link("Acknowledgments", destination: url) }
             }
             .font(.caption2)
             .foregroundColor(.secondary)
