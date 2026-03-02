@@ -16,8 +16,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::catch_unwind;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::audio_processor::AudioProcessor;
 use crate::audio_recorder::AudioRecorder;

@@ -27,10 +27,31 @@ libc = "0.2"
 
 # macOS-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.25"
-objc = "0.2.7"
 core-foundation = "0.9"
-core-graphics = "0.23"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSString",
+    "NSThread",
+    "NSAutoreleasePool",
+    "NSObjCRuntime",
+    "NSRunLoop",
+    "NSDate",
+    "NSGeometry",
+    "objc2-core-foundation",
+] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
+    "NSRunningApplication",
+    "NSMenu",
+    "NSMenuItem",
+    "NSStatusBar",
+    "NSStatusItem",
+    "NSStatusBarButton",
+    "NSButton",
+    "NSControl",
+    "NSImage",
+    "NSEvent",
+] }
 
 [lib]
 name = "blackbox"
@@ -48,7 +69,6 @@ path = "src/bin/bench_writer.rs"
 [features]
 default = ["benchmarking"]
 benchmarking = ["dep:sysinfo"]
-cargo-clippy = [] # Required: objc crate macros check this feature internally
 menu-bar = []
 ffi = []
 
@@ -59,8 +79,6 @@ nursery = { level = "warn", priority = -2 }
 # Allow specific lints that are problematic for this codebase
 arc_with_non_send_sync = "allow"
 module_name_repetitions = "allow"
-useless_transmute = "allow" # Needed for Objective-C FFI
-
 
 [package.metadata.bundle]
 name = "BlackBox Audio Recorder"

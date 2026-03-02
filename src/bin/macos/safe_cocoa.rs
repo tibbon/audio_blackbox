@@ -5,23 +5,25 @@
 #![allow(clippy::unnecessary_wraps)]
 
 #[cfg(target_os = "macos")]
-// Safe wrapper for Cocoa/AppKit APIs
-// Provides exception-safe interfaces to common macOS UI functionality
-use std::ffi::CStr;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
-use cocoa::appkit::NSApplicationActivationPolicy;
+use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
-use cocoa::base::{NO, YES, id, nil};
+use objc2::runtime::AnyObject;
 #[cfg(target_os = "macos")]
-use cocoa::foundation::{NSAutoreleasePool, NSSize, NSString};
+use objc2::sel;
 #[cfg(target_os = "macos")]
-use core_foundation::runloop::kCFRunLoopDefaultMode;
+use objc2::{AnyThread, MainThreadMarker, MainThreadOnly};
 #[cfg(target_os = "macos")]
-use objc::{class, msg_send, sel, sel_impl};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSEventMask, NSImage, NSMenu,
+    NSMenuItem as AppKitMenuItem, NSStatusBar, NSStatusItem as AppKitStatusItem,
+};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSAutoreleasePool, NSDate, NSDefaultRunLoopMode, NSSize, NSString};
 
 /// Represents an error from Cocoa/AppKit operations
 #[cfg(target_os = "macos")]
@@ -40,114 +42,58 @@ pub type CocoaResult<T> = Result<T, CocoaError>;
 /// Automatically releases all objects when dropped
 #[cfg(target_os = "macos")]
 pub struct AutoreleasePool {
-    pool: id,
+    pool: Retained<NSAutoreleasePool>,
 }
 
 #[cfg(target_os = "macos")]
 impl AutoreleasePool {
     /// Creates a new autorelease pool
     pub fn new() -> Self {
-        unsafe {
-            let pool = NSAutoreleasePool::new(nil);
-            Self { pool }
-        }
+        let pool = unsafe { NSAutoreleasePool::new() };
+        Self { pool }
     }
 }
 
-#[cfg(target_os = "macos")]
-impl Drop for AutoreleasePool {
-    fn drop(&mut self) {
-        unsafe {
-            let _: () = msg_send![self.pool, drain];
-        }
-    }
-}
-
-/// Wrapper around cocoa::msg_send! that provides better error handling
-#[cfg(target_os = "macos")]
-#[macro_export]
-macro_rules! safe_msg_send {
-    ($obj:expr, $selector:ident) => {
-        {
-            if $obj == nil {
-                Err(CocoaError::NilInstance(()))
-            } else {
-                unsafe {
-                    Ok(cocoa::base::msg_send![$obj, $selector])
-                }
-            }
-        }
-    };
-    ($obj:expr, $selector:ident : $($arg:expr),*) => {
-        {
-            if $obj == nil {
-                Err(CocoaError::NilInstance(()))
-            } else {
-                unsafe {
-                    Ok(cocoa::base::msg_send![$obj, $selector: $($arg),*])
-                }
-            }
-        }
-    };
-}
+// Drop is handled automatically by Retained<NSAutoreleasePool>
 
 /// Safe wrapper around NSString
 #[cfg(target_os = "macos")]
 pub struct SafeNSString {
-    ns_string: id,
+    ns_string: Retained<NSString>,
 }
 
 #[cfg(target_os = "macos")]
 impl SafeNSString {
     /// Create a new NSString from a Rust string
     pub fn new(string: &str) -> CocoaResult<Self> {
-        let _pool = AutoreleasePool::new();
-        let ns_string = unsafe {
-            let string = NSString::alloc(nil).init_str(string);
-            if string == nil {
-                return Err(CocoaError::NilInstance(()));
-            }
-            string
-        };
+        let ns_string = NSString::from_str(string);
         Ok(Self { ns_string })
     }
 
-    /// Get the underlying NSString id
-    pub fn as_id(&self) -> id {
-        self.ns_string
+    /// Get a reference to the underlying NSString
+    pub fn as_ns_string(&self) -> &NSString {
+        &self.ns_string
     }
 
     /// Convert to Rust String
     #[allow(dead_code, clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
-        unsafe {
-            let utf8_string: *const c_char = msg_send![self.ns_string, UTF8String];
-            if utf8_string.is_null() {
-                return String::new();
-            }
-            CStr::from_ptr(utf8_string).to_string_lossy().into_owned()
-        }
+        self.ns_string.to_string()
     }
 }
 
 /// Safe wrapper for menu bar icon (NSImage)
 #[cfg(target_os = "macos")]
 pub struct MenuBarIcon {
-    image: id,
+    image: Retained<NSImage>,
 }
 
 #[cfg(target_os = "macos")]
 impl MenuBarIcon {
     /// Create an icon from a system-provided symbol name
     pub fn from_system_name(name: &str) -> CocoaResult<Self> {
-        let name_str = SafeNSString::new(name)?;
-        let image = unsafe {
-            let image: id = msg_send![class!(NSImage), imageNamed:name_str.as_id()];
-            if image == nil {
-                return Err(CocoaError::ResourceNotFound(()));
-            }
-            image
-        };
+        let name_str = NSString::from_str(name);
+        let image = NSImage::imageNamed(&name_str).ok_or(CocoaError::ResourceNotFound(()))?;
         Ok(Self { image })
     }
 
@@ -155,16 +101,8 @@ impl MenuBarIcon {
     pub fn circle(color: &str, size: f64) -> CocoaResult<Self> {
         let pool = AutoreleasePool::new();
 
-        // Create an image with the specified size
-        let size = NSSize::new(size, size);
-        let image = unsafe {
-            let image: id = msg_send![class!(NSImage), alloc];
-            let image: id = msg_send![image, initWithSize:size];
-            if image == nil {
-                return Err(CocoaError::NilInstance(()));
-            }
-            image
-        };
+        let ns_size = NSSize::new(size, size);
+        let image = NSImage::initWithSize(NSImage::alloc(), ns_size);
 
         // More implementation details...
 
@@ -172,9 +110,9 @@ impl MenuBarIcon {
         Ok(Self { image })
     }
 
-    /// Get the underlying NSImage object
-    pub fn as_id(&self) -> id {
-        self.image
+    /// Get a reference to the underlying NSImage
+    pub fn as_image(&self) -> &NSImage {
+        &self.image
     }
 }
 
@@ -185,7 +123,7 @@ pub type MenuItemAction = Box<dyn Fn() + Send + 'static>;
 /// Represents a single menu item
 #[cfg(target_os = "macos")]
 pub struct MenuItem {
-    item: id,
+    item: Retained<AppKitMenuItem>,
     action: Option<Arc<Mutex<MenuItemAction>>>,
 }
 
@@ -193,14 +131,16 @@ pub struct MenuItem {
 impl MenuItem {
     /// Create a new menu item with the given title
     pub fn new(title: &str) -> CocoaResult<Self> {
-        let string = SafeNSString::new(title)?;
+        let mtm = MainThreadMarker::new().ok_or(CocoaError::NilInstance(()))?;
+        let title_str = NSString::from_str(title);
+        let empty_key = NSString::from_str("");
         let item = unsafe {
-            let item: id = msg_send![class!(NSMenuItem), alloc];
-            let item: id = msg_send![item, initWithTitle:string.as_id() action:sel!(menuItemAction:) keyEquivalent:NSString::alloc(nil).init_str("")];
-            if item == nil {
-                return Err(CocoaError::NilInstance(()));
-            }
-            item
+            AppKitMenuItem::initWithTitle_action_keyEquivalent(
+                AppKitMenuItem::alloc(mtm),
+                &title_str,
+                Some(sel!(menuItemAction:)),
+                &empty_key,
+            )
         };
 
         Ok(Self { item, action: None })
@@ -217,7 +157,8 @@ impl MenuItem {
         // Store the action pointer in the menu item's represented object
         unsafe {
             let action_ptr = Arc::into_raw(self.action.as_ref().unwrap().clone()) as *mut c_void;
-            let _: () = msg_send![self.item, setRepresentedObject:action_ptr as id];
+            self.item
+                .setRepresentedObject(Some(&*(action_ptr as *const AnyObject)));
         }
 
         self
@@ -226,72 +167,63 @@ impl MenuItem {
     /// Set whether this item is enabled
     #[allow(dead_code)]
     pub fn set_enabled(&mut self, enabled: bool) -> &mut Self {
-        unsafe {
-            let _: () = msg_send![self.item, setEnabled:if enabled { YES } else { NO }];
-        }
+        self.item.setEnabled(enabled);
         self
     }
 
-    /// Get the underlying NSMenuItem id
-    pub fn as_id(&self) -> id {
-        self.item
+    /// Get a reference to the underlying NSMenuItem
+    pub fn as_menu_item(&self) -> &AppKitMenuItem {
+        &self.item
     }
 }
 
 /// Represents a menu that can contain menu items
 #[cfg(target_os = "macos")]
 pub struct Menu {
-    menu: id,
+    inner: Retained<NSMenu>,
     items: Vec<MenuItem>,
+    mtm: MainThreadMarker,
 }
 
 #[cfg(target_os = "macos")]
 impl Menu {
     /// Create a new empty menu
     pub fn new() -> CocoaResult<Self> {
-        let menu = unsafe {
-            let menu: id = msg_send![class!(NSMenu), new];
-            if menu == nil {
-                return Err(CocoaError::NilInstance(()));
-            }
-            menu
-        };
-
+        let mtm = MainThreadMarker::new().ok_or(CocoaError::NilInstance(()))?;
+        let inner = NSMenu::new(mtm);
         Ok(Self {
-            menu,
+            inner,
             items: Vec::new(),
+            mtm,
         })
     }
 
     /// Add a menu item
     pub fn add_item(&mut self, item: MenuItem) -> &mut Self {
-        unsafe {
-            let _: () = msg_send![self.menu, addItem:item.as_id()];
-        }
+        self.inner.addItem(&item.item);
         self.items.push(item);
         self
     }
 
     /// Add a separator
     pub fn add_separator(&mut self) -> &mut Self {
-        unsafe {
-            let separator: id = msg_send![class!(NSMenuItem), separatorItem];
-            let _: () = msg_send![self.menu, addItem:separator];
-        }
+        let separator = AppKitMenuItem::separatorItem(self.mtm);
+        self.inner.addItem(&separator);
         self
     }
 
-    /// Get the underlying NSMenu id
-    pub fn as_id(&self) -> id {
-        self.menu
+    /// Get a reference to the underlying NSMenu
+    pub fn as_menu(&self) -> &NSMenu {
+        &self.inner
     }
 }
 
 /// Represents a status item in the macOS menu bar
 #[cfg(target_os = "macos")]
 pub struct StatusItem {
-    status_item: id,
-    menu: Option<Menu>,
+    inner: Retained<AppKitStatusItem>,
+    attached_menu: Option<Menu>,
+    mtm: MainThreadMarker,
 }
 
 #[cfg(target_os = "macos")]
@@ -299,59 +231,47 @@ impl StatusItem {
     /// Create a new status item in the menu bar
     pub fn new() -> CocoaResult<Self> {
         let _pool = AutoreleasePool::new();
-        let status_item = unsafe {
-            let status_bar: id = msg_send![class!(NSStatusBar), systemStatusBar];
-            // Use a fixed width for the status item
-            let status_item: id = msg_send![status_bar, statusItemWithLength:-1.0];
-            if status_item == nil {
-                return Err(CocoaError::NilInstance(()));
-            }
-            status_item
-        };
+        let mtm = MainThreadMarker::new().ok_or(CocoaError::NilInstance(()))?;
+        let status_bar = NSStatusBar::systemStatusBar();
+        // -1.0 = NSVariableStatusItemLength
+        let inner = status_bar.statusItemWithLength(-1.0);
 
         Ok(Self {
-            status_item,
-            menu: None,
+            inner,
+            attached_menu: None,
+            mtm,
         })
     }
 
-    /// Set the title of the status item
+    /// Set the title of the status item via its button
     pub fn set_title(&mut self, title: &str) -> &mut Self {
-        let string = SafeNSString::new(title).unwrap_or_else(|_| SafeNSString::new("").unwrap());
-        unsafe {
-            let _: () = msg_send![self.status_item, setTitle:string.as_id()];
+        let title_str = NSString::from_str(title);
+        if let Some(button) = self.inner.button(self.mtm) {
+            button.setTitle(&title_str);
         }
         self
     }
 
-    /// Set the icon of the status item
+    /// Set the icon of the status item via its button
     #[allow(dead_code)]
     pub fn set_icon(&mut self, icon: &MenuBarIcon) -> &mut Self {
-        unsafe {
-            let _: () = msg_send![self.status_item, setImage:icon.as_id()];
+        if let Some(button) = self.inner.button(self.mtm) {
+            button.setImage(Some(&icon.image));
         }
         self
     }
 
     /// Set the menu for this status item
     pub fn set_menu(&mut self, menu: Menu) -> &mut Self {
-        unsafe {
-            let _: () = msg_send![self.status_item, setMenu:menu.as_id()];
-        }
-        self.menu = Some(menu);
+        self.inner.setMenu(Some(&menu.inner));
+        self.attached_menu = Some(menu);
         self
-    }
-
-    /// Get the underlying NSStatusItem id
-    #[allow(dead_code)]
-    pub fn as_id(&self) -> id {
-        self.status_item
     }
 }
 
 /// The main application wrapper
 pub struct Application {
-    app: id,
+    app: Retained<NSApplication>,
     status_items: Vec<StatusItem>,
     is_running: bool,
 }
@@ -360,12 +280,10 @@ impl Application {
     /// Create a new application instance
     pub fn new() -> CocoaResult<Self> {
         let _pool = AutoreleasePool::new();
-        let app = unsafe {
-            let app: id = msg_send![class!(NSApplication), sharedApplication];
-            // Set as accessory app (appears in menu bar without dock icon or app menu)
-            let _: () = msg_send![app, setActivationPolicy:NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory];
-            app
-        };
+        let mtm = MainThreadMarker::new().ok_or(CocoaError::NilInstance(()))?;
+        let app = NSApplication::sharedApplication(mtm);
+        // Set as accessory app (appears in menu bar without dock icon or app menu)
+        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
         Ok(Self {
             app,
@@ -383,21 +301,19 @@ impl Application {
     /// Process a single event with the given timeout
     pub fn process_event(&self, timeout: Duration) -> bool {
         unsafe {
-            let date: id =
-                msg_send![class!(NSDate), dateWithTimeIntervalSinceNow:timeout.as_secs_f64()];
-            let mode = kCFRunLoopDefaultMode;
+            let date = NSDate::dateWithTimeIntervalSinceNow(timeout.as_secs_f64());
+            let mode = NSDefaultRunLoopMode;
 
-            let event: id = msg_send![
-                self.app,
-                nextEventMatchingMask:u64::MAX
-                untilDate:date
-                inMode:mode
-                dequeue:YES
-            ];
+            let event = self.app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                NSEventMask::Any,
+                Some(&date),
+                mode,
+                true,
+            );
 
-            if event != nil {
-                let _: () = msg_send![self.app, sendEvent:event];
-                let _: () = msg_send![self.app, updateWindows];
+            if let Some(event) = event {
+                self.app.sendEvent(&event);
+                self.app.updateWindows();
                 return true;
             }
 
@@ -418,26 +334,15 @@ unsafe extern "C" {
 
 extern "C" fn exception_handler(exception: *mut c_void) {
     unsafe {
-        let exception_id = exception as id;
-        let name: id = msg_send![exception_id, name];
-        let reason: id = msg_send![exception_id, reason];
+        let exception_obj = &*(exception as *const AnyObject);
+        let name: Option<Retained<NSString>> = objc2::msg_send![exception_obj, name];
+        let reason: Option<Retained<NSString>> = objc2::msg_send![exception_obj, reason];
 
-        let name_str = nsstring_to_string(name);
-        let reason_str = nsstring_to_string(reason);
+        let name_str = name.map_or_else(String::new, |s| s.to_string());
+        let reason_str = reason.map_or_else(String::new, |s| s.to_string());
 
-        eprintln!("Uncaught Objective-C exception: {name_str} - {reason_str}",);
+        eprintln!("Uncaught Objective-C exception: {name_str} - {reason_str}");
     }
-}
-
-// Helper function to convert NSString to Rust String
-unsafe fn nsstring_to_string(ns_string: id) -> String {
-    let utf8_string: *const c_char = msg_send![ns_string, UTF8String];
-    if utf8_string.is_null() {
-        return String::new();
-    }
-    unsafe { CStr::from_ptr(utf8_string) }
-        .to_string_lossy()
-        .into_owned()
 }
 
 // Set up exception handling
@@ -486,9 +391,6 @@ mod tests {
         // Test to_string
         let roundtrip = ns_string.to_string();
         assert_eq!(test_str, roundtrip);
-
-        // Test as_id does not return nil
-        assert_ne!(ns_string.as_id(), nil);
     }
 
     #[test]
@@ -503,13 +405,13 @@ mod tests {
 
         // Test creating system icon
         match MenuBarIcon::from_system_name("NSStatusAvailable") {
-            Ok(icon) => assert_ne!(icon.as_id(), nil),
+            Ok(_icon) => {} // icon exists, that's enough
             Err(e) => println!("Skipping system icon test: {e:?}"),
         }
 
         // Test creating circle icon
         match MenuBarIcon::circle("green", 16.0) {
-            Ok(icon) => assert_ne!(icon.as_id(), nil),
+            Ok(_icon) => {} // icon exists, that's enough
             Err(e) => println!("Skipping circle icon test: {e:?}"),
         }
     }
@@ -546,8 +448,6 @@ mod tests {
         // Test enabling/disabling
         item.set_enabled(false);
         item.set_enabled(true);
-
-        assert_ne!(item.as_id(), nil);
     }
 
     #[test]
@@ -576,8 +476,6 @@ mod tests {
             // Test adding separator
             menu.add_separator();
         }
-
-        assert_ne!(menu.as_id(), nil);
     }
 
     #[test]
@@ -611,8 +509,6 @@ mod tests {
         if let Ok(menu) = Menu::new() {
             status_item.set_menu(menu);
         }
-
-        assert_ne!(status_item.as_id(), nil);
     }
 
     #[test]
