@@ -16,6 +16,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::catch_unwind;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::audio_processor::AudioProcessor;
@@ -31,7 +32,7 @@ use crate::cpal_processor::CpalAudioProcessor;
 const HANDLE_MAGIC: u64 = 0xB1AC_B015_A11D_1000;
 
 pub struct BlackboxHandle {
-    magic: u64,
+    magic: AtomicU64,
     config: Mutex<AppConfig>,
     recorder: Mutex<Option<AudioRecorder<CpalAudioProcessor>>>,
     last_error: Mutex<Option<String>>,
@@ -39,7 +40,7 @@ pub struct BlackboxHandle {
 
 impl BlackboxHandle {
     fn is_valid(&self) -> bool {
-        self.magic == HANDLE_MAGIC
+        self.magic.load(Ordering::Acquire) == HANDLE_MAGIC
     }
 
     fn set_error(&self, msg: String) {
@@ -106,7 +107,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
         };
 
         let handle = Box::new(BlackboxHandle {
-            magic: HANDLE_MAGIC,
+            magic: AtomicU64::new(HANDLE_MAGIC),
             config: Mutex::new(config),
             recorder: Mutex::new(None),
             last_error: Mutex::new(None),
@@ -128,12 +129,14 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
     }
     let _ = catch_unwind(|| {
         let h = unsafe { &*handle };
-        if !h.is_valid() {
-            return;
+        // Atomically claim the right to destroy — only one caller can succeed.
+        if h.magic
+            .compare_exchange(HANDLE_MAGIC, 0, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return; // Already destroyed or invalid
         }
-        let mut handle = unsafe { Box::from_raw(handle) };
-        // Invalidate magic before cleanup so concurrent calls fail fast
-        handle.magic = 0;
+        let handle = unsafe { Box::from_raw(handle) };
         // Stop recording if active — AudioRecorder's Drop will finalize via the processor.
         if let Ok(mut guard) = handle.recorder.lock() {
             drop(guard.take());

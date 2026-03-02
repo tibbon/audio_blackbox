@@ -45,7 +45,7 @@ targets:
       path: BlackBoxApp/Info.plist
       properties:
         CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "8"
+        CFBundleVersion: "9"
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
         NSMicrophoneUsageDescription: "BlackBox Audio Recorder needs microphone access to record audio from your input devices."

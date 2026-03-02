@@ -70,7 +70,7 @@ XCODE_PROJECT = BlackBoxApp/BlackBoxApp.xcodeproj
 XCODE_SCHEME = BlackBoxApp
 XCODE_CONFIG = Release
 SWIFT_APP_DIR = BlackBoxApp
-SWIFT_APP_BUNDLE = $(RELEASE_DIR)/BlackBox Audio Recorder.app
+SWIFT_APP_BUNDLE = $(RELEASE_DIR)/$(APP_NAME).app
 
 # Build the Rust static library with FFI exports
 .PHONY: rust-lib
@@ -96,9 +96,9 @@ swift-app: rust-lib
 		echo "Building with xcodebuild..."; \
 		xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) build; \
 		BUILT_APP=$$(xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //'); \
-		if [ -d "$$BUILT_APP/BlackBox Audio Recorder.app" ]; then \
+		if [ -d "$$BUILT_APP/$(APP_NAME).app" ]; then \
 			rm -rf "$(SWIFT_APP_BUNDLE)"; \
-			cp -R "$$BUILT_APP/BlackBox Audio Recorder.app" "$(SWIFT_APP_BUNDLE)"; \
+			cp -R "$$BUILT_APP/$(APP_NAME).app" "$(SWIFT_APP_BUNDLE)"; \
 			echo "Copied app bundle to $(SWIFT_APP_BUNDLE)"; \
 		fi; \
 	else \
@@ -162,7 +162,7 @@ export: archive
 .PHONY: dmg
 dmg: export
 	@echo "Creating DMG installer..."
-	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/BlackBox Audio Recorder.app" -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/$(APP_NAME).app" -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
 	@echo "DMG created at $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg"
 
 # Regenerate Xcode project from project.yml (requires xcodegen)
