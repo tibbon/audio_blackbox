@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -46,7 +46,7 @@ jobs:
         components: clippy
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -81,13 +81,13 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -114,7 +114,7 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install cargo-audit
       uses: taiki-e/install-action@cargo-audit
@@ -131,13 +131,13 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -173,13 +173,13 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -215,13 +215,13 @@ jobs:
             artifact: blackbox-macos-arm64
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
