@@ -95,7 +95,7 @@ final class RecordingState: ObservableObject {
             if granted {
                 self.startRecordingInternal()
             } else {
-                self.errorMessage = "Microphone access denied. Open System Settings to grant permission."
+                self.errorMessage = "Microphone access denied. Open System Settings to allow access."
                 self.statusText = "Error"
             }
         }
@@ -174,7 +174,7 @@ final class RecordingState: ObservableObject {
     private func showMicrophonePermissionAlert() {
         let alert = NSAlert()
         alert.messageText = "Microphone Access Required"
-        alert.informativeText = "BlackBox needs microphone access to record audio. Please grant access in System Settings > Privacy & Security > Microphone."
+        alert.informativeText = "BlackBox needs microphone access to record audio. You can allow access in System Settings > Privacy & Security > Microphone."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")

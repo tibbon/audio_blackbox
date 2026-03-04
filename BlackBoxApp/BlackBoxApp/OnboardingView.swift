@@ -165,7 +165,7 @@ struct OnboardingView: View {
                     .font(.caption)
                 }
             } else {
-                Button("Grant Microphone Access") {
+                Button("Continue") {
                     requestMicAccess()
                 }
                 .controlSize(.large)
@@ -177,7 +177,7 @@ struct OnboardingView: View {
     private var directoryStep: some View {
         VStack(spacing: 16) {
             if micDenied {
-                Label("Microphone access denied \u{2014} recording won't work until you grant access in System Settings.",
+                Label("Microphone access denied \u{2014} recording won't work until you allow access in System Settings.",
                       systemImage: "exclamationmark.triangle.fill")
                     .foregroundColor(Color(nsColor: .systemOrange))
                     .font(.caption)
@@ -382,7 +382,7 @@ struct OnboardingView: View {
         // Warn if mic permission hasn't been granted yet
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         if micStatus == .denied || micStatus == .restricted {
-            recorder.errorMessage = "Microphone access denied. Open System Settings to grant permission."
+            recorder.errorMessage = "Microphone access denied. Open System Settings to allow access."
             recorder.statusText = "Error"
         }
 
