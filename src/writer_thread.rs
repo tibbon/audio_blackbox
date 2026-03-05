@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,6 +31,22 @@ fn tmp_wav_path(final_path: &str) -> String {
         || format!("{final_path}.recording"),
         |stem| format!("{stem}.recording.wav"),
     )
+}
+
+/// 64 KB write buffer — reduces syscall pressure at high channel counts
+/// compared to the default 8 KB used by `hound::WavWriter::create()`.
+const WAV_BUF_CAPACITY: usize = 65_536;
+
+/// Create a WAV writer with a 64 KB `BufWriter` instead of the default 8 KB.
+fn create_wav_writer(
+    path: &str,
+    spec: hound::WavSpec,
+) -> Result<WavWriterType, BlackboxError> {
+    let file = File::create(path)
+        .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {e}")))?;
+    let buf = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
+    hound::WavWriter::new(buf, spec)
+        .map_err(|e| BlackboxError::Wav(format!("Failed to init WAV writer: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -324,9 +341,7 @@ impl WriterThreadState {
                 sample_format: hound::SampleFormat::Int,
             };
 
-            let writer = hound::WavWriter::create(&tmp_path, spec).map_err(|e| {
-                BlackboxError::Wav(format!("Failed to create channel WAV file: {}", e))
-            })?;
+            let writer = create_wav_writer(&tmp_path, spec)?;
 
             self.multichannel_writers[idx] = Some(writer);
             self.pending_files.push((tmp_path, final_path.clone()));
@@ -359,9 +374,7 @@ impl WriterThreadState {
             sample_format: hound::SampleFormat::Int,
         };
 
-        let writer = hound::WavWriter::create(&tmp_path, spec).map_err(|e| {
-            BlackboxError::Wav(format!("Failed to create multichannel WAV file: {}", e))
-        })?;
+        let writer = create_wav_writer(&tmp_path, spec)?;
 
         self.writer = Some(writer);
         self.current_spec = spec;
@@ -389,8 +402,7 @@ impl WriterThreadState {
             sample_format: hound::SampleFormat::Int,
         };
 
-        let writer = hound::WavWriter::create(&tmp_path, spec)
-            .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {}", e)))?;
+        let writer = create_wav_writer(&tmp_path, spec)?;
 
         self.writer = Some(writer);
         self.current_spec = spec;
@@ -715,7 +727,7 @@ impl WriterThreadState {
                         bits_per_sample: self.bits_per_sample,
                         sample_format: hound::SampleFormat::Int,
                     };
-                    match hound::WavWriter::create(&tmp, spec) {
+                    match create_wav_writer(&tmp, spec) {
                         Ok(w) => {
                             self.multichannel_writers[idx] = Some(w);
                             self.pending_files.push((tmp, final_path.clone()));
@@ -736,7 +748,7 @@ impl WriterThreadState {
                     bits_per_sample: self.bits_per_sample,
                     sample_format: hound::SampleFormat::Int,
                 };
-                match hound::WavWriter::create(&tmp, spec) {
+                match create_wav_writer(&tmp, spec) {
                     Ok(w) => {
                         self.writer = Some(w);
                         self.pending_files.push((tmp, final_path.clone()));
@@ -750,7 +762,7 @@ impl WriterThreadState {
             OutputMode::Single => {
                 let final_path = format!("{}/{}.wav", self.output_dir, date_str);
                 let tmp = tmp_wav_path(&final_path);
-                match hound::WavWriter::create(&tmp, self.current_spec) {
+                match create_wav_writer(&tmp, self.current_spec) {
                     Ok(w) => {
                         self.writer = Some(w);
                         self.pending_files.push((tmp, final_path.clone()));
