@@ -262,7 +262,6 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             disk_space_low,
             stream_error,
             sample_rate_changed,
-            peak_levels,
             sample_rate,
             gate_idle,
         ) = handle
@@ -279,13 +278,12 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
                         p.disk_space_low(),
                         p.stream_error(),
                         p.sample_rate_changed(),
-                        p.peak_levels(),
                         p.sample_rate(),
                         p.gate_idle(),
                     )
                 })
             })
-            .unwrap_or((false, false, 0, false, false, false, Vec::new(), 0, false));
+            .unwrap_or((false, false, 0, false, false, false, 0, false));
 
         let input_device = handle
             .config
@@ -302,7 +300,6 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             "disk_space_low": disk_space_low,
             "stream_error": stream_error,
             "sample_rate_changed": sample_rate_changed,
-            "peak_levels": peak_levels,
             "sample_rate": sample_rate,
             "gate_idle": gate_idle,
         });
