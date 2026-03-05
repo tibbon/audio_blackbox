@@ -106,8 +106,8 @@ struct OnboardingView: View {
             chosenURL = defaultDir
             checkMicStatus()
         }
-        .onChange(of: step) { newStep in
-            if newStep == 1 { checkMicStatus() }
+        .onChange(of: step) {
+            if step == 1 { checkMicStatus() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if step == 1 { checkMicStatus() }

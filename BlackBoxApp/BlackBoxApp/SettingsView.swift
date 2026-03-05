@@ -82,7 +82,7 @@ struct RecordingSettingsTab: View {
                     }
                 }
                 .labelsHidden()
-                .onChange(of: selectedDevice) { _ in
+                .onChange(of: selectedDevice) {
                     refreshChannelCount()
                     applyConfig()
                     recorder.selectDevice(selectedDevice)
@@ -116,7 +116,7 @@ struct RecordingSettingsTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
-                .onChange(of: bitDepth) { _ in
+                .onChange(of: bitDepth) {
                     let old = prevBitDepth
                     guard bitDepth != old else { return }
                     prevBitDepth = bitDepth
@@ -141,7 +141,7 @@ struct RecordingSettingsTab: View {
 
             Section("Silence Detection") {
                 Toggle("Enable silence detection", isOn: $silenceEnabled)
-                    .onChange(of: silenceEnabled) { _ in applyConfig() }
+                    .onChange(of: silenceEnabled) { applyConfig() }
                     .accessibilityHint("Automatically delete silent recordings")
 
                 if silenceEnabled {
@@ -149,7 +149,7 @@ struct RecordingSettingsTab: View {
                         Slider(value: $silenceThreshold, in: 0.001...0.1, step: 0.005) {
                             Text("Threshold")
                         }
-                        .onChange(of: silenceThreshold) { _ in applyConfig() }
+                        .onChange(of: silenceThreshold) { applyConfig() }
                         .accessibilityLabel("Silence threshold")
                         .accessibilityValue(thresholdDescription)
 
@@ -178,7 +178,7 @@ struct RecordingSettingsTab: View {
                 }
 
                 Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
-                    .onChange(of: silenceGateEnabled) { _ in applyConfig() }
+                    .onChange(of: silenceGateEnabled) { applyConfig() }
                     .accessibilityHint("Stop writing to disk when all channels are silent")
 
                 if silenceGateEnabled {
@@ -189,7 +189,7 @@ struct RecordingSettingsTab: View {
                         Text("10 minutes").tag(600)
                         Text("30 minutes").tag(1800)
                     }
-                    .onChange(of: silenceGateTimeout) { _ in applyConfig() }
+                    .onChange(of: silenceGateTimeout) { applyConfig() }
                     .accessibilityLabel("Silence gate timeout")
 
                     Text("When enabled, BlackBox waits for audio before creating files, and finalizes them after the selected silence duration. Saves disk space during long idle periods.")
@@ -505,7 +505,7 @@ struct OutputSettingsTab: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.radioGroup)
-                .onChange(of: outputMode) { _ in
+                .onChange(of: outputMode) {
                     let old = prevOutputMode
                     guard outputMode != old else { return }
                     prevOutputMode = outputMode
@@ -536,7 +536,7 @@ struct OutputSettingsTab: View {
 
             Section("Continuous Recording") {
                 Toggle("Enable continuous recording", isOn: $continuousMode)
-                    .onChange(of: continuousMode) { _ in applyConfig() }
+                    .onChange(of: continuousMode) { applyConfig() }
                     .accessibilityHint("Automatically rotate files at regular intervals")
                 Text("Automatically saves and starts a new file at regular intervals, so no audio is lost if the app closes unexpectedly.")
                     .font(.caption)
@@ -551,9 +551,9 @@ struct OutputSettingsTab: View {
                         Text("2 hours").tag(7200)
                         Text("Custom").tag(-1)
                     }
-                    .onChange(of: cadenceSelection) { newValue in
-                        if newValue > 0 {
-                            recordingCadence = newValue
+                    .onChange(of: cadenceSelection) {
+                        if cadenceSelection > 0 {
+                            recordingCadence = cadenceSelection
                             applyConfig()
                         }
                     }
@@ -564,9 +564,9 @@ struct OutputSettingsTab: View {
                             TextField("", value: $recordingCadence, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
-                                .onChange(of: recordingCadence) { newValue in
-                                    if newValue < 1 { recordingCadence = 1 }
-                                    else if newValue > 86400 { recordingCadence = 86400 }
+                                .onChange(of: recordingCadence) {
+                                    if recordingCadence < 1 { recordingCadence = 1 }
+                                    else if recordingCadence > 86400 { recordingCadence = 86400 }
                                     applyConfig()
                                 }
                                 .accessibilityLabel("Custom rotation interval")
@@ -601,7 +601,7 @@ struct OutputSettingsTab: View {
                     Text("5 GB").tag(5000)
                     Text("10 GB").tag(10000)
                 }
-                .onChange(of: minDiskSpaceMB) { _ in applyConfig() }
+                .onChange(of: minDiskSpaceMB) { applyConfig() }
                 .accessibilityLabel("Minimum free disk space")
                 Text("Recording stops automatically when free disk space drops below this threshold.")
                     .font(.caption)
@@ -724,7 +724,7 @@ struct GeneralSettingsTab: View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _ in
+                    .onChange(of: launchAtLogin) {
                         updateLoginItem()
                     }
                     .accessibilityHint("Start BlackBox when you log in")
