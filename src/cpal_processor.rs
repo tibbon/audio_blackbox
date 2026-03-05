@@ -675,9 +675,9 @@ impl AudioProcessor for CpalAudioProcessor {
         channels: &[usize],
         output_mode: &str,
         debug: bool,
+        config: &AppConfig,
     ) -> Result<(), BlackboxError> {
-        let config = AppConfig::load();
-        self.process_audio_impl(channels, output_mode, debug, &config)
+        self.process_audio_impl(channels, output_mode, debug, config)
     }
 
     fn finalize(&mut self) -> Result<(), BlackboxError> {

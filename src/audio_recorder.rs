@@ -82,7 +82,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
 
         // Start the processor with the selected configuration
         self.processor
-            .process_audio(&channels, &output_mode, debug)?;
+            .process_audio(&channels, &output_mode, debug, &self.config)?;
 
         Ok(format!("Recording started with channels {:?}", channels))
     }
