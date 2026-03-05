@@ -87,8 +87,8 @@ pub struct WriterThreadState {
     pub total_device_channels: u16,
     /// Iteration counter for amortizing disk space checks (avoids syscall per loop iteration).
     pub disk_check_counter: u16,
-    /// Iteration counter for periodic WAV flush (crash-safe headers every ~10 seconds).
-    flush_counter: u16,
+    /// Frame counter for periodic WAV flush (crash-safe headers every ~10 seconds of audio).
+    flush_frame_counter: u32,
     /// Channel indices as a fixed inline array — no heap indirection, always in cache.
     /// Only the first `channel_count` entries are valid.
     pub channels: [u8; MAX_CHANNELS],
@@ -206,7 +206,7 @@ impl WriterThreadState {
             channel_count: channel_count as u8,
             total_device_channels: 0, // set by caller or process_audio
             disk_check_counter: 0,
-            flush_counter: 0,
+            flush_frame_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
             writer: None,
@@ -274,7 +274,7 @@ impl WriterThreadState {
             channel_count: channel_count as u8,
             total_device_channels: 0,
             disk_check_counter: 0,
-            flush_counter: 0,
+            flush_frame_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
             writer: None,
@@ -442,17 +442,19 @@ impl WriterThreadState {
     /// `hound::WavWriter::flush()` rewrites the WAV header with the correct data
     /// size and flushes the underlying `BufWriter` to the OS. After a flush, the
     /// file is a valid WAV playable up to that point — even after a force-quit or
-    /// SIGKILL. Uses a counter (~25,000 iterations ≈ 10 seconds) to amortize cost.
-    pub fn flush_writers(&mut self) {
-        if self.monitor_only || self.disk_stopped {
+    /// SIGKILL. Counts audio frames (~10 seconds worth) for predictable timing
+    /// regardless of channel count or loop speed.
+    pub fn flush_writers(&mut self, samples_consumed: usize) {
+        if self.monitor_only || self.disk_stopped || samples_consumed == 0 {
             return;
         }
 
-        self.flush_counter += 1;
-        if self.flush_counter < 25_000 {
+        let frames = samples_consumed as u32 / self.total_device_channels.max(1) as u32;
+        self.flush_frame_counter += frames;
+        if self.flush_frame_counter < self.sample_rate * 10 {
             return;
         }
-        self.flush_counter = 0;
+        self.flush_frame_counter = 0;
 
         if let Some(w) = &mut self.writer
             && let Err(e) = w.flush()
@@ -880,7 +882,7 @@ pub fn writer_thread_main(
         let read = read_available(&mut consumer, &mut state);
 
         // 5. Periodic flush — writes valid WAV headers for crash recovery
-        state.flush_writers();
+        state.flush_writers(read);
 
         if read == 0 {
             // Ring buffer empty — sleep briefly to avoid busy-wait
