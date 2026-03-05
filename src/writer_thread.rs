@@ -579,7 +579,10 @@ impl WriterThreadState {
         // Publish peaks to shared atomics (only active channels, not full array).
         // peak_levels.len() == ch_count (both derived from the same channel list at construction),
         // so zip is always exhaustive over the active channels with no bounds check per iteration.
-        for (peak_slot, &peak) in self.peak_levels.iter().zip(self.peak_scratch[..ch_count].iter())
+        for (peak_slot, &peak) in self
+            .peak_levels
+            .iter()
+            .zip(self.peak_scratch[..ch_count].iter())
         {
             peak_slot.value.store(peak.to_bits(), Ordering::Relaxed);
         }
@@ -697,8 +700,7 @@ impl WriterThreadState {
         match self.output_mode {
             OutputMode::Split => {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-                    let final_path =
-                        format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
+                    let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
                     let tmp = tmp_wav_path(&final_path);
                     let spec = hound::WavSpec {
                         channels: 1,
@@ -719,8 +721,7 @@ impl WriterThreadState {
                 }
             }
             OutputMode::Single if ch_count > 2 => {
-                let final_path =
-                    format!("{}/{}-multichannel.wav", self.output_dir, date_str);
+                let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
                 let tmp = tmp_wav_path(&final_path);
                 let spec = hound::WavSpec {
                     channels: self.channel_count as u16,
