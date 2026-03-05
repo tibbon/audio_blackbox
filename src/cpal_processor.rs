@@ -580,10 +580,17 @@ impl CpalAudioProcessor {
         // Clone for the writer thread
         let rotation_needed_writer = Arc::clone(&rotation_needed);
 
-        // Spawn writer thread
+        // Spawn writer thread with elevated priority to avoid ring buffer overflow
         let join_handle = std::thread::Builder::new()
             .name("blackbox-writer".to_string())
             .spawn(move || {
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    libc::pthread_set_qos_class_self_np(
+                        libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
+                        0,
+                    );
+                }
                 writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
             })
             .map_err(|e| {
@@ -873,6 +880,13 @@ impl AudioProcessor for CpalAudioProcessor {
         let join_handle = std::thread::Builder::new()
             .name("blackbox-monitor".to_string())
             .spawn(move || {
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    libc::pthread_set_qos_class_self_np(
+                        libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
+                        0,
+                    );
+                }
                 writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
             })
             .map_err(|e| {

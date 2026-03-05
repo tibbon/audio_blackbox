@@ -689,6 +689,13 @@ impl WriterThreadState {
             std::thread::Builder::new()
                 .name("blackbox-silence".to_string())
                 .spawn(move || {
+                    #[cfg(target_os = "macos")]
+                    unsafe {
+                        libc::pthread_set_qos_class_self_np(
+                            libc::qos_class_t::QOS_CLASS_BACKGROUND,
+                            0,
+                        );
+                    }
                     check_and_delete_silent_files(&final_files, threshold);
                 })
                 .ok(); // If thread spawn fails, skip silence check rather than block
