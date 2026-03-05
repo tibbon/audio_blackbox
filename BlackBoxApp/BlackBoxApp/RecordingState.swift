@@ -46,7 +46,8 @@ final class RecordingState: ObservableObject {
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
 
     /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
-    private var debugLogging: Bool { UserDefaults.standard.bool(forKey: "debugLogging") }
+    /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
+    private var debugLogging: Bool = UserDefaults.standard.bool(forKey: "debugLogging")
 
     init() {
         bridge = RustBridge()
@@ -404,6 +405,8 @@ final class RecordingState: ObservableObject {
         if gateTimeout > 0 {
             config["silence_gate_timeout_secs"] = gateTimeout
         }
+
+        debugLogging = defaults.bool(forKey: "debugLogging")
 
         if !config.isEmpty {
             bridge.setConfig(config)
