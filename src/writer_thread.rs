@@ -84,6 +84,7 @@ pub struct WriterThreadHandle {
 // WriterThreadState — lives entirely on the writer thread
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct WriterThreadState {
     // --- Hot fields: accessed every write_samples() call, grouped for cache locality ---
     /// Cached scale factor for f32-to-WAV conversion (avoids match per sample).
@@ -124,6 +125,9 @@ pub struct WriterThreadState {
     frame_remainder: Vec<f32>,
     /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
     combined_buf: Vec<f32>,
+    /// Set by `write_samples` when signal is detected in Idle mode.
+    /// The main loop opens writers before the next read, keeping write_samples I/O-free.
+    pub gate_pending_open: bool,
     /// Consecutive silent frames counted while gate is Recording.
     gate_silence_frames: u64,
     /// Frame count threshold for gate timeout (`timeout_secs * sample_rate`).
@@ -232,6 +236,7 @@ impl WriterThreadState {
             peak_levels,
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
+            gate_pending_open: false,
             gate_silence_frames: 0,
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
             gate_idle,
@@ -300,6 +305,7 @@ impl WriterThreadState {
             peak_levels,
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
+            gate_pending_open: false,
             gate_silence_frames: 0,
             gate_timeout_frames: 0,
             gate_idle: Arc::new(AtomicBool::new(false)),
@@ -588,14 +594,10 @@ impl WriterThreadState {
             match self.gate_state {
                 GateState::Idle => {
                     if has_signal {
-                        info!("Silence gate: signal detected, opening writers");
+                        // Flag for the main loop to open writers before the next read.
+                        // Keeps write_samples() free of file I/O.
+                        self.gate_pending_open = true;
                         self.gate_silence_frames = 0;
-                        if let Err(e) = self.open_writers_for_gate() {
-                            error!("Silence gate: failed to open writers: {}", e);
-                        } else {
-                            self.gate_state = GateState::Recording;
-                            self.gate_idle.store(false, Ordering::Release);
-                        }
                     }
                 }
                 GateState::Recording => {
@@ -621,7 +623,23 @@ impl WriterThreadState {
         }
     }
 
-    /// Create WAV writers mid-session when the silence gate transitions from Idle to Recording.
+    /// Process a pending gate open: create WAV files and transition to Recording.
+    /// Called from the main loop (or tests) after `write_samples` sets `gate_pending_open`.
+    pub fn process_gate_open(&mut self) {
+        if !self.gate_pending_open {
+            return;
+        }
+        self.gate_pending_open = false;
+        info!("Silence gate: signal detected, opening writers");
+        if let Err(e) = self.open_writers_for_gate() {
+            error!("Silence gate: failed to open writers: {}", e);
+        } else {
+            self.gate_state = GateState::Recording;
+            self.gate_idle.store(false, Ordering::Release);
+        }
+    }
+
+    /// Open WAV writers when the silence gate transitions from Idle to Recording.
     fn open_writers_for_gate(&mut self) -> Result<(), BlackboxError> {
         let ch_count = self.channel_count as usize;
         match self.output_mode {
@@ -893,6 +911,9 @@ pub fn writer_thread_main(
         if rotation_needed.swap(false, Ordering::Acquire) {
             state.rotate_files();
         }
+
+        // 3b. Open gate writers if signal was detected (deferred from write_samples)
+        state.process_gate_open();
 
         // 4. Read available samples from ring buffer
         let read = read_available(&mut consumer, &mut state);

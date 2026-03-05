@@ -109,6 +109,7 @@ fn test_gate_opens_on_signal() {
         // Feed audio above threshold
         let signal: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
         state.write_samples(&signal);
+        state.process_gate_open(); // simulate main loop processing
 
         // Should transition to Recording
         assert_eq!(state.gate_state, GateState::Recording);
@@ -139,6 +140,7 @@ fn test_gate_closes_after_timeout() {
         // Feed signal to open the gate
         let signal: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
         state.write_samples(&signal);
+        state.process_gate_open(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Recording);
 
         // Write more signal so the file has non-trivial content
@@ -183,6 +185,7 @@ fn test_gate_reopens_produces_separate_files() {
         // First signal burst — opens the gate
         let signal: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
         state.write_samples(&signal);
+        state.process_gate_open(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Recording);
 
         // Write more signal so the file has content
@@ -202,6 +205,7 @@ fn test_gate_reopens_produces_separate_files() {
 
         // Second signal burst — reopens the gate
         state.write_samples(&signal);
+        state.process_gate_open(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Recording);
 
         // Write more signal
