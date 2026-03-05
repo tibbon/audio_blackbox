@@ -627,24 +627,12 @@ impl CpalAudioProcessor {
                             }
 
                             // Push raw f32 to ring buffer (lock-free, wait-free, zero I/O).
-                            // Try the full chunk first; on failure, write as much as fits
-                            // so we only drop the true overflow instead of the entire callback.
-                            if producer.write_chunk_uninit(data.len()).is_ok_and(|chunk| {
-                                chunk.fill_from_iter(data.iter().copied());
-                                true
-                            }) {
-                                // Wrote everything
-                            } else {
-                                let available = producer.slots();
-                                if available > 0
-                                    && let Ok(chunk) = producer.write_chunk_uninit(available)
-                                {
-                                    chunk.fill_from_iter(data[..available].iter().copied());
-                                }
-                                let dropped = data.len() - available;
-                                if dropped > 0 {
-                                    write_errors.fetch_add(dropped as u64, Ordering::Relaxed);
-                                }
+                            // push_partial_slice uses memcpy internally for Copy types,
+                            // and handles partial writes when the buffer is nearly full.
+                            let (_, remainder) = producer.push_partial_slice(data);
+                            if !remainder.is_empty() {
+                                write_errors
+                                    .fetch_add(remainder.len() as u64, Ordering::Relaxed);
                             }
                         },
                         err_fn,
@@ -899,22 +887,10 @@ impl AudioProcessor for CpalAudioProcessor {
                     .build_input_stream(
                         &config.into(),
                         move |data: &[f32], _: &_| {
-                            if producer.write_chunk_uninit(data.len()).is_ok_and(|chunk| {
-                                chunk.fill_from_iter(data.iter().copied());
-                                true
-                            }) {
-                                // Wrote everything
-                            } else {
-                                let available = producer.slots();
-                                if available > 0
-                                    && let Ok(chunk) = producer.write_chunk_uninit(available)
-                                {
-                                    chunk.fill_from_iter(data[..available].iter().copied());
-                                }
-                                let dropped = data.len() - available;
-                                if dropped > 0 {
-                                    write_errors.fetch_add(dropped as u64, Ordering::Relaxed);
-                                }
+                            let (_, remainder) = producer.push_partial_slice(data);
+                            if !remainder.is_empty() {
+                                write_errors
+                                    .fetch_add(remainder.len() as u64, Ordering::Relaxed);
                             }
                         },
                         err_fn,
