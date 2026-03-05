@@ -109,8 +109,10 @@ struct OnboardingView: View {
         .onChange(of: step) {
             if step == 1 { checkMicStatus() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if step == 1 { checkMicStatus() }
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                if step == 1 { checkMicStatus() }
+            }
         }
     }
 
