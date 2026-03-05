@@ -691,11 +691,12 @@ impl WriterThreadState {
 
         // Create new files for the next recording period
         let ch_count = self.channel_count as usize;
+        let date_str = timestamp_now();
         match self.output_mode {
             OutputMode::Split => {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
                     let final_path =
-                        format!("{}/{}-ch{}.wav", self.output_dir, timestamp_now(), channel);
+                        format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
                     let tmp = tmp_wav_path(&final_path);
                     let spec = hound::WavSpec {
                         channels: 1,
@@ -717,7 +718,7 @@ impl WriterThreadState {
             }
             OutputMode::Single if ch_count > 2 => {
                 let final_path =
-                    format!("{}/{}-multichannel.wav", self.output_dir, timestamp_now());
+                    format!("{}/{}-multichannel.wav", self.output_dir, date_str);
                 let tmp = tmp_wav_path(&final_path);
                 let spec = hound::WavSpec {
                     channels: self.channel_count as u16,
@@ -737,7 +738,7 @@ impl WriterThreadState {
                 }
             }
             OutputMode::Single => {
-                let final_path = format!("{}/{}.wav", self.output_dir, timestamp_now());
+                let final_path = format!("{}/{}.wav", self.output_dir, date_str);
                 let tmp = tmp_wav_path(&final_path);
                 match hound::WavWriter::create(&tmp, self.current_spec) {
                     Ok(w) => {
