@@ -158,13 +158,19 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
         _ => f64::from(i32::MAX),
     };
 
-    // Stream through samples without collecting into memory
+    // Stream through samples without collecting into memory.
+    // Early-exit: if any single sample exceeds the threshold, the file is
+    // definitely not silent. This makes the common case (audible recording)
+    // complete in O(first-loud-sample) instead of scanning the entire file.
     let mut sum_of_squares: f64 = 0.0;
     let mut count: u64 = 0;
 
     for sample in reader.into_samples::<i32>() {
         let s = sample.map_err(|e| BlackboxError::Wav(format!("Failed to read sample: {}", e)))?;
         let normalized = f64::from(s) / norm;
+        if normalized.abs() >= threshold_f64 {
+            return Ok(false);
+        }
         sum_of_squares += normalized * normalized;
         count += 1;
     }
