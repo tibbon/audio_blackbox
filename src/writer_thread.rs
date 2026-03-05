@@ -793,10 +793,24 @@ impl WriterThreadState {
             }
         }
 
-        // Check silence synchronously during finalize — recording has stopped,
-        // no ring buffer pressure.
-        if self.silence_threshold > 0.0 {
-            check_and_delete_silent_files(&final_files, self.silence_threshold);
+        // Spawn silence check on a background thread so finalize returns quickly.
+        // Files may not be cleaned up immediately on quit, but the thread completes
+        // within seconds (and with early-exit, much faster for non-silent files).
+        if self.silence_threshold > 0.0 && !final_files.is_empty() {
+            let threshold = self.silence_threshold;
+            std::thread::Builder::new()
+                .name("blackbox-silence-final".to_string())
+                .spawn(move || {
+                    #[cfg(target_os = "macos")]
+                    unsafe {
+                        libc::pthread_set_qos_class_self_np(
+                            libc::qos_class_t::QOS_CLASS_BACKGROUND,
+                            0,
+                        );
+                    }
+                    check_and_delete_silent_files(&final_files, threshold);
+                })
+                .ok();
         }
 
         Ok(())

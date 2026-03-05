@@ -417,6 +417,9 @@ fn test_finalize_deletes_silent_file() {
         processor.feed_test_data(&data, 1);
         processor.finalize().unwrap();
 
+        // Silence check runs on a background thread; wait for it to complete
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
         let files = wav_files_in(temp_dir.path());
         assert!(
             files.is_empty(),
@@ -490,6 +493,9 @@ fn test_split_mode_silence_per_channel() {
         let data = generate_interleaved_f32(2, 1000, &[(1, 0.9)]);
         processor.feed_test_data(&data, 2);
         processor.finalize().unwrap();
+
+        // Silence check runs on a background thread; wait for it to complete
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         let files = wav_files_in(temp_dir.path());
         // ch0 is silent and should be deleted, ch1 should remain
