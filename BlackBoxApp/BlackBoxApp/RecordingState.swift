@@ -471,7 +471,16 @@ final class RecordingState: ObservableObject {
         }
 
         if needsUpdate {
-            peakLevels = Array(peakBuffer.prefix(count))
+            if peakLevels.count == count {
+                // Same channel count (common case): update in-place, no allocation
+                objectWillChange.send()
+                for i in 0..<count {
+                    peakLevels[i] = peakBuffer[i]
+                }
+            } else {
+                // Channel count changed: must reallocate
+                peakLevels = Array(peakBuffer.prefix(count))
+            }
         }
 
         if let start {
