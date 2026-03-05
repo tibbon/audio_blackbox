@@ -79,10 +79,10 @@ private struct MeterBar: View {
     @ScaledMetric(relativeTo: .caption) private var barHeight: CGFloat = 14
 
     @State private var peakHold: Float = -60
-    @State private var peakHoldTime: Date = .distantPast
+    @State private var peakHoldInstant: ContinuousClock.Instant = .now
 
     /// Peak hold decay: hold for 2 seconds, then drop.
-    private static let holdDuration: TimeInterval = 2.0
+    private static let holdDuration: ContinuousClock.Duration = .seconds(2)
 
     private var dBFS: Float {
         guard peak > 0 else { return -60 }
@@ -197,11 +197,11 @@ private struct MeterBar: View {
 
     /// Update peak hold: set new high, or decay after hold duration
     private func updatePeakHold() {
-        let now = Date()
+        let now = ContinuousClock.now
         if dBFS > peakHold {
             peakHold = dBFS
-            peakHoldTime = now
-        } else if now.timeIntervalSince(peakHoldTime) > Self.holdDuration {
+            peakHoldInstant = now
+        } else if now - peakHoldInstant > Self.holdDuration {
             // Decay: drop toward current level
             let decayed = peakHold - 1.5  // ~1.5 dB per frame at 30fps ≈ 45 dB/s
             peakHold = max(decayed, dBFS)
