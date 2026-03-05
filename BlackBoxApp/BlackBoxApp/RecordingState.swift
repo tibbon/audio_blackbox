@@ -37,6 +37,7 @@ final class RecordingState: ObservableObject {
     private var meterTimer: Timer?
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
+    private var hasRequestedNotificationAuth = false
     private var peakBuffer = [Float](repeating: 0, count: 64)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
@@ -53,14 +54,19 @@ final class RecordingState: ObservableObject {
         restoreOutputDirBookmark()
         restoreSavedSettings()
         restoreGlobalHotkey()
-        requestNotificationAuth()
 
         // Auto-record on launch if enabled (skip if onboarding not complete)
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
             && UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord)
         {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.start()
+                guard let self else { return }
+                self.start()
+                if self.isRecording {
+                    self.postNotification(title: "Recording Started",
+                                          body: "BlackBox started recording automatically.",
+                                          identifier: "auto-record-started")
+                }
             }
         }
     }
@@ -102,6 +108,12 @@ final class RecordingState: ObservableObject {
     }
 
     private func startRecordingInternal() {
+        // Request notification permission on first recording start (contextually relevant)
+        if !hasRequestedNotificationAuth {
+            hasRequestedNotificationAuth = true
+            requestNotificationAuth()
+        }
+
         // Stop monitoring first — recording will take over the audio stream
         if isMonitoring {
             stopMonitoring()
@@ -513,9 +525,9 @@ final class RecordingState: ObservableObject {
             if let rateChanged = status["sample_rate_changed"] as? Bool, rateChanged {
                 Self.log.warning("Sample rate changed on device — finalizing and restarting")
                 restartIfRecording(reason: "sample rate changed")
-                postNotification(title: "Sample Rate Changed",
-                                 body: "Your audio device's sample rate changed. Recording was restarted automatically.",
-                                 identifier: "sample-rate-changed")
+                notifyUser(title: "Sample Rate Changed",
+                          message: "Your audio device's sample rate changed. Recording was restarted automatically.",
+                          identifier: "sample-rate-changed")
                 return
             }
 
@@ -534,9 +546,9 @@ final class RecordingState: ObservableObject {
                     statusText = "Recording..."
                     startTimer()
                     Self.log.info("Recording restarted on available device")
-                    postNotification(title: "Device Changed",
-                                     body: "Your audio device changed. Recording continued on the next available device.",
-                                     identifier: "device-changed")
+                    notifyUser(title: "Device Changed",
+                              message: "Your audio device changed. Recording continued on the next available device.",
+                              identifier: "device-changed")
                 } else {
                     // No device available — stop for real
                     isRecording = false

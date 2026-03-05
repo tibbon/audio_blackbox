@@ -48,7 +48,7 @@ struct MeterView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         Image(systemName: "waveform")
-                            .font(.system(size: 32))
+                            .font(.largeTitle)
                             .foregroundColor(.secondary)
                         Text("No audio input")
                             .foregroundColor(.secondary)

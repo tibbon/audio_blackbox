@@ -48,7 +48,7 @@ targets:
         CFBundleVersion: "9"
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
-        NSMicrophoneUsageDescription: "BlackBox Audio Recorder needs microphone access to record audio from your input devices."
+        NSMicrophoneUsageDescription: "BlackBox Audio Recorder captures audio from your microphone or audio interface and saves it as WAV files stored locally on your Mac. No audio is ever sent over the network."
         NSHumanReadableCopyright: "Copyright © 2026 David Fisher. All rights reserved."
         LSApplicationCategoryType: public.app-category.music
         ITSAppUsesNonExemptEncryption: false

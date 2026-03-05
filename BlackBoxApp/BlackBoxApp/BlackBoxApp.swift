@@ -93,6 +93,7 @@ struct BlackBoxApp: App {
         // Status line
         Text(recorder.statusText)
             .font(.headline)
+            .monospacedDigit()
 
         if recorder.isRecording {
             let device = selectedDevice.isEmpty ? "System Default" : selectedDevice
@@ -320,6 +321,7 @@ struct AboutView: View {
             }
 
             HStack(spacing: 12) {
+                if let url = AppURL.privacy { Link("Privacy Policy", destination: url) }
                 if let url = AppURL.releaseNotes { Link("Release Notes", destination: url) }
                 if let url = AppURL.license { Link("License", destination: url) }
                 if let url = AppURL.acknowledgments { Link("Acknowledgments", destination: url) }
@@ -328,7 +330,7 @@ struct AboutView: View {
             .foregroundColor(.secondary)
         }
         .padding(24)
-        .frame(minWidth: 280, maxWidth: 280)
+        .frame(minWidth: 280)
         .background(AboutWindowConfigurator())
     }
 }

@@ -860,7 +860,7 @@ struct GeneralSettingsTab: View {
             "recording_cadence": 300,
             "min_disk_space_mb": 500,
             "bits_per_sample": 24,
-            "silence_gate_enabled": false,
+            "silence_gate_enabled": true,
             "silence_gate_timeout_secs": 300,
         ])
     }

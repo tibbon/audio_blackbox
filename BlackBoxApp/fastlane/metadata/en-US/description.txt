@@ -1,17 +1,21 @@
-BlackBox is a professional audio recorder that runs quietly in your menu bar, capturing every moment from any input device on your Mac.
+BlackBox is a professional audio recorder that lives in your macOS menu bar. It runs in the background so you can start and stop recording from the menu bar icon or a global keyboard shortcut — without switching apps.
 
 KEY FEATURES
 
-- Menu bar app — always accessible, never in the way
+- Menu bar app — always accessible, never in the way. BlackBox runs as a menu bar icon (no Dock icon) so it stays out of your workflow while remaining one click away.
 - Multichannel recording — capture up to 64 channels from any Core Audio device
 - Configurable bit depth — 16, 24, or 32-bit WAV recording
 - Split or combined output — one file per channel or a single multichannel file
-- Continuous recording with automatic file rotation
-- Silence detection — skip silence to save disk space
+- Continuous recording with automatic hourly file rotation — protects your audio if the app or Mac shuts down unexpectedly
+- Silence gate — pauses file creation during silence to save disk space, then resumes automatically when audio is detected
 - Real-time level metering — per-channel peak meters with color-coded dBFS display
 - Disk space monitoring — automatic safe stop when space runs low
 - Configurable global keyboard shortcut — start/stop recording from any app
 - Crash-safe WAV files — recordings are always valid, even after unexpected shutdown
+
+HOW IT WORKS
+
+BlackBox runs in your menu bar at the top of your screen. Click the icon to open the recording controls, or use a global keyboard shortcut to start and stop recording without touching the mouse. All recordings are saved as standard WAV files to a folder you choose — nothing is sent over the network.
 
 BUILT FOR PRO AUDIO
 

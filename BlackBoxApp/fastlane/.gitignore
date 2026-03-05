@@ -2,3 +2,7 @@ report.xml
 Preview.html
 screenshots/**/*.png
 test_output
+metadata/review_information/first_name.txt
+metadata/review_information/last_name.txt
+metadata/review_information/email_address.txt
+metadata/review_information/phone_number.txt

@@ -11,6 +11,7 @@ struct OnboardingView: View {
     @State private var micGranted = false
     @State private var micDenied = false
     @State private var continuousMode = true
+    @State private var silenceGateEnabled = true
     @State private var outputDir: String = ""
     @State private var chosenURL: URL?
 
@@ -98,7 +99,7 @@ struct OnboardingView: View {
             .padding(.horizontal, 32)
             .padding(.bottom, 24)
         }
-        .frame(width: 460, height: 380)
+        .frame(minWidth: 460, maxWidth: 460, minHeight: 380)
         .background(OnboardingWindowConfigurator())
         .onAppear {
             outputDir = defaultDir.path
@@ -266,6 +267,18 @@ struct OnboardingView: View {
                 }
             }
             .frame(maxWidth: 380)
+
+            Divider()
+                .frame(maxWidth: 380)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
+                Text("When enabled, BlackBox waits for audio before creating files. Saves disk space when no one is speaking.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 380, alignment: .leading)
         }
         .padding(.horizontal, 32)
     }
@@ -374,9 +387,11 @@ struct OnboardingView: View {
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: SettingsKeys.continuousMode)
         defaults.set(3600, forKey: SettingsKeys.recordingCadence)
+        defaults.set(true, forKey: SettingsKeys.silenceGateEnabled)
         recorder.bridge.setConfig([
             "continuous_mode": true,
             "recording_cadence": 3600,
+            "silence_gate_enabled": true,
         ])
 
         // Warn if mic permission hasn't been granted yet
@@ -403,9 +418,11 @@ struct OnboardingView: View {
         if continuousMode {
             defaults.set(3600, forKey: SettingsKeys.recordingCadence) // 1 hour
         }
+        defaults.set(silenceGateEnabled, forKey: SettingsKeys.silenceGateEnabled)
         recorder.bridge.setConfig([
             "continuous_mode": continuousMode,
             "recording_cadence": continuousMode ? 3600 : 300,
+            "silence_gate_enabled": silenceGateEnabled,
         ])
 
         hasCompletedOnboarding = true

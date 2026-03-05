@@ -1,0 +1,31 @@
+BlackBox Audio Recorder is a menu bar app — it does NOT appear in the Dock. After launching, look for the small circle icon in the macOS menu bar (top-right of the screen, near the clock).
+
+RECORDING INDICATION:
+When recording is active, the menu bar icon changes from an outline circle to a filled red circle. This provides a persistent visual indication that recording is in progress. The tooltip also updates to show the current recording status.
+
+HOW TO TEST RECORDING:
+1. Launch the app. The onboarding wizard runs on first launch — follow the steps to grant microphone access and choose an output folder.
+2. Click the circle icon in the menu bar to open the popover.
+3. Click "Start Recording" to begin. Notice the menu bar icon turns red.
+4. Speak into your Mac's microphone or play audio.
+5. Click "Stop Recording" to finish. The icon returns to an outline circle.
+6. Click "Show in Finder" to locate the saved WAV file(s).
+
+SILENCE GATE (enabled by default):
+When the silence gate is on, the status shows "Waiting for audio..." after you click Start Recording. This is intentional — the app waits for audio signal above the threshold before creating files. Once it detects sound, recording begins and files are created. If the silence gate is off (configurable in Settings > Audio tab), recording and file creation start immediately.
+
+RECORDINGS:
+- Files are saved as standard WAV audio in the directory shown under "Show in Finder"
+- In continuous mode (default), files rotate hourly so nothing is lost if the app or Mac shuts down unexpectedly
+- The app supports multichannel recording for audio interfaces with multiple inputs
+
+SETTINGS:
+- Global hotkey for start/stop is user-configurable in Settings > General tab
+- Audio settings (channels, bit depth, silence gate) are in Settings > Audio tab
+- Recording settings (continuous mode, output format) are in Settings > Recording tab
+
+ADDITIONAL NOTES:
+- The app requires microphone permission (requested during onboarding)
+- No network access is required — all recordings stay on the user's Mac
+- The app uses minimal system resources and is designed to run continuously in the background
+- "Launch at login" and "Start recording on launch" are both opt-in settings (off by default) in Settings > General tab. They require the user to explicitly enable them.

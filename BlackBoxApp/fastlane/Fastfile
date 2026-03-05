@@ -55,7 +55,8 @@ platform :mac do
       skip_binary_upload: true,
       force: true,
       metadata_path: "./fastlane/metadata",
-      screenshots_path: "./fastlane/screenshots"
+      screenshots_path: "./fastlane/screenshots",
+      app_rating_config_path: "./fastlane/age_rating_config.json"
     )
   end
 

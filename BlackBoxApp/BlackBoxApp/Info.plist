@@ -29,6 +29,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 David Fisher. All rights reserved.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>BlackBox Audio Recorder needs microphone access to record audio from your input devices.</string>
+	<string>BlackBox Audio Recorder captures audio from your microphone or audio interface and saves it as WAV files stored locally on your Mac. No audio is ever sent over the network.</string>
 </dict>
 </plist>
