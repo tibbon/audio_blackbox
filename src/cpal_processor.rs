@@ -459,16 +459,14 @@ impl CpalAudioProcessor {
                 BlackboxError::AudioDevice(format!("Failed to get config for '{device_name}': {e}"))
             })
     }
-}
 
-impl AudioProcessor for CpalAudioProcessor {
-    fn process_audio(
+    fn process_audio_impl(
         &mut self,
         channels: &[usize],
         output_mode: &str,
         debug: bool,
+        app_config: &AppConfig,
     ) -> Result<(), BlackboxError> {
-        // Stop monitoring first if active, so recording seamlessly replaces it
         if self.monitoring {
             self.stop_monitoring()?;
         }
@@ -484,7 +482,6 @@ impl AudioProcessor for CpalAudioProcessor {
         self.sample_rate_changed.store(false, Ordering::Relaxed);
 
         let host = cpal::default_host();
-        let app_config = AppConfig::load();
         let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
 
         info!(
@@ -691,6 +688,18 @@ impl AudioProcessor for CpalAudioProcessor {
 
         Ok(())
     }
+}
+
+impl AudioProcessor for CpalAudioProcessor {
+    fn process_audio(
+        &mut self,
+        channels: &[usize],
+        output_mode: &str,
+        debug: bool,
+    ) -> Result<(), BlackboxError> {
+        let config = AppConfig::load();
+        self.process_audio_impl(channels, output_mode, debug, &config)
+    }
 
     fn finalize(&mut self) -> Result<(), BlackboxError> {
         let errors = self.write_errors.load(Ordering::Relaxed);
@@ -754,7 +763,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let output_mode = config.get_output_mode();
         let debug = config.get_debug();
 
-        self.process_audio(&channels, &output_mode, debug)
+        self.process_audio_impl(&channels, &output_mode, debug, &config)
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {
