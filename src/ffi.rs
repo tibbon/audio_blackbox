@@ -19,10 +19,27 @@ use std::panic::catch_unwind;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde::Serialize;
+
 use crate::audio_processor::AudioProcessor;
 use crate::audio_recorder::AudioRecorder;
 use crate::config::AppConfig;
 use crate::cpal_processor::CpalAudioProcessor;
+
+/// Lightweight struct for direct serialization — avoids the heap-allocated
+/// `serde_json::Value` tree that `json!{}` creates.
+#[derive(Serialize)]
+struct StatusJson<'a> {
+    recording: bool,
+    monitoring: bool,
+    input_device: &'a str,
+    write_errors: u64,
+    disk_space_low: bool,
+    stream_error: bool,
+    sample_rate_changed: bool,
+    sample_rate: u32,
+    gate_idle: bool,
+}
 
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
@@ -292,19 +309,20 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             .and_then(|c| c.get_input_device())
             .unwrap_or_default();
 
-        let status = serde_json::json!({
-            "recording": is_recording,
-            "monitoring": is_monitoring,
-            "input_device": input_device,
-            "write_errors": write_errors,
-            "disk_space_low": disk_space_low,
-            "stream_error": stream_error,
-            "sample_rate_changed": sample_rate_changed,
-            "sample_rate": sample_rate,
-            "gate_idle": gate_idle,
-        });
+        let status = StatusJson {
+            recording: is_recording,
+            monitoring: is_monitoring,
+            input_device: &input_device,
+            write_errors,
+            disk_space_low,
+            stream_error,
+            sample_rate_changed,
+            sample_rate,
+            gate_idle,
+        };
 
-        to_c_string(&status.to_string())
+        let json = serde_json::to_string(&status).unwrap_or_else(|_| "{}".to_string());
+        to_c_string(&json)
     })
     .unwrap_or(std::ptr::null_mut())
 }
