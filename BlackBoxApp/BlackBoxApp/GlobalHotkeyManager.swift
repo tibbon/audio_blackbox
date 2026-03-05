@@ -53,7 +53,7 @@ final class GlobalHotkeyManager {
                 guard let userData else { return OSStatus(eventNotHandledErr) }
                 let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData)
                     .takeUnretainedValue()
-                DispatchQueue.main.async { manager.action?() }
+                Task { @MainActor in manager.action?() }
                 return noErr
             },
             1,

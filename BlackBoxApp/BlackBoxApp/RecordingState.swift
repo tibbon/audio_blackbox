@@ -60,7 +60,8 @@ final class RecordingState: ObservableObject {
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
             && UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord)
         {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
                 guard let self else { return }
                 self.start()
                 if self.isRecording {
@@ -259,7 +260,8 @@ final class RecordingState: ObservableObject {
     private func setTransientError(_ message: String) {
         errorMessage = message
         statusText = "Error"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
             guard let self, self.errorMessage == message else { return }
             self.errorMessage = nil
             if !self.isRecording { self.statusText = "Ready" }
@@ -679,7 +681,7 @@ final class RecordingState: ObservableObject {
     /// a security-scoped bookmark can no longer be resolved (e.g. volume unmounted).
     private func promptToReselectOutputDir(failedPath: String) {
         // Defer to next run loop so init() completes before showing UI
-        DispatchQueue.main.async { [weak self] in
+        Task { [weak self] in
             guard let self else { return }
             let alert = NSAlert()
             alert.messageText = "Output Directory Unavailable"

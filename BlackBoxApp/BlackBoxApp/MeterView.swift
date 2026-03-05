@@ -217,7 +217,7 @@ private struct MeterWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard let window = nsView.window else { return }
             window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
             window.standardWindowButton(.zoomButton)?.isEnabled = false

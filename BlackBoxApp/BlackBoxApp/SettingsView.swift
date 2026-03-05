@@ -36,7 +36,8 @@ struct SettingsView: View {
         guard sessions >= 3 else { return }
         guard !UserDefaults.standard.bool(forKey: "hasPromptedForReview") else { return }
         UserDefaults.standard.set(true, forKey: "hasPromptedForReview")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        Task {
+            try? await Task.sleep(for: .seconds(1))
             requestReview()
         }
     }
@@ -47,7 +48,7 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard let window = nsView.window else { return }
             window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
             window.standardWindowButton(.zoomButton)?.isEnabled = false

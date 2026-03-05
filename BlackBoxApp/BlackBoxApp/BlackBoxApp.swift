@@ -194,10 +194,11 @@ struct BlackBoxApp: App {
     }
 
     /// Auto-open the onboarding window on first launch. Called as a side effect
-    /// during body evaluation — uses asyncAfter to avoid modifying state during render.
+    /// during body evaluation — uses Task to avoid modifying state during render.
     private func autoOpenOnboardingIfNeeded() {
         guard !hasCompletedOnboarding, !didAutoOpenOnboarding else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
             didAutoOpenOnboarding = true
             NSApp.activate()
             openWindow(id: "onboarding")
@@ -343,7 +344,7 @@ private struct StatusItemTooltip: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             var view = nsView.superview
             while let v = view {
                 if let button = v as? NSStatusBarButton {
@@ -361,7 +362,7 @@ private struct AboutWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard let window = nsView.window else { return }
             window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
             window.standardWindowButton(.zoomButton)?.isEnabled = false
