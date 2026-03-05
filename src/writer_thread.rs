@@ -553,22 +553,6 @@ impl WriterThreadState {
                         }
                     }
                 }
-                OutputMode::Single if ch_count > 2 => {
-                    if let Some(w) = &mut self.writer {
-                        for frame in frame_data.chunks(frame_size) {
-                            for (idx, &channel) in ch_slice.iter().enumerate() {
-                                let ch = channel as usize;
-                                if ch < frame.len() {
-                                    let s = frame[ch];
-                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                                    if w.write_sample((s * scale) as i32).is_err() {
-                                        self.write_errors.fetch_add(1, Ordering::Relaxed);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 OutputMode::Single => {
                     if let Some(w) = &mut self.writer {
                         for frame in frame_data.chunks(frame_size) {
