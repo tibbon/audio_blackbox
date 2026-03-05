@@ -2,7 +2,7 @@ import AVFoundation
 import SwiftUI
 
 struct OnboardingView: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @Environment(\.dismiss) private var dismiss
 

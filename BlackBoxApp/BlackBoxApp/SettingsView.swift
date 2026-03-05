@@ -4,7 +4,7 @@ import StoreKit
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
     @Environment(\.requestReview) private var requestReview
 
     var body: some View {
@@ -59,7 +59,7 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
 // MARK: - Recording Tab
 
 struct RecordingSettingsTab: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
@@ -462,7 +462,7 @@ private func confirmSettingsChange(
 // MARK: - Output Tab
 
 struct OutputSettingsTab: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
     @AppStorage(SettingsKeys.outputMode) private var outputMode: String = "split"
     @AppStorage(SettingsKeys.continuousMode) private var continuousMode: Bool = false
     @AppStorage(SettingsKeys.recordingCadence) private var recordingCadence: Int = 300
@@ -711,7 +711,7 @@ struct OutputSettingsTab: View {
 // MARK: - General Tab
 
 struct GeneralSettingsTab: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false

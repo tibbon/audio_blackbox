@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MeterView: View {
-    @ObservedObject var recorder: RecordingState
+    var recorder: RecordingState
 
     /// Height of one meter row: barHeight (14pt) + vertical padding (6pt)
     private static let rowHeight: CGFloat = 20

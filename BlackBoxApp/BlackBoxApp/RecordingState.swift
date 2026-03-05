@@ -1,21 +1,21 @@
 import Foundation
 import AppKit
 import AVFoundation
-import Combine
+import Observation
 import os.log
 import UserNotifications
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
 @MainActor
-final class RecordingState: ObservableObject {
-    @Published var isRecording = false
-    @Published var isMonitoring = false
-    @Published var statusText = "Ready"
-    @Published var errorMessage: String?
-    @Published var availableDevices: [String] = []
-    @Published var peakLevels: [Float] = []
-    @Published var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
-    @Published var isMeterWindowOpen: Bool = false {
+@Observable final class RecordingState {
+    var isRecording = false
+    var isMonitoring = false
+    var statusText = "Ready"
+    var errorMessage: String?
+    var availableDevices: [String] = []
+    var peakLevels: [Float] = []
+    var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
+    var isMeterWindowOpen: Bool = false {
         didSet {
             if isMeterWindowOpen {
                 startMeterTimer()
@@ -475,7 +475,6 @@ final class RecordingState: ObservableObject {
         if needsUpdate {
             if peakLevels.count == count {
                 // Same channel count (common case): update in-place, no allocation
-                objectWillChange.send()
                 for i in 0..<count {
                     peakLevels[i] = peakBuffer[i]
                 }

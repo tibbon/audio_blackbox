@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct BlackBoxApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var recorder = RecordingState()
+    @State private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
