@@ -190,7 +190,7 @@ private struct MeterBar: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Channel \(channel)")
         .accessibilityValue(meterAccessibilityValue)
-        .onChange(of: peak) { _ in
+        .onChange(of: peak) {
             updatePeakHold()
         }
     }
