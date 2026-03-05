@@ -631,8 +631,7 @@ impl CpalAudioProcessor {
                             // and handles partial writes when the buffer is nearly full.
                             let (_, remainder) = producer.push_partial_slice(data);
                             if !remainder.is_empty() {
-                                write_errors
-                                    .fetch_add(remainder.len() as u64, Ordering::Relaxed);
+                                write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
                             }
                         },
                         err_fn,
@@ -882,24 +881,21 @@ impl AudioProcessor for CpalAudioProcessor {
         };
 
         let stream = match config.sample_format() {
-            SampleFormat::F32 => {
-                device
-                    .build_input_stream(
-                        &config.into(),
-                        move |data: &[f32], _: &_| {
-                            let (_, remainder) = producer.push_partial_slice(data);
-                            if !remainder.is_empty() {
-                                write_errors
-                                    .fetch_add(remainder.len() as u64, Ordering::Relaxed);
-                            }
-                        },
-                        err_fn,
-                        None,
-                    )
-                    .map_err(|e| {
-                        BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
-                    })?
-            }
+            SampleFormat::F32 => device
+                .build_input_stream(
+                    &config.into(),
+                    move |data: &[f32], _: &_| {
+                        let (_, remainder) = producer.push_partial_slice(data);
+                        if !remainder.is_empty() {
+                            write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|e| {
+                    BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
+                })?,
             _ => {
                 return Err(BlackboxError::AudioDevice(format!(
                     "Unsupported sample format: {:?}",

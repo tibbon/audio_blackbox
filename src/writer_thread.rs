@@ -38,10 +38,7 @@ fn tmp_wav_path(final_path: &str) -> String {
 const WAV_BUF_CAPACITY: usize = 65_536;
 
 /// Create a WAV writer with a 64 KB `BufWriter` instead of the default 8 KB.
-fn create_wav_writer(
-    path: &str,
-    spec: hound::WavSpec,
-) -> Result<WavWriterType, BlackboxError> {
+fn create_wav_writer(path: &str, spec: hound::WavSpec) -> Result<WavWriterType, BlackboxError> {
     let file = File::create(path)
         .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {e}")))?;
     let buf = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
