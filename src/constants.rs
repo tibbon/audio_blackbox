@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::BufWriter;
-
 pub const DEFAULT_CHANNELS: &str = "0";
 pub const DEFAULT_DEBUG: bool = false;
 pub const DEFAULT_DURATION: u64 = 30;
@@ -82,6 +79,3 @@ impl OutputMode {
         }
     }
 }
-
-// Type definitions to make complex types more readable
-pub type WavWriterType = hound::WavWriter<BufWriter<File>>;

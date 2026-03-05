@@ -1,5 +1,4 @@
-use std::fs::{self, File};
-use std::io::BufWriter;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -7,10 +6,9 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 
-use crate::constants::{
-    CacheAlignedPeak, MAX_CHANNELS, OutputMode, WRITER_THREAD_READ_CHUNK, WavWriterType,
-};
+use crate::constants::{CacheAlignedPeak, MAX_CHANNELS, OutputMode, WRITER_THREAD_READ_CHUNK};
 use crate::error::BlackboxError;
+use crate::raw_wav_writer::RawWavWriter;
 use crate::utils::{available_disk_space_mb, is_silent};
 
 use chrono::prelude::*;
@@ -33,17 +31,13 @@ fn tmp_wav_path(final_path: &str) -> String {
     )
 }
 
-/// 64 KB write buffer — reduces syscall pressure at high channel counts
-/// compared to the default 8 KB used by `hound::WavWriter::create()`.
-const WAV_BUF_CAPACITY: usize = 65_536;
-
-/// Create a WAV writer with a 64 KB `BufWriter` instead of the default 8 KB.
-fn create_wav_writer(path: &str, spec: hound::WavSpec) -> Result<WavWriterType, BlackboxError> {
-    let file = File::create(path)
-        .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {e}")))?;
-    let buf = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
-    hound::WavWriter::new(buf, spec)
-        .map_err(|e| BlackboxError::Wav(format!("Failed to init WAV writer: {e}")))
+/// Create a WAV writer using our direct-write `RawWavWriter`.
+fn create_wav_writer(
+    path: &str,
+    spec: crate::raw_wav_writer::WavSpec,
+) -> Result<RawWavWriter, BlackboxError> {
+    RawWavWriter::create(path, spec)
+        .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +106,8 @@ pub struct WriterThreadState {
     peak_scratch: [f32; MAX_CHANNELS],
 
     // --- Warm fields: accessed frequently but not per-sample ---
-    pub writer: Option<WavWriterType>,
-    pub multichannel_writers: Vec<Option<WavWriterType>>,
+    pub writer: Option<RawWavWriter>,
+    pub multichannel_writers: Vec<Option<RawWavWriter>>,
     pub write_errors: Arc<AtomicU64>,
     /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
     /// Each element is cache-line-aligned to prevent false sharing with the UI reader thread.
@@ -136,7 +130,7 @@ pub struct WriterThreadState {
     pub output_dir: String,
     pub sample_rate: u32,
     pub bits_per_sample: u16,
-    pub current_spec: hound::WavSpec,
+    pub current_spec: crate::raw_wav_writer::WavSpec,
     pub pending_files: Vec<(String, String)>,
     pub silence_threshold: f32,
     /// Minimum free disk space in MB before stopping writes (0 = disabled).
@@ -240,11 +234,10 @@ impl WriterThreadState {
             output_dir: output_dir.to_string(),
             sample_rate,
             bits_per_sample,
-            current_spec: hound::WavSpec {
+            current_spec: crate::raw_wav_writer::WavSpec {
                 channels: 1,
                 sample_rate,
                 bits_per_sample,
-                sample_format: hound::SampleFormat::Int,
             },
             pending_files: Vec::new(),
             silence_threshold,
@@ -309,11 +302,10 @@ impl WriterThreadState {
             output_dir: String::new(),
             sample_rate,
             bits_per_sample: 24,
-            current_spec: hound::WavSpec {
+            current_spec: crate::raw_wav_writer::WavSpec {
                 channels: 1,
                 sample_rate,
                 bits_per_sample: 24,
-                sample_format: hound::SampleFormat::Int,
             },
             pending_files: Vec::new(),
             silence_threshold: 0.0,
@@ -337,11 +329,10 @@ impl WriterThreadState {
             let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
             let tmp_path = tmp_wav_path(&final_path);
 
-            let spec = hound::WavSpec {
+            let spec = crate::raw_wav_writer::WavSpec {
                 channels: 1,
                 sample_rate: self.sample_rate,
                 bits_per_sample: self.bits_per_sample,
-                sample_format: hound::SampleFormat::Int,
             };
 
             let writer = create_wav_writer(&tmp_path, spec)?;
@@ -351,11 +342,10 @@ impl WriterThreadState {
             info!("Created channel WAV file: {}", final_path);
         }
 
-        self.current_spec = hound::WavSpec {
+        self.current_spec = crate::raw_wav_writer::WavSpec {
             channels: 1,
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
-            sample_format: hound::SampleFormat::Int,
         };
 
         Ok(())
@@ -370,11 +360,10 @@ impl WriterThreadState {
 
         info!("Setting up multichannel mode with {} channels", ch_count);
 
-        let spec = hound::WavSpec {
+        let spec = crate::raw_wav_writer::WavSpec {
             channels: self.channel_count as u16,
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
-            sample_format: hound::SampleFormat::Int,
         };
 
         let writer = create_wav_writer(&tmp_path, spec)?;
@@ -398,11 +387,10 @@ impl WriterThreadState {
         let final_path = format!("{}/{}.wav", self.output_dir, date_str);
         let tmp_path = tmp_wav_path(&final_path);
 
-        let spec = hound::WavSpec {
+        let spec = crate::raw_wav_writer::WavSpec {
             channels: num_channels as u16,
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
-            sample_format: hound::SampleFormat::Int,
         };
 
         let writer = create_wav_writer(&tmp_path, spec)?;
@@ -454,7 +442,7 @@ impl WriterThreadState {
 
     /// Flush all active WAV writers to make files crash-recoverable.
     ///
-    /// `hound::WavWriter::flush()` rewrites the WAV header with the correct data
+    /// `RawWavWriter::flush()` rewrites the WAV header with the correct data
     /// size and flushes the underlying `BufWriter` to the OS. After a flush, the
     /// file is a valid WAV playable up to that point — even after a force-quit or
     /// SIGKILL. Counts audio frames (~10 seconds worth) for predictable timing
@@ -714,12 +702,11 @@ impl WriterThreadState {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
                     let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
                     let tmp = tmp_wav_path(&final_path);
-                    let spec = hound::WavSpec {
+                    let spec = crate::raw_wav_writer::WavSpec {
                         channels: 1,
                         sample_rate: self.sample_rate,
                         bits_per_sample: self.bits_per_sample,
-                        sample_format: hound::SampleFormat::Int,
-                    };
+                            };
                     match create_wav_writer(&tmp, spec) {
                         Ok(w) => {
                             self.multichannel_writers[idx] = Some(w);
@@ -735,12 +722,11 @@ impl WriterThreadState {
             OutputMode::Single if ch_count > 2 => {
                 let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
                 let tmp = tmp_wav_path(&final_path);
-                let spec = hound::WavSpec {
+                let spec = crate::raw_wav_writer::WavSpec {
                     channels: self.channel_count as u16,
                     sample_rate: self.sample_rate,
                     bits_per_sample: self.bits_per_sample,
-                    sample_format: hound::SampleFormat::Int,
-                };
+                    };
                 match create_wav_writer(&tmp, spec) {
                     Ok(w) => {
                         self.writer = Some(w);

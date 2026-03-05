@@ -44,6 +44,7 @@ pub mod error;
 pub mod ffi;
 #[cfg(test)]
 mod mock_processor;
+mod raw_wav_writer;
 mod utils;
 mod writer_thread;
 
@@ -63,7 +64,7 @@ pub use constants::{
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
     DEFAULT_SILENCE_GATE_ENABLED, DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
     DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, OutputMode, RING_BUFFER_SECONDS,
-    WRITER_THREAD_READ_CHUNK, WavWriterType,
+    WRITER_THREAD_READ_CHUNK,
 };
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
