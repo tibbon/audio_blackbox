@@ -872,6 +872,10 @@ pub fn writer_thread_main(
     command_rx: std::sync::mpsc::Receiver<WriterCommand>,
     mut state: WriterThreadState,
 ) {
+    // Adaptive sleep: short when data is flowing, longer when idle.
+    // Caps at 5ms to bound worst-case latency while reducing idle wakeups ~5×.
+    let mut consecutive_empty: u8 = 0;
+
     loop {
         // 1. Check for shutdown command (non-blocking)
         if let Ok(WriterCommand::Shutdown(reply_tx)) = command_rx.try_recv() {
@@ -897,8 +901,12 @@ pub fn writer_thread_main(
         state.flush_writers(read);
 
         if read == 0 {
-            // Ring buffer empty — sleep briefly to avoid busy-wait
-            std::thread::sleep(Duration::from_millis(1));
+            // Ring buffer empty — back off gradually to reduce idle wakeups.
+            // 1ms → 2ms → 3ms → 4ms → 5ms (cap). Resets on data arrival.
+            consecutive_empty = consecutive_empty.saturating_add(1).min(5);
+            std::thread::sleep(Duration::from_millis(u64::from(consecutive_empty)));
+        } else {
+            consecutive_empty = 0;
         }
     }
 }
