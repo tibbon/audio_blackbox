@@ -309,7 +309,7 @@ impl WriterThreadState {
         info!("Setting up split mode with {} channels", ch_count);
 
         self.multichannel_writers.clear();
-        for _ in 0..MAX_CHANNELS {
+        for _ in 0..ch_count {
             self.multichannel_writers.push(None);
         }
 
