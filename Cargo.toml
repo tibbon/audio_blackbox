@@ -95,5 +95,9 @@ silence detection, and performance monitoring.
 osx_minimum_system_version = "10.14"
 osx_frameworks = ["AppKit", "Foundation", "CoreAudio"]
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
 [dev-dependencies]
 temp-env = "0.3.4"
