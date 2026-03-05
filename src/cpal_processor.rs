@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use log::{debug, error, info, warn};
 
@@ -601,8 +601,10 @@ impl CpalAudioProcessor {
             stream_error.store(true, Ordering::Release);
         };
 
-        // Local rotation timer for the callback (plain variable, not Arc<Mutex>)
-        let mut last_rotation = Instant::now();
+        // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
+        let rotation_threshold =
+            sample_rate as u64 * total_channels as u64 * recording_cadence;
+        let mut rotation_sample_counter: u64 = 0;
 
         // Build the input stream
         let stream = match config.sample_format() {
@@ -615,14 +617,12 @@ impl CpalAudioProcessor {
                                 debug!("Processing {} samples", data.len());
                             }
 
-                            // Check rotation timer (only reads Instant::now + comparison, no mutex)
+                            // Check rotation via sample counter (zero syscalls)
                             if continuous_mode {
-                                let now = Instant::now();
-                                if now.duration_since(last_rotation)
-                                    >= Duration::from_secs(recording_cadence)
-                                {
+                                rotation_sample_counter += data.len() as u64;
+                                if rotation_sample_counter >= rotation_threshold {
                                     rotation_needed_cb.store(true, Ordering::Release);
-                                    last_rotation = now;
+                                    rotation_sample_counter = 0;
                                 }
                             }
 
