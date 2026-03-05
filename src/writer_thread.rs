@@ -574,13 +574,12 @@ impl WriterThreadState {
             }
         }
 
-        // Publish peaks to shared atomics (only active channels, not full array)
-        for (idx, &peak) in self.peak_scratch[..ch_count].iter().enumerate() {
-            if idx < self.peak_levels.len() {
-                self.peak_levels[idx]
-                    .value
-                    .store(peak.to_bits(), Ordering::Relaxed);
-            }
+        // Publish peaks to shared atomics (only active channels, not full array).
+        // peak_levels.len() == ch_count (both derived from the same channel list at construction),
+        // so zip is always exhaustive over the active channels with no bounds check per iteration.
+        for (peak_slot, &peak) in self.peak_levels.iter().zip(self.peak_scratch[..ch_count].iter())
+        {
+            peak_slot.value.store(peak.to_bits(), Ordering::Relaxed);
         }
 
         // Silence gate transitions
