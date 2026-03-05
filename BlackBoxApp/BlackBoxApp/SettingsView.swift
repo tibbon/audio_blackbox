@@ -200,7 +200,7 @@ struct RecordingSettingsTab: View {
 
             Section("Monitoring") {
                 Button("Open Level Meter\u{2026}") {
-                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.activate()
                     openWindow(id: "meter")
                 }
                 .accessibilityHint("Opens real-time audio level meter")
@@ -450,7 +450,7 @@ private func confirmSettingsChange(
     alert.alertStyle = .informational
     alert.addButton(withTitle: "Restart")
     alert.addButton(withTitle: "Cancel")
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activate()
     if alert.runModal() == .alertFirstButtonReturn {
         onRestart()
     } else {
@@ -775,7 +775,7 @@ struct GeneralSettingsTab: View {
             Section("Setup") {
                 Button("Run Setup Again\u{2026}") {
                     hasCompletedOnboarding = false
-                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.activate()
                     openWindow(id: "onboarding")
                 }
                 .accessibilityHint("Re-run the initial setup wizard")
@@ -815,7 +815,7 @@ struct GeneralSettingsTab: View {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Reset")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         if alert.runModal() != .alertFirstButtonReturn {
             resetAllSettings()
         }

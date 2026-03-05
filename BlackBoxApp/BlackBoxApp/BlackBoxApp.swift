@@ -43,7 +43,7 @@ struct BlackBoxApp: App {
                 Divider()
 
                 Button("Set Up BlackBox\u{2026}") {
-                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.activate()
                     openWindow(id: "onboarding")
                 }
 
@@ -125,7 +125,7 @@ struct BlackBoxApp: App {
         }
 
         Button("Level Meter\u{2026}") {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openWindow(id: "meter")
         }
 
@@ -168,12 +168,12 @@ struct BlackBoxApp: App {
         Divider()
 
         Button("About BlackBox\u{2026}") {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openWindow(id: "about")
         }
 
         Button("Settings\u{2026}") {
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openWindow(id: "settings")
         }
         .keyboardShortcut(",")
@@ -199,7 +199,7 @@ struct BlackBoxApp: App {
         guard !hasCompletedOnboarding, !didAutoOpenOnboarding else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             didAutoOpenOnboarding = true
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             openWindow(id: "onboarding")
         }
     }
@@ -266,7 +266,7 @@ struct BlackBoxApp: App {
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Stop & Quit")
 
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             if alert.runModal() == .alertFirstButtonReturn {
                 return
             }

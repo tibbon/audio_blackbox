@@ -273,7 +273,7 @@ final class RecordingState: ObservableObject {
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         alert.runModal()
     }
 
@@ -687,7 +687,7 @@ final class RecordingState: ObservableObject {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Choose Directory\u{2026}")
             alert.addButton(withTitle: "Use Default")
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             if alert.runModal() == .alertFirstButtonReturn {
                 let panel = NSOpenPanel()
                 panel.canChooseDirectories = true
