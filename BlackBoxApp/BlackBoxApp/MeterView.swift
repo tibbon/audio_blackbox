@@ -3,11 +3,44 @@ import SwiftUI
 struct MeterView: View {
     @ObservedObject var recorder: RecordingState
 
+    /// Height of one meter row: barHeight (14pt) + vertical padding (6pt)
+    private static let rowHeight: CGFloat = 20
+    /// Vertical space reserved for window chrome, title bar, and padding
+    private static let chromeOverhead: CGFloat = 80
+
+    private var columnLayout: (columns: Int, rowsPerColumn: Int) {
+        let count = recorder.peakLevels.count
+        let availableHeight = (NSScreen.main?.visibleFrame.height ?? 800) - Self.chromeOverhead
+        let maxRows = max(1, Int(availableHeight / Self.rowHeight))
+        if count <= maxRows {
+            return (1, count)
+        }
+        let cols = Int(ceil(Double(count) / Double(maxRows)))
+        let rowsPer = Int(ceil(Double(count) / Double(cols)))
+        return (cols, rowsPer)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if (recorder.isRecording || recorder.isMonitoring) && !recorder.peakLevels.isEmpty {
-                ForEach(0..<recorder.peakLevels.count, id: \.self) { index in
-                    MeterBar(channel: index + 1, peak: recorder.peakLevels[index])
+                let layout = columnLayout
+                if layout.columns <= 1 {
+                    ForEach(0..<recorder.peakLevels.count, id: \.self) { index in
+                        MeterBar(channel: index + 1, peak: recorder.peakLevels[index])
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach(0..<layout.columns, id: \.self) { col in
+                            let start = col * layout.rowsPerColumn
+                            let end = min(start + layout.rowsPerColumn, recorder.peakLevels.count)
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(start..<end, id: \.self) { index in
+                                    MeterBar(channel: index + 1, peak: recorder.peakLevels[index])
+                                }
+                            }
+                            .frame(minWidth: 280)
+                        }
+                    }
                 }
             } else {
                 Spacer()

@@ -65,7 +65,7 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
-    @AppStorage(SettingsKeys.silenceGateEnabled) private var silenceGateEnabled: Bool = false
+    @AppStorage(SettingsKeys.silenceGateEnabled) private var silenceGateEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceGateTimeout) private var silenceGateTimeout: Int = 300
     @State private var deviceChannelCount: Int = 0
     @State private var selectedChannels: Set<Int> = [1]
