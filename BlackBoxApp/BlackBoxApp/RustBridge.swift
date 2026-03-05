@@ -157,9 +157,12 @@ final class RustBridge {
     }
 
     /// Read a JSON C string from an FFI call, parse it, and free the C string.
+    /// Parses directly from the C buffer to avoid an intermediate Swift String copy.
     private func readJSON(_ call: () -> UnsafeMutablePointer<CChar>?) -> Any? {
-        guard let str = readString(call),
-              let data = str.data(using: .utf8) else { return nil }
+        guard let ptr = call() else { return nil }
+        defer { blackbox_free_string(ptr) }
+        let len = strlen(ptr)
+        let data = Data(bytes: ptr, count: len)
         return try? JSONSerialization.jsonObject(with: data)
     }
 }
