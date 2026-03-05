@@ -26,7 +26,11 @@ pub const DISK_CHECK_INTERVAL_SECS: u64 = 10;
 /// How many seconds of audio the ring buffer can hold (at device sample rate * channels).
 pub const RING_BUFFER_SECONDS: usize = 5;
 /// How many f32 samples the writer thread reads per iteration.
-pub const WRITER_THREAD_READ_CHUNK: usize = 4096;
+///
+/// Larger chunks reduce per-iteration overhead (fewer `read_chunk()` atomics,
+/// `write_samples()` calls, and peak publish cycles). At 48 kHz / 64 ch,
+/// 16 384 samples ≈ 5.3 ms — well within the 33 ms meter polling window.
+pub const WRITER_THREAD_READ_CHUNK: usize = 16_384;
 
 /// Cache-line-aligned atomic peak level.
 ///
