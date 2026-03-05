@@ -112,6 +112,13 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
 pub fn available_disk_space_mb(path: &str) -> Option<u64> {
     use std::ffi::CString;
     let c_path = CString::new(path).ok()?;
+    available_disk_space_mb_cstr(&c_path)
+}
+
+/// Like `available_disk_space_mb` but takes a pre-allocated `CStr`, avoiding a
+/// heap allocation per call. Used by the writer thread's periodic check.
+#[cfg(unix)]
+pub fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
     if result == 0 {

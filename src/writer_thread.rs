@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -128,6 +129,9 @@ pub struct WriterThreadState {
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
+    /// Pre-allocated CString of `output_dir` for `statvfs` calls (avoids heap alloc per check).
+    #[cfg(unix)]
+    output_dir_cstr: Option<CString>,
     pub sample_rate: u32,
     pub bits_per_sample: u16,
     pub current_spec: crate::raw_wav_writer::WavSpec,
@@ -232,6 +236,8 @@ impl WriterThreadState {
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
             gate_idle,
             output_dir: output_dir.to_string(),
+            #[cfg(unix)]
+            output_dir_cstr: CString::new(output_dir).ok(),
             sample_rate,
             bits_per_sample,
             current_spec: crate::raw_wav_writer::WavSpec {
@@ -300,6 +306,8 @@ impl WriterThreadState {
             gate_timeout_frames: 0,
             gate_idle: Arc::new(AtomicBool::new(false)),
             output_dir: String::new(),
+            #[cfg(unix)]
+            output_dir_cstr: None, // Monitor mode doesn't check disk space
             sample_rate,
             bits_per_sample: 24,
             current_spec: crate::raw_wav_writer::WavSpec {
@@ -422,7 +430,16 @@ impl WriterThreadState {
         }
         self.disk_check_counter = 0;
 
-        if let Some(available_mb) = available_disk_space_mb(&self.output_dir)
+        // Use cached CString on unix to avoid heap allocation per check.
+        #[cfg(unix)]
+        let available_mb = self
+            .output_dir_cstr
+            .as_deref()
+            .and_then(crate::utils::available_disk_space_mb_cstr);
+        #[cfg(not(unix))]
+        let available_mb = available_disk_space_mb(&self.output_dir);
+
+        if let Some(available_mb) = available_mb
             && available_mb < self.min_disk_space_mb
         {
             warn!(
