@@ -372,6 +372,13 @@ impl CpalAudioProcessor {
         })
     }
 
+    /// Return a clone of the `Arc` holding per-channel peak levels.
+    ///
+    /// Used by the FFI layer to read peaks without locking the recorder mutex.
+    pub fn peak_levels_arc(&self) -> Arc<Vec<CacheAlignedPeak>> {
+        Arc::clone(&self.peak_levels)
+    }
+
     /// Find an input device by name, or return the default input device.
     fn find_input_device(
         host: &cpal::Host,

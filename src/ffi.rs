@@ -16,7 +16,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::catch_unwind;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
@@ -65,6 +65,10 @@ pub struct BlackboxHandle {
     config: Mutex<AppConfig>,
     recorder: Mutex<Option<AudioRecorder<CpalAudioProcessor>>>,
     last_error: Mutex<Option<String>>,
+    /// Per-channel peak levels — shared with the writer thread.
+    /// Stored here so the 30 Hz meter poll can read atomics without
+    /// locking the recorder mutex.
+    peak_levels: Mutex<Arc<Vec<crate::constants::CacheAlignedPeak>>>,
 }
 
 impl BlackboxHandle {
@@ -140,6 +144,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
             config: Mutex::new(config),
             recorder: Mutex::new(None),
             last_error: Mutex::new(None),
+            peak_levels: Mutex::new(Arc::new(Vec::new())),
         });
 
         Box::into_raw(handle)
@@ -210,6 +215,11 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
             return -1;
         }
 
+        // Cache peak_levels Arc so the meter poll skips the recorder mutex.
+        if let Ok(mut pl) = handle.peak_levels.lock() {
+            *pl = recorder.get_processor().peak_levels_arc();
+        }
+
         match handle.recorder.lock() {
             Ok(mut guard) => {
                 *guard = Some(recorder);
@@ -234,6 +244,11 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
             return -1;
         };
         handle.clear_error();
+
+        // Clear cached peak levels before stopping.
+        if let Ok(mut pl) = handle.peak_levels.lock() {
+            *pl = Arc::new(Vec::new());
+        }
 
         match handle.recorder.lock() {
             Ok(mut guard) => {
@@ -523,16 +538,19 @@ pub extern "C" fn blackbox_get_peak_levels(
 
         let buf = unsafe { std::slice::from_raw_parts_mut(out, max_channels as usize) };
 
-        handle
-            .recorder
-            .lock()
-            .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(|r| r.get_processor().fill_peak_levels(buf) as i32)
-            })
-            .unwrap_or(0)
+        // Read from the cached Arc — no recorder mutex needed.
+        let peaks = match handle.peak_levels.lock() {
+            Ok(pl) => Arc::clone(&pl),
+            Err(_) => return 0,
+        };
+        let count = peaks.len().min(buf.len());
+        for (dst, src) in buf[..count]
+            .iter_mut()
+            .zip(peaks.iter())
+        {
+            *dst = f32::from_bits(src.value.load(std::sync::atomic::Ordering::Relaxed));
+        }
+        count as i32
     })
     .unwrap_or(-1)
 }
@@ -584,6 +602,10 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
                 handle.set_error(format!("Failed to start monitoring: {}", e));
                 return -1;
             }
+            // Cache peak_levels Arc so the meter poll skips the recorder mutex.
+            if let Ok(mut pl) = handle.peak_levels.lock() {
+                *pl = recorder.get_processor().peak_levels_arc();
+            }
         }
 
         0
@@ -601,6 +623,11 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
             return -1;
         };
         handle.clear_error();
+
+        // Clear cached peak levels before stopping.
+        if let Ok(mut pl) = handle.peak_levels.lock() {
+            *pl = Arc::new(Vec::new());
+        }
 
         match handle.recorder.lock() {
             Ok(mut guard) => {
