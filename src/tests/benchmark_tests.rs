@@ -986,3 +986,178 @@ fn benchmark_monitor_cpu_idle() {
 
     println!();
 }
+
+// ===========================================================================
+// Benchmark 10: Sample rate scaling (44.1 / 48 / 96 / 192 kHz)
+//
+// Measures throughput at each sample rate to verify we stay above real-time
+// even at 192 kHz. Uses 24-bit (production default) and both 2ch and 32ch.
+// ===========================================================================
+
+#[test]
+#[ignore = "manual benchmark"]
+fn benchmark_sample_rate_scaling() {
+    let sample_rates: &[u32] = &[44_100, 48_000, 96_000, 192_000];
+    let channel_configs: &[usize] = &[2, 32];
+    let duration_secs = 10;
+    let bits_per_sample: u16 = 24;
+
+    println!("\n============================================================");
+    println!("  Benchmark: Sample rate scaling (24-bit)");
+    println!("  (throughput at increasing sample rates)");
+    println!("============================================================");
+    print_release_note();
+    println!(
+        "  {:>6} {:>4} {:>15} {:>12} {:>10}",
+        "Rate", "Ch", "Time (ms)", "Samples/s", "Realtime"
+    );
+    println!(
+        "  {:-<6} {:-<4} {:-<15} {:-<12} {:-<10}",
+        "", "", "", "", ""
+    );
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        for &sample_rate in sample_rates {
+            for &ch_count in channel_configs {
+                let temp_dir = tempdir().unwrap();
+                let dir = temp_dir.path().to_str().unwrap();
+                let write_errors = Arc::new(AtomicU64::new(0));
+                let channels: Vec<usize> = (0..ch_count).collect();
+
+                let mut state = WriterThreadState::new(
+                    dir,
+                    sample_rate,
+                    &channels,
+                    "single",
+                    0.0,
+                    Arc::clone(&write_errors),
+                    0,
+                    Arc::new(AtomicBool::new(false)),
+                    bits_per_sample,
+                    Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    false,
+                    0,
+                )
+                .unwrap();
+                state.total_device_channels = ch_count as u16;
+
+                let frames = sample_rate as usize * duration_secs;
+                let data = generate_bench_data(ch_count, frames);
+
+                let warmup = generate_bench_data(ch_count, 1000);
+                state.write_samples(&warmup);
+
+                let start = Instant::now();
+                let chunk_samples = 512 * ch_count;
+                for chunk in data.chunks(chunk_samples) {
+                    state.write_samples(chunk);
+                }
+                let elapsed = start.elapsed();
+                let _ = state.finalize_all();
+
+                let total_samples = frames * ch_count;
+                let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
+                let realtime_rate = sample_rate as f64 * ch_count as f64;
+                let realtime_multiple = samples_per_sec / realtime_rate;
+
+                println!(
+                    "  {:>5}k {:>4} {:>12.1} ms {:>12} {:>8.1}x",
+                    sample_rate / 1000,
+                    ch_count,
+                    elapsed.as_secs_f64() * 1000.0,
+                    format_rate(samples_per_sec),
+                    realtime_multiple,
+                );
+            }
+        }
+    });
+
+    println!();
+}
+
+// ===========================================================================
+// Benchmark 11: Bit depth comparison (16 / 24 / 32-bit)
+//
+// Measures throughput at each bit depth to show the cost of wider samples.
+// Tests at both 2ch/48kHz (common) and 32ch/192kHz (stress).
+// ===========================================================================
+
+#[test]
+#[ignore = "manual benchmark"]
+fn benchmark_bit_depth_comparison() {
+    let bit_depths: &[u16] = &[16, 24, 32];
+    let configs: &[(usize, u32)] = &[(2, 48_000), (32, 48_000), (2, 192_000), (32, 192_000)];
+    let duration_secs = 10;
+
+    println!("\n============================================================");
+    println!("  Benchmark: Bit depth comparison (16 / 24 / 32-bit)");
+    println!("  (throughput at each bit depth x channel/rate combos)");
+    println!("============================================================");
+    print_release_note();
+    println!(
+        "  {:>4} {:>6} {:>5} {:>15} {:>12} {:>10}",
+        "Bits", "Rate", "Ch", "Time (ms)", "Samples/s", "Realtime"
+    );
+    println!(
+        "  {:-<4} {:-<6} {:-<5} {:-<15} {:-<12} {:-<10}",
+        "", "", "", "", "", ""
+    );
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        for &(ch_count, sample_rate) in configs {
+            for &bits in bit_depths {
+                let temp_dir = tempdir().unwrap();
+                let dir = temp_dir.path().to_str().unwrap();
+                let write_errors = Arc::new(AtomicU64::new(0));
+                let channels: Vec<usize> = (0..ch_count).collect();
+
+                let mut state = WriterThreadState::new(
+                    dir,
+                    sample_rate,
+                    &channels,
+                    "single",
+                    0.0,
+                    Arc::clone(&write_errors),
+                    0,
+                    Arc::new(AtomicBool::new(false)),
+                    bits,
+                    Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    false,
+                    0,
+                )
+                .unwrap();
+                state.total_device_channels = ch_count as u16;
+
+                let frames = sample_rate as usize * duration_secs;
+                let data = generate_bench_data(ch_count, frames);
+
+                let warmup = generate_bench_data(ch_count, 1000);
+                state.write_samples(&warmup);
+
+                let start = Instant::now();
+                let chunk_samples = 512 * ch_count;
+                for chunk in data.chunks(chunk_samples) {
+                    state.write_samples(chunk);
+                }
+                let elapsed = start.elapsed();
+                let _ = state.finalize_all();
+
+                let total_samples = frames * ch_count;
+                let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
+                let realtime_rate = sample_rate as f64 * ch_count as f64;
+                let realtime_multiple = samples_per_sec / realtime_rate;
+
+                println!(
+                    "  {:>4} {:>5}k {:>5} {:>12.1} ms {:>12} {:>8.1}x",
+                    bits,
+                    sample_rate / 1000,
+                    ch_count,
+                    elapsed.as_secs_f64() * 1000.0,
+                    format_rate(samples_per_sec),
+                    realtime_multiple,
+                );
+            }
+            println!();
+        }
+    });
+}
