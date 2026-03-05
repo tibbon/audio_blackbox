@@ -38,7 +38,7 @@ struct BlackBoxApp: App {
 
                 Text("Complete setup to start recording")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Divider()
 
@@ -100,12 +100,12 @@ struct BlackBoxApp: App {
             let chCount = countChannels(channelSpec)
             Text("\(device) \u{00B7} \(chCount) ch")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
 
         if let error = recorder.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
-                .foregroundColor(Color(nsColor: .systemRed))
+                .foregroundStyle(Color(nsColor: .systemRed))
                 .font(.caption)
                 .accessibilityLabel("Error: \(error)")
         }
@@ -309,11 +309,11 @@ struct AboutView: View {
 
             Text("Version \(version) (\(build))")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(copyright)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             if let url = AppURL.website {
                 Link("dollhousemediatech.com/blackbox", destination: url)
@@ -327,7 +327,7 @@ struct AboutView: View {
                 if let url = AppURL.acknowledgments { Link("Acknowledgments", destination: url) }
             }
             .font(.caption2)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
         }
         .padding(24)
         .frame(minWidth: 280)

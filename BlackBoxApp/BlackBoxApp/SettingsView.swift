@@ -104,7 +104,7 @@ struct RecordingSettingsTab: View {
                 } else {
                     Text("Select an input device to see available channels.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -136,7 +136,7 @@ struct RecordingSettingsTab: View {
                 .accessibilityHint("Precision of WAV recordings")
                 Text("24-bit is the professional standard. 16-bit saves space. 32-bit float offers maximum precision with larger files.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Silence Detection") {
@@ -156,7 +156,7 @@ struct RecordingSettingsTab: View {
                         HStack {
                             Text("Sensitive")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                             Spacer()
                             Text(thresholdPresetLabel)
                                 .font(.caption)
@@ -164,7 +164,7 @@ struct RecordingSettingsTab: View {
                             Spacer()
                             Text("Aggressive")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
 
@@ -194,7 +194,7 @@ struct RecordingSettingsTab: View {
 
                     Text("When enabled, BlackBox waits for audio before creating files, and finalizes them after the selected silence duration. Saves disk space during long idle periods.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -206,7 +206,7 @@ struct RecordingSettingsTab: View {
                 .accessibilityHint("Opens real-time audio level meter")
                 Text("View real-time audio input levels per channel during recording.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -263,7 +263,7 @@ struct RecordingSettingsTab: View {
             Spacer()
             Text("\(selectedChannels.count) of \(deviceChannelCount) selected")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -479,7 +479,7 @@ struct OutputSettingsTab: View {
                     Text(displayPath)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .accessibilityLabel("Output directory: \(outputDir)")
@@ -526,11 +526,11 @@ struct OutputSettingsTab: View {
                 if outputMode == "single" {
                     Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
                         .font(.caption)
-                        .foregroundColor(Color(nsColor: .systemOrange))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
                 } else {
                     Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -540,7 +540,7 @@ struct OutputSettingsTab: View {
                     .accessibilityHint("Automatically rotate files at regular intervals")
                 Text("Automatically saves and starts a new file at regular intervals, so no audio is lost if the app closes unexpectedly.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 if continuousMode {
                     Picker("Rotate every:", selection: $cadenceSelection) {
@@ -575,10 +575,10 @@ struct OutputSettingsTab: View {
                             if recordingCadence >= 86400 {
                                 Text("Maximum: 24 hours")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             } else if recordingCadence > 0 {
                                 Text("(\(cadenceDescription))")
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .font(.caption)
                             }
                         }
@@ -587,7 +587,7 @@ struct OutputSettingsTab: View {
                     if let estimate = fileSizeEstimate {
                         Text("Estimated file size per chunk: \(estimate)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -605,7 +605,7 @@ struct OutputSettingsTab: View {
                 .accessibilityLabel("Minimum free disk space")
                 Text("Recording stops automatically when free disk space drops below this threshold.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -732,7 +732,7 @@ struct GeneralSettingsTab: View {
                     .accessibilityHint("Begin recording immediately when BlackBox starts")
                 Text("When auto-record is enabled, recording begins with your saved settings.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Global Shortcut") {
@@ -756,11 +756,11 @@ struct GeneralSettingsTab: View {
                 if let shortcutError {
                     Text(shortcutError)
                         .font(.caption)
-                        .foregroundColor(Color(nsColor: .systemRed))
+                        .foregroundStyle(Color(nsColor: .systemRed))
                 } else {
                     Text("Works from any app. Click the button and press your desired key combination.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -769,7 +769,7 @@ struct GeneralSettingsTab: View {
                     .accessibilityHint("Log detailed info to macOS Console")
                 Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Setup") {
@@ -781,13 +781,13 @@ struct GeneralSettingsTab: View {
                 .accessibilityHint("Re-run the initial setup wizard")
                 Text("Re-run the setup wizard to change your output directory or recording mode.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
 
                 Button("Reset All Settings\u{2026}") {
                     confirmResetAllSettings()
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .accessibilityHint("Restore all settings to their defaults")
             }
         }

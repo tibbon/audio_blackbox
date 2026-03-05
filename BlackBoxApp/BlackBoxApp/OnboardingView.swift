@@ -68,7 +68,7 @@ struct OnboardingView: View {
                         skipOnboarding()
                     }
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 switch step {
@@ -129,7 +129,7 @@ struct OnboardingView: View {
 
             Text("BlackBox records audio from your Mac and saves it as WAV files. It runs quietly in your menu bar, always ready to capture.")
                 .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: 360)
         }
         .padding(.horizontal, 32)
@@ -139,7 +139,7 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Image(systemName: "mic.circle.fill")
                 .font(.system(size: 56))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
 
             Text("Microphone Access")
@@ -148,16 +148,16 @@ struct OnboardingView: View {
 
             Text("BlackBox needs access to your microphone to record audio. Your recordings stay on your Mac and are never sent anywhere.")
                 .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: 360)
 
             if micGranted {
                 Label("Microphone access granted", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(Color(nsColor: .systemGreen))
+                    .foregroundStyle(Color(nsColor: .systemGreen))
             } else if micDenied {
                 VStack(spacing: 8) {
                     Label("Microphone access denied", systemImage: "xmark.circle.fill")
-                        .foregroundColor(Color(nsColor: .systemRed))
+                        .foregroundStyle(Color(nsColor: .systemRed))
                     Button("Open System Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                             NSWorkspace.shared.open(url)
@@ -180,14 +180,14 @@ struct OnboardingView: View {
             if micDenied {
                 Label("Microphone access denied \u{2014} recording won't work until you allow access in System Settings.",
                       systemImage: "exclamationmark.triangle.fill")
-                    .foregroundColor(Color(nsColor: .systemOrange))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
                     .font(.caption)
                     .frame(maxWidth: 360)
             }
 
             Image(systemName: "folder.circle.fill")
                 .font(.system(size: 56))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
 
             Text("Choose Output Directory")
@@ -195,13 +195,13 @@ struct OnboardingView: View {
                 .fontWeight(.semibold)
 
             Text("Where should BlackBox save your recordings?")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             HStack {
                 Text(abbreviatePath(outputDir))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundColor(chosenURL != nil ? .primary : .secondary)
+                    .foregroundStyle(chosenURL != nil ? .primary : .secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(Color(nsColor: .controlBackgroundColor))
@@ -225,11 +225,11 @@ struct OnboardingView: View {
             if chosenURL == nil {
                 Text("Select a folder to continue. BlackBox will create it if it doesn't exist.")
                     .font(.caption)
-                    .foregroundColor(Color(nsColor: .systemOrange))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
             } else {
                 Label("Folder selected", systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundColor(Color(nsColor: .systemGreen))
+                    .foregroundStyle(Color(nsColor: .systemGreen))
             }
         }
         .padding(.horizontal, 32)
@@ -239,7 +239,7 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Image(systemName: "recordingtape.circle.fill")
                 .font(.system(size: 56))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
 
             Text("Continuous Recording")
@@ -247,7 +247,7 @@ struct OnboardingView: View {
                 .fontWeight(.semibold)
 
             Text("How should BlackBox protect your recordings?")
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             VStack(spacing: 12) {
                 recordingModeOption(
@@ -275,7 +275,7 @@ struct OnboardingView: View {
                 Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
                 Text("When enabled, BlackBox waits for audio before creating files. Saves disk space when no one is speaking.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 380, alignment: .leading)
@@ -293,16 +293,16 @@ struct OnboardingView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                     Text(description)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

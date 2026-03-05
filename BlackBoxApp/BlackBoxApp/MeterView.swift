@@ -49,9 +49,9 @@ struct MeterView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "waveform")
                             .font(.largeTitle)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         Text("No audio input")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Level meter: No audio input")
@@ -184,7 +184,7 @@ private struct MeterBar: View {
             Text(dBLabel)
                 .font(.system(.caption, design: .monospaced))
                 .frame(width: dBLabelWidth, alignment: .trailing)
-                .foregroundColor(dBFS > -3 ? Color(nsColor: .systemRed) : dBFS > -12 ? Color(nsColor: .systemYellow) : .secondary)
+                .foregroundStyle(dBFS > -3 ? Color(nsColor: .systemRed) : dBFS > -12 ? Color(nsColor: .systemYellow) : .secondary)
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
