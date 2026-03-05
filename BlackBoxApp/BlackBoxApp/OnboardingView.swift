@@ -205,7 +205,7 @@ struct OnboardingView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
                     .background(Color(nsColor: .controlBackgroundColor))
-                    .cornerRadius(6)
+                    .clipShape(.rect(cornerRadius: 6))
 
                 Button("Choose\u{2026}") {
                     chooseDirectory()

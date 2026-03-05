@@ -150,7 +150,7 @@ private struct MeterBar: View {
                     Rectangle()
                         .fill(Color.primary.opacity(0.08))
                         .frame(height: barHeight)
-                        .cornerRadius(3)
+                        .clipShape(.rect(cornerRadius: 3))
 
                     // dB scale tick marks
                     ForEach(MeterBar.tickPositions, id: \.dB) { tick in
@@ -164,7 +164,7 @@ private struct MeterBar: View {
                     // Gradient-filled level bar
                     Self.meterGradient
                         .frame(width: max(0, geo.size.width * barFraction), height: barHeight)
-                        .cornerRadius(3)
+                        .clipShape(.rect(cornerRadius: 3))
                         .animation(.linear(duration: 0.05), value: barFraction)
 
                     // Peak hold indicator
