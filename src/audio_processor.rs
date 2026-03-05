@@ -74,4 +74,9 @@ pub trait AudioProcessor {
     fn is_monitoring(&self) -> bool {
         false
     }
+
+    /// Whether the silence gate is currently idle (no files open, waiting for signal).
+    fn gate_idle(&self) -> bool {
+        false
+    }
 }

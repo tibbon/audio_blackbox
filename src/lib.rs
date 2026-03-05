@@ -61,8 +61,9 @@ pub use constants::{
     CacheAlignedPeak, DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE,
     DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
-    DEFAULT_SILENCE_THRESHOLD, DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, OutputMode,
-    RING_BUFFER_SECONDS, WRITER_THREAD_READ_CHUNK, WavWriterType,
+    DEFAULT_SILENCE_GATE_ENABLED, DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
+    DISK_CHECK_INTERVAL_SECS, MAX_CHANNELS, OutputMode, RING_BUFFER_SECONDS,
+    WRITER_THREAD_READ_CHUNK, WavWriterType,
 };
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
@@ -134,6 +135,7 @@ mod tests {
     mod recorder_tests;
     mod ring_buffer_tests;
     mod shutdown_tests;
+    mod silence_gate_tests;
     mod silence_tests;
 
     // Check if we're running in CI
@@ -169,6 +171,10 @@ mod tests {
             ("MIN_DISK_SPACE_MB", None),
             ("BLACKBOX_BITS_PER_SAMPLE", None),
             ("BITS_PER_SAMPLE", None),
+            ("BLACKBOX_SILENCE_GATE_ENABLED", None),
+            ("SILENCE_GATE_ENABLED", None),
+            ("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS", None),
+            ("SILENCE_GATE_TIMEOUT_SECS", None),
             ("BLACKBOX_CONFIG", None),
         ]
     }

@@ -264,6 +264,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             sample_rate_changed,
             peak_levels,
             sample_rate,
+            gate_idle,
         ) = handle
             .recorder
             .lock()
@@ -280,10 +281,11 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
                         p.sample_rate_changed(),
                         p.peak_levels(),
                         p.sample_rate(),
+                        p.gate_idle(),
                     )
                 })
             })
-            .unwrap_or((false, false, 0, false, false, false, Vec::new(), 0));
+            .unwrap_or((false, false, 0, false, false, false, Vec::new(), 0, false));
 
         let input_device = handle
             .config
@@ -302,6 +304,7 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
             "sample_rate_changed": sample_rate_changed,
             "peak_levels": peak_levels,
             "sample_rate": sample_rate,
+            "gate_idle": gate_idle,
         });
 
         to_c_string(&status.to_string())

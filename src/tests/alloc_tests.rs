@@ -100,6 +100,8 @@ fn test_write_samples_zero_alloc_recording() {
             Arc::new(AtomicBool::new(false)),
             24,
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = ch_count as u16;
@@ -165,6 +167,8 @@ fn test_write_samples_zero_alloc_partial_frames() {
             Arc::new(AtomicBool::new(false)),
             24,
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = ch_count as u16;

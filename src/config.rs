@@ -7,7 +7,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::constants::{
     DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG,
     DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
-    DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_GATE_ENABLED,
+    DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
 };
 use crate::error::BlackboxError;
 
@@ -42,6 +43,10 @@ pub struct AppConfig {
     pub min_disk_space_mb: Option<u64>,
     /// Bits per sample for WAV output: 16, 24, or 32 (default: 24)
     pub bits_per_sample: Option<u16>,
+    /// Enable silence gate: pause disk I/O during silence, resume on signal
+    pub silence_gate_enabled: Option<bool>,
+    /// Seconds of silence before the gate closes and finalizes files
+    pub silence_gate_timeout_secs: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -59,6 +64,8 @@ impl Default for AppConfig {
             input_device: None,
             min_disk_space_mb: Some(DEFAULT_MIN_DISK_SPACE_MB),
             bits_per_sample: Some(DEFAULT_BITS_PER_SAMPLE),
+            silence_gate_enabled: Some(DEFAULT_SILENCE_GATE_ENABLED),
+            silence_gate_timeout_secs: Some(DEFAULT_SILENCE_GATE_TIMEOUT_SECS),
         }
     }
 }
@@ -179,6 +186,12 @@ impl AppConfig {
         }
         if other.bits_per_sample.is_some() {
             self.bits_per_sample = other.bits_per_sample;
+        }
+        if other.silence_gate_enabled.is_some() {
+            self.silence_gate_enabled = other.silence_gate_enabled;
+        }
+        if other.silence_gate_timeout_secs.is_some() {
+            self.silence_gate_timeout_secs = other.silence_gate_timeout_secs;
         }
     }
 
@@ -317,6 +330,30 @@ impl AppConfig {
         if let Some(val) = bits {
             self.bits_per_sample = Some(val);
         }
+
+        let gate_enabled = std::env::var("BLACKBOX_SILENCE_GATE_ENABLED")
+            .ok()
+            .and_then(|s| Self::parse_bool(&s))
+            .or_else(|| {
+                std::env::var("SILENCE_GATE_ENABLED")
+                    .ok()
+                    .and_then(|s| Self::parse_bool(&s))
+            });
+        if let Some(val) = gate_enabled {
+            self.silence_gate_enabled = Some(val);
+        }
+
+        let gate_timeout = std::env::var("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("SILENCE_GATE_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+            });
+        if let Some(val) = gate_timeout {
+            self.silence_gate_timeout_secs = Some(val);
+        }
     }
 
     /// Generate a sample configuration file with comments
@@ -369,6 +406,14 @@ performance_logging = {}
 # Default: {}
 bits_per_sample = {}
 
+# Silence gate: pause recording during silence, resume on signal (true/false)
+# Default: {}
+silence_gate_enabled = {}
+
+# Seconds of silence before the gate closes and finalizes files
+# Default: {}
+silence_gate_timeout_secs = {}
+
 # Input device name (leave commented out for system default)
 # input_device = "MacBook Pro Microphone"
 "#,
@@ -391,7 +436,11 @@ bits_per_sample = {}
             DEFAULT_PERFORMANCE_LOGGING,
             default_config.get_performance_logging(),
             DEFAULT_BITS_PER_SAMPLE,
-            default_config.get_bits_per_sample()
+            default_config.get_bits_per_sample(),
+            DEFAULT_SILENCE_GATE_ENABLED,
+            default_config.get_silence_gate_enabled(),
+            DEFAULT_SILENCE_GATE_TIMEOUT_SECS,
+            default_config.get_silence_gate_timeout_secs()
         );
 
         // We don't need to convert to TOML since we're creating a template with comments
@@ -492,6 +541,16 @@ bits_per_sample = {}
             _ => DEFAULT_BITS_PER_SAMPLE,
         }
     }
+
+    pub fn get_silence_gate_enabled(&self) -> bool {
+        self.silence_gate_enabled
+            .unwrap_or(DEFAULT_SILENCE_GATE_ENABLED)
+    }
+
+    pub fn get_silence_gate_timeout_secs(&self) -> u64 {
+        self.silence_gate_timeout_secs
+            .unwrap_or(DEFAULT_SILENCE_GATE_TIMEOUT_SECS)
+    }
 }
 
 #[cfg(test)]
@@ -524,6 +583,8 @@ mod tests {
                     input_device: None,
                     min_disk_space_mb: None,
                     bits_per_sample: None,
+                    silence_gate_enabled: None,
+                    silence_gate_timeout_secs: None,
                 };
 
                 // Apply environment variables directly
@@ -700,6 +761,8 @@ mod tests {
             input_device: None,
             min_disk_space_mb: Some(500),
             bits_per_sample: Some(24),
+            silence_gate_enabled: Some(false),
+            silence_gate_timeout_secs: Some(300),
         };
 
         let override_config = AppConfig {
@@ -713,8 +776,10 @@ mod tests {
             output_dir: None,          // This shouldn't override
             performance_logging: None, // This shouldn't override
             input_device: None,
-            min_disk_space_mb: None, // This shouldn't override
-            bits_per_sample: None,   // This shouldn't override
+            min_disk_space_mb: None,         // This shouldn't override
+            bits_per_sample: None,           // This shouldn't override
+            silence_gate_enabled: None,      // This shouldn't override
+            silence_gate_timeout_secs: None, // This shouldn't override
         };
 
         base_config.merge(override_config);

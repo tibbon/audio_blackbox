@@ -313,6 +313,8 @@ pub struct CpalAudioProcessor {
     sample_rate_changed: Arc<AtomicBool>,
     /// Per-channel peak levels (f32 as u32 bits). Shared with writer thread.
     peak_levels: Arc<Vec<CacheAlignedPeak>>,
+    /// Shared flag: true when silence gate is idle (no files open).
+    gate_idle: Arc<AtomicBool>,
     /// Handle to the writer thread (None before process_audio, None after finalize).
     writer_thread: Option<WriterThreadHandle>,
     /// Whether monitoring mode is active (levels without recording).
@@ -378,6 +380,7 @@ impl CpalAudioProcessor {
             rate_listener: None,
             sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels: Arc::new(Vec::new()),
+            gate_idle: Arc::new(AtomicBool::new(false)),
             writer_thread: None,
             monitoring: false,
             #[cfg(test)]
@@ -548,6 +551,9 @@ impl AudioProcessor for CpalAudioProcessor {
         );
         self.peak_levels = Arc::clone(&peak_levels);
 
+        let gate_enabled = app_config.get_silence_gate_enabled();
+        let gate_timeout_secs = app_config.get_silence_gate_timeout_secs();
+
         // Create writer thread state with initial WAV writers
         let mut state = WriterThreadState::new(
             &self.output_dir,
@@ -560,7 +566,10 @@ impl AudioProcessor for CpalAudioProcessor {
             Arc::clone(&self.disk_space_low),
             bits_per_sample,
             peak_levels,
+            gate_enabled,
+            gate_timeout_secs,
         )?;
+        self.gate_idle = Arc::clone(&state.gate_idle);
         state.total_device_channels = total_channels as u16;
 
         // Create ring buffer
@@ -960,6 +969,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn is_monitoring(&self) -> bool {
         self.monitoring
     }
+
+    fn gate_idle(&self) -> bool {
+        self.gate_idle.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for CpalAudioProcessor {
@@ -1023,6 +1036,8 @@ impl CpalAudioProcessor {
             Arc::clone(&disk_space_low),
             bits_per_sample,
             Arc::clone(&peak_levels),
+            false, // gate disabled in default test helper
+            0,
         )?;
         // For tests, total_device_channels is set per feed_test_data call
         state.total_device_channels = 0;
@@ -1043,6 +1058,7 @@ impl CpalAudioProcessor {
             rate_listener: None,
             sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels,
+            gate_idle: Arc::new(AtomicBool::new(false)),
             writer_thread: None,
             monitoring: false,
             direct_state: Some(state),

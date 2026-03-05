@@ -16,6 +16,9 @@ pub const DEFAULT_PERFORMANCE_LOGGING: bool = false;
 pub const DEFAULT_BITS_PER_SAMPLE: u16 = 24;
 // Disk space monitoring
 pub const DEFAULT_MIN_DISK_SPACE_MB: u64 = 500;
+// Silence gate
+pub const DEFAULT_SILENCE_GATE_ENABLED: bool = false;
+pub const DEFAULT_SILENCE_GATE_TIMEOUT_SECS: u64 = 300;
 /// How often the writer thread checks available disk space.
 pub const DISK_CHECK_INTERVAL_SECS: u64 = 10;
 

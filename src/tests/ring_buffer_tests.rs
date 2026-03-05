@@ -63,6 +63,8 @@ fn test_ring_buffer_overflow_counted() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -126,6 +128,8 @@ fn test_writer_thread_processes_all_samples() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -187,6 +191,8 @@ fn test_writer_thread_rotation() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -265,6 +271,8 @@ fn test_writer_thread_shutdown_drains() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -331,6 +339,8 @@ fn test_writer_thread_silence_on_rotation() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -476,6 +486,8 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -555,6 +567,8 @@ fn test_new_fails_when_disk_space_low() {
             Arc::clone(&disk_space_low),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         );
 
         let err = result
@@ -593,6 +607,8 @@ fn test_new_succeeds_when_disk_check_disabled() {
             Arc::clone(&disk_space_low),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         );
 
         assert!(result.is_ok(), "Should succeed when disk check is disabled");
@@ -627,6 +643,8 @@ fn test_writer_thread_disk_space_check_sets_flag() {
             Arc::clone(&disk_space_low),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;
@@ -667,6 +685,8 @@ fn test_disk_stopped_skips_writes() {
             Arc::clone(&disk_space_low),
             16,
             Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = 1;

@@ -149,6 +149,14 @@ final class RecordingState: ObservableObject {
         }
     }
 
+    /// Restart monitoring to pick up config changes (channels, device).
+    /// No-op if not currently monitoring.
+    func restartMonitoring() {
+        guard isMonitoring else { return }
+        stopMonitoring()
+        startMonitoring()
+    }
+
     // MARK: - Microphone Permission
 
     private func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
@@ -309,7 +317,11 @@ final class RecordingState: ObservableObject {
     func selectDevice(_ name: String) {
         UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
         bridge.setConfig(["input_device": name])
-        restartIfRecording(reason: "device changed")
+        if isRecording {
+            restartIfRecording(reason: "device changed")
+        } else if isMonitoring {
+            restartMonitoring()
+        }
     }
 
     /// Finalize current WAV files and immediately start a new recording session
@@ -370,6 +382,15 @@ final class RecordingState: ObservableObject {
         let bitDepth = defaults.integer(forKey: SettingsKeys.bitDepth)
         if bitDepth > 0 {
             config["bits_per_sample"] = bitDepth
+        }
+
+        // Silence gate
+        if defaults.object(forKey: SettingsKeys.silenceGateEnabled) != nil {
+            config["silence_gate_enabled"] = defaults.bool(forKey: SettingsKeys.silenceGateEnabled)
+        }
+        let gateTimeout = defaults.integer(forKey: SettingsKeys.silenceGateTimeout)
+        if gateTimeout > 0 {
+            config["silence_gate_timeout_secs"] = gateTimeout
         }
 
         if !config.isEmpty {
@@ -465,18 +486,24 @@ final class RecordingState: ObservableObject {
         }
 
         guard let start = recordingStartTime else { return }
+
+        // Update elapsed time display
         let elapsed = Int(Date().timeIntervalSince(start))
         let hours = elapsed / 3600
         let minutes = (elapsed % 3600) / 60
         let seconds = elapsed % 60
-        if hours > 0 {
-            statusText = String(format: "Recording %d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            statusText = String(format: "Recording %d:%02d", minutes, seconds)
-        }
+        let elapsedText = hours > 0
+            ? String(format: "Recording %d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "Recording %d:%02d", minutes, seconds)
+        statusText = elapsedText
 
         // Check status from Rust engine
         if let status = bridge.getStatus() {
+            // Show "Waiting for audio..." when silence gate is idle
+            if let gateIdle = status["gate_idle"] as? Bool, gateIdle {
+                statusText = "Waiting for audio\u{2026}"
+            }
+
             if debugLogging {
                 Self.log.debug("Status poll: \(String(describing: status))")
             }
@@ -574,6 +601,7 @@ final class RecordingState: ObservableObject {
                 relativeTo: nil
             )
             UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
+            UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
 
             // Release previous access if any
             securityScopedURL?.stopAccessingSecurityScopedResource()
@@ -606,9 +634,11 @@ final class RecordingState: ObservableObject {
             if url.startAccessingSecurityScopedResource() {
                 securityScopedURL = url
                 bridge.setConfig(["output_dir": url.path])
+                UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
                 Self.log.info("Restored output directory: \(url.path)\(isStale ? " (stale, refreshing)" : "")")
             } else {
                 Self.log.warning("Failed to access security-scoped resource: \(url.path)")
+                promptToReselectOutputDir(failedPath: url.path)
             }
             if isStale {
                 saveOutputDirBookmark(for: url)
@@ -616,6 +646,41 @@ final class RecordingState: ObservableObject {
         } catch {
             Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            let failedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) ?? "the configured directory"
+            promptToReselectOutputDir(failedPath: failedPath)
+        }
+    }
+
+    /// Show an alert asking the user to re-select their output directory when
+    /// a security-scoped bookmark can no longer be resolved (e.g. volume unmounted).
+    private func promptToReselectOutputDir(failedPath: String) {
+        // Defer to next run loop so init() completes before showing UI
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.messageText = "Output Directory Unavailable"
+            alert.informativeText = "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Choose Directory\u{2026}")
+            alert.addButton(withTitle: "Use Default")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.canCreateDirectories = true
+                panel.prompt = "Select"
+                panel.message = "Select output directory for recordings"
+                if panel.runModal() == .OK, let url = panel.url {
+                    self.saveOutputDirBookmark(for: url)
+                }
+            } else {
+                // Use default: ~/Music/BlackBox Recordings
+                let musicDir = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Music")
+                    .appendingPathComponent("BlackBox Recordings")
+                self.saveOutputDirBookmark(for: musicDir)
+            }
         }
     }
 

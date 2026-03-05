@@ -33,6 +33,19 @@ fn tmp_wav_path(final_path: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Silence gate state machine
+// ---------------------------------------------------------------------------
+
+/// Whether the silence gate is currently idle (no files open) or recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GateState {
+    /// No audio signal — WAV files are closed, only tracking peaks.
+    Idle,
+    /// Audio signal present — WAV files are open and writing.
+    Recording,
+}
+
+// ---------------------------------------------------------------------------
 // WriterCommand — sent from the processor to the writer thread
 // ---------------------------------------------------------------------------
 
@@ -62,6 +75,10 @@ pub struct WriterThreadState {
     pub monitor_only: bool,
     /// When true, writing is paused because disk space is low.
     pub disk_stopped: bool,
+    /// Whether the silence gate feature is enabled.
+    pub gate_enabled: bool,
+    /// Current gate state (Idle = no files open, Recording = writing to disk).
+    pub gate_state: GateState,
     /// Output mode as a 1-byte enum — eliminates string comparison in the hot-path match.
     pub output_mode: OutputMode,
     /// Number of active channels (indexes into `channels` array).
@@ -90,6 +107,12 @@ pub struct WriterThreadState {
     frame_remainder: Vec<f32>,
     /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
     combined_buf: Vec<f32>,
+    /// Consecutive silent frames counted while gate is Recording.
+    gate_silence_frames: u64,
+    /// Frame count threshold for gate timeout (`timeout_secs * sample_rate`).
+    gate_timeout_frames: u64,
+    /// Shared flag: true when gate is idle (no files open). Read by FFI for status.
+    pub gate_idle: Arc<AtomicBool>,
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
@@ -130,6 +153,8 @@ impl WriterThreadState {
         disk_space_low: Arc<AtomicBool>,
         bits_per_sample: u16,
         peak_levels: Arc<Vec<CacheAlignedPeak>>,
+        gate_enabled: bool,
+        gate_timeout_secs: u64,
     ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
             fs::create_dir_all(output_dir)?;
@@ -164,10 +189,19 @@ impl WriterThreadState {
             ch_arr[i] = ch as u8;
         }
 
+        let gate_idle = Arc::new(AtomicBool::new(gate_enabled));
+        let initial_gate_state = if gate_enabled {
+            GateState::Idle
+        } else {
+            GateState::Recording
+        };
+
         let mut state = WriterThreadState {
             sample_scale,
             monitor_only: false,
             disk_stopped: false,
+            gate_enabled,
+            gate_state: initial_gate_state,
             output_mode: mode,
             channel_count: channel_count as u8,
             total_device_channels: 0, // set by caller or process_audio
@@ -181,6 +215,9 @@ impl WriterThreadState {
             peak_levels,
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
+            gate_silence_frames: 0,
+            gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
+            gate_idle,
             output_dir: output_dir.to_string(),
             sample_rate,
             bits_per_sample,
@@ -196,11 +233,13 @@ impl WriterThreadState {
             disk_space_low,
         };
 
-        // Set up writers based on output mode
-        match mode {
-            OutputMode::Split => state.setup_split_mode()?,
-            OutputMode::Single if channels.len() <= 2 => state.setup_standard_mode()?,
-            OutputMode::Single => state.setup_multichannel_mode()?,
+        // When gate is enabled, start idle (no files). Writers are created on first signal.
+        if !gate_enabled {
+            match mode {
+                OutputMode::Split => state.setup_split_mode()?,
+                OutputMode::Single if channels.len() <= 2 => state.setup_standard_mode()?,
+                OutputMode::Single => state.setup_multichannel_mode()?,
+            }
         }
 
         Ok(state)
@@ -229,6 +268,8 @@ impl WriterThreadState {
             sample_scale,
             monitor_only: true,
             disk_stopped: false,
+            gate_enabled: false,
+            gate_state: GateState::Recording,
             output_mode: OutputMode::Single, // unused in monitor mode
             channel_count: channel_count as u8,
             total_device_channels: 0,
@@ -242,6 +283,9 @@ impl WriterThreadState {
             peak_levels,
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
+            gate_silence_frames: 0,
+            gate_timeout_frames: 0,
+            gate_idle: Arc::new(AtomicBool::new(false)),
             output_dir: String::new(),
             sample_rate,
             bits_per_sample: 24,
@@ -466,8 +510,8 @@ impl WriterThreadState {
         let ch_count = self.channel_count as usize;
         let ch_slice = &self.channels[..ch_count];
 
-        if self.monitor_only {
-            // Monitor mode: only track peaks, no disk writes
+        if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
+            // Monitor mode or gate idle: only track peaks, no disk writes
             for frame in frame_data.chunks(frame_size) {
                 for (idx, &channel) in ch_slice.iter().enumerate() {
                     let ch = channel as usize;
@@ -538,10 +582,68 @@ impl WriterThreadState {
                     .store(peak.to_bits(), Ordering::Relaxed);
             }
         }
+
+        // Silence gate transitions
+        if self.gate_enabled && !self.monitor_only {
+            let max_peak = self.peak_scratch[..ch_count]
+                .iter()
+                .copied()
+                .fold(0.0_f32, f32::max);
+            let has_signal = max_peak > self.silence_threshold;
+
+            match self.gate_state {
+                GateState::Idle => {
+                    if has_signal {
+                        info!("Silence gate: signal detected, opening writers");
+                        self.gate_silence_frames = 0;
+                        if let Err(e) = self.open_writers_for_gate() {
+                            error!("Silence gate: failed to open writers: {}", e);
+                        } else {
+                            self.gate_state = GateState::Recording;
+                            self.gate_idle.store(false, Ordering::Release);
+                        }
+                    }
+                }
+                GateState::Recording => {
+                    if has_signal {
+                        self.gate_silence_frames = 0;
+                    } else {
+                        self.gate_silence_frames += full_frames as u64;
+                        if self.gate_silence_frames >= self.gate_timeout_frames {
+                            info!(
+                                "Silence gate: timeout reached ({} frames), finalizing files",
+                                self.gate_silence_frames
+                            );
+                            if let Err(e) = self.finalize_all() {
+                                error!("Silence gate: finalize error: {}", e);
+                            }
+                            self.gate_state = GateState::Idle;
+                            self.gate_idle.store(true, Ordering::Release);
+                            self.gate_silence_frames = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Create WAV writers mid-session when the silence gate transitions from Idle to Recording.
+    fn open_writers_for_gate(&mut self) -> Result<(), BlackboxError> {
+        let ch_count = self.channel_count as usize;
+        match self.output_mode {
+            OutputMode::Split => self.setup_split_mode()?,
+            OutputMode::Single if ch_count <= 2 => self.setup_standard_mode()?,
+            OutputMode::Single => self.setup_multichannel_mode()?,
+        }
+        Ok(())
     }
 
     /// Rotate files: finalize current writers, rename, check silence, create new writers.
     pub fn rotate_files(&mut self) {
+        // No-op when gate is idle (no files to rotate)
+        if self.gate_enabled && self.gate_state == GateState::Idle {
+            return;
+        }
         info!("Rotating recording files...");
 
         // Take all pending (tmp → final) pairs from the previous period

@@ -65,6 +65,8 @@ struct RecordingSettingsTab: View {
     @AppStorage(SettingsKeys.silenceEnabled) private var silenceEnabled: Bool = true
     @AppStorage(SettingsKeys.silenceThreshold) private var silenceThreshold: Double = 0.01
     @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
+    @AppStorage(SettingsKeys.silenceGateEnabled) private var silenceGateEnabled: Bool = false
+    @AppStorage(SettingsKeys.silenceGateTimeout) private var silenceGateTimeout: Int = 300
     @State private var deviceChannelCount: Int = 0
     @State private var selectedChannels: Set<Int> = [1]
     @State private var prevBitDepth: Int = 24
@@ -174,6 +176,26 @@ struct RecordingSettingsTab: View {
                         .font(.caption)
                     }
                 }
+
+                Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
+                    .onChange(of: silenceGateEnabled) { _ in applyConfig() }
+                    .accessibilityHint("Stop writing to disk when all channels are silent")
+
+                if silenceGateEnabled {
+                    Picker("Resume after:", selection: $silenceGateTimeout) {
+                        Text("1 minute").tag(60)
+                        Text("2 minutes").tag(120)
+                        Text("5 minutes").tag(300)
+                        Text("10 minutes").tag(600)
+                        Text("30 minutes").tag(1800)
+                    }
+                    .onChange(of: silenceGateTimeout) { _ in applyConfig() }
+                    .accessibilityLabel("Silence gate timeout")
+
+                    Text("When enabled, BlackBox waits for audio before creating files, and finalizes them after the selected silence duration. Saves disk space during long idle periods.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Section("Monitoring") {
@@ -189,8 +211,8 @@ struct RecordingSettingsTab: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            refreshChannelCount()
-            syncCheckboxesFromChannelSpec()
+            syncCheckboxesFromChannelSpec()  // Load saved spec FIRST
+            refreshChannelCount()            // Then clamp to device capabilities
             prevBitDepth = bitDepth
             prevChannelSpec = channelSpec
         }
@@ -276,6 +298,7 @@ struct RecordingSettingsTab: View {
         prevChannelSpec = newSpec
         guard recorder.isRecording else {
             applyConfig()
+            recorder.restartMonitoring()
             return
         }
         confirmSettingsChange(reason: "channels") {
@@ -326,6 +349,8 @@ struct RecordingSettingsTab: View {
             "audio_channels": channelSpecToZeroBased(channelSpec),
             "silence_threshold": silenceEnabled ? silenceThreshold : 0.0,
             "bits_per_sample": bitDepth,
+            "silence_gate_enabled": silenceGateEnabled,
+            "silence_gate_timeout_secs": silenceGateTimeout,
         ]
         if !selectedDevice.isEmpty {
             config["input_device"] = selectedDevice
@@ -810,6 +835,7 @@ struct GeneralSettingsTab: View {
             SettingsKeys.continuousMode, SettingsKeys.recordingCadence,
             SettingsKeys.launchAtLogin, SettingsKeys.autoRecord,
             SettingsKeys.minDiskSpaceMB, SettingsKeys.bitDepth,
+            SettingsKeys.silenceGateEnabled, SettingsKeys.silenceGateTimeout,
             "debugLogging",
         ]
         for key in keysToReset {
@@ -834,6 +860,8 @@ struct GeneralSettingsTab: View {
             "recording_cadence": 300,
             "min_disk_space_mb": 500,
             "bits_per_sample": 24,
+            "silence_gate_enabled": false,
+            "silence_gate_timeout_secs": 300,
         ])
     }
 
@@ -975,4 +1003,7 @@ enum SettingsKeys {
     static let minDiskSpaceMB = "minDiskSpaceMB"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
     static let bitDepth = "bitDepth"
+    static let lastOutputDirPath = "lastOutputDirPath"
+    static let silenceGateEnabled = "silenceGateEnabled"
+    static let silenceGateTimeout = "silenceGateTimeout"
 }

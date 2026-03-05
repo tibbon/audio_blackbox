@@ -99,6 +99,8 @@ fn benchmark_direct_write_throughput() {
                 Arc::new(AtomicBool::new(false)),
                 16,
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                false,
+                0,
             )
             .unwrap();
             state.total_device_channels = ch_count as u16;
@@ -196,6 +198,8 @@ fn benchmark_split_mode_throughput() {
                 Arc::new(AtomicBool::new(false)),
                 16,
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                false,
+                0,
             )
             .unwrap();
             state.total_device_channels = ch_count as u16;
@@ -278,6 +282,8 @@ fn benchmark_ring_buffer_pipeline() {
                 Arc::new(AtomicBool::new(false)),
                 16,
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                false,
+                0,
             )
             .unwrap();
             state.total_device_channels = ch_count as u16;
@@ -389,6 +395,8 @@ fn benchmark_rotation_overhead() {
                     Arc::new(AtomicBool::new(false)),
                     16,
                     Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    false,
+                    0,
                 )
                 .unwrap();
                 state.total_device_channels = ch_count as u16;
@@ -495,6 +503,8 @@ fn benchmark_monitor_vs_recording() {
                 Arc::new(AtomicBool::new(false)),
                 16,
                 Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                false,
+                0,
             )
             .unwrap();
             record_state.total_device_channels = ch_count as u16;
@@ -700,6 +710,8 @@ fn benchmark_write_samples_overhead() {
             Arc::new(AtomicBool::new(false)),
             24,
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            false,
+            0,
         )
         .unwrap();
         record_state.total_device_channels = ch_count as u16;
@@ -779,6 +791,8 @@ fn benchmark_ring_buffer_latency() {
             Arc::new(AtomicBool::new(false)),
             16,
             Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            false,
+            0,
         )
         .unwrap();
         state.total_device_channels = total_channels as u16;
