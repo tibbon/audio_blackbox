@@ -334,6 +334,9 @@ impl CpalAudioProcessor {
     }
 
     /// Create a new CpalAudioProcessor using the provided configuration.
+    ///
+    /// Defers device probing to `process_audio()` / `start_monitoring()` to
+    /// avoid enumerating the audio device twice on recording start.
     pub fn with_config(config: &AppConfig) -> Result<Self, BlackboxError> {
         check_alsa_availability()?;
 
@@ -345,27 +348,8 @@ impl CpalAudioProcessor {
             fs::create_dir_all(&output_dir)?;
         }
 
-        let host = cpal::default_host();
-        let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
-
-        info!(
-            "Using audio device: {}",
-            device
-                .description()
-                .map(|d| d.name().to_string())
-                .map_err(|e| BlackboxError::AudioDevice(e.to_string()))?
-        );
-
-        let config_audio = device.default_input_config().map_err(|e| {
-            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
-        })?;
-
-        debug!("Default input stream config: {:?}", config_audio);
-
-        let sample_rate = config_audio.sample_rate();
-
         Ok(CpalAudioProcessor {
-            sample_rate,
+            sample_rate: 0, // Set when recording/monitoring starts
             stream: None,
             continuous_mode,
             recording_cadence,
@@ -502,6 +486,7 @@ impl CpalAudioProcessor {
 
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
+        self.sample_rate = sample_rate;
 
         // Auto-adapt to available channels
         let mut actual_channels: Vec<usize> = Vec::new();
@@ -836,6 +821,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
+        self.sample_rate = sample_rate;
 
         // Determine which channels to monitor
         let channels_str = app_config.get_audio_channels();
