@@ -526,23 +526,19 @@ impl WriterThreadState {
 
         if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
             // Monitor mode or gate idle: only track peaks, no disk writes
-            for frame in frame_data.chunks(frame_size) {
+            for frame in frame_data.chunks_exact(frame_size) {
                 for (idx, &channel) in ch_slice.iter().enumerate() {
-                    let ch = channel as usize;
-                    if ch < frame.len() {
-                        let abs = frame[ch].abs();
-                        self.peak_scratch[idx] = self.peak_scratch[idx].max(abs);
+                    if let Some(&s) = frame.get(channel as usize) {
+                        self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                     }
                 }
             }
         } else {
             match self.output_mode {
                 OutputMode::Split => {
-                    for frame in frame_data.chunks(frame_size) {
+                    for frame in frame_data.chunks_exact(frame_size) {
                         for (idx, &channel) in ch_slice.iter().enumerate() {
-                            let ch = channel as usize;
-                            if ch < frame.len() {
-                                let s = frame[ch];
+                            if let Some(&s) = frame.get(channel as usize) {
                                 self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                 if let Some(w) = &mut self.multichannel_writers[idx]
                                     && w.write_sample((s * scale) as i32).is_err()
@@ -555,11 +551,9 @@ impl WriterThreadState {
                 }
                 OutputMode::Single => {
                     if let Some(w) = &mut self.writer {
-                        for frame in frame_data.chunks(frame_size) {
+                        for frame in frame_data.chunks_exact(frame_size) {
                             for (idx, &channel) in ch_slice.iter().enumerate() {
-                                let ch = channel as usize;
-                                if ch < frame.len() {
-                                    let s = frame[ch];
+                                if let Some(&s) = frame.get(channel as usize) {
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                     if w.write_sample((s * scale) as i32).is_err() {
                                         self.write_errors.fetch_add(1, Ordering::Relaxed);
