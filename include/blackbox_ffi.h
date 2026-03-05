@@ -19,6 +19,19 @@ extern "C" {
 typedef struct BlackboxHandle BlackboxHandle;
 
 /*
+ * Lightweight status flags for the 1 Hz polling loop.
+ * No JSON, no string allocation — just plain C fields.
+ */
+typedef struct {
+    uint64_t write_errors;
+    uint32_t sample_rate;
+    bool gate_idle;
+    bool disk_space_low;
+    bool stream_error;
+    bool sample_rate_changed;
+} StatusFlags;
+
+/*
  * Create a new handle from a JSON configuration string.
  * Pass NULL or "" for default configuration.
  * Returns NULL on failure (should not happen with defaults).
@@ -57,6 +70,13 @@ bool blackbox_is_recording(const BlackboxHandle *handle);
 char *blackbox_get_status_json(const BlackboxHandle *handle);
 
 /*
+ * Fill a StatusFlags struct with current engine status.
+ * Zero-allocation alternative to blackbox_get_status_json.
+ * Returns 0 on success, -1 on failure.
+ */
+int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out);
+
+/*
  * Return a JSON array of available input device names.
  * Example: ["MacBook Pro Microphone", "External USB Mic"]
  * Caller must free the returned string with blackbox_free_string().
@@ -65,11 +85,43 @@ char *blackbox_get_status_json(const BlackboxHandle *handle);
 char *blackbox_list_input_devices(void);
 
 /*
+ * Get the input channel count for a device by name.
+ * Pass NULL or "" for the system default device.
+ * Returns the channel count (>= 1), or -1 on error.
+ */
+int32_t blackbox_get_device_channel_count(const char *device_name);
+
+/*
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
  * Returns 0 on success, -1 on error.
  */
 int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
+
+/*
+ * Write current peak levels into a caller-provided float buffer.
+ * out must point to an array of at least max_channels floats.
+ * Returns the number of channels written, or -1 on error.
+ * Lightweight alternative to blackbox_get_status_json for meter UIs.
+ */
+int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
+
+/*
+ * Start audio monitoring (peak levels without recording to disk).
+ * Returns 0 on success, -1 on error.
+ */
+int32_t blackbox_start_monitoring(BlackboxHandle *handle);
+
+/*
+ * Stop audio monitoring.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t blackbox_stop_monitoring(BlackboxHandle *handle);
+
+/*
+ * Check whether audio monitoring is currently active.
+ */
+bool blackbox_is_monitoring(const BlackboxHandle *handle);
 
 /*
  * Return the current configuration as a JSON string.

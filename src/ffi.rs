@@ -41,6 +41,18 @@ struct StatusJson<'a> {
     gate_idle: bool,
 }
 
+/// Lightweight C struct for status polling — no JSON, no string allocation.
+/// Fields match what the Swift `updateDuration()` loop actually reads.
+#[repr(C)]
+pub struct StatusFlags {
+    pub write_errors: u64,
+    pub sample_rate: u32,
+    pub gate_idle: bool,
+    pub disk_space_low: bool,
+    pub stream_error: bool,
+    pub sample_rate_changed: bool,
+}
+
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
 // ---------------------------------------------------------------------------
@@ -325,6 +337,56 @@ pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mu
         to_c_string(&json)
     })
     .unwrap_or(std::ptr::null_mut())
+}
+
+/// Fill a `StatusFlags` struct with current engine status.
+///
+/// Zero-allocation, no JSON, single mutex lock — designed for the 1 Hz polling loop.
+/// Returns 0 on success, -1 on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_get_status_flags(
+    handle: *const BlackboxHandle,
+    out: *mut StatusFlags,
+) -> i32 {
+    catch_unwind(|| {
+        let Some(handle) = validate_handle(handle) else {
+            return -1;
+        };
+        if out.is_null() {
+            return -1;
+        }
+
+        let flags = handle
+            .recorder
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard.as_ref().map(|r| {
+                    let p = r.get_processor();
+                    StatusFlags {
+                        write_errors: p.write_error_count(),
+                        sample_rate: p.sample_rate(),
+                        gate_idle: p.gate_idle(),
+                        disk_space_low: p.disk_space_low(),
+                        stream_error: p.stream_error(),
+                        sample_rate_changed: p.sample_rate_changed(),
+                    }
+                })
+            })
+            .unwrap_or(StatusFlags {
+                write_errors: 0,
+                sample_rate: 0,
+                gate_idle: false,
+                disk_space_low: false,
+                stream_error: false,
+                sample_rate_changed: false,
+            });
+
+        // Safety: out is non-null, and we write a POD struct.
+        unsafe { out.write(flags) };
+        0
+    })
+    .unwrap_or(-1)
 }
 
 /// Return a JSON array of available input device names.

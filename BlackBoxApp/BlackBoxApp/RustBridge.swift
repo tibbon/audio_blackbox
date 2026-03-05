@@ -70,7 +70,17 @@ final class RustBridge {
 
     // MARK: - Status & Configuration
 
-    /// Get the current status as a dictionary.
+    /// Get lightweight status flags (no JSON, no string allocation).
+    func getStatusFlags() -> StatusFlags? {
+        guard let handle = handle else { return nil }
+        var flags = StatusFlags()
+        if blackbox_get_status_flags(handle, &flags) == 0 {
+            return flags
+        }
+        return nil
+    }
+
+    /// Get the current status as a dictionary (debug/diagnostic use only).
     func getStatus() -> [String: Any]? {
         guard let handle = handle else { return nil }
         return readJSON { blackbox_get_status_json(handle) } as? [String: Any]

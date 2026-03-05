@@ -526,20 +526,16 @@ import UserNotifications
             : String(format: "Recording %d:%02d", minutes, seconds)
         statusText = elapsedText
 
-        // Check status from Rust engine
-        if let status = bridge.getStatus() {
+        // Check status from Rust engine (lightweight C struct, no JSON)
+        if let status = bridge.getStatusFlags() {
             // Show "Waiting for audio..." when silence gate is idle
-            if let gateIdle = status["gate_idle"] as? Bool, gateIdle {
+            if status.gate_idle {
                 statusText = "Waiting for audio\u{2026}"
-            }
-
-            if debugLogging {
-                Self.log.debug("Status poll: \(String(describing: status))")
             }
 
             // Sample rate changed on the audio device — restart to pick up new rate
             // so the WAV header matches the actual audio data.
-            if let rateChanged = status["sample_rate_changed"] as? Bool, rateChanged {
+            if status.sample_rate_changed {
                 Self.log.warning("Sample rate changed on device — finalizing and restarting")
                 restartIfRecording(reason: "sample rate changed")
                 notifyUser(title: "Sample Rate Changed",
@@ -550,7 +546,7 @@ import UserNotifications
 
             // Audio stream error — device disconnected or driver failure.
             // Finalize current files, then try to restart on the next available device.
-            if let streamError = status["stream_error"] as? Bool, streamError {
+            if status.stream_error {
                 Self.log.error("Stream error detected — finalizing files and attempting restart")
                 stopTimer()
                 _ = bridge.stopRecording()
@@ -577,7 +573,7 @@ import UserNotifications
                 return
             }
             // Disk space low — stop recording gracefully
-            if let diskLow = status["disk_space_low"] as? Bool, diskLow {
+            if status.disk_space_low {
                 stop()
                 let msg = "Your disk is almost full. Free up space and try again."
                 setTransientError(msg)
@@ -586,34 +582,32 @@ import UserNotifications
                 return
             }
             // Write errors — cumulative counter from Rust engine
-            if let writeErrors = status["write_errors"] as? Int {
-                let newDrops = writeErrors - lastReportedWriteErrors
+            let writeErrors = Int(status.write_errors)
+            let newDrops = writeErrors - lastReportedWriteErrors
 
-                if writeErrors > 48_000 {
-                    // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
-                    stop()
-                    let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
-                    setTransientError(msg)
-                    Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
-                    notifyUser(title: "Recording Stopped", message: msg)
-                    return
-                } else if newDrops > 0 {
-                    // Only log/display when NEW drops occur (counter is cumulative)
-                    lastReportedWriteErrors = writeErrors
-                    Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
-                    if writeErrors > 500 {
-                        errorMessage = "Audio quality degraded \u{2014} some data was lost"
-                    }
+            if writeErrors > 48_000 {
+                // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
+                stop()
+                let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
+                setTransientError(msg)
+                Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
+                notifyUser(title: "Recording Stopped", message: msg)
+                return
+            } else if newDrops > 0 {
+                // Only log/display when NEW drops occur (counter is cumulative)
+                lastReportedWriteErrors = writeErrors
+                Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
+                if writeErrors > 500 {
+                    errorMessage = "Audio quality degraded \u{2014} some data was lost"
                 }
             }
 
             // Sample rate — update for file size estimates in settings
-            if let rate = status["sample_rate"] as? Int, rate > 0, rate != sampleRate {
+            let rate = Int(status.sample_rate)
+            if rate > 0, rate != sampleRate {
                 sampleRate = rate
                 UserDefaults.standard.set(rate, forKey: "lastSampleRate")
             }
-        } else if debugLogging {
-            Self.log.debug("getStatus() returned nil")
         }
     }
 

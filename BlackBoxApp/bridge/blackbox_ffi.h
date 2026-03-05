@@ -19,6 +19,19 @@ extern "C" {
 typedef struct BlackboxHandle BlackboxHandle;
 
 /*
+ * Lightweight status flags for the 1 Hz polling loop.
+ * No JSON, no string allocation — just plain C fields.
+ */
+typedef struct {
+    uint64_t write_errors;
+    uint32_t sample_rate;
+    bool gate_idle;
+    bool disk_space_low;
+    bool stream_error;
+    bool sample_rate_changed;
+} StatusFlags;
+
+/*
  * Create a new handle from a JSON configuration string.
  * Pass NULL or "" for default configuration.
  * Returns NULL on failure (should not happen with defaults).
@@ -55,6 +68,13 @@ bool blackbox_is_recording(const BlackboxHandle *handle);
  * Returns NULL on failure.
  */
 char *blackbox_get_status_json(const BlackboxHandle *handle);
+
+/*
+ * Fill a StatusFlags struct with current engine status.
+ * Zero-allocation alternative to blackbox_get_status_json.
+ * Returns 0 on success, -1 on failure.
+ */
+int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out);
 
 /*
  * Return a JSON array of available input device names.
