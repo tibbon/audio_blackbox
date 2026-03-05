@@ -33,8 +33,8 @@ import UserNotifications
 
     let bridge: RustBridge
     private var recordingStartTime: Date?
-    private var timer: Timer?
-    private var meterTimer: Timer?
+    private var timerTask: Task<Void, Never>?
+    private var meterTimerTask: Task<Void, Never>?
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
     private var hasRequestedNotificationAuth = false
@@ -418,32 +418,36 @@ import UserNotifications
     // MARK: - Duration Timer
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+        timerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
                 self?.updateDuration()
             }
         }
     }
 
     private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+        timerTask?.cancel()
+        timerTask = nil
     }
 
     // MARK: - Meter Timer (fast polling for level meter window)
 
     private func startMeterTimer() {
-        guard meterTimer == nil else { return }
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+        guard meterTimerTask == nil else { return }
+        meterTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(33))
+                guard !Task.isCancelled else { break }
                 self?.updatePeakLevels()
             }
         }
     }
 
     private func stopMeterTimer() {
-        meterTimer?.invalidate()
-        meterTimer = nil
+        meterTimerTask?.cancel()
+        meterTimerTask = nil
     }
 
     private func updatePeakLevels() {
