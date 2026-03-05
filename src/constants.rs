@@ -6,7 +6,7 @@ pub const DEFAULT_DEBUG: bool = false;
 pub const DEFAULT_DURATION: u64 = 30;
 pub const DEFAULT_OUTPUT_MODE: &str = "single";
 pub const DEFAULT_SILENCE_THRESHOLD: f32 = 0.01;
-pub const MAX_CHANNELS: usize = 64;
+pub const MAX_CHANNELS: usize = 255;
 
 // Constants for continuous recording mode
 pub const DEFAULT_CONTINUOUS_MODE: bool = false;

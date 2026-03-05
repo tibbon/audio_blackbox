@@ -182,7 +182,7 @@ impl WriterThreadState {
             _ => i32::MAX as f32,
         };
 
-        // Pack channel indices into a fixed inline array (u8 fits MAX_CHANNELS=64)
+        // Pack channel indices into a fixed inline array (u8 fits MAX_CHANNELS=255)
         let mut ch_arr = [0_u8; MAX_CHANNELS];
         let channel_count = channels.len().min(MAX_CHANNELS);
         for (i, &ch) in channels.iter().take(MAX_CHANNELS).enumerate() {
@@ -499,16 +499,16 @@ impl WriterThreadState {
 
         let frame_data = &work_data[..used];
 
-        // Reset pre-allocated peak scratch buffer (no heap alloc)
-        for p in &mut self.peak_scratch {
-            *p = 0.0;
-        }
-
         // Cache scale factor on the stack for the inner loop
         let scale = self.sample_scale;
 
         let ch_count = self.channel_count as usize;
         let ch_slice = &self.channels[..ch_count];
+
+        // Reset only active channels in peak scratch buffer (no heap alloc)
+        for p in &mut self.peak_scratch[..ch_count] {
+            *p = 0.0;
+        }
 
         if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
             // Monitor mode or gate idle: only track peaks, no disk writes

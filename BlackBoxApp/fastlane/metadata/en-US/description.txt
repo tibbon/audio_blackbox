@@ -3,7 +3,7 @@ BlackBox is a professional audio recorder that lives in your macOS menu bar. It 
 KEY FEATURES
 
 - Menu bar app — always accessible, never in the way. BlackBox runs as a menu bar icon (no Dock icon) so it stays out of your workflow while remaining one click away.
-- Multichannel recording — capture up to 64 channels from any Core Audio device
+- Multichannel recording — capture up to 255 channels from any Core Audio device
 - Configurable bit depth — 16, 24, or 32-bit WAV recording
 - Split or combined output — one file per channel or a single multichannel file
 - Continuous recording with automatic hourly file rotation — protects your audio if the app or Mac shuts down unexpectedly

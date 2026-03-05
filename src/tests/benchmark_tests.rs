@@ -59,7 +59,7 @@ fn format_rate(samples_per_sec: f64) -> String {
 #[test]
 #[ignore = "manual benchmark — run with: cargo test benchmark -- --ignored --nocapture"]
 fn benchmark_direct_write_throughput() {
-    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
     // Simulate 10 seconds of audio per run
     let duration_secs = 10;
@@ -161,7 +161,7 @@ fn benchmark_direct_write_throughput() {
 #[test]
 #[ignore = "manual benchmark"]
 fn benchmark_split_mode_throughput() {
-    let channel_counts: &[usize] = &[2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 
@@ -245,7 +245,7 @@ fn benchmark_split_mode_throughput() {
 #[test]
 #[ignore = "manual benchmark"]
 fn benchmark_ring_buffer_pipeline() {
-    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 
@@ -360,7 +360,7 @@ fn benchmark_ring_buffer_pipeline() {
 #[test]
 #[ignore = "manual benchmark"]
 fn benchmark_rotation_overhead() {
-    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
 
     println!("\n============================================================");
@@ -442,7 +442,7 @@ fn benchmark_rotation_overhead() {
 #[test]
 #[ignore = "manual benchmark"]
 fn benchmark_monitor_vs_recording() {
-    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 
@@ -549,7 +549,7 @@ fn benchmark_monitor_vs_recording() {
 #[test]
 #[ignore = "manual benchmark"]
 fn benchmark_monitor_pipeline() {
-    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64];
+    let channel_counts: &[usize] = &[1, 2, 8, 16, 32, 64, 128, 255];
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 

@@ -47,7 +47,7 @@ fn test_duplicate_channels() {
 fn test_invalid_channels() {
     // Test channel number exceeding maximum
     assert!(parse_channel_string(&MAX_CHANNELS.to_string()).is_err());
-    assert!(parse_channel_string("64").is_err());
+    assert!(parse_channel_string("255").is_err());
 
     // Test invalid range
     assert!(parse_channel_string("2-1").is_err());

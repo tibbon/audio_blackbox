@@ -38,7 +38,7 @@ final class RecordingState: ObservableObject {
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
     private var hasRequestedNotificationAuth = false
-    private var peakBuffer = [Float](repeating: 0, count: 64)
+    private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
 
