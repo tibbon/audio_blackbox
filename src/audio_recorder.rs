@@ -87,6 +87,11 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         Ok(format!("Recording started with channels {:?}", channels))
     }
 
+    /// Start monitoring audio levels without recording to disk.
+    pub fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
+        self.processor.start_monitoring(&self.config)
+    }
+
     /// Create a default config file if one doesn't exist
     pub fn create_default_config(&self, path: &str) -> Result<(), BlackboxError> {
         self.config.create_config_file(path)

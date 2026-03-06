@@ -16,8 +16,6 @@ pub const DEFAULT_MIN_DISK_SPACE_MB: u64 = 500;
 // Silence gate
 pub const DEFAULT_SILENCE_GATE_ENABLED: bool = true;
 pub const DEFAULT_SILENCE_GATE_TIMEOUT_SECS: u64 = 300;
-/// How often the writer thread checks available disk space.
-pub const DISK_CHECK_INTERVAL_SECS: u64 = 10;
 
 // Ring buffer constants
 /// How many seconds of audio the ring buffer can hold (at device sample rate * channels).

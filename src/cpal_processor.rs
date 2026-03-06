@@ -741,14 +741,13 @@ impl AudioProcessor for CpalAudioProcessor {
         Ok(())
     }
 
-    fn start_recording(&mut self) -> Result<(), BlackboxError> {
-        let config = AppConfig::load();
+    fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
         let channels_str = config.get_audio_channels();
         let channels = parse_channel_string(&channels_str)?;
         let output_mode = config.get_output_mode();
         let debug = config.get_debug();
 
-        self.process_audio_impl(&channels, &output_mode, debug, &config)
+        self.process_audio_impl(&channels, &output_mode, debug, config)
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {
@@ -794,7 +793,7 @@ impl AudioProcessor for CpalAudioProcessor {
         self.sample_rate
     }
 
-    fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
+    fn start_monitoring(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
         // If already monitoring, nothing to do
         if self.monitoring {
             return Ok(());
@@ -805,19 +804,18 @@ impl AudioProcessor for CpalAudioProcessor {
         self.stream_error.store(false, Ordering::Relaxed);
 
         let host = cpal::default_host();
-        let app_config = AppConfig::load();
-        let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
+        let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
 
-        let config = device.default_input_config().map_err(|e| {
+        let stream_config = device.default_input_config().map_err(|e| {
             BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
         })?;
 
-        let total_channels = config.channels() as usize;
-        let sample_rate = config.sample_rate();
+        let total_channels = stream_config.channels() as usize;
+        let sample_rate = stream_config.sample_rate();
         self.sample_rate = sample_rate;
 
         // Determine which channels to monitor
-        let channels_str = app_config.get_audio_channels();
+        let channels_str = config.get_audio_channels();
         let requested_channels = parse_channel_string(&channels_str)?;
         let mut actual_channels: Vec<usize> = Vec::new();
         for &channel in &requested_channels {
@@ -886,10 +884,10 @@ impl AudioProcessor for CpalAudioProcessor {
             stream_error.store(true, Ordering::Release);
         };
 
-        let stream = match config.sample_format() {
+        let stream = match stream_config.sample_format() {
             SampleFormat::F32 => device
                 .build_input_stream(
-                    &config.into(),
+                    &stream_config.into(),
                     move |data: &[f32], _: &_| {
                         let (_, remainder) = producer.push_partial_slice(data);
                         if !remainder.is_empty() {
@@ -905,7 +903,7 @@ impl AudioProcessor for CpalAudioProcessor {
             _ => {
                 return Err(BlackboxError::AudioDevice(format!(
                     "Unsupported sample format: {:?}",
-                    config.sample_format()
+                    stream_config.sample_format()
                 )));
             }
         };

@@ -184,7 +184,7 @@ impl AudioProcessor for MockAudioProcessor {
         Ok(())
     }
 
-    fn start_recording(&mut self) -> Result<(), BlackboxError> {
+    fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
         // Clone the values to avoid borrowing self mutably and immutably
         let channels = self.channels.clone();
         let output_mode = self.output_mode.clone();
@@ -192,12 +192,7 @@ impl AudioProcessor for MockAudioProcessor {
 
         // In the mock, we'll just simulate this by immediately processing audio
         // with the stored configuration
-        self.process_audio(
-            &channels,
-            &output_mode,
-            debug,
-            &crate::config::AppConfig::load(),
-        )
+        self.process_audio(&channels, &output_mode, debug, config)
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {

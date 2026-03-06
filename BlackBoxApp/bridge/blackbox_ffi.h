@@ -25,6 +25,7 @@ typedef struct BlackboxHandle BlackboxHandle;
 typedef struct {
     uint64_t write_errors;
     uint32_t sample_rate;
+    bool is_recording;
     bool gate_idle;
     bool disk_space_low;
     bool stream_error;
@@ -62,16 +63,8 @@ int32_t blackbox_stop_recording(BlackboxHandle *handle);
 bool blackbox_is_recording(const BlackboxHandle *handle);
 
 /*
- * Return a JSON object with the current status.
- * Example: {"recording": true, "input_device": "MacBook Pro Microphone"}
- * Caller must free the returned string with blackbox_free_string().
- * Returns NULL on failure.
- */
-char *blackbox_get_status_json(const BlackboxHandle *handle);
-
-/*
  * Fill a StatusFlags struct with current engine status.
- * Zero-allocation alternative to blackbox_get_status_json.
+ * Zero-allocation, no JSON — designed for the 1 Hz polling loop.
  * Returns 0 on success, -1 on failure.
  */
 int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out);
@@ -102,7 +95,7 @@ int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
  * Write current peak levels into a caller-provided float buffer.
  * out must point to an array of at least max_channels floats.
  * Returns the number of channels written, or -1 on error.
- * Lightweight alternative to blackbox_get_status_json for meter UIs.
+ * Lightweight zero-allocation read for meter UIs.
  */
 int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
 

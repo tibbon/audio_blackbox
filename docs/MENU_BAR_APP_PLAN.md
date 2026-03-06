@@ -55,7 +55,7 @@ blackbox_create(config_json: *const c_char) -> *mut BlackboxHandle
 blackbox_start_recording(handle) -> i32
 blackbox_stop_recording(handle) -> i32
 blackbox_is_recording(handle) -> bool
-blackbox_get_status_json(handle) -> *const c_char
+blackbox_get_status_flags(handle, out: *mut StatusFlags) -> i32
 blackbox_list_input_devices() -> *const c_char  (returns JSON array)
 blackbox_set_config_json(handle, json: *const c_char) -> i32
 blackbox_destroy(handle)

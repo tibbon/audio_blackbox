@@ -216,14 +216,20 @@ private struct MeterBar: View {
 }
 
 /// Disables minimize and zoom buttons on the Level Meter window per Apple HIG.
+/// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct MeterWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { NSView() }
+    func makeNSView(context: Context) -> NSView { WindowConfiguratorView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        Task { @MainActor in
-            guard let window = nsView.window else { return }
-            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
-            window.standardWindowButton(.zoomButton)?.isEnabled = false
-        }
+private final class WindowConfiguratorView: NSView {
+    private var configured = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard !configured, let window else { return }
+        configured = true
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
     }
 }

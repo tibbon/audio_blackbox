@@ -227,9 +227,9 @@ struct BlackBoxApp: App {
     /// during body evaluation — uses Task to avoid modifying state during render.
     private func autoOpenOnboardingIfNeeded() {
         guard !hasCompletedOnboarding, !didAutoOpenOnboarding else { return }
+        didAutoOpenOnboarding = true  // Set immediately to prevent duplicate Tasks
         Task {
             try? await Task.sleep(for: .milliseconds(300))
-            didAutoOpenOnboarding = true
             NSApp.activate()
             openWindow(id: "onboarding")
         }
@@ -389,14 +389,20 @@ private struct StatusItemTooltip: NSViewRepresentable {
 }
 
 /// Disables minimize and zoom buttons on the About window per Apple HIG.
+/// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct AboutWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { NSView() }
+    func makeNSView(context: Context) -> NSView { AboutConfiguratorView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        Task { @MainActor in
-            guard let window = nsView.window else { return }
-            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
-            window.standardWindowButton(.zoomButton)?.isEnabled = false
-        }
+private final class AboutConfiguratorView: NSView {
+    private var configured = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard !configured, let window else { return }
+        configured = true
+        window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
     }
 }

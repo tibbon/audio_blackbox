@@ -149,6 +149,7 @@ fn test_gate_closes_after_timeout() {
         // Feed 2 seconds of silence (exceeds 1 second timeout)
         let silence = vec![0.0_f32; 96000];
         state.write_samples(&silence);
+        state.process_gate_close(); // simulate main loop processing
 
         // Should be back to Idle
         assert_eq!(state.gate_state, GateState::Idle);
@@ -194,6 +195,7 @@ fn test_gate_reopens_produces_separate_files() {
         // Silence to close gate
         let silence = vec![0.0_f32; 96000];
         state.write_samples(&silence);
+        state.process_gate_close(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Idle);
 
         let first_files = wav_files_in(temp_dir.path());

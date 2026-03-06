@@ -477,20 +477,15 @@ import UserNotifications
         }
 
         if needsUpdate {
-            if peakLevels.count == count {
-                // Same channel count (common case): update in-place, no allocation
-                for i in 0..<count {
-                    peakLevels[i] = peakBuffer[i]
-                }
-            } else {
-                // Channel count changed: must reallocate
-                peakLevels = Array(peakBuffer.prefix(count))
-            }
+            // Single assignment triggers one @Observable notification instead of N
+            // (subscript mutations each trigger separate withMutation calls)
+            peakLevels = Array(peakBuffer.prefix(count))
         }
 
         if let start {
             let elapsed = ContinuousClock.now - start
-            meterPollTotalNs += UInt64(elapsed.components.attoseconds / 1_000_000_000)
+            let (secs, atto) = elapsed.components
+            meterPollTotalNs += UInt64(secs) &* 1_000_000_000 &+ UInt64(atto / 1_000_000_000)
             meterPollCount += 1
             if meterPollCount >= 30 {
                 let avgNs = meterPollTotalNs / UInt64(meterPollCount)
@@ -502,18 +497,6 @@ import UserNotifications
     }
 
     private func updateDuration() {
-        // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
-        if isRecording && !bridge.isRecording {
-            stopTimer()
-            isRecording = false
-            recordingStartTime = nil
-            let msg = bridge.lastError ?? "Recording stopped unexpectedly"
-            setTransientError(msg)
-            Self.log.error("Recording stopped unexpectedly: \(msg)")
-            notifyUser(title: "Recording Stopped", message: msg)
-            return
-        }
-
         guard let start = recordingStartTime else { return }
 
         // Update elapsed time display
@@ -528,6 +511,17 @@ import UserNotifications
 
         // Check status from Rust engine (lightweight C struct, no JSON)
         if let status = bridge.getStatusFlags() {
+            // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
+            if isRecording && !status.is_recording {
+                stopTimer()
+                isRecording = false
+                recordingStartTime = nil
+                let msg = bridge.lastError ?? "Recording stopped unexpectedly"
+                setTransientError(msg)
+                Self.log.error("Recording stopped unexpectedly: \(msg)")
+                notifyUser(title: "Recording Stopped", message: msg)
+                return
+            }
             // Show "Waiting for audio..." when silence gate is idle
             if status.gate_idle {
                 statusText = "Waiting for audio\u{2026}"

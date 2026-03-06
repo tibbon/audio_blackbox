@@ -95,26 +95,12 @@ fn test_stop_recording_when_not_recording() {
 fn test_null_handle_error_returns() {
     assert_eq!(blackbox_start_recording(std::ptr::null_mut()), -1);
     assert_eq!(blackbox_stop_recording(std::ptr::null_mut()), -1);
-    assert!(blackbox_get_status_json(std::ptr::null()).is_null());
     assert!(blackbox_get_config_json(std::ptr::null()).is_null());
     assert!(blackbox_get_last_error(std::ptr::null()).is_null());
     assert_eq!(
         blackbox_set_config_json(std::ptr::null_mut(), std::ptr::null()),
         -1
     );
-}
-
-#[test]
-fn test_get_status_json() {
-    let handle = blackbox_create(std::ptr::null());
-    let status_ptr = blackbox_get_status_json(handle);
-    let status = unsafe { read_and_free(status_ptr) }.expect("status should be readable");
-
-    let parsed: serde_json::Value = serde_json::from_str(&status).expect("should be valid JSON");
-    assert_eq!(parsed["recording"], false);
-    assert_eq!(parsed["write_errors"], 0);
-
-    blackbox_destroy(handle);
 }
 
 #[test]

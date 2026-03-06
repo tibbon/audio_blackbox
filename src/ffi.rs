@@ -26,32 +26,22 @@ use crate::audio_recorder::AudioRecorder;
 use crate::config::AppConfig;
 use crate::cpal_processor::CpalAudioProcessor;
 
-/// Lightweight struct for direct serialization — avoids the heap-allocated
-/// `serde_json::Value` tree that `json!{}` creates.
-#[derive(Serialize)]
-struct StatusJson<'a> {
-    recording: bool,
-    monitoring: bool,
-    input_device: &'a str,
-    write_errors: u64,
-    disk_space_low: bool,
-    stream_error: bool,
-    sample_rate_changed: bool,
-    sample_rate: u32,
-    gate_idle: bool,
-}
-
 /// Lightweight C struct for status polling — no JSON, no string allocation.
 /// Fields match what the Swift `updateDuration()` loop actually reads.
 #[repr(C)]
 pub struct StatusFlags {
     pub write_errors: u64,
     pub sample_rate: u32,
+    pub is_recording: bool,
     pub gate_idle: bool,
     pub disk_space_low: bool,
     pub stream_error: bool,
     pub sample_rate_changed: bool,
 }
+
+// Compile-time check that Rust and C agree on StatusFlags layout.
+// If this fails, update the C header (blackbox_ffi.h) to match.
+const _: () = assert!(std::mem::size_of::<StatusFlags>() == 24);
 
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
@@ -286,74 +276,6 @@ pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
     .unwrap_or(false)
 }
 
-/// Return a JSON object with the current status.
-///
-/// Example: `{"recording": true, "input_device": "MacBook Pro Microphone", "write_errors": 0}`
-///
-/// The caller must free the returned string with `blackbox_free_string`.
-/// Returns null on failure.
-#[unsafe(no_mangle)]
-pub extern "C" fn blackbox_get_status_json(handle: *const BlackboxHandle) -> *mut c_char {
-    catch_unwind(|| {
-        let Some(handle) = validate_handle(handle) else {
-            return std::ptr::null_mut();
-        };
-
-        let (
-            is_recording,
-            is_monitoring,
-            write_errors,
-            disk_space_low,
-            stream_error,
-            sample_rate_changed,
-            sample_rate,
-            gate_idle,
-        ) = handle
-            .recorder
-            .lock()
-            .ok()
-            .and_then(|guard| {
-                guard.as_ref().map(|r| {
-                    let p = r.get_processor();
-                    (
-                        p.is_recording(),
-                        p.is_monitoring(),
-                        p.write_error_count(),
-                        p.disk_space_low(),
-                        p.stream_error(),
-                        p.sample_rate_changed(),
-                        p.sample_rate(),
-                        p.gate_idle(),
-                    )
-                })
-            })
-            .unwrap_or((false, false, 0, false, false, false, 0, false));
-
-        let input_device = handle
-            .config
-            .lock()
-            .ok()
-            .and_then(|c| c.get_input_device())
-            .unwrap_or_default();
-
-        let status = StatusJson {
-            recording: is_recording,
-            monitoring: is_monitoring,
-            input_device: &input_device,
-            write_errors,
-            disk_space_low,
-            stream_error,
-            sample_rate_changed,
-            sample_rate,
-            gate_idle,
-        };
-
-        let json = serde_json::to_string(&status).unwrap_or_else(|_| "{}".to_string());
-        to_c_string(&json)
-    })
-    .unwrap_or(std::ptr::null_mut())
-}
-
 /// Fill a `StatusFlags` struct with current engine status.
 ///
 /// Zero-allocation, no JSON, single mutex lock — designed for the 1 Hz polling loop.
@@ -381,6 +303,7 @@ pub extern "C" fn blackbox_get_status_flags(
                     StatusFlags {
                         write_errors: p.write_error_count(),
                         sample_rate: p.sample_rate(),
+                        is_recording: p.is_recording(),
                         gate_idle: p.gate_idle(),
                         disk_space_low: p.disk_space_low(),
                         stream_error: p.stream_error(),
@@ -391,6 +314,7 @@ pub extern "C" fn blackbox_get_status_flags(
             .unwrap_or(StatusFlags {
                 write_errors: 0,
                 sample_rate: 0,
+                is_recording: false,
                 gate_idle: false,
                 disk_space_low: false,
                 stream_error: false,
@@ -595,7 +519,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
         }
 
         if let Some(recorder) = guard.as_mut() {
-            if let Err(e) = recorder.processor_mut().start_monitoring() {
+            if let Err(e) = recorder.start_monitoring() {
                 handle.set_error(format!("Failed to start monitoring: {}", e));
                 return -1;
             }

@@ -120,6 +120,9 @@ pub struct WriterThreadState {
     /// Set by `write_samples` when signal is detected in Idle mode.
     /// The main loop opens writers before the next read, keeping write_samples I/O-free.
     pub gate_pending_open: bool,
+    /// Set by `write_samples` when silence timeout is reached in Recording mode.
+    /// The main loop finalizes writers, keeping write_samples free of file I/O.
+    pub gate_pending_close: bool,
     /// Consecutive silent frames counted while gate is Recording.
     gate_silence_frames: u64,
     /// Frame count threshold for gate timeout (`timeout_secs * sample_rate`).
@@ -232,6 +235,7 @@ impl WriterThreadState {
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
             gate_pending_open: false,
+            gate_pending_close: false,
             gate_silence_frames: 0,
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
             gate_idle,
@@ -298,6 +302,7 @@ impl WriterThreadState {
             frame_remainder: Vec::new(),
             combined_buf: Vec::new(),
             gate_pending_open: false,
+            gate_pending_close: false,
             gate_silence_frames: 0,
             gate_timeout_frames: 0,
             gate_idle: Arc::new(AtomicBool::new(false)),
@@ -604,16 +609,9 @@ impl WriterThreadState {
                     } else {
                         self.gate_silence_frames += full_frames as u64;
                         if self.gate_silence_frames >= self.gate_timeout_frames {
-                            info!(
-                                "Silence gate: timeout reached ({} frames), finalizing files",
-                                self.gate_silence_frames
-                            );
-                            if let Err(e) = self.finalize_all() {
-                                error!("Silence gate: finalize error: {}", e);
-                            }
-                            self.gate_state = GateState::Idle;
-                            self.gate_idle.store(true, Ordering::Release);
-                            self.gate_silence_frames = 0;
+                            // Flag for the main loop to finalize writers.
+                            // Keeps write_samples() free of file I/O.
+                            self.gate_pending_close = true;
                         }
                     }
                 }
@@ -635,6 +633,25 @@ impl WriterThreadState {
             self.gate_state = GateState::Recording;
             self.gate_idle.store(false, Ordering::Release);
         }
+    }
+
+    /// Process a pending gate close: finalize WAV files and transition to Idle.
+    /// Called from the main loop (or tests) after `write_samples` sets `gate_pending_close`.
+    pub fn process_gate_close(&mut self) {
+        if !self.gate_pending_close {
+            return;
+        }
+        self.gate_pending_close = false;
+        info!(
+            "Silence gate: timeout reached ({} frames), finalizing files",
+            self.gate_silence_frames
+        );
+        if let Err(e) = self.finalize_all() {
+            error!("Silence gate: finalize error: {}", e);
+        }
+        self.gate_state = GateState::Idle;
+        self.gate_idle.store(true, Ordering::Release);
+        self.gate_silence_frames = 0;
     }
 
     /// Open WAV writers when the silence gate transitions from Idle to Recording.
@@ -908,8 +925,9 @@ pub fn writer_thread_main(
             state.rotate_files();
         }
 
-        // 3b. Open gate writers if signal was detected (deferred from write_samples)
+        // 3b. Process deferred gate transitions (keeps write_samples free of file I/O)
         state.process_gate_open();
+        state.process_gate_close();
 
         // 4. Read available samples from ring buffer
         let read = read_available(&mut consumer, &mut state);

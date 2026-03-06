@@ -18,7 +18,7 @@ pub trait AudioProcessor {
     /// Finalize the audio processing, closing any open files or resources.
     fn finalize(&mut self) -> Result<(), BlackboxError>;
 
-    fn start_recording(&mut self) -> Result<(), BlackboxError>;
+    fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError>;
     fn stop_recording(&mut self) -> Result<(), BlackboxError>;
     fn is_recording(&self) -> bool;
 
@@ -63,7 +63,7 @@ pub trait AudioProcessor {
     }
 
     /// Start monitoring audio levels without recording to disk.
-    fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
+    fn start_monitoring(&mut self, _config: &AppConfig) -> Result<(), BlackboxError> {
         Ok(())
     }
 
