@@ -92,7 +92,7 @@ long_description = """
 A macOS menu bar application for audio recording with multiple modes,
 silence detection, and performance monitoring.
 """
-osx_minimum_system_version = "10.14"
+osx_minimum_system_version = "15.0"
 osx_frameworks = ["AppKit", "Foundation", "CoreAudio"]
 
 [profile.release]

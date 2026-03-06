@@ -22,13 +22,29 @@ A WAV encoding and decoding library in Rust.
 
 ## MIT
 
-### objc
+### objc2
 
-Objective-C runtime bindings and wrapper for Rust.
+Objective-C runtime bindings for Rust.
 
 - **License**: MIT
-- **Author**: Steven Sheldon
-- **Repository**: <https://github.com/SSheldon/rust-objc>
+- **Author**: Mads Marquart
+- **Repository**: <https://github.com/madsmtm/objc2>
+
+### objc2-foundation
+
+Rust bindings to Apple's Foundation framework.
+
+- **License**: MIT
+- **Author**: Mads Marquart
+- **Repository**: <https://github.com/madsmtm/objc2>
+
+### objc2-app-kit
+
+Rust bindings to Apple's AppKit framework.
+
+- **License**: MIT
+- **Author**: Mads Marquart
+- **Repository**: <https://github.com/madsmtm/objc2>
 
 ### sysinfo
 
@@ -47,9 +63,9 @@ Date and time library for Rust.
 - **License**: MIT OR Apache-2.0
 - **Repository**: <https://github.com/chronotope/chrono>
 
-### cocoa
+### core-foundation
 
-Bindings to Cocoa for macOS.
+Bindings to Apple's Core Foundation framework.
 
 - **License**: MIT OR Apache-2.0
 - **Authors**: The Servo Project Developers

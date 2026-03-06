@@ -1,15 +1,5 @@
-// audio_recorder: A cross-platform audio recording library in Rust
-// Copyright (C) 2023, David Fisher
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// BlackBox Audio Recorder — Copyright (C) 2023-2026, David Fisher
+// Licensed under the Business Source License 1.1 (BUSL-1.1). See LICENSE.
 
 // Lint configuration: keep pedantic/nursery suppressions that match codebase patterns.
 #![allow(clippy::module_name_repetitions)]

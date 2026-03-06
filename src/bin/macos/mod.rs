@@ -4,10 +4,6 @@
 
 // macOS menu bar implementation for audio recording
 
-// Module for safe Cocoa/AppKit wrappers
-#[cfg(target_os = "macos")]
-mod safe_cocoa;
-
 #[cfg(target_os = "macos")]
 use log::{debug, error, info, warn};
 #[cfg(target_os = "macos")]
@@ -29,12 +25,6 @@ use crate::AudioProcessor;
 use crate::AudioRecorder;
 #[cfg(target_os = "macos")]
 use crate::CpalAudioProcessor;
-
-// Import the safe Cocoa wrappers
-#[cfg(target_os = "macos")]
-use self::safe_cocoa::{
-    Application, AutoreleasePool, CocoaResult, Menu, MenuItem, StatusItem, setup_exception_handling,
-};
 
 // Simple struct for thread-safe shared state
 #[cfg(target_os = "macos")]
@@ -89,26 +79,8 @@ impl MenuBarApp {
         // Start UI thread
         let ui_state = state.clone();
         let ui_thread = thread::spawn(move || {
-            // Set up exception handling for Objective-C
-            setup_exception_handling();
-
             info!("UI thread started");
-
-            // Legacy Rust Cocoa UI path — disabled; the real UI is Swift/SwiftUI via FFI
-            let use_visual_ui = false;
-
-            if use_visual_ui {
-                info!("Using visual menu bar UI with safe_cocoa wrappers");
-                // Create the visual menu bar UI using our safe wrappers
-                if let Err(e) = create_visual_menu_bar(control_receiver, ui_state) {
-                    error!("Failed to create menu bar UI: {e:?}");
-                    // Can't fall back to simplified UI here as control_receiver is moved
-                }
-            } else {
-                info!("Using simplified menu bar (non-visual)");
-                create_simplified_menu_bar(control_receiver, ui_state);
-            }
-
+            create_simplified_menu_bar(control_receiver, ui_state);
             info!("UI thread terminated");
         });
 
@@ -257,103 +229,7 @@ impl MenuBarApp {
     }
 }
 
-// Function to create a visual menu bar using safe_cocoa wrappers
-fn create_visual_menu_bar(
-    control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
-    state: SharedState,
-) -> CocoaResult<()> {
-    // Create autorelease pool
-    let _pool = AutoreleasePool::new();
-
-    // Initialize application
-    let mut app = Application::new()?;
-
-    // Create status item
-    let mut status_item = StatusItem::new()?;
-
-    // Set initial title
-    status_item.set_title("◎");
-
-    // Create menu
-    let mut menu = Menu::new()?;
-
-    // Add record/stop item
-    let mut record_item = MenuItem::new("Start Recording")?;
-
-    let record_state = state.is_recording.clone();
-    let record_sender = std::sync::mpsc::Sender::clone(&mpsc::channel::<ControlMessage>().0);
-
-    record_item.set_action(move || {
-        let is_recording = *record_state.lock().unwrap();
-        if is_recording {
-            let _ = record_sender.send(ControlMessage::StopRecording);
-        } else {
-            let _ = record_sender.send(ControlMessage::StartRecording);
-        }
-    });
-
-    menu.add_item(record_item);
-
-    // Add separator
-    menu.add_separator();
-
-    // Add quit item
-    let mut quit_item = MenuItem::new("Quit")?;
-
-    let quit_sender = std::sync::mpsc::Sender::clone(&mpsc::channel::<ControlMessage>().0);
-    quit_item.set_action(move || {
-        let _ = quit_sender.send(ControlMessage::Quit);
-    });
-
-    menu.add_item(quit_item);
-
-    // Attach menu to status item
-    status_item.set_menu(menu);
-
-    // Add status item to app
-    app.add_status_item(status_item);
-
-    // Message pump - monitor for control messages and update UI
-    let timeout = Duration::from_millis(100);
-
-    // Print status display
-    info!("==== BlackBox Audio Recorder ====");
-    info!("Menu bar UI initialized");
-    info!("Check the menu bar icon to control the app");
-    info!("================================");
-
-    // Main event loop
-    let mut running = true;
-    while running {
-        // Process one event
-        app.process_event(timeout);
-
-        // Check for control messages
-        if let Ok(msg) = control_receiver.try_recv() {
-            match msg {
-                ControlMessage::StartRecording => {
-                    *state.is_recording.lock().unwrap() = true;
-                }
-                ControlMessage::StopRecording => {
-                    *state.is_recording.lock().unwrap() = false;
-                }
-                ControlMessage::UpdateOutputDir(dir) => {
-                    *state.output_dir.lock().unwrap() = dir;
-                }
-                ControlMessage::Quit => {
-                    running = false;
-                }
-            }
-        }
-    }
-
-    // Clean up
-    app.terminate();
-
-    Ok(())
-}
-
-// Fallback implementation — processes ControlMessages without Cocoa UI
+// Processes ControlMessages without Cocoa UI
 fn create_simplified_menu_bar(
     control_receiver: std::sync::mpsc::Receiver<ControlMessage>,
     state: SharedState,
