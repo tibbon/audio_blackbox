@@ -28,7 +28,7 @@ libc = "0.2"
 
 # macOS-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.9"
+core-foundation = "0.10"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
     "NSString",
