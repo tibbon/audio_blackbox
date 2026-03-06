@@ -10,7 +10,7 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 - **Configurable bit depth** — 16-bit, 24-bit (default, pro standard), or 32-bit WAV
 - **Two output modes** — `single` (one file, automatically multichannel for 3+ channels), `split` (one file per channel)
 - **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes
-- **Silence detection** — automatically deletes silent recordings on rotation
+- **Silence gate** — pauses recording during silence, resumes when audio is detected (configurable threshold and timeout)
 - **Disk space monitoring** — automatically stops recording when free space drops below a configurable threshold
 - **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer
 - **Per-channel peak metering** — tracked on the writer thread at zero extra cost, exposed via FFI
@@ -30,7 +30,7 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ```bash
 cargo build                          # Debug build
 cargo build --release                # Release build
-cargo test                           # Run all tests (139 total: 127 lib + 12 binary)
+cargo test                           # Run all tests (148 total: 136 lib + 12 binary)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 ```
@@ -57,6 +57,10 @@ output_dir = "recordings"
 
 # Silence threshold (0.0 to disable)
 silence_threshold = 0.01
+
+# Silence gate — pauses recording during silence
+silence_gate_enabled = true
+silence_gate_timeout_secs = 300
 
 # Continuous recording mode
 continuous_mode = false
@@ -90,7 +94,7 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 ```
 
 - **RT callback**: only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
-- **Writer thread**: reads from the ring buffer, converts f32 to the configured bit depth, writes WAV via hound, tracks per-channel peak levels, handles file rotation and disk space monitoring.
+- **Writer thread**: reads from the ring buffer, converts f32 to the configured bit depth, writes WAV directly (custom `RawWavWriter`, no third-party WAV library in the hot path), tracks per-channel peak levels, handles file rotation and disk space monitoring.
 - **Ring buffer**: sized for 5 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O even at high channel counts.
 
 ### Key modules
@@ -104,7 +108,7 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 | `src/constants.rs` | Default values, type aliases |
 | `src/ffi.rs` | C FFI layer for Swift/SwiftUI frontend |
 | `src/error.rs` | Custom error type via thiserror |
-| `src/bin/macos/` | Cocoa-based macOS menu bar UI (feature-gated) |
+| `src/bin/macos/` | objc2-based macOS menu bar UI (feature-gated) |
 | `BlackBoxApp/` | SwiftUI menu bar app (Xcode project, calls Rust via FFI) |
 
 ## Benchmarking
@@ -173,8 +177,8 @@ CI runs on every push to `main` and on pull requests. Seven parallel jobs:
 |-----|---------------|
 | **Format** | `cargo fmt --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **Test (Ubuntu)** | 115 lib tests (12 benchmarks ignored) |
-| **Test (macOS)** | 115 lib + 12 macOS binary tests (12 benchmarks ignored) |
+| **Test (Ubuntu)** | 122 lib tests (14 benchmarks ignored) |
+| **Test (macOS)** | 122 lib + 12 macOS binary tests (14 benchmarks ignored) |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
