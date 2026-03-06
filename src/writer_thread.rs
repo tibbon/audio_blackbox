@@ -723,7 +723,7 @@ impl WriterThreadState {
                         channels: 1,
                         sample_rate: self.sample_rate,
                         bits_per_sample: self.bits_per_sample,
-                            };
+                    };
                     match create_wav_writer(&tmp, spec) {
                         Ok(w) => {
                             self.multichannel_writers[idx] = Some(w);
@@ -743,7 +743,7 @@ impl WriterThreadState {
                     channels: self.channel_count as u16,
                     sample_rate: self.sample_rate,
                     bits_per_sample: self.bits_per_sample,
-                    };
+                };
                 match create_wav_writer(&tmp, spec) {
                     Ok(w) => {
                         self.writer = Some(w);

@@ -609,8 +609,7 @@ impl CpalAudioProcessor {
         };
 
         // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
-        let rotation_threshold =
-            sample_rate as u64 * total_channels as u64 * recording_cadence;
+        let rotation_threshold = sample_rate as u64 * total_channels as u64 * recording_cadence;
         let mut rotation_sample_counter: u64 = 0;
 
         // Build the input stream

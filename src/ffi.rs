@@ -16,8 +16,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::catch_unwind;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 
@@ -544,10 +544,7 @@ pub extern "C" fn blackbox_get_peak_levels(
             Err(_) => return 0,
         };
         let count = peaks.len().min(buf.len());
-        for (dst, src) in buf[..count]
-            .iter_mut()
-            .zip(peaks.iter())
-        {
+        for (dst, src) in buf[..count].iter_mut().zip(peaks.iter()) {
             *dst = f32::from_bits(src.value.load(std::sync::atomic::Ordering::Relaxed));
         }
         count as i32

@@ -193,7 +193,12 @@ impl AudioProcessor for MockAudioProcessor {
 
         // In the mock, we'll just simulate this by immediately processing audio
         // with the stored configuration
-        self.process_audio(&channels, &output_mode, debug, &crate::config::AppConfig::load())
+        self.process_audio(
+            &channels,
+            &output_mode,
+            debug,
+            &crate::config::AppConfig::load(),
+        )
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {

@@ -71,8 +71,7 @@ impl RawWavWriter {
     #[inline]
     pub fn write_sample(&mut self, sample: i32) -> io::Result<()> {
         let bytes = sample.to_le_bytes();
-        self.writer
-            .write_all(&bytes[..self.byte_width as usize])?;
+        self.writer.write_all(&bytes[..self.byte_width as usize])?;
         self.data_bytes_written += u64::from(self.byte_width);
         Ok(())
     }
