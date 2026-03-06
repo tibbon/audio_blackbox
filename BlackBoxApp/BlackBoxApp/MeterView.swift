@@ -8,8 +8,7 @@ struct MeterView: View {
     /// Vertical space reserved for window chrome, title bar, and padding
     private static let chromeOverhead: CGFloat = 80
 
-    private var columnLayout: (columns: Int, rowsPerColumn: Int) {
-        let count = recorder.peakLevels.count
+    private func columnLayout(for count: Int) -> (columns: Int, rowsPerColumn: Int) {
         let availableHeight = (NSScreen.main?.visibleFrame.height ?? 800) - Self.chromeOverhead
         let maxRows = max(1, Int(availableHeight / Self.rowHeight))
         if count <= maxRows {
@@ -22,20 +21,24 @@ struct MeterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if (recorder.isRecording || recorder.isMonitoring) && !recorder.peakLevels.isEmpty {
-                let layout = columnLayout
+            // Snapshot peak levels so the ForEach closure captures stable values.
+            // Without this, peakLevels can be cleared (monitoring stopped) between
+            // ForEach range creation and closure execution, causing an index-out-of-bounds crash.
+            let levels = recorder.peakLevels
+            if (recorder.isRecording || recorder.isMonitoring) && !levels.isEmpty {
+                let layout = columnLayout(for: levels.count)
                 if layout.columns <= 1 {
-                    ForEach(0..<recorder.peakLevels.count, id: \.self) { index in
-                        MeterBar(channel: index + 1, peak: recorder.peakLevels[index])
+                    ForEach(levels.indices, id: \.self) { index in
+                        MeterBar(channel: index + 1, peak: levels[index])
                     }
                 } else {
                     HStack(alignment: .top, spacing: 16) {
                         ForEach(0..<layout.columns, id: \.self) { col in
                             let start = col * layout.rowsPerColumn
-                            let end = min(start + layout.rowsPerColumn, recorder.peakLevels.count)
+                            let end = min(start + layout.rowsPerColumn, levels.count)
                             VStack(alignment: .leading, spacing: 0) {
                                 ForEach(start..<end, id: \.self) { index in
-                                    MeterBar(channel: index + 1, peak: recorder.peakLevels[index])
+                                    MeterBar(channel: index + 1, peak: levels[index])
                                 }
                             }
                             .frame(minWidth: 280)

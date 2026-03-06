@@ -2,19 +2,48 @@ import SwiftUI
 
 /// Handles system-initiated termination (logout, restart, shutdown) by gracefully
 /// finalizing any active recording before allowing the app to quit.
+///
+/// Also prevents SwiftUI from terminating the app when the last Window scene closes,
+/// which is a known issue with MenuBarExtra + Window combinations.
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recorder: RecordingState?
 
+    /// Set to true before calling NSApp.terminate() from Quit menu items.
+    /// Prevents SwiftUI's spurious terminate-on-last-window-close from killing the app.
+    var explicitQuit = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure we start as an accessory app (menu bar only, no Dock icon).
+        NSApp.setActivationPolicy(.accessory)
+
+        // System shutdown/logout fires willPowerOff before applicationShouldTerminate.
+        // Mark it as explicit so we cooperate with the system instead of blocking.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.explicitQuit = true
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false // Menu bar app — stay alive when all windows are closed
+        false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let recorder, recorder.isRecording else { return .terminateNow }
-        // System is shutting down — gracefully finalize files without prompting.
-        // The user already confirmed at the OS level (logout/restart/shutdown).
-        recorder.stop()
-        recorder.releaseOutputDirAccess()
+        // SwiftUI triggers NSApp.terminate() when the last Window scene closes.
+        // Block that — we're a menu bar app and should stay alive.
+        guard explicitQuit else {
+            NSApp.setActivationPolicy(.accessory)
+            return .terminateCancel
+        }
+
+        // Explicit quit (user or system) — finalize recordings gracefully.
+        if let recorder, recorder.isRecording {
+            recorder.stop()
+        }
+        recorder?.releaseOutputDirAccess()
         return .terminateNow
     }
 }
@@ -54,6 +83,7 @@ struct BlackBoxApp: App {
                 Divider()
 
                 Button("Quit BlackBox") {
+                    appDelegate.explicitQuit = true
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q")
@@ -278,6 +308,7 @@ struct BlackBoxApp: App {
             recorder.stop()
         }
         recorder.releaseOutputDirAccess()
+        appDelegate.explicitQuit = true
         NSApplication.shared.terminate(nil)
     }
 }
