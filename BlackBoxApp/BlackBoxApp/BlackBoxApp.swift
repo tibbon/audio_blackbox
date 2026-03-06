@@ -5,6 +5,10 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recorder: RecordingState?
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false // Menu bar app — stay alive when all windows are closed
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let recorder, recorder.isRecording else { return .terminateNow }
         // System is shutting down — gracefully finalize files without prompting.

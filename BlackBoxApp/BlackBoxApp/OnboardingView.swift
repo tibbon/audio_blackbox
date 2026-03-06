@@ -14,6 +14,7 @@ struct OnboardingView: View {
     @State private var silenceGateEnabled = true
     @State private var outputDir: String = ""
     @State private var chosenURL: URL?
+    @State private var dirChangedByUser = false
 
     private let defaultDir: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Music")
@@ -102,8 +103,14 @@ struct OnboardingView: View {
         .frame(minWidth: 460, maxWidth: 460, minHeight: 380)
         .background(OnboardingWindowConfigurator())
         .onAppear {
-            outputDir = defaultDir.path
-            chosenURL = defaultDir
+            // On re-run, preserve the user's existing output directory
+            if let savedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) {
+                outputDir = savedPath
+                chosenURL = URL(fileURLWithPath: savedPath)
+            } else {
+                outputDir = defaultDir.path
+                chosenURL = defaultDir
+            }
             checkMicStatus()
         }
         .onChange(of: step) {
@@ -220,6 +227,7 @@ struct OnboardingView: View {
             Button("Use Default Location") {
                 chosenURL = defaultDir
                 outputDir = defaultDir.path
+                dirChangedByUser = true
             }
             .font(.caption)
             .accessibilityHint("Saves recordings to ~/Music/BlackBox Recordings")
@@ -375,6 +383,7 @@ struct OnboardingView: View {
         if panel.runModal() == .OK, let url = panel.url {
             outputDir = url.path
             chosenURL = url
+            dirChangedByUser = true
             return url
         }
         return nil
@@ -411,8 +420,12 @@ struct OnboardingView: View {
         // chosenURL is guaranteed non-nil — button is disabled until user picks a folder.
         guard let url = chosenURL else { return }
 
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        recorder.saveOutputDirBookmark(for: url)
+        // Only update the bookmark if the user explicitly picked a new directory.
+        // Re-running onboarding without changing the dir preserves the existing bookmark.
+        if dirChangedByUser {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            recorder.saveOutputDirBookmark(for: url)
+        }
 
         // Save recording mode choice
         let defaults = UserDefaults.standard
