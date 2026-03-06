@@ -45,7 +45,7 @@ targets:
       path: BlackBoxApp/Info.plist
       properties:
         CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "9"
+        CFBundleVersion: "10"
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
         NSMicrophoneUsageDescription: "BlackBox Audio Recorder captures audio from your microphone or audio interface and saves it as WAV files stored locally on your Mac. No audio is ever sent over the network."

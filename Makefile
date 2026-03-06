@@ -184,10 +184,20 @@ fl-metadata:
 fl-fetch:
 	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane fetch_metadata
 
-# Submit latest build for App Store review
+# Cancel existing App Store review submission
+.PHONY: fl-cancel
+fl-cancel:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane cancel_review
+
+# Submit latest build for App Store review (cancels existing submission if needed)
 .PHONY: fl-submit
 fl-submit:
 	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane submit_review
+
+# Build, upload to TestFlight, and submit for review
+.PHONY: fl-beta
+fl-beta:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane beta
 
 # Check metadata for common rejection reasons
 .PHONY: fl-check
@@ -222,9 +232,11 @@ help:
 	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
 	@echo ""
 	@echo "Fastlane:"
+	@echo "  fl-beta         - Build, upload to TestFlight, and submit for review"
 	@echo "  fl-metadata     - Upload metadata to App Store Connect"
 	@echo "  fl-fetch        - Download current metadata from App Store Connect"
-	@echo "  fl-submit       - Submit latest build for App Store review"
+	@echo "  fl-cancel       - Cancel existing App Store review submission"
+	@echo "  fl-submit       - Submit latest build for review (auto-cancels existing)"
 	@echo "  fl-check        - Check metadata for common rejection reasons"
 	@echo ""
 	@echo "  help            - Show this help"

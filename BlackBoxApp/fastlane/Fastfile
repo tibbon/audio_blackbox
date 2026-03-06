@@ -75,8 +75,8 @@ platform :mac do
     )
   end
 
-  desc "Submit latest build for App Store review"
-  lane :submit_review do
+  desc "Cancel existing review submission (reject current build)"
+  lane :cancel_review do
     api_key = asc_api_key
     deliver(
       api_key: api_key,
@@ -84,13 +84,35 @@ platform :mac do
       skip_binary_upload: true,
       skip_metadata: true,
       skip_screenshots: true,
+      submit_for_review: false,
+      reject_if_possible: true,
+      force: true
+    )
+  end
+
+  desc "Submit latest build for App Store review (cancels existing submission if needed)"
+  lane :submit_review do |options|
+    api_key = asc_api_key
+
+    submit_opts = {
+      api_key: api_key,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
       submit_for_review: true,
+      reject_if_possible: true,
       automatic_release: false,
       precheck_include_in_app_purchases: false,
       submission_information: {
         add_id_info_uses_idfa: false
       }
-    )
+    }
+
+    # Allow specifying build number: fastlane submit_review build:10
+    submit_opts[:build_number] = options[:build] if options[:build]
+
+    deliver(submit_opts)
   end
 
   desc "Check metadata for common rejection reasons"

@@ -39,13 +39,21 @@ Upload metadata and screenshots to App Store Connect
 
 Download current metadata from App Store Connect
 
+### mac cancel_review
+
+```sh
+[bundle exec] fastlane mac cancel_review
+```
+
+Cancel existing review submission (reject current build)
+
 ### mac submit_review
 
 ```sh
 [bundle exec] fastlane mac submit_review
 ```
 
-Submit latest build for App Store review
+Submit latest build for App Store review (cancels existing submission if needed)
 
 ### mac check
 
