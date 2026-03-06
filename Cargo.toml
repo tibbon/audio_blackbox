@@ -2,6 +2,7 @@
 name = "blackbox"
 version = "1.0.0"
 edition = "2024"
+rust-version = "1.94"
 authors = ["David Fisher <tibbon@gmail.com>"]
 description = "An audio blackbox for your recording needs"
 license = "BUSL-1.1"
