@@ -167,12 +167,11 @@ impl AudioProcessor for MockAudioProcessor {
         let config = AppConfig::load();
         let silence_threshold = config.get_silence_threshold();
 
-        // Cast to i32 for comparison - using as i32 > 0 check
         if silence_threshold > 0.0 && self.create_silent_file {
             // If we're creating silent files and threshold is set, delete the files
             // since they should be below the threshold. This allows testing the
             // silence detection and deletion functionality.
-            let files_to_delete = self.created_files.clone(); // Clone to avoid borrowing issues
+            let files_to_delete = self.created_files.clone();
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
                     error!("Failed to delete silent file in test: {}", e);

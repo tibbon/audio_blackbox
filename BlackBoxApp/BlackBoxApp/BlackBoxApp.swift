@@ -65,7 +65,6 @@ struct BlackBoxApp: App {
         let _ = autoOpenOnboardingIfNeeded()
         MenuBarExtra {
             if !hasCompletedOnboarding {
-                // Onboarding-required menu
                 Text("Setup Required")
                     .font(.headline)
 
@@ -88,7 +87,6 @@ struct BlackBoxApp: App {
                 }
                 .keyboardShortcut("q")
             } else {
-                // Normal menu
                 normalMenu
             }
         } label: {
@@ -124,7 +122,6 @@ struct BlackBoxApp: App {
 
     @ViewBuilder
     private var normalMenu: some View {
-        // Status line
         Text(recorder.statusText)
             .font(.headline)
             .monospacedDigit()
@@ -165,7 +162,6 @@ struct BlackBoxApp: App {
 
         Divider()
 
-        // Input device submenu with checkmarks
         if !recorder.availableDevices.isEmpty {
             Menu("Input Device") {
                 Toggle("System Default", isOn: Binding(

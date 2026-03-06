@@ -257,7 +257,7 @@ struct RecordingSettingsTab: View {
             }
             .font(.caption)
             Button("Reset") {
-                selectedChannels = [1]  // Keep at least channel 1
+                selectedChannels = [1]
                 syncChannelSpecFromCheckboxes()
             }
             .font(.caption)

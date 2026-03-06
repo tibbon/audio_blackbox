@@ -94,9 +94,8 @@ impl MenuBarApp {
 
             info!("UI thread started");
 
-            // Always use simplified UI for now
-            // In a real implementation, we would check for a feature flag or config option
-            let use_visual_ui = false; // Change this to true to use visual UI
+            // Legacy Rust Cocoa UI path — disabled; the real UI is Swift/SwiftUI via FFI
+            let use_visual_ui = false;
 
             if use_visual_ui {
                 info!("Using visual menu bar UI with safe_cocoa wrappers");
@@ -334,11 +333,9 @@ fn create_visual_menu_bar(
             match msg {
                 ControlMessage::StartRecording => {
                     *state.is_recording.lock().unwrap() = true;
-                    // TODO: Update menu text
                 }
                 ControlMessage::StopRecording => {
                     *state.is_recording.lock().unwrap() = false;
-                    // TODO: Update menu text
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
                     *state.output_dir.lock().unwrap() = dir;

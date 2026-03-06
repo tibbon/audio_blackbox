@@ -22,7 +22,6 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Step indicator
             HStack(spacing: 8) {
                 ForEach(0..<4) { i in
                     Circle()
@@ -40,7 +39,6 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Step content
             Group {
                 switch step {
                 case 0:
@@ -58,7 +56,6 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Navigation buttons
             HStack {
                 if step > 0 {
                     Button("Back") {
@@ -431,7 +428,7 @@ struct OnboardingView: View {
         let defaults = UserDefaults.standard
         defaults.set(continuousMode, forKey: SettingsKeys.continuousMode)
         if continuousMode {
-            defaults.set(3600, forKey: SettingsKeys.recordingCadence) // 1 hour
+            defaults.set(3600, forKey: SettingsKeys.recordingCadence)
         }
         defaults.set(silenceGateEnabled, forKey: SettingsKeys.silenceGateEnabled)
         recorder.bridge.setConfig([

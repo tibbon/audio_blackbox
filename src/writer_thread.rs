@@ -79,7 +79,7 @@ pub struct WriterThreadHandle {
 #[allow(clippy::struct_excessive_bools)]
 pub struct WriterThreadState {
     // --- Hot fields: accessed every write_samples() call, grouped for cache locality ---
-    /// Cached scale factor for f32-to-WAV conversion (avoids match per sample).
+    /// Cached scale factor for f32-to-WAV conversion.
     sample_scale: f32,
     /// When true, only track peak levels without writing to disk.
     pub monitor_only: bool,
@@ -269,11 +269,7 @@ impl WriterThreadState {
         channels: &[usize],
         peak_levels: Arc<Vec<CacheAlignedPeak>>,
     ) -> Self {
-        let sample_scale = match 24_u16 {
-            16 => f32::from(i16::MAX),
-            24 => 8_388_607.0_f32,
-            _ => i32::MAX as f32,
-        };
+        let sample_scale = 8_388_607.0_f32; // 24-bit max (monitor mode is always 24-bit)
 
         // Pack channel indices into inline array
         let mut ch_arr = [0_u8; MAX_CHANNELS];

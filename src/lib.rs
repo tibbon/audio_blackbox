@@ -31,7 +31,6 @@
 #![allow(clippy::use_self)]
 #![allow(clippy::redundant_else)]
 
-// Modular organization of code
 mod audio_processor;
 mod audio_recorder;
 #[cfg(feature = "benchmarking")]
@@ -123,7 +122,6 @@ mod tests {
     use std::path::Path;
     use tempfile::tempdir;
 
-    // Include test submodules
     mod alloc_tests;
     mod benchmark_tests;
     mod channel_tests;

@@ -315,7 +315,7 @@ pub struct CpalAudioProcessor {
     peak_levels: Arc<Vec<CacheAlignedPeak>>,
     /// Shared flag: true when silence gate is idle (no files open).
     gate_idle: Arc<AtomicBool>,
-    /// Handle to the writer thread (None before process_audio, None after finalize).
+    /// Handle to the writer thread (None when idle; set by process_audio or start_monitoring, cleared by finalize or stop_monitoring).
     writer_thread: Option<WriterThreadHandle>,
     /// Whether monitoring mode is active (levels without recording).
     monitoring: bool,
@@ -938,7 +938,7 @@ impl AudioProcessor for CpalAudioProcessor {
                 .send(WriterCommand::Shutdown(reply_tx))
                 .is_ok()
             {
-                // Monitor mode finalize is a no-op (no files), but wait for thread
+                // Wait for writer thread shutdown (5s timeout; silently skipped on timeout)
                 if let Ok(_result) = reply_rx.recv_timeout(Duration::from_secs(5))
                     && let Some(jh) = handle.join_handle.take()
                 {

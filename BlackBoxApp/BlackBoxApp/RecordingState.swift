@@ -586,7 +586,7 @@ import UserNotifications
             let newDrops = writeErrors - lastReportedWriteErrors
 
             if writeErrors > 48_000 {
-                // Auto-stop if excessive (>48000 ≈ 1 second at 48kHz)
+                // Auto-stop if excessive (>48000 samples dropped across all channels)
                 stop()
                 let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
                 setTransientError(msg)

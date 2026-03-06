@@ -101,7 +101,6 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
 /// No-op implementation for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
 pub fn check_alsa_availability() -> Result<(), BlackboxError> {
-    // No-op on non-Linux platforms
     Ok(())
 }
 
