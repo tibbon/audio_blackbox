@@ -15,6 +15,18 @@
 extern "C" {
 #endif
 
+/* Error codes returned by blackbox_* functions.
+ * Success is 0; all errors are negative. Retrieve the human-readable
+ * message for any non-zero code with blackbox_get_last_error().
+ */
+#define BLACKBOX_OK                  0
+#define BLACKBOX_ERR_INVALID_HANDLE -1
+#define BLACKBOX_ERR_AUDIO_DEVICE   -2
+#define BLACKBOX_ERR_CONFIG         -3
+#define BLACKBOX_ERR_IO             -4
+#define BLACKBOX_ERR_LOCK_POISONED  -5
+#define BLACKBOX_ERR_INTERNAL       -6
+
 /* Opaque handle to the Rust audio engine. */
 typedef struct BlackboxHandle BlackboxHandle;
 
@@ -47,13 +59,13 @@ void blackbox_destroy(BlackboxHandle *handle);
 
 /*
  * Start recording with the current configuration.
- * Returns 0 on success, -1 on error.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_start_recording(BlackboxHandle *handle);
 
 /*
  * Stop recording.
- * Returns 0 on success, -1 on error.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_stop_recording(BlackboxHandle *handle);
 
@@ -65,7 +77,7 @@ bool blackbox_is_recording(const BlackboxHandle *handle);
 /*
  * Fill a StatusFlags struct with current engine status.
  * Zero-allocation, no JSON — designed for the 1 Hz polling loop.
- * Returns 0 on success, -1 on failure.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out);
 
@@ -80,34 +92,34 @@ char *blackbox_list_input_devices(void);
 /*
  * Get the input channel count for a device by name.
  * Pass NULL or "" for the system default device.
- * Returns the channel count (>= 1), or -1 on error.
+ * Returns the channel count (>= 1), or BLACKBOX_ERR_AUDIO_DEVICE on error.
  */
 int32_t blackbox_get_device_channel_count(const char *device_name);
 
 /*
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
- * Returns 0 on success, -1 on error.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
 
 /*
  * Write current peak levels into a caller-provided float buffer.
  * out must point to an array of at least max_channels floats.
- * Returns the number of channels written, or -1 on error.
+ * Returns the number of channels written, or a negative error code.
  * Lightweight zero-allocation read for meter UIs.
  */
 int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
 
 /*
  * Start audio monitoring (peak levels without recording to disk).
- * Returns 0 on success, -1 on error.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_start_monitoring(BlackboxHandle *handle);
 
 /*
  * Stop audio monitoring.
- * Returns 0 on success, -1 on error.
+ * Returns BLACKBOX_OK on success, or a negative error code.
  */
 int32_t blackbox_stop_monitoring(BlackboxHandle *handle);
 

@@ -1,6 +1,24 @@
 import Foundation
 import BlackBoxFFI
 
+/// Typed error codes matching the Rust FFI BLACKBOX_ERR_* constants.
+enum BlackBoxError: Int32 {
+    case ok = 0
+    case invalidHandle = -1
+    case audioDevice = -2
+    case config = -3
+    case io = -4
+    case lockPoisoned = -5
+    case `internal` = -6
+    case unknown = -99
+
+    init(code: Int32) {
+        self = BlackBoxError(rawValue: code) ?? .unknown
+    }
+
+    var isSuccess: Bool { self == .ok }
+}
+
 /// Swift wrapper around the BlackBox Rust FFI, providing safe memory management
 /// and Swift-native types.
 final class RustBridge {
@@ -26,18 +44,18 @@ final class RustBridge {
 
     // MARK: - Recording Control
 
-    /// Start recording. Returns true on success.
+    /// Start recording. Returns a typed error code.
     @discardableResult
-    func startRecording() -> Bool {
-        guard let handle = handle else { return false }
-        return blackbox_start_recording(handle) == 0
+    func startRecording() -> BlackBoxError {
+        guard let handle = handle else { return .invalidHandle }
+        return BlackBoxError(code: blackbox_start_recording(handle))
     }
 
-    /// Stop recording. Returns true on success.
+    /// Stop recording. Returns a typed error code.
     @discardableResult
-    func stopRecording() -> Bool {
-        guard let handle = handle else { return false }
-        return blackbox_stop_recording(handle) == 0
+    func stopRecording() -> BlackBoxError {
+        guard let handle = handle else { return .invalidHandle }
+        return BlackBoxError(code: blackbox_stop_recording(handle))
     }
 
     /// Whether recording is currently active.
@@ -48,18 +66,18 @@ final class RustBridge {
 
     // MARK: - Monitoring Control
 
-    /// Start audio monitoring (levels without recording). Returns true on success.
+    /// Start audio monitoring (levels without recording). Returns a typed error code.
     @discardableResult
-    func startMonitoring() -> Bool {
-        guard let handle = handle else { return false }
-        return blackbox_start_monitoring(handle) == 0
+    func startMonitoring() -> BlackBoxError {
+        guard let handle = handle else { return .invalidHandle }
+        return BlackBoxError(code: blackbox_start_monitoring(handle))
     }
 
-    /// Stop audio monitoring. Returns true on success.
+    /// Stop audio monitoring. Returns a typed error code.
     @discardableResult
-    func stopMonitoring() -> Bool {
-        guard let handle = handle else { return false }
-        return blackbox_stop_monitoring(handle) == 0
+    func stopMonitoring() -> BlackBoxError {
+        guard let handle = handle else { return .invalidHandle }
+        return BlackBoxError(code: blackbox_stop_monitoring(handle))
     }
 
     /// Whether audio monitoring is currently active.
@@ -74,7 +92,7 @@ final class RustBridge {
     func getStatusFlags() -> StatusFlags? {
         guard let handle = handle else { return nil }
         var flags = StatusFlags()
-        if blackbox_get_status_flags(handle, &flags) == 0 {
+        if blackbox_get_status_flags(handle, &flags) == BLACKBOX_OK {
             return flags
         }
         return nil
@@ -89,13 +107,13 @@ final class RustBridge {
     /// Update configuration with the given dictionary.
     /// Only fields present in the dictionary are updated.
     @discardableResult
-    func setConfig(_ config: [String: Any]) -> Bool {
+    func setConfig(_ config: [String: Any]) -> BlackBoxError {
         guard let handle = handle,
               let jsonData = try? JSONSerialization.data(withJSONObject: config),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
-            return false
+            return .invalidHandle
         }
-        return jsonString.withCString { blackbox_set_config_json(handle, $0) } == 0
+        return BlackBoxError(code: jsonString.withCString { blackbox_set_config_json(handle, $0) })
     }
 
     /// Get the last error message, or nil if no error.

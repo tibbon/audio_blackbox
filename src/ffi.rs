@@ -19,12 +19,20 @@ use std::panic::catch_unwind;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
-
 use crate::audio_processor::AudioProcessor;
 use crate::audio_recorder::AudioRecorder;
 use crate::config::AppConfig;
 use crate::cpal_processor::CpalAudioProcessor;
+use crate::error::BlackboxError;
+
+// ── FFI error codes (mirrored as #defines in blackbox_ffi.h) ─────────────
+pub const BLACKBOX_OK: i32 = 0;
+pub const BLACKBOX_ERR_INVALID_HANDLE: i32 = -1;
+pub const BLACKBOX_ERR_AUDIO_DEVICE: i32 = -2;
+pub const BLACKBOX_ERR_CONFIG: i32 = -3;
+pub const BLACKBOX_ERR_IO: i32 = -4;
+pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
+pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
 
 /// Lightweight C struct for status polling — no JSON, no string allocation.
 /// Fields match what the Swift `updateDuration()` loop actually reads.
@@ -76,6 +84,22 @@ impl BlackboxHandle {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = None;
         }
+    }
+
+    /// Store an error message and return the typed error code for a `BlackboxError`.
+    fn set_error_from(&self, msg: String, err: &BlackboxError) -> i32 {
+        self.set_error(msg);
+        match err {
+            BlackboxError::AudioDevice(_) => BLACKBOX_ERR_AUDIO_DEVICE,
+            BlackboxError::Config(_) | BlackboxError::ChannelParse(_) => BLACKBOX_ERR_CONFIG,
+            BlackboxError::Io(_) | BlackboxError::Wav(_) => BLACKBOX_ERR_IO,
+        }
+    }
+
+    /// Store a lock-poisoned error and return the appropriate code.
+    fn lock_poisoned(&self, msg: String) -> i32 {
+        self.set_error(msg);
+        BLACKBOX_ERR_LOCK_POISONED
     }
 }
 
@@ -173,36 +197,32 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
 /// Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`, and begins
 /// recording using the current configuration.
 ///
-/// Returns 0 on success, -1 on error (retrieve with `blackbox_get_last_error`).
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
+/// Retrieve the human-readable message with `blackbox_get_last_error`.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         handle.clear_error();
 
         let config = match handle.config.lock() {
             Ok(c) => c.clone(),
-            Err(e) => {
-                handle.set_error(format!("Config lock poisoned: {}", e));
-                return -1;
-            }
+            Err(e) => return handle.lock_poisoned(format!("Config lock poisoned: {e}")),
         };
 
         let processor = match CpalAudioProcessor::with_config(&config) {
             Ok(p) => p,
             Err(e) => {
-                handle.set_error(format!("Failed to create audio processor: {}", e));
-                return -1;
+                return handle.set_error_from(format!("Failed to create audio processor: {e}"), &e);
             }
         };
 
         let mut recorder = AudioRecorder::with_config(processor, config);
 
         if let Err(e) = recorder.start_recording() {
-            handle.set_error(format!("Failed to start recording: {}", e));
-            return -1;
+            return handle.set_error_from(format!("Failed to start recording: {e}"), &e);
         }
 
         // Cache peak_levels Arc so the meter poll skips the recorder mutex.
@@ -213,25 +233,22 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
         match handle.recorder.lock() {
             Ok(mut guard) => {
                 *guard = Some(recorder);
-                0
+                BLACKBOX_OK
             }
-            Err(e) => {
-                handle.set_error(format!("Recorder lock poisoned: {}", e));
-                -1
-            }
+            Err(e) => handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
         }
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Stop recording.
 ///
-/// Returns 0 on success, -1 on error.
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         handle.clear_error();
 
@@ -245,18 +262,14 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
                 if let Some(mut recorder) = guard.take()
                     && let Err(e) = recorder.processor_mut().stop_recording()
                 {
-                    handle.set_error(format!("Failed to stop recording: {}", e));
-                    return -1;
+                    return handle.set_error_from(format!("Failed to stop recording: {e}"), &e);
                 }
-                0
+                BLACKBOX_OK
             }
-            Err(e) => {
-                handle.set_error(format!("Recorder lock poisoned: {}", e));
-                -1
-            }
+            Err(e) => handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
         }
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Check whether recording is currently active.
@@ -279,7 +292,7 @@ pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
 /// Fill a `StatusFlags` struct with current engine status.
 ///
 /// Zero-allocation, no JSON, single mutex lock — designed for the 1 Hz polling loop.
-/// Returns 0 on success, -1 on failure.
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_status_flags(
     handle: *const BlackboxHandle,
@@ -287,10 +300,10 @@ pub extern "C" fn blackbox_get_status_flags(
 ) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         if out.is_null() {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         }
 
         let flags = handle
@@ -323,9 +336,9 @@ pub extern "C" fn blackbox_get_status_flags(
 
         // Safety: out is non-null, and we write a POD struct.
         unsafe { out.write(flags) };
-        0
+        BLACKBOX_OK
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Return a JSON array of available input device names.
@@ -347,7 +360,7 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
 /// Get the input channel count for a device by name.
 ///
 /// Pass an empty string or null for the system default device.
-/// Returns the channel count (>= 1), or -1 on error.
+/// Returns the channel count (>= 1), or `BLACKBOX_ERR_AUDIO_DEVICE` on error.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) -> i32 {
     catch_unwind(|| {
@@ -356,54 +369,52 @@ pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) 
         } else {
             unsafe { cstr_to_str(device_name) }.unwrap_or("")
         };
-        CpalAudioProcessor::get_device_channel_count(name).map_or(-1, |ch| i32::from(ch))
+        CpalAudioProcessor::get_device_channel_count(name)
+            .map_or(BLACKBOX_ERR_AUDIO_DEVICE, |ch| i32::from(ch))
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Update the configuration from a JSON string.
 ///
 /// Only fields present (non-null) in the JSON are updated; others are left unchanged.
-/// Returns 0 on success, -1 on error.
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_set_config_json(
     handle: *mut BlackboxHandle,
     json: *const c_char,
 ) -> i32 {
     if json.is_null() {
-        return -1;
+        return BLACKBOX_ERR_INVALID_HANDLE;
     }
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         handle.clear_error();
 
         let Some(json_str) = (unsafe { cstr_to_str(json) }) else {
             handle.set_error("Invalid UTF-8 in config JSON".to_string());
-            return -1;
+            return BLACKBOX_ERR_CONFIG;
         };
 
         let partial: AppConfig = match serde_json::from_str(json_str) {
             Ok(c) => c,
             Err(e) => {
-                handle.set_error(format!("Invalid config JSON: {}", e));
-                return -1;
+                handle.set_error(format!("Invalid config JSON: {e}"));
+                return BLACKBOX_ERR_CONFIG;
             }
         };
 
         match handle.config.lock() {
             Ok(mut guard) => {
                 guard.merge(partial);
-                0
+                BLACKBOX_OK
             }
-            Err(e) => {
-                handle.set_error(format!("Config lock poisoned: {}", e));
-                -1
-            }
+            Err(e) => handle.lock_poisoned(format!("Config lock poisoned: {e}")),
         }
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Get the last error message, or null if no error has occurred.
@@ -454,7 +465,7 @@ pub extern "C" fn blackbox_get_peak_levels(
 ) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         if out.is_null() || max_channels <= 0 {
             return 0;
@@ -473,7 +484,7 @@ pub extern "C" fn blackbox_get_peak_levels(
         }
         count as i32
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Start audio monitoring (peak levels without recording to disk).
@@ -481,38 +492,33 @@ pub extern "C" fn blackbox_get_peak_levels(
 /// Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`, and begins
 /// monitoring using the current configuration.
 ///
-/// Returns 0 on success, -1 on error (retrieve with `blackbox_get_last_error`).
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
+/// Retrieve the human-readable message with `blackbox_get_last_error`.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         handle.clear_error();
 
         let config = match handle.config.lock() {
             Ok(c) => c.clone(),
-            Err(e) => {
-                handle.set_error(format!("Config lock poisoned: {}", e));
-                return -1;
-            }
+            Err(e) => return handle.lock_poisoned(format!("Config lock poisoned: {e}")),
         };
 
         // Create a processor if we don't already have a recorder
         let mut guard = match handle.recorder.lock() {
             Ok(g) => g,
-            Err(e) => {
-                handle.set_error(format!("Recorder lock poisoned: {}", e));
-                return -1;
-            }
+            Err(e) => return handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
         };
 
         if guard.is_none() {
             let processor = match CpalAudioProcessor::with_config(&config) {
                 Ok(p) => p,
                 Err(e) => {
-                    handle.set_error(format!("Failed to create audio processor: {}", e));
-                    return -1;
+                    return handle
+                        .set_error_from(format!("Failed to create audio processor: {e}"), &e);
                 }
             };
             *guard = Some(AudioRecorder::with_config(processor, config));
@@ -520,8 +526,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
 
         if let Some(recorder) = guard.as_mut() {
             if let Err(e) = recorder.start_monitoring() {
-                handle.set_error(format!("Failed to start monitoring: {}", e));
-                return -1;
+                return handle.set_error_from(format!("Failed to start monitoring: {e}"), &e);
             }
             // Cache peak_levels Arc so the meter poll skips the recorder mutex.
             if let Ok(mut pl) = handle.peak_levels.lock() {
@@ -529,19 +534,19 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
             }
         }
 
-        0
+        BLACKBOX_OK
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Stop audio monitoring.
 ///
-/// Returns 0 on success, -1 on error.
+/// Returns `BLACKBOX_OK` on success, or a negative error code.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
-            return -1;
+            return BLACKBOX_ERR_INVALID_HANDLE;
         };
         handle.clear_error();
 
@@ -554,23 +559,20 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
             Ok(mut guard) => {
                 if let Some(recorder) = guard.as_mut() {
                     if let Err(e) = recorder.processor_mut().stop_monitoring() {
-                        handle.set_error(format!("Failed to stop monitoring: {}", e));
-                        return -1;
+                        return handle
+                            .set_error_from(format!("Failed to stop monitoring: {e}"), &e);
                     }
                     // If not recording, drop the recorder to release resources
                     if !recorder.get_processor().is_recording() {
                         drop(guard.take());
                     }
                 }
-                0
+                BLACKBOX_OK
             }
-            Err(e) => {
-                handle.set_error(format!("Recorder lock poisoned: {}", e));
-                -1
-            }
+            Err(e) => handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
         }
     })
-    .unwrap_or(-1)
+    .unwrap_or(BLACKBOX_ERR_INTERNAL)
 }
 
 /// Check whether audio monitoring is currently active.

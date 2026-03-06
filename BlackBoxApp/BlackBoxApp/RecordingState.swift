@@ -121,7 +121,8 @@ import UserNotifications
             stopMonitoring()
         }
 
-        if bridge.startRecording() {
+        let result = bridge.startRecording()
+        if result.isSuccess {
             isRecording = true
             recordingStartTime = Date()
             statusText = "Recording..."
@@ -133,9 +134,20 @@ import UserNotifications
         } else {
             isRecording = false
             recordingStartTime = nil
-            let err = bridge.lastError ?? "Failed to start recording"
+            let detail = bridge.lastError
+            let err: String
+            switch result {
+            case .audioDevice:
+                err = "No audio input device found. Check System Settings \u{203A} Sound."
+            case .config:
+                err = "Configuration error: \(detail ?? "invalid settings")"
+            case .io:
+                err = "Recording failed: disk error"
+            default:
+                err = detail ?? "Failed to start recording"
+            }
             setTransientError(err)
-            Self.log.error("Failed to start recording: \(err)")
+            Self.log.error("Failed to start recording (code \(result.rawValue)): \(err)")
         }
     }
 
@@ -145,18 +157,19 @@ import UserNotifications
         checkMicrophonePermission { [weak self] granted in
             guard let self else { return }
             if granted {
-                if self.bridge.startMonitoring() {
+                let result = self.bridge.startMonitoring()
+                if result.isSuccess {
                     self.isMonitoring = true
                     Self.log.info("Audio monitoring started")
                 } else {
-                    Self.log.error("Failed to start monitoring: \(self.bridge.lastError ?? "unknown")")
+                    Self.log.error("Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")")
                 }
             }
         }
     }
 
     func stopMonitoring() {
-        if bridge.stopMonitoring() {
+        if bridge.stopMonitoring().isSuccess {
             isMonitoring = false
             peakLevels = []
             Self.log.info("Audio monitoring stopped")
@@ -282,7 +295,8 @@ import UserNotifications
     func stop() {
         let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
-        if bridge.stopRecording() {
+        let result = bridge.stopRecording()
+        if result.isSuccess {
             isRecording = false
             recordingStartTime = nil
             peakLevels = []
@@ -305,7 +319,7 @@ import UserNotifications
         } else {
             let err = bridge.lastError ?? "Failed to stop recording"
             setTransientError(err)
-            Self.log.error("Failed to stop recording: \(err)")
+            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(err)")
         }
     }
 
@@ -547,7 +561,7 @@ import UserNotifications
                 peakLevels = []
                 lastReportedWriteErrors = 0
 
-                if bridge.startRecording() {
+                if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
                     recordingStartTime = Date()
                     statusText = "Recording..."

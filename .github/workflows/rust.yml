@@ -11,6 +11,10 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Formatting ─────────────────────────────────────────────────────
   # Fast check — fails early before burning CI minutes on builds.

@@ -87,19 +87,25 @@ fn test_stop_recording_when_not_recording() {
     let handle = blackbox_create(std::ptr::null());
     // Stopping when not recording should succeed (no-op)
     let result = blackbox_stop_recording(handle);
-    assert_eq!(result, 0);
+    assert_eq!(result, BLACKBOX_OK);
     blackbox_destroy(handle);
 }
 
 #[test]
 fn test_null_handle_error_returns() {
-    assert_eq!(blackbox_start_recording(std::ptr::null_mut()), -1);
-    assert_eq!(blackbox_stop_recording(std::ptr::null_mut()), -1);
+    assert_eq!(
+        blackbox_start_recording(std::ptr::null_mut()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert_eq!(
+        blackbox_stop_recording(std::ptr::null_mut()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
     assert!(blackbox_get_config_json(std::ptr::null()).is_null());
     assert!(blackbox_get_last_error(std::ptr::null()).is_null());
     assert_eq!(
         blackbox_set_config_json(std::ptr::null_mut(), std::ptr::null()),
-        -1
+        BLACKBOX_ERR_INVALID_HANDLE
     );
 }
 
@@ -125,7 +131,7 @@ fn test_set_config_json() {
 
     let update = CString::new(r#"{"debug": true, "duration": 120}"#).unwrap();
     let result = blackbox_set_config_json(handle, update.as_ptr());
-    assert_eq!(result, 0);
+    assert_eq!(result, BLACKBOX_OK);
 
     // Verify the update
     let config_ptr = blackbox_get_config_json(handle);
@@ -142,7 +148,7 @@ fn test_set_config_json() {
 fn test_set_config_json_null_json() {
     let handle = blackbox_create(std::ptr::null());
     let result = blackbox_set_config_json(handle, std::ptr::null());
-    assert_eq!(result, -1);
+    assert_eq!(result, BLACKBOX_ERR_INVALID_HANDLE);
     blackbox_destroy(handle);
 }
 
@@ -151,7 +157,7 @@ fn test_set_config_json_invalid() {
     let handle = blackbox_create(std::ptr::null());
     let bad_json = CString::new("{invalid}").unwrap();
     let result = blackbox_set_config_json(handle, bad_json.as_ptr());
-    assert_eq!(result, -1);
+    assert_eq!(result, BLACKBOX_ERR_CONFIG);
 
     // Should have an error message
     let err_ptr = blackbox_get_last_error(handle);
