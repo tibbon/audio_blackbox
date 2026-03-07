@@ -7,6 +7,7 @@ options:
 
 settings:
   SWIFT_VERSION: "5.10"
+  VERSIONING_SYSTEM: "apple-generic"
 
 targets:
   BlackBoxApp:
@@ -39,6 +40,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ARCHS: arm64
         MACOSX_DEPLOYMENT_TARGET: "15.0"
+        CURRENT_PROJECT_VERSION: "11"
+        MARKETING_VERSION: "1.0.0"
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
     info:
@@ -52,3 +55,26 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 David Fisher. All rights reserved."
         LSApplicationCategoryType: public.app-category.music
         ITSAppUsesNonExemptEncryption: false
+  BlackBoxAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - BlackBoxAppTests
+    dependencies:
+      - target: BlackBoxApp
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder"
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/bridge"
+        IMPORT_PATHS: "$(SRCROOT)/bridge"
+schemes:
+  BlackBoxApp:
+    build:
+      targets:
+        BlackBoxApp: all
+        BlackBoxAppTests: [test]
+    test:
+      targets:
+        - BlackBoxAppTests
