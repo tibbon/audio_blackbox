@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Fastlane lane to run"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - beta
+          - metadata
+          - check
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── CI gate ───────────────────────────────────────────────────────
+  # Run the full test suite before any release work.
+  ci:
+    name: CI checks
+    uses: ./.github/workflows/rust.yml
+
+  # ── TestFlight / App Store ────────────────────────────────────────
+  release:
+    name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
+    needs: ci
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: BlackBoxApp
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-release-
+
+    - name: Extract version from tag
+      id: version
+      run: |
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version $VERSION"
+        else
+          echo "version=" >> "$GITHUB_OUTPUT"
+          echo "Manual run — using version from Xcode project"
+        fi
+      working-directory: ..
+
+    - name: Build Rust static library (FFI)
+      run: cd .. && make rust-lib
+
+    - name: Install signing certificate
+      env:
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      run: |
+        # Create a temporary keychain
+        KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        # Import certificate
+        CERT_PATH=$RUNNER_TEMP/certificate.p12
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+        security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+          -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        rm "$CERT_PATH"
+
+        # Allow codesign to access the keychain
+        security set-key-partition-list -S apple-tool:,apple: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.3"
+        working-directory: BlackBoxApp
+
+    - name: Install Fastlane
+      run: gem install fastlane
+
+    - name: Run Fastlane
+      env:
+        ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        SKIP_RUST_BUILD: "true"
+      run: |
+        # Decode base64 key content for Fastlane
+        export ASC_KEY_CONTENT=$(echo "$ASC_KEY_CONTENT" | base64 --decode)
+        fastlane "${{ github.event.inputs.lane || 'beta' }}"
+
+    - name: Clean up keychain
+      if: always()
+      run: |
+        KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+        if [ -f "$KEYCHAIN_PATH" ]; then
+          security delete-keychain "$KEYCHAIN_PATH"
+        fi

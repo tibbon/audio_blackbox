@@ -6,6 +6,7 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [ "main" ]
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
@@ -195,6 +196,9 @@ jobs:
 
     - name: Build Rust static library (FFI)
       run: cargo build --release --features ffi
+
+    - name: Run Swift tests
+      run: xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' CODE_SIGN_IDENTITY="-"
 
     - name: Build SwiftUI app
       run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
