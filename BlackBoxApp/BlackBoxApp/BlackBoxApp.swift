@@ -18,12 +18,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // System shutdown/logout fires willPowerOff before applicationShouldTerminate.
         // Mark it as explicit so we cooperate with the system instead of blocking.
-        NSWorkspace.shared.notificationCenter.addObserver(
+        let wsnc = NSWorkspace.shared.notificationCenter
+
+        wsnc.addObserver(
             forName: NSWorkspace.willPowerOffNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.explicitQuit = true
+        }
+
+        wsnc.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recorder?.handleWillSleep()
+        }
+
+        wsnc.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recorder?.handleDidWake()
+        }
+
+        wsnc.addObserver(
+            forName: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recorder?.handleSessionDidResignActive()
+        }
+
+        wsnc.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recorder?.handleSessionDidBecomeActive()
         }
     }
 

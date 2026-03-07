@@ -5,6 +5,33 @@ import Observation
 import os.log
 import UserNotifications
 
+/// Pure decision logic for sleep/wake handling, extracted for testability.
+enum SleepWakePolicy {
+    enum SleepAction: Equatable {
+        case pauseForResume
+        case stop
+        case ignore
+    }
+
+    static func sleepAction(isRecording: Bool, behavior: String) -> SleepAction {
+        guard isRecording else { return .ignore }
+        return behavior == "resume" ? .pauseForResume : .stop
+    }
+
+    static func shouldResumeOnWake(wasInterrupted: Bool) -> Bool {
+        wasInterrupted
+    }
+
+    static func shouldPreventSleep(settingEnabled: Bool) -> Bool {
+        settingEnabled
+    }
+
+    static func sessionResignAction(isRecording: Bool) -> SleepAction {
+        guard isRecording else { return .ignore }
+        return .pauseForResume
+    }
+}
+
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
 @MainActor
 @Observable final class RecordingState {
@@ -41,6 +68,8 @@ import UserNotifications
     private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
+    private var activityToken: (any NSObjectProtocol)?
+    private var wasSleepInterrupted = false
 
     private static let bookmarkKey = "outputDirBookmark"
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
@@ -69,6 +98,100 @@ import UserNotifications
                                           body: "BlackBox started recording automatically.",
                                           identifier: "auto-record-started")
                 }
+            }
+        }
+    }
+
+    // MARK: - Sleep / Wake
+
+    private func beginPreventingSleep() {
+        guard activityToken == nil else { return }
+        let idleDisabled = UserDefaults.standard.object(forKey: SettingsKeys.preventSleep) as? Bool ?? true
+        var opts: ProcessInfo.ActivityOptions = .userInitiated  // always prevent App Nap
+        if SleepWakePolicy.shouldPreventSleep(settingEnabled: idleDisabled) {
+            opts.insert(.idleSystemSleepDisabled)
+        }
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: opts,
+            reason: "BlackBox is recording audio"
+        )
+        Self.log.info("Sleep prevention: appNap=always idleSleep=\(idleDisabled)")
+    }
+
+    private func endPreventingSleep() {
+        guard let token = activityToken else { return }
+        ProcessInfo.processInfo.endActivity(token)
+        activityToken = nil
+        Self.log.info("Sleep prevention disabled")
+    }
+
+    func handleWillSleep() {
+        let behavior = UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior) ?? "resume"
+        let action = SleepWakePolicy.sleepAction(isRecording: isRecording, behavior: behavior)
+        switch action {
+        case .ignore:
+            return
+        case .pauseForResume:
+            wasSleepInterrupted = true
+            postNotification(title: "Recording Paused",
+                             body: "Your Mac is going to sleep. Recording will resume on wake.",
+                             identifier: "sleep-paused")
+        case .stop:
+            postNotification(title: "Recording Stopped",
+                             body: "Your Mac is going to sleep.",
+                             identifier: "recording-stopped")
+        }
+        stop()
+        Self.log.info("Sleep: stopped recording (behavior=\(behavior))")
+    }
+
+    func handleDidWake() {
+        guard SleepWakePolicy.shouldResumeOnWake(wasInterrupted: wasSleepInterrupted) else { return }
+        wasSleepInterrupted = false
+        Self.log.info("Wake: attempting to resume recording")
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self, !self.isRecording else { return }
+            self.start()
+            if self.isRecording {
+                self.postNotification(title: "Recording Resumed",
+                                      body: "Recording resumed after wake.",
+                                      identifier: "wake-resumed")
+            } else {
+                self.postNotification(title: "Resume Failed",
+                                      body: "Could not restart recording after wake. Check your audio device.",
+                                      identifier: "wake-failed")
+            }
+        }
+    }
+
+    func handleSessionDidResignActive() {
+        let action = SleepWakePolicy.sessionResignAction(isRecording: isRecording)
+        guard action == .pauseForResume else { return }
+        wasSleepInterrupted = true
+        stop()
+        Self.log.info("Fast User Switch: stopped recording for resume on return")
+        postNotification(title: "Recording Paused",
+                         body: "User session switched. Recording will resume when you return.",
+                         identifier: "session-paused")
+    }
+
+    func handleSessionDidBecomeActive() {
+        guard SleepWakePolicy.shouldResumeOnWake(wasInterrupted: wasSleepInterrupted) else { return }
+        wasSleepInterrupted = false
+        Self.log.info("Fast User Switch: attempting to resume recording")
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self, !self.isRecording else { return }
+            self.start()
+            if self.isRecording {
+                self.postNotification(title: "Recording Resumed",
+                                      body: "Recording resumed after session switch.",
+                                      identifier: "session-resumed")
+            } else {
+                self.postNotification(title: "Resume Failed",
+                                      body: "Could not restart recording after session switch.",
+                                      identifier: "session-failed")
             }
         }
     }
@@ -128,6 +251,7 @@ import UserNotifications
             statusText = "Recording..."
             lastReportedWriteErrors = 0
             startTimer()
+            beginPreventingSleep()
             Self.log.info("Recording started")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                                  userInfo: [.announcement: "Recording started"])
@@ -296,6 +420,7 @@ import UserNotifications
         let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
         let result = bridge.stopRecording()
+        endPreventingSleep()
         if result.isSuccess {
             isRecording = false
             recordingStartTime = nil

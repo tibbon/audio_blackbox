@@ -140,13 +140,24 @@ upload: archive
 		-allowProvisioningUpdates
 	@echo "Upload complete — build should appear in App Store Connect shortly."
 
-# Full release: verify, bump build, archive, upload to App Store Connect
+# Tag a release and push — CI handles build, TestFlight, and GitHub Release.
+# Usage: make release VERSION=1.0.1
 .PHONY: release
-release: verify
-	@echo "Bumping build number..."
-	@./scripts/bump-version.sh
-	@$(MAKE) upload
-	@echo "Release done — check App Store Connect for the new build."
+release:
+ifndef VERSION
+	$(error Usage: make release VERSION=1.0.1)
+endif
+	@echo "Tagging v$(VERSION)..."
+	git tag -a "v$(VERSION)" -m "Release $(VERSION)"
+	git push origin "v$(VERSION)"
+	@echo ""
+	@echo "Tag v$(VERSION) pushed. CI will:"
+	@echo "  1. Run full test suite"
+	@echo "  2. Build and upload to TestFlight"
+	@echo "  3. Create GitHub Release with binaries"
+	@echo ""
+	@echo "Approve the release deployment at:"
+	@echo "  https://github.com/tibbon/audio_blackbox/actions"
 
 # Export signed app from archive (for direct distribution)
 .PHONY: export
@@ -224,8 +235,8 @@ help:
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
-	@echo "  release         - Verify, bump build, archive, upload to App Store Connect"
-	@echo "  upload          - Archive and upload to App Store Connect"
+	@echo "  release VERSION=X.Y.Z - Tag and push; CI builds + uploads to TestFlight"
+	@echo "  upload          - Archive and upload to App Store Connect (local)"
 	@echo "  archive         - Create Xcode archive for distribution"
 	@echo "  export          - Export signed app from archive"
 	@echo "  dmg             - Create DMG installer"

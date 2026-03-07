@@ -724,6 +724,8 @@ struct GeneralSettingsTab: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.launchAtLogin) private var launchAtLogin = false
     @AppStorage(SettingsKeys.autoRecord) private var autoRecord = false
+    @AppStorage(SettingsKeys.sleepBehavior) private var sleepBehavior: String = "resume"
+    @AppStorage(SettingsKeys.preventSleep) private var preventSleep: Bool = true
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @AppStorage("debugLogging") private var debugLogging = false
     @State private var shortcutLabel: String = "None"
@@ -741,6 +743,25 @@ struct GeneralSettingsTab: View {
                 Toggle("Start recording on launch", isOn: $autoRecord)
                     .accessibilityHint("Begin recording immediately when BlackBox starts")
                 Text("When auto-record is enabled, recording begins with your saved settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Sleep Behavior") {
+                Toggle("Prevent idle sleep while recording", isOn: $preventSleep)
+                    .accessibilityHint("Keep your Mac awake during recording")
+                Text("When enabled, your Mac won't sleep from inactivity while recording. Lid close and manual sleep are unaffected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("When Mac sleeps during recording:", selection: $sleepBehavior) {
+                    Text("Pause and resume on wake").tag("resume")
+                    Text("Stop recording").tag("stop")
+                }
+                .pickerStyle(.radioGroup)
+                .accessibilityLabel("Sleep behavior")
+
+                Text("Controls what happens if your Mac is forced to sleep (lid close, low battery, etc.).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -846,6 +867,7 @@ struct GeneralSettingsTab: View {
             SettingsKeys.launchAtLogin, SettingsKeys.autoRecord,
             SettingsKeys.minDiskSpaceMB, SettingsKeys.bitDepth,
             SettingsKeys.silenceGateEnabled, SettingsKeys.silenceGateTimeout,
+            SettingsKeys.sleepBehavior, SettingsKeys.preventSleep,
             "debugLogging",
         ]
         for key in keysToReset {
@@ -858,6 +880,8 @@ struct GeneralSettingsTab: View {
         // Refresh local state
         launchAtLogin = false
         autoRecord = false
+        sleepBehavior = "resume"
+        preventSleep = true
         debugLogging = false
 
         // Push default config to Rust engine so it takes effect immediately
@@ -1018,4 +1042,6 @@ enum SettingsKeys {
     static let lastOutputDirPath = "lastOutputDirPath"
     static let silenceGateEnabled = "silenceGateEnabled"
     static let silenceGateTimeout = "silenceGateTimeout"
+    static let sleepBehavior = "sleepBehavior"
+    static let preventSleep = "preventSleep"
 }
