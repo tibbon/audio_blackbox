@@ -194,14 +194,22 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-swift-
 
+    - name: Cache Xcode DerivedData
+      uses: actions/cache@v5
+      with:
+        path: ~/Library/Developer/Xcode/DerivedData/BlackBoxApp-*
+        key: ${{ runner.os }}-xcode-${{ hashFiles('BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj', 'BlackBoxApp/BlackBoxApp/**/*.swift') }}
+        restore-keys: |
+          ${{ runner.os }}-xcode-
+
     - name: Build Rust static library (FFI)
       run: cargo build --release --features ffi
 
-    - name: Run Swift tests
-      run: xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' CODE_SIGN_IDENTITY="-"
-
     - name: Build SwiftUI app
       run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
+
+    - name: Run Swift tests
+      run: xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' CODE_SIGN_IDENTITY="-"
 
   # ── Release ────────────────────────────────────────────────────────
   # Builds release binaries on both Linux and macOS, then creates a
