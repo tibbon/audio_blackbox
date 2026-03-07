@@ -22,18 +22,85 @@ concurrency:
 permissions: {}
 
 jobs:
-  # ── CI gate ───────────────────────────────────────────────────────
-  # Run the full test suite before any release work.
-  ci:
-    name: CI checks
+  # ── GitHub Release binaries ───────────────────────────────────────
+  # Builds CLI binaries on Linux and macOS. macOS also includes the
+  # SwiftUI .app bundle as a zip.
+  github-release:
+    name: GitHub Release (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
     permissions:
-      contents: read
-    uses: ./.github/workflows/rust.yml
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: blackbox-linux-amd64
+          - os: macos-latest
+            artifact: blackbox-macos-arm64
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-release-
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config
+
+    - name: Build CLI release
+      run: cargo build --release
+
+    - name: Copy CLI binary
+      run: cp target/release/blackbox ${{ matrix.artifact }}
+
+    - name: Build SwiftUI app (macOS only)
+      if: matrix.os == 'macos-latest'
+      run: |
+        cargo build --release --features ffi
+        xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
+        BUILT_APP=$(xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //')
+        cp -R "$BUILT_APP/BlackBox Audio Recorder.app" "BlackBox Audio Recorder.app"
+        ditto -c -k --keepParent "BlackBox Audio Recorder.app" "BlackBox-Audio-Recorder.app.zip"
+
+    - name: Upload CLI binary
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ matrix.artifact }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload macOS app bundle
+      if: matrix.os == 'macos-latest'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: BlackBox-Audio-Recorder.app.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── TestFlight / App Store ────────────────────────────────────────
-  release:
+  # Builds and uploads via Fastlane. Protected environment requires
+  # manual approval from the repo owner.
+  testflight:
     name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
-    needs: ci
     runs-on: macos-latest
     environment: release
     permissions:
