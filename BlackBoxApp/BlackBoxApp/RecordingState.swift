@@ -78,8 +78,12 @@ enum SleepWakePolicy {
     /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
     private var debugLogging: Bool = UserDefaults.standard.bool(forKey: "debugLogging")
 
+    /// True when running inside an XCTest host — skips hardware-dependent init.
+    private static let isTesting = NSClassFromString("XCTestCase") != nil
+
     init() {
         bridge = RustBridge()
+        guard !Self.isTesting else { return }
         refreshDevices()
         restoreOutputDirBookmark()
         restoreSavedSettings()
