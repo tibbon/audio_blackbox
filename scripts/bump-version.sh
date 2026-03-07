@@ -23,6 +23,7 @@ CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST" 2>/
 NEW_BUILD=$((CURRENT_BUILD + 1))
 sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST"
 sed -i '' "s/CFBundleVersion: \"[^\"]*\"/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
+sed -i '' "s/CURRENT_PROJECT_VERSION: \"[^\"]*\"/CURRENT_PROJECT_VERSION: \"$NEW_BUILD\"/" "$PROJECT_YML"
 echo "  CFBundleVersion: $CURRENT_BUILD → $NEW_BUILD"
 
 # Optionally update marketing version if argument provided
@@ -49,8 +50,9 @@ if [[ $# -ge 1 ]]; then
     sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST"
     echo "  Updated Info.plist"
 
-    # project.yml — CFBundleShortVersionString
+    # project.yml — CFBundleShortVersionString + MARKETING_VERSION
     sed -i '' "s/CFBundleShortVersionString: \"[^\"]*\"/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
+    sed -i '' "s/MARKETING_VERSION: \"[^\"]*\"/MARKETING_VERSION: \"$NEW_VERSION\"/" "$PROJECT_YML"
     echo "  Updated project.yml"
 
     echo ""

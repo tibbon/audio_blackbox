@@ -13,15 +13,15 @@
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
+		BE185DA077E00152905E3845 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E06870571E2C3D34F75C6 /* CoreTests.swift */; };
 		D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAA96D336F9106E336A98A7 /* MeterView.swift */; };
 		E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C515ABD54DB00D283F73A524 /* OnboardingView.swift */; };
+		F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */; };
 		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
-		AA00010000000000000000A4 /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000000A1 /* SleepWakeTests.swift */; };
-		AA00010000000000000000B1 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000000B0 /* CoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		AA00010000000000000000A5 /* PBXContainerItemProxy */ = {
+		3B634197B6166BC407A59651 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 43D9CE3A68B4CCF3D8573D94 /* Project object */;
 			proxyType = 1;
@@ -31,8 +31,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeTests.swift; sourceTree = "<group>"; };
 		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
 		3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
+		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A3E06870571E2C3D34F75C6 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -42,17 +45,23 @@
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
 		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
 		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		AA00010000000000000000A1 /* SleepWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeTests.swift; sourceTree = "<group>"; };
-		AA00010000000000000000A2 /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AA00010000000000000000B0 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		1C451CB95C0A5482D6C6F55D /* BlackBoxAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
+				0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */,
+			);
+			path = BlackBoxAppTests;
+			sourceTree = "<group>";
+		};
 		7F01E7D61DE30C7E836DED8F = {
 			isa = PBXGroup;
 			children = (
 				BA337CCE7A5957FF5AD4D45C /* BlackBoxApp */,
-				AA00010000000000000000A3 /* BlackBoxAppTests */,
+				1C451CB95C0A5482D6C6F55D /* BlackBoxAppTests */,
 				9B0C183B2A902029D8F0A18D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,7 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */,
-				AA00010000000000000000A2 /* BlackBoxAppTests.xctest */,
+				6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,18 +92,27 @@
 			path = BlackBoxApp;
 			sourceTree = "<group>";
 		};
-		AA00010000000000000000A3 /* BlackBoxAppTests */ = {
-			isa = PBXGroup;
-			children = (
-				AA00010000000000000000B0 /* CoreTests.swift */,
-				AA00010000000000000000A1 /* SleepWakeTests.swift */,
-			);
-			path = BlackBoxAppTests;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		C670EF17C033687DAC7960A8 /* BlackBoxAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D7F407082C5C8F11F6B5258 /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */;
+			buildPhases = (
+				14CFE0023F1A379F9F5D19CC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				93D585BC39E78B1BC8DD7758 /* PBXTargetDependency */,
+			);
+			name = BlackBoxAppTests;
+			packageProductDependencies = (
+			);
+			productName = BlackBoxAppTests;
+			productReference = 6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		DD8280819EC1745861DD709C /* BlackBoxApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D7D534FF3BDA0C2535A6C537 /* Build configuration list for PBXNativeTarget "BlackBoxApp" */;
@@ -113,22 +131,6 @@
 			productReference = A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AA00010000000000000000A8 /* BlackBoxAppTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AA00010000000000000000AB /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */;
-			buildPhases = (
-				AA00010000000000000000A7 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				AA00010000000000000000A6 /* PBXTargetDependency */,
-			);
-			name = BlackBoxAppTests;
-			productName = BlackBoxAppTests;
-			productReference = AA00010000000000000000A2 /* BlackBoxAppTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -140,9 +142,6 @@
 				TargetAttributes = {
 					DD8280819EC1745861DD709C = {
 						ProvisioningStyle = Automatic;
-					};
-					AA00010000000000000000A8 = {
-						TestTargetID = DD8280819EC1745861DD709C;
 					};
 				};
 			};
@@ -161,7 +160,7 @@
 			projectRoot = "";
 			targets = (
 				DD8280819EC1745861DD709C /* BlackBoxApp */,
-				AA00010000000000000000A8 /* BlackBoxAppTests */,
+				C670EF17C033687DAC7960A8 /* BlackBoxAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -179,6 +178,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		14CFE0023F1A379F9F5D19CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
+				F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		37A5FC8F87988A7E93524B1C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -193,22 +201,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AA00010000000000000000A7 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AA00010000000000000000B1 /* CoreTests.swift in Sources */,
-				AA00010000000000000000A4 /* SleepWakeTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		AA00010000000000000000A6 /* PBXTargetDependency */ = {
+		93D585BC39E78B1BC8DD7758 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DD8280819EC1745861DD709C /* BlackBoxApp */;
-			targetProxy = AA00010000000000000000A5 /* PBXContainerItemProxy */;
+			targetProxy = 3B634197B6166BC407A59651 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -221,6 +220,7 @@
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
 				INFOPLIST_FILE = BlackBoxApp/Info.plist;
@@ -232,6 +232,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",
@@ -304,6 +305,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.10;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
 		};
@@ -315,6 +317,7 @@
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 11;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
 				INFOPLIST_FILE = BlackBoxApp/Info.plist;
@@ -326,6 +329,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",
@@ -405,46 +409,60 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.10;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
-		AA00010000000000000000A9 /* Debug */ = {
+		ADC6C1A1978C820BA21BA021 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.BlackBoxAppTests;
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
-				SWIFT_VERSION = 5.10;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder";
-			};
-			name = Debug;
-		};
-		AA00010000000000000000AA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IMPORT_PATHS = "$(SRCROOT)/bridge";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
-				SWIFT_VERSION = 5.10;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder";
 			};
 			name = Release;
 		};
+		F7C3AA61BD6DB3AD75C2A5D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IMPORT_PATHS = "$(SRCROOT)/bridge";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.BlackBoxAppTests;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		5D7F407082C5C8F11F6B5258 /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F7C3AA61BD6DB3AD75C2A5D3 /* Debug */,
+				ADC6C1A1978C820BA21BA021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		A270336424195CA52B515B29 /* Build configuration list for PBXProject "BlackBoxApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -459,15 +477,6 @@
 			buildConfigurations = (
 				139D29AA7006551DD1983958 /* Debug */,
 				29F230D58F45C00BB97780A1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		AA00010000000000000000AB /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AA00010000000000000000A9 /* Debug */,
-				AA00010000000000000000AA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
