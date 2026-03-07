@@ -220,8 +220,12 @@ final class RustBridgeTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
-    func testListInputDevices() {
-        // Should return an array (may be empty in CI)
+    func testListInputDevices() throws {
+        // CoreAudio device enumeration hangs on CI runners with no audio hardware
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["CI"] != nil,
+            "Skipping — no audio hardware on CI"
+        )
         let devices = RustBridge.listInputDevices()
         XCTAssertNotNil(devices)
         // Type check — should be [String]
