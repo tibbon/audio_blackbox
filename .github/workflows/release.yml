@@ -175,6 +175,18 @@ jobs:
     - name: Install Fastlane
       run: gem install fastlane
 
+    - name: Write ASC API key file
+      env:
+        ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      run: |
+        # xcodebuild needs the .p8 key as a file for -allowProvisioningUpdates
+        KEY_DIR="$RUNNER_TEMP/asc_keys"
+        mkdir -p "$KEY_DIR"
+        echo "$ASC_KEY_CONTENT" | base64 --decode > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+        echo "ASC_KEY_PATH=$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+      working-directory: ..
+
     - name: Run Fastlane
       env:
         ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -184,14 +196,15 @@ jobs:
         RELEASE_VERSION: ${{ steps.version.outputs.version }}
         SKIP_RUST_BUILD: "true"
       run: |
-        # Decode base64 key content for Fastlane
+        # Decode base64 key content for Fastlane API auth
         export ASC_KEY_CONTENT=$(echo "$ASC_KEY_CONTENT" | base64 --decode)
         fastlane "${{ github.event.inputs.lane || 'beta' }}"
 
-    - name: Clean up keychain
+    - name: Clean up secrets
       if: always()
       run: |
         KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
         if [ -f "$KEYCHAIN_PATH" ]; then
           security delete-keychain "$KEYCHAIN_PATH"
         fi
+        rm -rf "$RUNNER_TEMP/asc_keys"

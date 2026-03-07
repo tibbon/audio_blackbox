@@ -46,7 +46,15 @@ platform :mac do
       sh("cd ../.. && make rust-lib")
     end
 
-    # Build and archive
+    # Build and archive — use ASC API key for automatic provisioning on CI
+    xcargs = "DEVELOPMENT_TEAM=#{team_id} ARCHS=arm64"
+    if ENV["ASC_KEY_PATH"]
+      xcargs += " -allowProvisioningUpdates"
+      xcargs += " -authenticationKeyPath '#{ENV["ASC_KEY_PATH"]}'"
+      xcargs += " -authenticationKeyID '#{ENV["ASC_KEY_ID"]}'"
+      xcargs += " -authenticationKeyIssuerID '#{ENV["ASC_ISSUER_ID"]}'"
+    end
+
     build_app(
       project: "BlackBoxApp.xcodeproj",
       scheme: "BlackBoxApp",
@@ -59,7 +67,7 @@ platform :mac do
       },
       output_directory: "../target/fastlane",
       clean: true,
-      xcargs: "DEVELOPMENT_TEAM=#{team_id} ARCHS=arm64"
+      xcargs: xcargs
     )
 
     # Upload to TestFlight
