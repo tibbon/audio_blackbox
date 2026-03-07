@@ -222,6 +222,27 @@ fl-beta:
 fl-check:
 	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane check
 
+# --- Setup ---
+
+# Install git hooks from scripts/
+.PHONY: hooks
+hooks:
+	@echo "Installing git hooks..."
+	@cp scripts/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Git hooks installed."
+
+# First-time repo setup: install hooks and verify toolchain
+.PHONY: setup
+setup:
+	@echo "=== Setting up BlackBox development environment ==="
+	@command -v cargo >/dev/null 2>&1 || { echo "Error: Rust toolchain not found. Install from https://rustup.rs"; exit 1; }
+	@command -v xcodebuild >/dev/null 2>&1 || echo "Warning: Xcode not found — Swift builds will be skipped"
+	@$(MAKE) hooks
+	@echo "Running initial verify..."
+	@$(MAKE) verify
+	@echo "=== Setup complete ==="
+
 # Help
 .PHONY: help
 help:
@@ -256,5 +277,9 @@ help:
 	@echo "  fl-cancel       - Cancel existing App Store review submission"
 	@echo "  fl-submit       - Submit latest build for review (auto-cancels existing)"
 	@echo "  fl-check        - Check metadata for common rejection reasons"
+	@echo ""
+	@echo "Setup:"
+	@echo "  setup           - First-time repo setup (hooks + verify)"
+	@echo "  hooks           - Install/update git hooks"
 	@echo ""
 	@echo "  help            - Show this help"
