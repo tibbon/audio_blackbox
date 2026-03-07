@@ -56,13 +56,20 @@ run:
 clean:
 	$(CARGO_BIN) clean
 
-# Verify: fmt + clippy + test + build (run before committing)
+# Verify: fmt + clippy + test + build + Swift tests (run before committing)
 .PHONY: verify
 verify:
 	$(CARGO_BIN) fmt --all -- --check
 	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) test -- --test-threads=1
 	$(CARGO_BIN) build
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		echo "Running Swift tests..."; \
+		$(CARGO_BIN) build --release --no-default-features --features ffi && \
+		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
+			-destination 'platform=macOS' CODE_SIGN_IDENTITY="-" -quiet; \
+		echo "Swift tests passed."; \
+	fi
 
 # --- SwiftUI Menu Bar App ---
 
