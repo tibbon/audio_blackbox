@@ -221,15 +221,24 @@ final class RustBridgeTests: XCTestCase {
     }
 
     func testListInputDevices() throws {
-        // CoreAudio device enumeration hangs on CI runners with no audio hardware
-        try XCTSkipIf(
-            ProcessInfo.processInfo.environment["CI"] != nil,
-            "Skipping — no audio hardware on CI"
-        )
-        let devices = RustBridge.listInputDevices()
+        // CoreAudio device enumeration hangs indefinitely on machines with
+        // no audio hardware (CI runners). Use a timeout instead of env var
+        // detection — xcodebuild test host doesn't inherit shell env vars.
+        let semaphore = DispatchSemaphore(value: 0)
+        var devices: [String]?
+
+        DispatchQueue.global().async {
+            devices = RustBridge.listInputDevices()
+            semaphore.signal()
+        }
+
+        let result = semaphore.wait(timeout: .now() + 5)
+        if result == .timedOut {
+            throw XCTSkip("CoreAudio device enumeration timed out — no audio hardware")
+        }
+
         XCTAssertNotNil(devices)
-        // Type check — should be [String]
-        XCTAssertTrue(type(of: devices) == [String].self)
+        XCTAssertTrue(type(of: devices!) == [String].self)
     }
 
     func testGetStatusFlagsWhenIdle() {
