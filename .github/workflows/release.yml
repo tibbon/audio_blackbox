@@ -19,11 +19,15 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   # ── CI gate ───────────────────────────────────────────────────────
   # Run the full test suite before any release work.
   ci:
     name: CI checks
+    permissions:
+      contents: read
     uses: ./.github/workflows/rust.yml
 
   # ── TestFlight / App Store ────────────────────────────────────────
