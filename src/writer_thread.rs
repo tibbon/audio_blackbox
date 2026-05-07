@@ -184,7 +184,8 @@ impl WriterThreadState {
             && let Some(available_mb) = available_disk_space_mb(output_dir)
             && available_mb < min_disk_space_mb
         {
-            disk_space_low.store(true, Ordering::Release);
+            // status flag only; reader at disk_space_low() loads Relaxed.
+            disk_space_low.store(true, Ordering::Relaxed);
             return Err(BlackboxError::Io(std::io::Error::other(format!(
                 "Insufficient disk space: {}MB available, {}MB required",
                 available_mb, min_disk_space_mb
@@ -443,7 +444,8 @@ impl WriterThreadState {
                 "Disk space low: {}MB available, threshold is {}MB — stopping recording",
                 available_mb, self.min_disk_space_mb
             );
-            self.disk_space_low.store(true, Ordering::Release);
+            // status flag only; reader at disk_space_low() loads Relaxed.
+            self.disk_space_low.store(true, Ordering::Relaxed);
             self.disk_stopped = true;
             // Finalize current files so data written so far is safe
             if let Err(e) = self.finalize_all() {

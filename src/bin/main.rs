@@ -102,10 +102,11 @@ fn main() {
     let r = running.clone();
     let s = shutdown_in_progress.clone();
     ::ctrlc::set_handler(move || {
-        if !s.load(Ordering::SeqCst) {
+        // Status flags only — single-bit signal, no synchronizes-with payload.
+        if !s.load(Ordering::Relaxed) {
             info!("Shutting down...");
-            s.store(true, Ordering::SeqCst);
-            r.store(false, Ordering::SeqCst);
+            s.store(true, Ordering::Relaxed);
+            r.store(false, Ordering::Relaxed);
         }
     })
     .expect("Error setting Ctrl-C handler");
@@ -159,7 +160,7 @@ fn main() {
     }
 
     let mut elapsed: u64 = 0;
-    while running.load(Ordering::SeqCst) {
+    while running.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_secs(1));
         elapsed += 1;
 
