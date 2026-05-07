@@ -147,13 +147,23 @@ upload: archive
 		-allowProvisioningUpdates
 	@echo "Upload complete — build should appear in App Store Connect shortly."
 
+# Verify that the marketing version and build number are consistent across
+# Cargo.toml, Makefile, project.yml, and Info.plist. Run before tagging.
+.PHONY: check-versions
+check-versions:
+	@./scripts/check-versions.sh
+
 # Tag a release and push — CI handles build, TestFlight, and GitHub Release.
 # Usage: make release VERSION=1.0.1
 .PHONY: release
-release:
+release: check-versions
 ifndef VERSION
 	$(error Usage: make release VERSION=1.0.1)
 endif
+	@if [ "$(VERSION)" != "$$(grep -E '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')" ]; then \
+	    echo "Error: VERSION=$(VERSION) does not match Cargo.toml. Run scripts/bump-version.sh $(VERSION) first."; \
+	    exit 1; \
+	fi
 	@echo "Tagging v$(VERSION)..."
 	git tag -a "v$(VERSION)" -m "Release $(VERSION)"
 	git push origin "v$(VERSION)"
@@ -263,6 +273,7 @@ help:
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
+	@echo "  check-versions  - Verify version fields are aligned across all files"
 	@echo "  release VERSION=X.Y.Z - Tag and push; CI builds + uploads to TestFlight"
 	@echo "  upload          - Archive and upload to App Store Connect (local)"
 	@echo "  archive         - Create Xcode archive for distribution"
