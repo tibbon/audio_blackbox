@@ -48,6 +48,9 @@ pub const BLACKBOX_ERR_IO: i32 = -4;
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
 pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
 pub const BLACKBOX_ERR_DISK_SPACE_LOW: i32 = -7;
+/// Caller passed a null or otherwise invalid argument that isn't the handle
+/// itself (e.g. a null OUT pointer, a null JSON string).
+pub const BLACKBOX_ERR_INVALID_ARG: i32 = -8;
 
 /// Lightweight C struct for status polling — no JSON, no string allocation.
 /// Fields match what the Swift `updateDuration()` loop actually reads.
@@ -368,7 +371,7 @@ pub extern "C" fn blackbox_get_status_flags(
         return BLACKBOX_ERR_INVALID_HANDLE;
     };
     if out.is_null() {
-        return BLACKBOX_ERR_INVALID_HANDLE;
+        return BLACKBOX_ERR_INVALID_ARG;
     }
 
     // Clone the bundle out from under the lock, then drop the lock before
@@ -430,12 +433,14 @@ pub extern "C" fn blackbox_set_config_json(
     handle: *mut BlackboxHandle,
     json: *const c_char,
 ) -> i32 {
-    if json.is_null() {
-        return BLACKBOX_ERR_INVALID_HANDLE;
-    }
+    // Validate the handle first — a null/invalid handle is a more fundamental
+    // failure than a missing arg.
     let Some(handle) = validate_handle(handle) else {
         return BLACKBOX_ERR_INVALID_HANDLE;
     };
+    if json.is_null() {
+        return BLACKBOX_ERR_INVALID_ARG;
+    }
     handle.clear_error();
 
     let Some(json_str) = (unsafe { cstr_to_str(json) }) else {
