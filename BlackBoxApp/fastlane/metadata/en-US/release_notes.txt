@@ -1,5 +1,10 @@
-- Level meter now shows live audio levels before recording starts
-- Open the Level Meter window to preview signal and verify your device/channels
-- Monitoring auto-starts when the meter opens and stops when you close it
-- Recording seamlessly takes over from monitoring, and monitoring resumes when you stop
-- Various bug fixes and improvements
+Reliability and polish across the recording engine.
+
+• The menu bar icon now pulses while recording so you can see at a glance that capture is live.
+• Onboarding window no longer clips on the recording-mode step and reopens to the foreground if you've dismissed it.
+• Faster app launch — the menu bar appears immediately instead of waiting on a folder probe.
+• Smoother level meters during long sessions.
+• More precise error reporting — failures from the audio engine now surface specific reasons (device unavailable, low disk space, etc.) instead of a generic message.
+• Hardened audio-sample conversion against malformed input from unusual devices — bad samples can no longer freeze the level meter or skew silence detection.
+• Smaller download (~26% reduction).
+• Updated to the latest Rust toolchain and audio dependencies.
