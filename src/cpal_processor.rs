@@ -1262,3 +1262,64 @@ impl CpalAudioProcessor {
             .map_or_else(Vec::new, |s| s.pending_files.clone())
     }
 }
+
+#[cfg(test)]
+mod push_samples_tests {
+    use super::push_samples_with_overflow_count;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Direct unit test for `push_samples_with_overflow_count` (DOLL-130).
+    /// The integration test (`test_ring_buffer_overflow_counted`) spins up
+    /// a writer thread, two channels, and a temp dir to exercise four
+    /// arithmetic lines; this catches drift in those lines faster.
+    ///
+    /// Killer-question: revert the `fetch_add(remainder.len() as u64, ...)`
+    /// branch (or change the count to a fixed constant) and this test
+    /// fails immediately.
+    #[test]
+    fn push_samples_counts_rejected_suffix() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
+        let write_errors = AtomicU64::new(0);
+
+        // Push fewer than capacity → no overflow.
+        let small = vec![0.0_f32; 8];
+        push_samples_with_overflow_count(&mut producer, &small, &write_errors);
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            0,
+            "no overflow expected when pushing within capacity"
+        );
+
+        // Push exactly the remaining capacity → fits, still no overflow.
+        let fill = vec![0.0_f32; 8];
+        push_samples_with_overflow_count(&mut producer, &fill, &write_errors);
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            0,
+            "no overflow when filling to exact capacity"
+        );
+
+        // Now the ring is full; the next push has zero capacity, so the
+        // entire batch is rejected. The counter must reflect the full
+        // remainder length.
+        let overflow = vec![0.0_f32; 100];
+        push_samples_with_overflow_count(&mut producer, &overflow, &write_errors);
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            100,
+            "all 100 samples should have been rejected when ring is full"
+        );
+
+        // Asymmetric case: drain 4 slots, then push 10 — 4 fit, 6 are rejected.
+        if let Ok(chunk) = consumer.read_chunk(4) {
+            chunk.commit_all();
+        }
+        let asymmetric = vec![0.0_f32; 10];
+        push_samples_with_overflow_count(&mut producer, &asymmetric, &write_errors);
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            106,
+            "expected 100 + 6 rejected samples after asymmetric push"
+        );
+    }
+}
