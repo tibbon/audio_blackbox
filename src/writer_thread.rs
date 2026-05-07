@@ -271,8 +271,11 @@ impl WriterThreadState {
             min_disk_space_mb,
             disk_space_low,
             timestamp_fn: Arc::new(timestamp_now),
+            // SilenceCheckWorker::new returns Option (DOLL-122) — spawn
+            // failures degrade to "no silence checks this session"
+            // rather than crashing the recording.
             silence_worker: if silence_threshold > 0.0 {
-                Some(SilenceCheckWorker::new(silence_threshold))
+                SilenceCheckWorker::new(silence_threshold)
             } else {
                 None
             },
@@ -905,13 +908,18 @@ struct SilenceCheckWorker {
 }
 
 impl SilenceCheckWorker {
-    fn new(threshold: f32) -> Self {
+    /// Construct a new worker. Returns `None` if the underlying thread
+    /// spawn fails (resource exhaustion: EAGAIN/ENOMEM/RLIMIT_NPROC).
+    /// Callers store `silence_worker: None` and the writer thread keeps
+    /// running — silent files just don't get auto-deleted that session
+    /// (DOLL-122).
+    fn new(threshold: f32) -> Option<Self> {
         // Bounded channel: 8 batches in flight is generous given that
         // rotation cadence is per-second at the fastest. Backpressure on
         // the rotation path (a brief block on `send`) is preferable to
         // unbounded memory growth.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<String>>(8);
-        let handle = std::thread::Builder::new()
+        let handle = match std::thread::Builder::new()
             .name("blackbox-silence".to_string())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
@@ -928,13 +936,21 @@ impl SilenceCheckWorker {
                 while let Ok(files) = rx.recv() {
                     check_and_delete_silent_files(&files, threshold);
                 }
-            })
-            .expect("failed to spawn silence-check worker thread");
+            }) {
+            Ok(h) => h,
+            Err(e) => {
+                error!(
+                    "Failed to spawn silence-check worker thread ({e}); \
+                     silence detection will be disabled this session."
+                );
+                return None;
+            }
+        };
 
-        SilenceCheckWorker {
+        Some(SilenceCheckWorker {
             tx: Some(tx),
             handle: Some(handle),
-        }
+        })
     }
 
     /// Submit a batch of file paths for silence checking. Best-effort: if
