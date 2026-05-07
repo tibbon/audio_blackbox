@@ -327,7 +327,7 @@ mod sample_rate_listener {
 /// 8-field shape as a SemVer contract (DOLL-120). Adding a 9th flag stays
 /// a no-op for downstream consumers.
 #[cfg(feature = "ffi")]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct ProcessorStatus {
     /// True between the end of `process_audio_impl` and the start of `finalize`.
     pub(crate) recording_active: Arc<AtomicBool>,
@@ -345,17 +345,11 @@ pub(crate) struct ProcessorStatus {
 #[cfg(feature = "ffi")]
 impl ProcessorStatus {
     /// Construct an idle bundle (all flags false, counters zero).
+    /// Thin alias for `Default::default()` — kept so the call sites in
+    /// `ffi.rs` read intentionally as "reset to idle" rather than the
+    /// generic "default-init."
     pub(crate) fn idle() -> Self {
-        ProcessorStatus {
-            recording_active: Arc::new(AtomicBool::new(false)),
-            monitoring_active: Arc::new(AtomicBool::new(false)),
-            sample_rate: Arc::new(AtomicU32::new(0)),
-            write_errors: Arc::new(AtomicU64::new(0)),
-            disk_space_low: Arc::new(AtomicBool::new(false)),
-            stream_error: Arc::new(AtomicBool::new(false)),
-            sample_rate_changed: Arc::new(AtomicBool::new(false)),
-            gate_idle: Arc::new(AtomicBool::new(false)),
-        }
+        Self::default()
     }
 }
 
