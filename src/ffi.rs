@@ -254,6 +254,9 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
     if handle.is_null() {
         return;
     }
+    // SAFETY: per the FFI contract documented on `blackbox_create` and
+    // `validate_handle`, `handle` originated from `Box::into_raw` in
+    // `blackbox_create` and is not concurrently freed.
     let h = unsafe { &*handle };
     // Atomically claim the right to destroy — only one caller can succeed.
     if h.magic
@@ -262,6 +265,10 @@ pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
     {
         return; // Already destroyed or invalid
     }
+    // SAFETY: the AcqRel CAS above guarantees we are the unique caller
+    // entering this branch for this `handle`. The pointer originated from
+    // `Box::into_raw` in `blackbox_create`; reconstructing the `Box` and
+    // dropping it frees the allocation exactly once.
     let handle = unsafe { Box::from_raw(handle) };
     // Stop recording if active — AudioRecorder's Drop will finalize via the processor.
     if let Ok(mut guard) = handle.recorder.lock() {
@@ -438,7 +445,12 @@ pub extern "C" fn blackbox_get_status_flags(
         sample_rate_changed: status.sample_rate_changed.load(Ordering::Relaxed),
     };
 
-    // Safety: out is non-null, and we write a POD struct.
+    // SAFETY: `out` was null-checked above. `StatusFlags` is `#[repr(C)]`
+    // with a 24-byte size assertion at module top; the C caller is
+    // contractually responsible for providing a writable, properly-
+    // aligned 24-byte slot (alignof StatusFlags = 8 due to the leading
+    // u64). `ptr::write` does not call any drop on the previous bytes
+    // (treated as uninit), which is correct for an OUT pointer.
     unsafe { out.write(flags) };
     BLACKBOX_OK
 }
@@ -546,6 +558,10 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
     if s.is_null() {
         return;
     }
+    // SAFETY: caller contract (documented on the fn) guarantees `s`
+    // originated from a previous `to_c_string` (which calls
+    // `CString::into_raw`), and is freed exactly once. Reconstructing
+    // the CString and dropping it releases the allocation.
     drop(unsafe { CString::from_raw(s) });
 }
 
@@ -574,6 +590,10 @@ pub extern "C" fn blackbox_get_peak_levels(
         return BLACKBOX_ERR_INVALID_ARG;
     }
 
+    // SAFETY: `out` was just null-checked and `max_channels > 0` was
+    // verified. Caller contract (documented on the fn) guarantees `out`
+    // points to at least `max_channels` properly-aligned `f32` slots
+    // valid for writes for the duration of this call, and is not aliased.
     let buf = unsafe { std::slice::from_raw_parts_mut(out, max_channels as usize) };
 
     // Read from the cached Arc — no recorder mutex needed.
