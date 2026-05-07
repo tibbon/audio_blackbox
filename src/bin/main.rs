@@ -17,9 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-#[cfg(feature = "benchmarking")]
-use log::warn;
-use log::{error, info};
+use log::{error, info, warn};
 
 use blackbox::AppConfig;
 use blackbox::AudioProcessor;
@@ -101,15 +99,20 @@ fn main() {
     let shutdown_in_progress = Arc::new(AtomicBool::new(false));
     let r = running.clone();
     let s = shutdown_in_progress.clone();
-    ::ctrlc::set_handler(move || {
+    if let Err(e) = ::ctrlc::set_handler(move || {
         // Status flags only — single-bit signal, no synchronizes-with payload.
         if !s.load(Ordering::Relaxed) {
             info!("Shutting down...");
             s.store(true, Ordering::Relaxed);
             r.store(false, Ordering::Relaxed);
         }
-    })
-    .expect("Error setting Ctrl-C handler");
+    }) {
+        // ctrlc::set_handler errors when called twice in a process or when
+        // the underlying signal install fails. Log and continue: the CLI
+        // still runs to completion via the duration timer; only graceful
+        // Ctrl-C shutdown is degraded (DOLL-115).
+        warn!("Failed to install Ctrl-C handler ({e}); shutdown will rely on the duration timer.");
+    }
 
     // Create processor and recorder
     let processor = match CpalAudioProcessor::new() {

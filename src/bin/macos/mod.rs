@@ -106,9 +106,13 @@ impl MenuBarApp {
             }
         };
 
-        // Initialize recorder with config
+        // Initialize recorder with config. Use `.lock().ok()` like the FFI
+        // library does so a poisoned mutex (e.g. another holder panicked)
+        // doesn't crash the menu-bar app — DOLL-115.
         let mut config = AppConfig::new();
-        config.output_dir = Some(self.state.output_dir.lock().unwrap().clone());
+        if let Ok(dir) = self.state.output_dir.lock() {
+            config.output_dir = Some(dir.clone());
+        }
 
         if let Ok(mut rec_guard) = self.recorder.lock() {
             *rec_guard = Some(AudioRecorder::with_config(processor, config));
@@ -116,10 +120,9 @@ impl MenuBarApp {
 
         // Print initial status
         info!("Menu bar initialized and ready");
-        info!(
-            "Recording will be saved to: {}",
-            self.state.output_dir.lock().unwrap()
-        );
+        if let Ok(dir) = self.state.output_dir.lock() {
+            info!("Recording will be saved to: {}", *dir);
+        }
 
         // Send notification
         Self::send_notification(
@@ -127,12 +130,18 @@ impl MenuBarApp {
             "App is running. Use the menu bar icon to control recording.",
         );
 
-        // Set up a channel for CTRL+C handling
+        // Set up a channel for CTRL+C handling. If installation fails (e.g.
+        // already-installed in this process), log and continue rather than
+        // aborting the menu-bar app — DOLL-115.
         let (tx, rx) = std::sync::mpsc::channel();
-        ctrlc::set_handler(move || {
+        if let Err(e) = ctrlc::set_handler(move || {
             let _ = tx.send(());
-        })
-        .expect("Error setting Ctrl-C handler");
+        }) {
+            warn!(
+                "Failed to install Ctrl-C handler ({e}); continuing without it. \
+                 Quit via the menu bar instead."
+            );
+        }
 
         // Main application loop - wait for user to stop the application
         info!("Press Ctrl+C to exit");
@@ -256,7 +265,9 @@ fn create_simplified_menu_bar(
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
                     debug!("UI: Updating output dir to {dir}");
-                    *state.output_dir.lock().unwrap() = dir;
+                    if let Ok(mut guard) = state.output_dir.lock() {
+                        *guard = dir;
+                    }
                 }
                 ControlMessage::Quit => {
                     debug!("UI: Quitting");
