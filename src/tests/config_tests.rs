@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use tempfile::tempdir;
 
@@ -49,23 +48,21 @@ fn test_config_loading() {
         "#;
             fs::write(&config_path, config_content).unwrap();
 
-            // Point to our test config file
-            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
-            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
+            // Point to our test config file via temp_env so it's restored
+            // even if assertions panic.
+            temp_env::with_var("BLACKBOX_CONFIG", Some(config_path.to_str().unwrap()), || {
+                let config = AppConfig::load();
 
-            // Load the configuration
-            let config = AppConfig::load();
-
-            // Verify that the config was loaded from the file
-            assert_eq!(config.get_audio_channels(), "1,2,3");
-            assert!(config.get_debug());
-            assert_eq!(config.get_duration(), 60);
-            assert_eq!(config.get_output_mode(), "split");
-            assert!((config.get_silence_threshold() - 0.05).abs() < f32::EPSILON);
-            assert!(config.get_continuous_mode());
-            assert_eq!(config.get_recording_cadence(), 1800);
-            assert_eq!(config.get_output_dir(), "/tmp");
-            assert!(config.get_performance_logging());
+                assert_eq!(config.get_audio_channels(), "1,2,3");
+                assert!(config.get_debug());
+                assert_eq!(config.get_duration(), 60);
+                assert_eq!(config.get_output_mode(), "split");
+                assert!((config.get_silence_threshold() - 0.05).abs() < f32::EPSILON);
+                assert!(config.get_continuous_mode());
+                assert_eq!(config.get_recording_cadence(), 1800);
+                assert_eq!(config.get_output_dir(), "/tmp");
+                assert!(config.get_performance_logging());
+            });
         },
     );
 }
@@ -228,24 +225,20 @@ fn test_config_env_vars() {
         "#;
             fs::write(&config_path, config_content).unwrap();
 
-            // Point to our test config file and ONLY this config file
-            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
-            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
+            temp_env::with_var("BLACKBOX_CONFIG", Some(config_path.to_str().unwrap()), || {
+                let config = AppConfig::load();
 
-            // Load configuration and verify it uses values from the config file
-            let config = AppConfig::load();
+                println!("Config values:");
+                println!("  audio_channels: {}", config.get_audio_channels());
+                println!("  debug: {}", config.get_debug());
 
-            // Print values for debugging
-            println!("Config values:");
-            println!("  audio_channels: {}", config.get_audio_channels());
-            println!("  debug: {}", config.get_debug());
-
-            assert_eq!(
-                config.get_audio_channels(),
-                "0,1,2",
-                "Config should load audio_channels from file"
-            );
-            assert!(config.get_debug(), "Config should load debug from file");
+                assert_eq!(
+                    config.get_audio_channels(),
+                    "0,1,2",
+                    "Config should load audio_channels from file"
+                );
+                assert!(config.get_debug(), "Config should load debug from file");
+            });
         },
     );
 }
@@ -293,65 +286,61 @@ fn test_config_env_vars_precedence() {
         "#;
             fs::write(&config_path, config_content).unwrap();
 
-            // Point to our test config file
-            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
-            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
+            temp_env::with_var("BLACKBOX_CONFIG", Some(config_path.to_str().unwrap()), || {
+                println!("Environment variables:");
+                println!(
+                    "  BLACKBOX_AUDIO_CHANNELS: {:?}",
+                    std::env::var("BLACKBOX_AUDIO_CHANNELS")
+                );
+                println!("  BLACKBOX_DEBUG: {:?}", std::env::var("BLACKBOX_DEBUG"));
 
-            // Verify the environment variables are set correctly
-            println!("Environment variables:");
-            println!(
-                "  BLACKBOX_AUDIO_CHANNELS: {:?}",
-                env::var("BLACKBOX_AUDIO_CHANNELS")
-            );
-            println!("  BLACKBOX_DEBUG: {:?}", env::var("BLACKBOX_DEBUG"));
+                let config = AppConfig::load();
+                println!("Loaded config values:");
+                println!("  audio_channels: {}", config.get_audio_channels());
+                println!("  debug: {}", config.get_debug());
 
-            // Test that environment variables take precedence over config file values
-            let config = AppConfig::load();
-            println!("Loaded config values:");
-            println!("  audio_channels: {}", config.get_audio_channels());
-            println!("  debug: {}", config.get_debug());
-
-            assert_eq!(
-                config.get_audio_channels(),
-                "3,4,5",
-                "Environment variable should override config file"
-            );
-            assert!(
-                config.get_debug(),
-                "Environment variable should override config file"
-            );
-            assert_eq!(
-                config.get_duration(),
-                120,
-                "Environment variable should override config file"
-            );
-            assert_eq!(
-                config.get_output_mode(),
-                "split",
-                "Environment variable should override config file"
-            );
-            assert!(
-                (config.get_silence_threshold() - 0.001).abs() < f32::EPSILON,
-                "Environment variable should override config file"
-            );
-            assert!(
-                config.get_continuous_mode(),
-                "Environment variable should override config file"
-            );
-            assert_eq!(
-                config.get_recording_cadence(),
-                600,
-                "Environment variable should override config file"
-            );
-            assert_eq!(
-                config.get_output_dir(),
-                "/tmp/test_output",
-                "Environment variable should override config file"
-            );
-            assert!(
-                config.get_performance_logging(),
-                "Environment variable should override config file"
-            );
+                assert_eq!(
+                    config.get_audio_channels(),
+                    "3,4,5",
+                    "Environment variable should override config file"
+                );
+                assert!(
+                    config.get_debug(),
+                    "Environment variable should override config file"
+                );
+                assert_eq!(
+                    config.get_duration(),
+                    120,
+                    "Environment variable should override config file"
+                );
+                assert_eq!(
+                    config.get_output_mode(),
+                    "split",
+                    "Environment variable should override config file"
+                );
+                assert!(
+                    (config.get_silence_threshold() - 0.001).abs() < f32::EPSILON,
+                    "Environment variable should override config file"
+                );
+                assert!(
+                    config.get_continuous_mode(),
+                    "Environment variable should override config file"
+                );
+                assert_eq!(
+                    config.get_recording_cadence(),
+                    600,
+                    "Environment variable should override config file"
+                );
+                assert_eq!(
+                    config.get_output_dir(),
+                    "/tmp/test_output",
+                    "Environment variable should override config file"
+                );
+                assert!(
+                    config.get_performance_logging(),
+                    "Environment variable should override config file"
+                );
+            });
         },
     );
 }
@@ -400,28 +389,24 @@ fn test_config_invalid_env_vars() {
         "#;
             fs::write(&config_path, config_content).unwrap();
 
-            // Point to our test config file and ONLY this config file
-            // SAFETY: We're in a test serialized by temp_env; no other threads read this var.
-            unsafe { env::set_var("BLACKBOX_CONFIG", config_path.to_str().unwrap()) };
+            temp_env::with_var("BLACKBOX_CONFIG", Some(config_path.to_str().unwrap()), || {
+                let config = AppConfig::load();
 
-            // Load configuration and verify it uses values from the config file
-            let config = AppConfig::load();
+                println!("Config values:");
+                println!("  audio_channels: {}", config.get_audio_channels());
+                println!("  debug: {}", config.get_debug());
 
-            // Print values for debugging
-            println!("Config values:");
-            println!("  audio_channels: {}", config.get_audio_channels());
-            println!("  debug: {}", config.get_debug());
-
-            assert_eq!(
-                config.get_audio_channels(),
-                "3,4,5",
-                "Config should load audio_channels from file"
-            );
-            assert_eq!(
-                config.get_debug(),
-                DEFAULT_DEBUG,
-                "Invalid debug should fall back to default"
-            );
+                assert_eq!(
+                    config.get_audio_channels(),
+                    "3,4,5",
+                    "Config should load audio_channels from file"
+                );
+                assert_eq!(
+                    config.get_debug(),
+                    DEFAULT_DEBUG,
+                    "Invalid debug should fall back to default"
+                );
+            });
         },
     );
 }
