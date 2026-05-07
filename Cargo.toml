@@ -68,7 +68,10 @@ name = "bench-writer"
 path = "src/bin/bench_writer.rs"
 
 [features]
-default = ["benchmarking"]
+default = []
+# `benchmarking` pulls in sysinfo for the bench-writer binary and the
+# #[ignore]-d benchmark tests. Off by default so the shipped App Store
+# build does not link sysinfo.
 benchmarking = ["dep:sysinfo"]
 menu-bar = []
 ffi = []
@@ -99,6 +102,11 @@ osx_frameworks = ["AppKit", "Foundation", "CoreAudio"]
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# Audio app: any panic in production is a bug we want to catch via crash
+# reporting, not unwind through. Saves binary size and removes unwinding
+# tables from the hot path.
+panic = "abort"
+strip = true
 
 [dev-dependencies]
 temp-env = "0.3"
