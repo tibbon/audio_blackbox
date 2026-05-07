@@ -700,10 +700,11 @@ impl CpalAudioProcessor {
             .name("blackbox-writer".to_string())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
-                // SAFETY: macOS-only libc call that takes a QoS class enum
-                // value and a relative priority offset. No pointer args;
-                // affects only the current thread's QoS attribute. Cannot
-                // produce UB on any input.
+                // SAFETY: macOS-only libc call. No pointer args; affects
+                // only the current thread's QoS attribute. The passed
+                // `qos_class_t` is a valid enum variant; a different
+                // (invalid) value could in principle be unsound, but
+                // every call site here passes a known-good constant.
                 unsafe {
                     libc::pthread_set_qos_class_self_np(
                         libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
