@@ -77,29 +77,27 @@ fn test_ring_buffer_overflow_counted() {
             writer_thread_main(consumer, rotation_clone, command_rx, state);
         });
 
-        // Fill the ring buffer past capacity
-        // First fill it up
-        let data = [0.5_f32; 16];
-        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
-            chunk.fill_from_iter(data.iter().copied());
-        }
-
-        // Now try to push more — should fail since it's full
-        let overflow_data = vec![0.5_f32; 100];
-        let mut overflow_count: u64 = 0;
-        for &sample in &overflow_data {
-            if producer.push(sample).is_err() {
-                overflow_count += 1;
-            }
-        }
-
-        assert!(overflow_count > 0, "Should have had ring buffer overflow");
+        // Fill the ring buffer past capacity by calling the SAME helper the
+        // production cpal callback uses — anything else would test the test,
+        // not the production overflow-counting contract.
+        let overflow_data = vec![0.5_f32; 116]; // 16-slot buffer + 100 overflow
+        crate::cpal_processor::push_samples_with_overflow_count(
+            &mut producer,
+            &overflow_data,
+            &write_errors,
+        );
 
         // Shutdown the writer thread
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
         reply_rx.recv().unwrap().unwrap();
         handle.join().unwrap();
+
+        // The production write_errors counter must reflect the rejected
+        // suffix. If the increment branch in push_samples_with_overflow_count
+        // were deleted, this would fail.
+        let count = write_errors.load(Ordering::Relaxed);
+        assert!(count >= 100, "expected >=100 rejected samples, got {count}");
     });
 }
 
@@ -148,10 +146,8 @@ fn test_writer_thread_processes_all_samples() {
             chunk.fill_from_iter(data.iter().copied());
         }
 
-        // Give writer thread time to process
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // Shutdown and verify
+        // Shutdown drains the ring buffer before returning the reply, so
+        // the previous 50ms sleep was redundant — drop it (DOLL-96).
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
         reply_rx.recv().unwrap().unwrap();
@@ -703,20 +699,67 @@ fn test_disk_stopped_skips_writes() {
         .unwrap();
         state.total_device_channels = 1;
 
-        // Write some data first
-        let data = vec![0.5_f32; 100];
+        // List all .wav files including the in-progress `.recording.wav`
+        // tmp files (which `wav_files_in` filters out).
+        let all_wav = |dir: &std::path::Path| -> Vec<std::path::PathBuf> {
+            std::fs::read_dir(dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.to_str().unwrap_or_default().contains(".wav"))
+                .collect()
+        };
+
+        // Positive control: write enough samples to be observable after
+        // disk-stop renames the .recording.wav → .wav. The check_disk_space
+        // call below performs a synchronous finalize_all on the pending
+        // file, which flushes any buffered bytes to disk.
+        let data = vec![0.5_f32; 5000];
         state.write_samples(&data);
 
-        // Simulate disk_stopped by setting min_disk_space_mb high and triggering check
+        // Trigger disk_stopped — this finalizes the pending file (rename
+        // .recording.wav → .wav, flushing buffered bytes) and flips
+        // disk_stopped = true.
         state.min_disk_space_mb = 999_000_000;
         state.disk_check_counter = 10_000;
-        state.check_disk_space(); // This sets disk_stopped = true and finalizes files
+        state.check_disk_space();
+        assert!(state.disk_stopped, "disk_stopped should be set after check");
 
-        // Now write_samples should be a no-op
+        let post_stop_files = all_wav(temp_dir.path());
+        assert_eq!(
+            post_stop_files.len(),
+            1,
+            "expected one finalized WAV after disk-stop, got {post_stop_files:?}"
+        );
+        let healthy_size = std::fs::metadata(&post_stop_files[0])
+            .expect("file metadata")
+            .len();
+        assert!(
+            healthy_size > 0,
+            "expected non-empty WAV after disk-stop finalize, got {healthy_size} bytes — \
+             positive control failed; means bytes never reached disk"
+        );
+
+        // Now write_samples should be a no-op. The killer-question check:
+        // if we removed the disk_stopped guard from write_samples, those
+        // 200 samples would change the byte total below.
+        let pre_skip_total: u64 = all_wav(temp_dir.path())
+            .iter()
+            .map(|p| std::fs::metadata(p).map_or(0, |m| m.len()))
+            .sum();
+
         let more_data = vec![0.5_f32; 200];
         state.write_samples(&more_data);
 
-        // The state should still have no errors from the skipped writes
+        let post_skip_total: u64 = all_wav(temp_dir.path())
+            .iter()
+            .map(|p| std::fs::metadata(p).map_or(0, |m| m.len()))
+            .sum();
+
+        assert_eq!(
+            pre_skip_total, post_skip_total,
+            "write_samples after disk_stopped must not change on-disk byte total"
+        );
         assert_eq!(write_errors.load(Ordering::Relaxed), 0);
     });
 }

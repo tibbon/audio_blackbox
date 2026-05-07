@@ -270,18 +270,39 @@ fn test_rotation_noop_when_gate_idle() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
 
-        let mut state = make_gate_state(dir, true, 5, 0.01);
+        // Positive control first: rotation while Recording must produce a
+        // new file. Without this anchor, the Idle assertion below could
+        // pass even if rotate_files() became a no-op for ALL states.
+        {
+            let mut state = make_gate_state(dir, false, 5, 0.0);
+            assert_eq!(state.gate_state, GateState::Recording);
+            let before = all_wav_like_files(temp_dir.path()).len();
+            // Advance the clock so the rotated file gets a distinct stamp.
+            let clock = crate::test_utils::MockClock::new();
+            state.set_timestamp_fn(clock.as_timestamp_fn());
+            clock.advance();
+            state.rotate_files();
+            let after = all_wav_like_files(temp_dir.path()).len();
+            assert!(
+                after > before,
+                "rotation while Recording must produce new files: before={before}, after={after}"
+            );
+            // Drop state to release file handles before the negative case.
+        }
+
+        // Negative case: rotation while Idle should be a no-op.
+        let temp_dir2 = tempdir().unwrap();
+        let dir2 = temp_dir2.path().to_str().unwrap();
+        let mut state = make_gate_state(dir2, true, 5, 0.01);
         assert_eq!(state.gate_state, GateState::Idle);
 
-        // Rotation should be a no-op
         state.rotate_files();
 
-        // Still idle, no files
         assert_eq!(state.gate_state, GateState::Idle);
-        let files = all_wav_like_files(temp_dir.path());
+        let files = all_wav_like_files(temp_dir2.path());
         assert!(
             files.is_empty(),
-            "Rotation should not create files when gate is idle"
+            "Rotation should not create files when gate is idle, found: {files:?}"
         );
     });
 }
