@@ -97,7 +97,11 @@ struct OnboardingView: View {
             .padding(.horizontal, 32)
             .padding(.bottom, 24)
         }
-        .frame(minWidth: 460, maxWidth: 460, minHeight: 380)
+        // minHeight is what enforces the size on subsequent launches —
+        // SwiftUI persists the window frame in user defaults, so .defaultSize
+        // on the Window only applies the first time. The view-level minHeight
+        // is what windowResizability(.contentSize) honours every open.
+        .frame(minWidth: 460, maxWidth: 460, minHeight: 540)
         .background(OnboardingWindowConfigurator())
         .onAppear {
             // On re-run, preserve the user's existing output directory
