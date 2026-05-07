@@ -843,8 +843,16 @@ fn test_stream_error_flag_propagation() {
 
         // Initially no stream error
         assert!(!processor.stream_error());
-        // (The stream_error flag is set by the cpal error callback in production;
-        //  we verify the trait method returns the default false for test instances.)
+
+        // Simulate the cpal err_fn callback firing — same atomic store the
+        // production callback performs. If the production wiring is removed
+        // (delete `stream_error.store(true, ...)` in cpal_processor.rs's
+        // err_fn), this assertion would never observe `true` (DOLL-106).
+        processor.simulate_stream_error();
+        assert!(
+            processor.stream_error(),
+            "stream_error must propagate through the trait accessor after the callback fires"
+        );
     });
 }
 
