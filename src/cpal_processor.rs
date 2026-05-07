@@ -95,27 +95,31 @@ mod sample_rate_listener {
     /// RAII guard: registers a CoreAudio property listener on creation, removes on drop.
     pub(super) struct SampleRateListener {
         device_id: AudioObjectID,
-        /// Raw pointer to an `Arc<AtomicBool>` — we own one strong reference.
+        /// Raw pointer to an `AtomicBool` (the inner value of an `Arc<AtomicBool>`,
+        /// produced via `Arc::into_raw`). The listener owns exactly one strong
+        /// reference logically; the Arc is *never* reclaimed while the listener
+        /// might still receive callbacks (see Drop and the SAFETY block below).
         client_data: *mut c_void,
     }
 
     // SAFETY: this listener can be transferred between threads because:
     //
-    // 1. The pointed-to data is `Arc<AtomicBool>`. Both `Arc` and `AtomicBool`
-    //    are `Send + Sync`, and we hold one strong reference whose ownership
-    //    moves with the listener.
-    // 2. The CoreAudio thread that calls `on_rate_changed` only does an
+    // 1. The pointed-to data is `AtomicBool`. `Arc::into_raw` returned a
+    //    `*const AtomicBool`; we own one strong reference's worth of refcount,
+    //    not a pointer to an `Arc` itself. Both `Arc` and `AtomicBool` are
+    //    `Send + Sync`.
+    // 2. The CoreAudio thread that calls `on_rate_changed` only performs an
     //    atomic store on the bool — no Rust-state access that requires
     //    higher-level synchronization.
-    // 3. CoreAudio serializes registration (`new`) and removal (`drop`)
-    //    against its own internal callback dispatch. There is no scenario
-    //    where Drop runs concurrently with a callback against the same
-    //    `client_data`.
-    // 4. If `AudioObjectRemovePropertyListener` fails in Drop (line 158
-    //    below), the Arc is intentionally leaked to avoid UAF: the listener
-    //    is still registered on the CoreAudio side and could fire after
-    //    Drop returns. Leaking the strong reference keeps the AtomicBool
-    //    valid for any straggler callback.
+    // 3. We DO NOT rely on CoreAudio to serialize the listener-removal
+    //    callback against in-flight callbacks on other threads. Apple's docs
+    //    don't actually guarantee that — only that no *new* callbacks start
+    //    after `AudioObjectRemovePropertyListener` returns. To eliminate the
+    //    race entirely, Drop unconditionally leaks the Arc strong reference
+    //    (see Drop impl below). The AtomicBool then lives until process exit,
+    //    safe to dereference from any straggler callback. Cost: one
+    //    sizeof(AtomicBool) = 1 byte per CoreAudio listener for the
+    //    process lifetime, which is bounded (one listener per recording).
     unsafe impl Send for SampleRateListener {}
 
     impl SampleRateListener {
@@ -164,15 +168,19 @@ mod sample_rate_listener {
                     self.client_data,
                 )
             };
-            if status == 0 {
-                // Successfully removed — safe to reclaim the Arc
-                unsafe {
-                    drop(Arc::from_raw(self.client_data as *const AtomicBool));
-                }
-            } else {
-                // Listener still registered — leak the Arc to avoid use-after-free
+            if status != 0 {
                 warn!("Failed to remove sample rate listener (status {})", status);
             }
+            // Unconditionally leak the Arc strong reference. Apple's docs do
+            // not guarantee that callbacks already in flight on another thread
+            // have ceased by the time `AudioObjectRemovePropertyListener`
+            // returns — only that no *new* callbacks start. Reclaiming the
+            // Arc here would race a straggler callback's atomic load against
+            // a freed `AtomicBool`. Leaking is bounded: one byte per listener,
+            // and listeners are tied to recordings (not unbounded).
+            //
+            // Equivalent to `Arc::into_raw` having transferred ownership to
+            // the listener for the lifetime of the process.
         }
     }
 
