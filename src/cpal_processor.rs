@@ -752,7 +752,10 @@ impl CpalAudioProcessor {
         }
 
         // Mirror the live state for lock-free external readers.
-        // Stored last so a partial init never advertises an active recording.
+        // Status flag only — no synchronizes-with relationship (matches the
+        // Relaxed convention used elsewhere in the FFI status path; readers
+        // never observe `stream` / `writer_thread` cross-thread, so program
+        // order within this fn is enough to make sense of `recording_active`).
         self.recording_active.store(true, Ordering::Relaxed);
 
         Ok(())
