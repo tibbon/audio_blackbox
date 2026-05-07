@@ -166,6 +166,25 @@ fn to_c_string(s: &str) -> *mut c_char {
     CString::new(s).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
+/// Borrowed handle reference with a lifetime tied to the calling FFI fn.
+///
+/// Wraps `&'a BlackboxHandle` so the borrow cannot be stored past the call
+/// — e.g. into a `'static` collection or moved into a `thread::spawn`
+/// closure (those would require `'static`, and `HandleRef<'a>` only
+/// promises `'a`). This keeps the FFI contract enforceable at compile time:
+/// the borrow's validity is bounded by the `extern "C"` body's scope, so a
+/// concurrent `blackbox_destroy` racing some other `blackbox_*` call is
+/// the only way to violate it (which the FFI doc-contract on
+/// `blackbox_destroy` already forbids).
+struct HandleRef<'a>(&'a BlackboxHandle);
+
+impl<'a> std::ops::Deref for HandleRef<'a> {
+    type Target = BlackboxHandle;
+    fn deref(&self) -> &BlackboxHandle {
+        self.0
+    }
+}
+
 /// Validate a handle pointer: non-null and magic number matches.
 /// Returns `None` if invalid.
 ///
@@ -178,20 +197,19 @@ fn to_c_string(s: &str) -> *mut c_char {
 ///   is a data race the magic check cannot detect (a freed allocation could
 ///   be reused with the magic word still in place).
 ///
-/// The returned `'static` lifetime is a polite fiction — the underlying
-/// allocation is freed by `blackbox_destroy`. It is sound for the FFI call's
-/// duration only because Swift owns the destroy decision and the contract
-/// above forbids it happening concurrently with any other call against the
-/// same handle.
-fn validate_handle(handle: *const BlackboxHandle) -> Option<&'static BlackboxHandle> {
+/// The returned `HandleRef<'a>` has an unbound lifetime that each call site
+/// inherits from its `extern "C"` body scope — a future maintainer who
+/// tries to thread the borrow into a `'static` slot or a `thread::spawn`
+/// closure will get a compile error rather than a silent UAF (DOLL-119).
+fn validate_handle<'a>(handle: *const BlackboxHandle) -> Option<HandleRef<'a>> {
     if handle.is_null() {
         return None;
     }
     // SAFETY: per the FFI contract documented above, `handle` originated from
     // `blackbox_create` (Box::leak) and is not concurrently freed. The magic
     // word check is a UAF mitigation, not a soundness argument.
-    let h = unsafe { &*handle };
-    if h.is_valid() { Some(h) } else { None }
+    let h: &'a BlackboxHandle = unsafe { &*handle };
+    if h.is_valid() { Some(HandleRef(h)) } else { None }
 }
 
 // ---------------------------------------------------------------------------
