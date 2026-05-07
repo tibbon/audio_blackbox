@@ -110,10 +110,13 @@ final class RustBridge {
     /// Only fields present in the dictionary are updated.
     @discardableResult
     func setConfig(_ config: [String: Any]) -> BlackBoxError {
-        guard let handle = handle,
-              let jsonData = try? JSONSerialization.data(withJSONObject: config),
+        // DOLL-105: distinguish handle nullity from JSON-encoding failure.
+        // The previous combined `guard` returned `.invalidHandle` for both,
+        // misleading any caller that inspects the error code.
+        guard let handle = handle else { return .invalidHandle }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: config),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
-            return .invalidHandle
+            return .config
         }
         return BlackBoxError(code: jsonString.withCString { blackbox_set_config_json(handle, $0) })
     }
