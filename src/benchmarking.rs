@@ -3,6 +3,7 @@ use log::error;
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -13,7 +14,7 @@ pub struct PerformanceTracker {
     enabled: bool,
     log_path: String,
     metrics: Arc<Mutex<VecDeque<PerformanceMetrics>>>,
-    running: Arc<Mutex<bool>>,
+    running: Arc<AtomicBool>,
     history_length: usize,
     interval_secs: u64,
 }
@@ -34,7 +35,7 @@ impl PerformanceTracker {
             enabled,
             log_path: log_path.to_string(),
             metrics: Arc::new(Mutex::new(VecDeque::with_capacity(history_length))),
-            running: Arc::new(Mutex::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
             history_length,
             interval_secs,
         }
@@ -46,12 +47,14 @@ impl PerformanceTracker {
             return;
         }
 
-        let mut running = self.running.lock().unwrap();
-        if *running {
+        // Atomic CAS: if already running, bail; otherwise mark running.
+        if self
+            .running
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
             return; // Already running
         }
-        *running = true;
-        drop(running);
 
         let metrics = Arc::clone(&self.metrics);
         let running = Arc::clone(&self.running);
@@ -76,7 +79,7 @@ impl PerformanceTracker {
             }
 
             // Monitoring loop
-            while *running.lock().unwrap() {
+            while running.load(Ordering::Relaxed) {
                 sys.refresh_all();
 
                 if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
@@ -123,8 +126,7 @@ impl PerformanceTracker {
             return;
         }
 
-        let mut running = self.running.lock().unwrap();
-        *running = false;
+        self.running.store(false, Ordering::Relaxed);
     }
 
     /// Get the current performance metrics
@@ -265,7 +267,7 @@ mod tests {
         let tracker = PerformanceTracker::new(false, "dummy.log", 10, 1);
 
         tracker.start();
-        assert!(!*tracker.running.lock().unwrap());
+        assert!(!tracker.running.load(Ordering::Relaxed));
 
         assert!(tracker.get_current_metrics().is_none());
         assert!(tracker.get_average_metrics().is_none());

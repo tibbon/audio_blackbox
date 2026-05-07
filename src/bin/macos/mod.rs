@@ -9,6 +9,8 @@ use log::{debug, error, info, warn};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 #[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "macos")]
 use std::sync::mpsc;
 #[cfg(target_os = "macos")]
 use std::sync::{Arc, Mutex};
@@ -30,7 +32,7 @@ use crate::CpalAudioProcessor;
 #[cfg(target_os = "macos")]
 #[derive(Clone)]
 struct SharedState {
-    is_recording: Arc<Mutex<bool>>,
+    is_recording: Arc<AtomicBool>,
     output_dir: Arc<Mutex<String>>,
 }
 
@@ -65,7 +67,7 @@ impl MenuBarApp {
 
         // Initialize shared state
         let state = SharedState {
-            is_recording: Arc::new(Mutex::new(false)),
+            is_recording: Arc::new(AtomicBool::new(false)),
             output_dir: Arc::new(Mutex::new("recordings".to_string())),
         };
 
@@ -138,7 +140,7 @@ impl MenuBarApp {
 
         while running {
             // Check recording state for any changes
-            let is_recording = *self.state.is_recording.lock().unwrap();
+            let is_recording = self.state.is_recording.load(Ordering::Relaxed);
 
             // Update recorder if state has changed
             if is_recording {
@@ -197,9 +199,7 @@ impl MenuBarApp {
     /// Updates the recording status
     #[allow(dead_code)]
     pub fn update_status(&mut self, is_recording: bool) {
-        if let Ok(mut recording) = self.state.is_recording.lock() {
-            *recording = is_recording;
-        }
+        self.state.is_recording.store(is_recording, Ordering::Relaxed);
     }
 
     #[allow(dead_code)]
@@ -248,11 +248,11 @@ fn create_simplified_menu_bar(
             match msg {
                 ControlMessage::StartRecording => {
                     debug!("UI: Starting recording");
-                    *state.is_recording.lock().unwrap() = true;
+                    state.is_recording.store(true, Ordering::Relaxed);
                 }
                 ControlMessage::StopRecording => {
                     debug!("UI: Stopping recording");
-                    *state.is_recording.lock().unwrap() = false;
+                    state.is_recording.store(false, Ordering::Relaxed);
                 }
                 ControlMessage::UpdateOutputDir(dir) => {
                     debug!("UI: Updating output dir to {dir}");
@@ -333,11 +333,11 @@ mod tests {
 
         // Test updating status to recording
         app.update_status(true);
-        assert!(*app.state.is_recording.lock().unwrap());
+        assert!(app.state.is_recording.load(Ordering::Relaxed));
 
         // Test updating status to not recording
         app.update_status(false);
-        assert!(!*app.state.is_recording.lock().unwrap());
+        assert!(!app.state.is_recording.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
         }
 
         let _state = SharedState {
-            is_recording: Arc::new(Mutex::new(false)),
+            is_recording: Arc::new(AtomicBool::new(false)),
             output_dir: Arc::new(Mutex::new("test_output".to_string())),
         };
 
