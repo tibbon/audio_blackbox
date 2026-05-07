@@ -495,6 +495,16 @@ impl CpalAudioProcessor {
         }
     }
 
+    /// Test-only: simulate the macOS CoreAudio sample-rate-changed
+    /// listener firing. The real callback at sample_rate_listener::
+    /// on_rate_changed does this exact store. Tests use it to exercise
+    /// the propagation path without needing a real audio device whose
+    /// rate can be changed mid-test (DOLL-123 verification).
+    #[cfg(test)]
+    pub fn simulate_sample_rate_changed(&self) {
+        self.sample_rate_changed.store(true, Ordering::Relaxed);
+    }
+
     /// Return a clone-able bundle of the processor's status atomics.
     ///
     /// Cloning is cheap (Arc clones); the FFI layer caches the result so the
@@ -835,6 +845,12 @@ impl AudioProcessor for CpalAudioProcessor {
         // sample_rate = 0 — matches the symmetry of stop_monitoring and
         // the start-side ordering (DOLL-101).
         self.sample_rate_atomic.store(0, Ordering::Relaxed);
+        // Also clear `sample_rate_changed` (DOLL-123): without this, a
+        // rate-change flag set during a session survived stop and was
+        // observed `true` by the next FFI poll between sessions.
+        // process_audio_impl already resets it on the start side; clearing
+        // here makes start/stop symmetric.
+        self.sample_rate_changed.store(false, Ordering::Relaxed);
         self.recording_active.store(false, Ordering::Release);
 
         let errors = self.write_errors.load(Ordering::Relaxed);
@@ -1112,6 +1128,9 @@ impl AudioProcessor for CpalAudioProcessor {
         // store of `false` to monitoring_active. Readers Acquire-loading
         // `monitoring_active = false` then see sample_rate_atomic = 0.
         self.sample_rate_atomic.store(0, Ordering::Relaxed);
+        // Also clear `sample_rate_changed` (DOLL-123) — symmetry with
+        // finalize / start-side reset.
+        self.sample_rate_changed.store(false, Ordering::Relaxed);
         self.monitoring_active.store(false, Ordering::Release);
         self.peak_levels = Arc::new(Vec::new());
 
