@@ -2,6 +2,7 @@ use crate::AudioRecorder;
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
 use crate::constants::*;
+use crate::error::BlackboxError;
 use crate::mock_processor::MockAudioProcessor;
 
 use std::path::Path;
@@ -42,9 +43,14 @@ fn test_recorder_with_config() {
         let config = AppConfig::default();
         let mut recorder = AudioRecorder::with_config(processor, config);
 
-        let result = recorder.start_recording();
-        assert!(result.is_ok());
-        assert!(recorder.get_processor().audio_processed);
+        recorder.start_recording().expect("start_recording");
+        // Real post-condition: a valid WAV with the mock's expected sample count
+        // exists on disk. `audio_processed` is set unconditionally by the mock
+        // and would also fire if the recorder short-circuited.
+        let reader = hound::WavReader::open(&file_name)
+            .expect("recorder should have produced a readable WAV");
+        assert_eq!(reader.spec().sample_rate, 44100);
+        assert!(reader.len() > 0, "WAV should contain samples");
     });
 }
 
@@ -82,13 +88,15 @@ fn test_recorder_start_recording_invalid_channels() {
             let processor = MockAudioProcessor::new(&file_name);
             let mut recorder = AudioRecorder::new(processor);
 
-            let result = recorder.start_recording();
-            assert!(result.is_err());
-            let err_msg = result.unwrap_err().to_string();
+            // Pattern-match the variant — substring-checking the Display
+            // output would silently pass on any other ChannelParse-shaped
+            // string error.
+            let err = recorder
+                .start_recording()
+                .expect_err("invalid channels must error");
             assert!(
-                err_msg.contains("Channel parse error"),
-                "Error message should mention channel parsing, got: {}",
-                err_msg
+                matches!(err, BlackboxError::ChannelParse(_)),
+                "expected ChannelParse, got {err:?}"
             );
         },
     );
@@ -134,10 +142,21 @@ fn test_recorder_split_mode() {
             let processor = MockAudioProcessor::new(&file_name);
             let mut recorder = AudioRecorder::new(processor);
 
-            let result = recorder.start_recording();
-            assert!(result.is_ok());
+            recorder.start_recording().expect("start_recording");
+            // Both the in-mock bookkeeping AND the on-disk artefacts must
+            // reflect Split mode: one file per channel, all readable.
             assert_eq!(recorder.get_processor().output_mode, OutputMode::Split);
-            assert!(recorder.get_processor().created_files.len() > 1);
+            let created = &recorder.get_processor().created_files;
+            assert_eq!(
+                created.len(),
+                3,
+                "Split mode with channels=0,1 should produce the main file plus one per channel"
+            );
+            for path in created {
+                assert!(Path::new(path).exists(), "created file missing: {path}");
+                let r = hound::WavReader::open(path).expect("readable WAV");
+                assert!(r.len() > 0, "split file {path} contained no samples");
+            }
         },
     );
 }
@@ -162,9 +181,14 @@ fn test_recorder_multichannel_mode() {
             let processor = MockAudioProcessor::new(&file_name);
             let mut recorder = AudioRecorder::new(processor);
 
-            let result = recorder.start_recording();
-            assert!(result.is_ok());
+            recorder.start_recording().expect("start_recording");
+            // Single mode: one interleaved file. The mock writes to the spec
+            // (channels=2 in the !Split branch); verify that on disk rather
+            // than re-reading the field the mock unconditionally set.
             assert_eq!(recorder.get_processor().output_mode, OutputMode::Single);
+            let r = hound::WavReader::open(&file_name).expect("readable WAV");
+            assert_eq!(r.spec().channels, 2, "single mode mock writes 2 channels");
+            assert!(r.len() > 0, "WAV should contain samples");
         },
     );
 }
@@ -179,8 +203,15 @@ fn test_recorder_finalize_error_propagation() {
         processor.should_fail_finalize = true;
 
         let mut recorder = AudioRecorder::new(processor);
-        assert!(recorder.start_recording().is_ok());
-        assert!(recorder.processor_mut().finalize().is_err());
+        recorder.start_recording().expect("start_recording");
+        let err = recorder
+            .processor_mut()
+            .finalize()
+            .expect_err("finalize must propagate the simulated failure");
+        assert!(
+            matches!(&err, BlackboxError::Wav(msg) if msg.contains("Simulated finalize failure")),
+            "expected Wav(\"Simulated finalize failure\"), got {err:?}"
+        );
     });
 }
 
