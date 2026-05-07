@@ -27,7 +27,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use blackbox::{RING_BUFFER_SECONDS, f32_to_wav_sample};
+use blackbox::RING_BUFFER_SECONDS;
+
+/// Inline copy of `writer_thread::f32_to_wav_sample` so this benchmark
+/// binary doesn't widen the lib's public API (DOLL-129). The lib helper
+/// is `pub(crate)` for the same reason. If the conversion math changes
+/// in the lib, this copy needs to track it.
+fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
+    let scale = match bits_per_sample {
+        16 => f32::from(i16::MAX),
+        24 => 8_388_607.0_f32,
+        _ => i32::MAX as f32,
+    };
+    (sample.clamp(-1.0, 1.0) * scale).round() as i32
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

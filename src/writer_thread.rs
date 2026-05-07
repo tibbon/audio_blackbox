@@ -174,8 +174,11 @@ pub struct WriterThreadState {
 /// Clamps out-of-range inputs (and NaN, which clamps to one of the bounds)
 /// before rounding, so callers can't silently emit truncated or sign-flipped
 /// values. The hot path uses the pre-cached `sample_scale` field on
-/// `WriterThreadState` for speed; this helper is for tests, the bench
-/// binary, and any code path that converts at non-RT priority.
+/// `WriterThreadState` for speed; this helper exists solely so tests can
+/// assert the conversion math without going through `write_samples`. The
+/// `bench-writer` binary keeps an inline copy because the lib helper is
+/// not part of the public API (DOLL-129).
+#[cfg(test)]
 pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     let scale = match bits_per_sample {
         16 => f32::from(i16::MAX), // 32767.0
