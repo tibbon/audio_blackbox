@@ -129,27 +129,40 @@ final class RustBridge {
 
     // MARK: - Peak Levels (lightweight, no JSON)
 
-    /// Write peak levels into a caller-provided buffer. Returns the channel count.
+    /// Write peak levels into a caller-provided buffer. Returns the channel
+    /// count on success, or a typed `BlackBoxError` on failure (DOLL-125).
     /// Zero-allocation path for the meter polling loop.
-    func fillPeakLevels(into buffer: inout [Float]) -> Int {
-        guard let handle = handle else { return 0 }
+    func fillPeakLevels(into buffer: inout [Float]) -> Result<Int, BlackBoxError> {
+        guard let handle = handle else { return .failure(.invalidHandle) }
         let count = blackbox_get_peak_levels(handle, &buffer, Int32(buffer.count))
-        return max(Int(count), 0)
+        if count >= 0 {
+            return .success(Int(count))
+        }
+        // Negative codes from Rust are typed errors — surface them rather
+        // than collapsing to 0 (which the prior `max(Int(count), 0)` did,
+        // hiding lock-poison + invalid-arg + invalid-handle).
+        return .failure(BlackBoxError(code: count))
     }
 
     // MARK: - Device Enumeration
 
     /// Get the input channel count for a device by name.
     /// Pass empty string for the system default device.
-    /// Returns nil on error.
-    static func getDeviceChannelCount(deviceName: String) -> Int? {
+    /// Returns the channel count on success, or a typed `BlackBoxError`
+    /// (DOLL-125) — distinguishes BLACKBOX_ERR_AUDIO_DEVICE (-2, "device
+    /// missing/unreadable") from BLACKBOX_ERR_INVALID_ARG (-8, "fix your
+    /// buffer / invalid UTF-8") rather than collapsing both to nil.
+    static func getDeviceChannelCount(deviceName: String) -> Result<Int, BlackBoxError> {
         let count: Int32
         if deviceName.isEmpty {
             count = blackbox_get_device_channel_count(nil)
         } else {
             count = deviceName.withCString { blackbox_get_device_channel_count($0) }
         }
-        return count > 0 ? Int(count) : nil
+        if count >= 0 {
+            return .success(Int(count))
+        }
+        return .failure(BlackBoxError(code: count))
     }
 
     /// List available input device names.
