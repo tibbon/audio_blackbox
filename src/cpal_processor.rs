@@ -394,6 +394,23 @@ pub struct CpalAudioProcessor {
     direct_state: Option<WriterThreadState>,
 }
 
+/// Push f32 samples into the ring buffer and atomically count any rejected
+/// suffix in `write_errors`. Used by the cpal audio callback (real-time)
+/// and by tests that need to verify the overflow-counting contract — both
+/// call this single helper so the test can't drift from production.
+pub fn push_samples_with_overflow_count(
+    producer: &mut rtrb::Producer<f32>,
+    data: &[f32],
+    write_errors: &AtomicU64,
+) {
+    // push_partial_slice uses memcpy internally for Copy types and handles
+    // partial writes when the buffer is nearly full.
+    let (_, remainder) = producer.push_partial_slice(data);
+    if !remainder.is_empty() {
+        write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
+    }
+}
+
 impl CpalAudioProcessor {
     /// Create a new CpalAudioProcessor instance, loading config from env/TOML.
     ///
@@ -720,13 +737,11 @@ impl CpalAudioProcessor {
                                 }
                             }
 
-                            // Push raw f32 to ring buffer (lock-free, wait-free, zero I/O).
-                            // push_partial_slice uses memcpy internally for Copy types,
-                            // and handles partial writes when the buffer is nearly full.
-                            let (_, remainder) = producer.push_partial_slice(data);
-                            if !remainder.is_empty() {
-                                write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
-                            }
+                            push_samples_with_overflow_count(
+                                &mut producer,
+                                data,
+                                &write_errors,
+                            );
                         },
                         err_fn,
                         None,
