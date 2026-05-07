@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use log::{debug, error, info, warn};
@@ -302,6 +302,44 @@ mod sample_rate_listener {
     }
 }
 
+/// Bundle of `Arc<Atomic*>` status flags shared between `CpalAudioProcessor` and
+/// outside readers (e.g. the FFI status-poll path).
+///
+/// Cloning the bundle clones `Arc`s only — readers can lock a containing `Mutex`
+/// briefly to obtain a clone, drop the lock, and then perform lock-free atomic
+/// loads. This lets the FFI status query stay lock-free with respect to the
+/// multi-second device probe that runs under the recorder mutex.
+#[derive(Clone)]
+pub struct ProcessorStatus {
+    /// True between the end of `process_audio_impl` and the start of `finalize`.
+    pub recording_active: Arc<AtomicBool>,
+    /// True between the end of `start_monitoring` and the start of `stop_monitoring`.
+    pub monitoring_active: Arc<AtomicBool>,
+    /// Mirrors the active stream's sample rate; 0 when idle.
+    pub sample_rate: Arc<AtomicU32>,
+    pub write_errors: Arc<AtomicU64>,
+    pub disk_space_low: Arc<AtomicBool>,
+    pub stream_error: Arc<AtomicBool>,
+    pub sample_rate_changed: Arc<AtomicBool>,
+    pub gate_idle: Arc<AtomicBool>,
+}
+
+impl ProcessorStatus {
+    /// Construct an idle bundle (all flags false, counters zero).
+    pub fn idle() -> Self {
+        ProcessorStatus {
+            recording_active: Arc::new(AtomicBool::new(false)),
+            monitoring_active: Arc::new(AtomicBool::new(false)),
+            sample_rate: Arc::new(AtomicU32::new(0)),
+            write_errors: Arc::new(AtomicU64::new(0)),
+            disk_space_low: Arc::new(AtomicBool::new(false)),
+            stream_error: Arc::new(AtomicBool::new(false)),
+            sample_rate_changed: Arc::new(AtomicBool::new(false)),
+            gate_idle: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 /// CpalAudioProcessor handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 ///
@@ -332,6 +370,13 @@ pub struct CpalAudioProcessor {
     peak_levels: Arc<Vec<CacheAlignedPeak>>,
     /// Shared flag: true when silence gate is idle (no files open).
     gate_idle: Arc<AtomicBool>,
+    /// Mirrors `is_recording()` so external readers can check recording state via a
+    /// single atomic load instead of holding the recorder mutex.
+    recording_active: Arc<AtomicBool>,
+    /// Mirrors `is_monitoring()`. Same rationale as `recording_active`.
+    monitoring_active: Arc<AtomicBool>,
+    /// Mirrors `sample_rate` for the same reason; 0 when idle.
+    sample_rate_atomic: Arc<AtomicU32>,
     /// Handle to the writer thread (None when idle; set by process_audio or start_monitoring, cleared by finalize or stop_monitoring).
     writer_thread: Option<WriterThreadHandle>,
     /// Whether monitoring mode is active (levels without recording).
@@ -382,6 +427,9 @@ impl CpalAudioProcessor {
             sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels: Arc::new(Vec::new()),
             gate_idle: Arc::new(AtomicBool::new(false)),
+            recording_active: Arc::new(AtomicBool::new(false)),
+            monitoring_active: Arc::new(AtomicBool::new(false)),
+            sample_rate_atomic: Arc::new(AtomicU32::new(0)),
             writer_thread: None,
             monitoring: false,
             #[cfg(test)]
@@ -394,6 +442,26 @@ impl CpalAudioProcessor {
     /// Used by the FFI layer to read peaks without locking the recorder mutex.
     pub fn peak_levels_arc(&self) -> Arc<Vec<CacheAlignedPeak>> {
         Arc::clone(&self.peak_levels)
+    }
+
+    /// Return a clone-able bundle of the processor's status atomics.
+    ///
+    /// Cloning is cheap (Arc clones); the FFI layer caches the result so the
+    /// status-poll path can read flags without taking the recorder mutex.
+    /// Note that `gate_idle` and `peak_levels` are re-allocated on every
+    /// recording start, so callers must re-fetch this bundle after each
+    /// start to avoid reading a stale gate from the previous session.
+    pub fn status_arcs(&self) -> ProcessorStatus {
+        ProcessorStatus {
+            recording_active: Arc::clone(&self.recording_active),
+            monitoring_active: Arc::clone(&self.monitoring_active),
+            sample_rate: Arc::clone(&self.sample_rate_atomic),
+            write_errors: Arc::clone(&self.write_errors),
+            disk_space_low: Arc::clone(&self.disk_space_low),
+            stream_error: Arc::clone(&self.stream_error),
+            sample_rate_changed: Arc::clone(&self.sample_rate_changed),
+            gate_idle: Arc::clone(&self.gate_idle),
+        }
     }
 
     /// Find an input device by name, or return the default input device.
@@ -511,6 +579,7 @@ impl CpalAudioProcessor {
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
         self.sample_rate = sample_rate;
+        self.sample_rate_atomic.store(sample_rate, Ordering::Relaxed);
 
         // Auto-adapt to available channels
         let mut actual_channels: Vec<usize> = Vec::new();
@@ -682,6 +751,10 @@ impl CpalAudioProcessor {
             );
         }
 
+        // Mirror the live state for lock-free external readers.
+        // Stored last so a partial init never advertises an active recording.
+        self.recording_active.store(true, Ordering::Relaxed);
+
         Ok(())
     }
 }
@@ -698,6 +771,11 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn finalize(&mut self) -> Result<(), BlackboxError> {
+        // Mirror state for lock-free readers before we begin teardown.
+        // Cleared first so an FFI status poll racing finalize never sees
+        // "recording" while the stream is gone.
+        self.recording_active.store(false, Ordering::Relaxed);
+
         let errors = self.write_errors.load(Ordering::Relaxed);
         if errors > 0 {
             warn!(
@@ -746,9 +824,12 @@ impl AudioProcessor for CpalAudioProcessor {
 
         #[cfg(test)]
         if let Some(mut state) = self.direct_state.take() {
-            return state.finalize_all();
+            let result = state.finalize_all();
+            self.sample_rate_atomic.store(0, Ordering::Relaxed);
+            return result;
         }
 
+        self.sample_rate_atomic.store(0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -766,7 +847,9 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn is_recording(&self) -> bool {
-        !self.monitoring && (self.stream.is_some() || self.writer_thread.is_some())
+        // Reads the lifted atomic mirror; the FFI status poll uses the same
+        // flag via `status_arcs()` without needing the recorder mutex.
+        self.recording_active.load(Ordering::Relaxed)
     }
 
     fn write_error_count(&self) -> u64 {
@@ -801,7 +884,7 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        self.sample_rate_atomic.load(Ordering::Relaxed)
     }
 
     fn start_monitoring(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
@@ -824,6 +907,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let total_channels = stream_config.channels() as usize;
         let sample_rate = stream_config.sample_rate();
         self.sample_rate = sample_rate;
+        self.sample_rate_atomic.store(sample_rate, Ordering::Relaxed);
 
         // Determine which channels to monitor
         let channels_str = config.get_audio_channels();
@@ -926,6 +1010,8 @@ impl AudioProcessor for CpalAudioProcessor {
 
         self.stream = Some(Box::new(stream));
         self.monitoring = true;
+        // Mirror to atomic for lock-free readers (FFI status poll).
+        self.monitoring_active.store(true, Ordering::Relaxed);
 
         Ok(())
     }
@@ -958,13 +1044,15 @@ impl AudioProcessor for CpalAudioProcessor {
         }
 
         self.monitoring = false;
+        self.monitoring_active.store(false, Ordering::Relaxed);
+        self.sample_rate_atomic.store(0, Ordering::Relaxed);
         self.peak_levels = Arc::new(Vec::new());
 
         Ok(())
     }
 
     fn is_monitoring(&self) -> bool {
-        self.monitoring
+        self.monitoring_active.load(Ordering::Relaxed)
     }
 
     fn gate_idle(&self) -> bool {
@@ -1056,6 +1144,14 @@ impl CpalAudioProcessor {
             sample_rate_changed: Arc::new(AtomicBool::new(false)),
             peak_levels,
             gate_idle: Arc::new(AtomicBool::new(false)),
+            // Tests call `feed_test_data` then `finalize` directly, never going
+            // through `process_audio_impl`. Match the prior behaviour where
+            // `is_recording()` was false for `new_for_test` processors —
+            // letting `Drop` skip `finalize()` since each test owns its own
+            // teardown sequence.
+            recording_active: Arc::new(AtomicBool::new(false)),
+            monitoring_active: Arc::new(AtomicBool::new(false)),
+            sample_rate_atomic: Arc::new(AtomicU32::new(sample_rate)),
             writer_thread: None,
             monitoring: false,
             direct_state: Some(state),
