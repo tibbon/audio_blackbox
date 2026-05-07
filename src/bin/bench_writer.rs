@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use blackbox::RING_BUFFER_SECONDS;
+use blackbox::{RING_BUFFER_SECONDS, f32_to_wav_sample};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -150,7 +150,8 @@ fn run_direct(
                     if channel < frame.len()
                         && let Some(w) = &mut writers[idx]
                     {
-                        let sample = (frame[channel] * 8_388_607.0) as i32;
+                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                        let sample = f32_to_wav_sample(frame[channel], 24);
                         if w.write_sample(sample).is_err() {
                             write_errors.fetch_add(1, Ordering::Relaxed);
                         }
@@ -200,7 +201,8 @@ fn run_direct(
             for frame in data.chunks(num_channels) {
                 for &channel in &channel_indices {
                     if channel < frame.len() {
-                        let sample = (frame[channel] * 8_388_607.0) as i32;
+                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                        let sample = f32_to_wav_sample(frame[channel], 24);
                         if writer.write_sample(sample).is_err() {
                             write_errors.fetch_add(1, Ordering::Relaxed);
                         }
@@ -270,7 +272,8 @@ fn run_pipeline(
                             for frame in slice.chunks(num_channels) {
                                 for &channel in &channel_indices {
                                     if channel < frame.len() {
-                                        let sample = (frame[channel] * 8_388_607.0) as i32;
+                                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                        let sample = f32_to_wav_sample(frame[channel], 24);
                                         if writer.write_sample(sample).is_err() {
                                             write_errors_writer.fetch_add(1, Ordering::Relaxed);
                                         }

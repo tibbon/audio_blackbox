@@ -163,8 +163,12 @@ pub struct WriterThreadState {
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
-/// Used by tests; the hot path uses the pre-cached `sample_scale` field instead.
-#[cfg(test)]
+///
+/// Clamps out-of-range inputs (and NaN, which clamps to one of the bounds)
+/// before rounding, so callers can't silently emit truncated or sign-flipped
+/// values. The hot path uses the pre-cached `sample_scale` field on
+/// `WriterThreadState` for speed; this helper is for tests, the bench
+/// binary, and any code path that converts at non-RT priority.
 pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     let scale = match bits_per_sample {
         16 => f32::from(i16::MAX), // 32767.0
@@ -501,7 +505,11 @@ impl WriterThreadState {
             return;
         }
 
-        let frames = samples_consumed as u32 / self.total_device_channels.max(1) as u32;
+        // Defense in depth (DOLL-112): a usize > u32::MAX is unreachable
+        // today since WRITER_THREAD_READ_CHUNK is 16_384, but a future
+        // bump could regress this to a silent zero (and skip flush).
+        let samples_u32 = u32::try_from(samples_consumed).unwrap_or(u32::MAX);
+        let frames = samples_u32 / u32::from(self.total_device_channels.max(1));
         self.flush_frame_counter += frames;
         if self.flush_frame_counter < self.sample_rate * 10 {
             return;
