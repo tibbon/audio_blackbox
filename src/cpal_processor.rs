@@ -177,7 +177,8 @@ mod sample_rate_listener {
     ) -> i32 {
         if !client_data.is_null() {
             let flag = unsafe { &*(client_data as *const AtomicBool) };
-            flag.store(true, Ordering::Release);
+            // status flag only; reader at sample_rate_changed() loads Relaxed.
+            flag.store(true, Ordering::Relaxed);
         }
         0
     }
@@ -598,7 +599,8 @@ impl CpalAudioProcessor {
         let stream_error = Arc::clone(&self.stream_error);
         let err_fn = move |err| {
             error!("an error occurred on stream: {}", err);
-            stream_error.store(true, Ordering::Release);
+            // status flag only; reader at stream_error() loads Relaxed.
+            stream_error.store(true, Ordering::Relaxed);
         };
 
         // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
@@ -874,7 +876,8 @@ impl AudioProcessor for CpalAudioProcessor {
         let stream_error = Arc::clone(&self.stream_error);
         let err_fn = move |err| {
             error!("an error occurred on stream: {}", err);
-            stream_error.store(true, Ordering::Release);
+            // status flag only; reader at stream_error() loads Relaxed.
+            stream_error.store(true, Ordering::Relaxed);
         };
 
         let stream = match stream_config.sample_format() {
