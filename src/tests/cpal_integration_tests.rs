@@ -416,10 +416,11 @@ fn test_finalize_deletes_silent_file() {
 
         let data = generate_silent_interleaved_f32(1, 1000);
         processor.feed_test_data(&data, 1);
+        // finalize() drops the writer state, which drops the silence-check
+        // worker, which joins the worker thread — by the time finalize()
+        // returns, all submitted batches have been processed (no sleep
+        // needed; previous 100ms sleep was the flake source DOLL-97 fixed).
         processor.finalize().unwrap();
-
-        // Silence check runs on a background thread; wait for it to complete
-        std::thread::sleep(std::time::Duration::from_millis(100));
 
         let files = wav_files_in(temp_dir.path());
         assert!(
@@ -493,10 +494,9 @@ fn test_split_mode_silence_per_channel() {
         // ch0 silent, ch1 loud
         let data = generate_interleaved_f32(2, 1000, &[(1, 0.9)]);
         processor.feed_test_data(&data, 2);
+        // See test_finalize_deletes_silent_file: no sleep needed, finalize()
+        // joins the silence-check worker before returning.
         processor.finalize().unwrap();
-
-        // Silence check runs on a background thread; wait for it to complete
-        std::thread::sleep(std::time::Duration::from_millis(100));
 
         let files = wav_files_in(temp_dir.path());
         // ch0 is silent and should be deleted, ch1 should remain
