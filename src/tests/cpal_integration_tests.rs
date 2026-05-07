@@ -141,8 +141,8 @@ fn test_standard_mode_data_accuracy() {
         let files = wav_files_in(temp_dir.path());
         let (_, samples) = read_wav(&files[0]);
 
-        // 0.5 * 32767.0 = 16383.5 → truncated to 16383
-        let expected = (0.5_f32 * 32767.0) as i32;
+        // 0.5 * 32767.0 = 16383.5 → rounded to 16384
+        let expected = (0.5_f32 * 32767.0).round() as i32;
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
@@ -292,9 +292,9 @@ fn test_multichannel_mode_interleaving() {
         assert_eq!(spec.channels, 3);
 
         // Verify interleaving: samples should alternate ch0, ch1, ch2
-        let expected_ch0 = (0.25_f32 * 32767.0) as i32;
-        let expected_ch1 = (0.50_f32 * 32767.0) as i32;
-        let expected_ch2 = (0.75_f32 * 32767.0) as i32;
+        let expected_ch0 = (0.25_f32 * 32767.0).round() as i32;
+        let expected_ch1 = (0.50_f32 * 32767.0).round() as i32;
+        let expected_ch2 = (0.75_f32 * 32767.0).round() as i32;
 
         for f in 0..frames {
             assert_eq!(samples[f * 3], expected_ch0, "Frame {} ch0", f);
@@ -594,8 +594,8 @@ fn test_24bit_recording() {
         assert_eq!(spec.bits_per_sample, 24);
         assert_eq!(samples.len(), 100);
 
-        // 0.5 * 8_388_607.0 = 4_194_303.5 → truncated to 4_194_303
-        let expected = (0.5_f32 * 8_388_607.0) as i32;
+        // 0.5 * 8_388_607.0 = 4_194_303.5 → rounded to 4_194_304
+        let expected = (0.5_f32 * 8_388_607.0).round() as i32;
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
@@ -626,7 +626,7 @@ fn test_32bit_recording() {
         assert_eq!(spec.bits_per_sample, 32);
         assert_eq!(samples.len(), 100);
 
-        let expected = (0.5_f32 * i32::MAX as f32) as i32;
+        let expected = (0.5_f32 * i32::MAX as f32).round() as i32;
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
@@ -655,7 +655,7 @@ fn test_16bit_backward_compat() {
         assert_eq!(spec.bits_per_sample, 16);
         assert_eq!(samples.len(), 100);
 
-        let expected = (0.5_f32 * 32767.0) as i32;
+        let expected = (0.5_f32 * 32767.0).round() as i32;
         for &s in &samples {
             assert_eq!(s, expected);
         }
@@ -668,7 +668,8 @@ fn test_f32_to_wav_sample_conversion() {
     assert_eq!(f32_to_wav_sample(0.0, 16), 0);
     assert_eq!(f32_to_wav_sample(1.0, 16), 32767);
     assert_eq!(f32_to_wav_sample(-1.0, 16), -32767);
-    assert_eq!(f32_to_wav_sample(0.5, 16), (0.5_f32 * 32767.0) as i32);
+    // 0.5 * 32767.0 = 16383.5; round-half-away-from-zero → 16384
+    assert_eq!(f32_to_wav_sample(0.5, 16), (0.5_f32 * 32767.0).round() as i32);
 
     // 24-bit
     assert_eq!(f32_to_wav_sample(0.0, 24), 0);
@@ -684,6 +685,49 @@ fn test_f32_to_wav_sample_conversion() {
         "32-bit max should be large: {}",
         max32
     );
+}
+
+#[test]
+fn test_f32_to_wav_sample_handles_nan_and_inf() {
+    // NaN flows through clamp/round/cast and lands on 0 — silent dropout, not
+    // a max-amplitude click. Acceptable sentinel for an unusable sample.
+    assert_eq!(f32_to_wav_sample(f32::NAN, 16), 0);
+    assert_eq!(f32_to_wav_sample(f32::NAN, 24), 0);
+    assert_eq!(f32_to_wav_sample(f32::NAN, 32), 0);
+
+    // ±Inf clamps to ±1.0 then scales to the bit-depth max — not i32::MIN/MAX.
+    assert_eq!(f32_to_wav_sample(f32::INFINITY, 16), 32767);
+    assert_eq!(f32_to_wav_sample(f32::NEG_INFINITY, 16), -32767);
+    assert_eq!(f32_to_wav_sample(f32::INFINITY, 24), 8_388_607);
+    assert_eq!(f32_to_wav_sample(f32::NEG_INFINITY, 24), -8_388_607);
+}
+
+#[test]
+fn test_f32_to_wav_sample_clamps_out_of_range() {
+    // cpal does not guarantee [-1.0, 1.0] on all backends. Out-of-range
+    // inputs must clamp, not wrap or saturate to i32::MIN/MAX.
+    assert_eq!(f32_to_wav_sample(2.0, 16), 32767);
+    assert_eq!(f32_to_wav_sample(-2.0, 16), -32767);
+    assert_eq!(f32_to_wav_sample(100.0, 16), 32767);
+    assert_eq!(f32_to_wav_sample(-100.0, 16), -32767);
+}
+
+#[test]
+fn test_f32_to_wav_sample_roundtrip_within_quantization_error() {
+    // For any amplitude in [-1.0, 1.0], converting to i16 and back must
+    // round-trip within one LSB of quantization error.
+    let cases = [-1.0, -0.5, -0.25, -0.125, 0.0, 0.125, 0.25, 0.5, 0.999, 1.0];
+    for a in cases {
+        let i = f32_to_wav_sample(a, 16);
+        let recovered = i as f32 / 32767.0;
+        let err = (a - recovered).abs();
+        assert!(
+            err <= 1.0 / 32767.0,
+            "roundtrip error {} exceeds 1 LSB for amplitude {}",
+            err,
+            a
+        );
+    }
 }
 
 // ===========================================================================
