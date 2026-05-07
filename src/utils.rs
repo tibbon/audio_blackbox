@@ -121,8 +121,14 @@ pub fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
     if result == 0 {
-        #[allow(clippy::unnecessary_cast)] // f_bavail is u32 on some platforms, u64 on others
-        Some(stat.f_bavail as u64 * stat.f_frsize / (1024 * 1024))
+        // Both fields can be u32 on some platforms (Linux) and u64 on others
+        // (macOS); promote each to u64 explicitly before multiplying so a large
+        // filesystem (>4 TiB free, 4 KiB block) doesn't wrap before the divide.
+        #[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
+        let blocks = stat.f_bavail as u64;
+        #[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
+        let frsize = stat.f_frsize as u64;
+        Some(blocks.saturating_mul(frsize) / (1024 * 1024))
     } else {
         None
     }
