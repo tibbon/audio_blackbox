@@ -277,15 +277,36 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
         }
     };
 
+    // Pre-publish the processor's atomics BEFORE the audio callback starts
+    // mutating them (DOLL-99). The "stable" atomics (recording_active,
+    // sample_rate, write_errors, disk_space_low, stream_error,
+    // sample_rate_changed, monitoring_active) live on the processor for
+    // its full lifetime, so cloning their Arcs here gives the FFI status
+    // path the same identity the audio thread will publish to.
+    //
+    // gate_idle and peak_levels are re-allocated inside process_audio_impl
+    // (the writer-thread state owns them), so we re-fetch those after
+    // start completes — see the second swap below.
+    let pre_status = processor.status_arcs();
+
     let mut recorder = AudioRecorder::with_config(processor, config);
 
+    if let Ok(mut s) = handle.status.lock() {
+        *s = pre_status;
+    }
+
     if let Err(e) = recorder.start_recording() {
+        // Roll back the published bundle — start failed, no recording.
+        if let Ok(mut s) = handle.status.lock() {
+            *s = ProcessorStatus::idle();
+        }
         return handle.set_error_from(format!("Failed to start recording: {e}"), &e);
     }
 
-    // Install recorder + cache its status atomics under the same lock
-    // sequence so a racing stop_recording cannot see "live" status flags
-    // pointing at a recorder that hasn't been installed yet.
+    // Install recorder + refresh the volatile atomics (gate_idle replaced
+    // by writer-thread state, peak_levels allocated based on channel count)
+    // under recorder.lock(). Status readers see a state consistent with
+    // the installed recorder for the entire flow.
     match handle.recorder.lock() {
         Ok(mut guard) => {
             if let Ok(mut pl) = handle.peak_levels.lock() {
@@ -568,11 +589,24 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
     }
 
     if let Some(recorder) = guard.as_mut() {
+        // Pre-publish stable atomics BEFORE start_monitoring kicks off the
+        // audio callback (DOLL-99). Same pattern as blackbox_start_recording.
+        if let Ok(mut s) = handle.status.lock() {
+            *s = recorder.get_processor().status_arcs();
+        }
+
         if let Err(e) = recorder.start_monitoring() {
+            // Roll back published bundle on failure.
+            if let Ok(mut s) = handle.status.lock() {
+                *s = ProcessorStatus::idle();
+            }
             return handle.set_error_from(format!("Failed to start monitoring: {e}"), &e);
         }
-        // Cache peak_levels Arc and status atomics so the FFI poll path
-        // skips the recorder mutex.
+
+        // Refresh the volatile atomics (peak_levels is allocated inside
+        // start_monitoring based on channel count). gate_idle is not used
+        // by monitor mode, so a refresh would be redundant — but a single
+        // status_arcs() call is cheap, so re-publish for consistency.
         if let Ok(mut pl) = handle.peak_levels.lock() {
             *pl = recorder.get_processor().peak_levels_arc();
         }
