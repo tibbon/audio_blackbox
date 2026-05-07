@@ -894,11 +894,6 @@ struct SilenceCheckWorker {
     /// its `recv()` loop cleanly.
     tx: Option<std::sync::mpsc::SyncSender<Vec<String>>>,
     handle: Option<std::thread::JoinHandle<()>>,
-    /// Incremented after each batch is processed. Currently unused outside
-    /// the worker thread itself, but kept on the struct so a future test
-    /// or observability hook can read it without re-plumbing the Arc.
-    #[allow(dead_code)]
-    completed: Arc<AtomicU64>,
 }
 
 impl SilenceCheckWorker {
@@ -908,8 +903,6 @@ impl SilenceCheckWorker {
         // the rotation path (a brief block on `send`) is preferable to
         // unbounded memory growth.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<String>>(8);
-        let completed = Arc::new(AtomicU64::new(0));
-        let completed_worker = Arc::clone(&completed);
         let handle = std::thread::Builder::new()
             .name("blackbox-silence".to_string())
             .spawn(move || {
@@ -922,9 +915,6 @@ impl SilenceCheckWorker {
                 }
                 while let Ok(files) = rx.recv() {
                     check_and_delete_silent_files(&files, threshold);
-                    // Bump after the batch so a test can wait for "this
-                    // many checks completed" and trust the post-condition.
-                    completed_worker.fetch_add(1, Ordering::Relaxed);
                 }
             })
             .expect("failed to spawn silence-check worker thread");
@@ -932,7 +922,6 @@ impl SilenceCheckWorker {
         SilenceCheckWorker {
             tx: Some(tx),
             handle: Some(handle),
-            completed,
         }
     }
 
