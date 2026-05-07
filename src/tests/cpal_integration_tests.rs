@@ -852,6 +852,40 @@ fn test_stream_error_flag_propagation() {
     });
 }
 
+#[test]
+fn test_finalize_clears_sample_rate_changed() {
+    // DOLL-123 — without finalize clearing the flag, a stop+start cycle
+    // could leave a stale `true` from the prior session visible to the
+    // next FFI status poll between sessions.
+    let temp_dir = tempdir().unwrap();
+    let dir = temp_dir.path().to_str().unwrap();
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+
+        // Simulate the macOS CoreAudio rate-change listener firing during
+        // a recording.
+        processor.simulate_sample_rate_changed();
+        assert!(
+            processor.sample_rate_changed(),
+            "sample_rate_changed must be observable after the listener fires"
+        );
+
+        // Feed some data + finalize. After finalize the flag must be back
+        // to false so the next session doesn't inherit it.
+        let data = generate_silent_interleaved_f32(1, 100);
+        processor.feed_test_data(&data, 1);
+        processor.finalize().unwrap();
+
+        assert!(
+            !processor.sample_rate_changed(),
+            "finalize must reset sample_rate_changed (DOLL-123); leftover \
+             true would survive a stop/start gap and mislead the FFI poll"
+        );
+    });
+}
+
 // ===========================================================================
 // Peak level metering tests
 // ===========================================================================
