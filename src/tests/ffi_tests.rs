@@ -210,3 +210,94 @@ fn test_config_with_input_device() {
 
     blackbox_destroy(handle);
 }
+
+#[test]
+fn test_get_status_flags_idle_handle() {
+    let handle = blackbox_create(std::ptr::null());
+    assert!(!handle.is_null());
+
+    let mut flags = StatusFlags {
+        write_errors: 9999,
+        sample_rate: 9999,
+        is_recording: true,
+        gate_idle: true,
+        disk_space_low: true,
+        stream_error: true,
+        sample_rate_changed: true,
+    };
+    let rc = blackbox_get_status_flags(handle, &raw mut flags);
+    assert_eq!(rc, BLACKBOX_OK);
+    // A freshly created handle has not started recording; status must read idle.
+    assert!(!flags.is_recording);
+    assert!(!flags.gate_idle);
+    assert!(!flags.disk_space_low);
+    assert!(!flags.stream_error);
+    assert!(!flags.sample_rate_changed);
+    assert_eq!(flags.write_errors, 0);
+    assert_eq!(flags.sample_rate, 0);
+
+    blackbox_destroy(handle);
+}
+
+#[test]
+fn test_get_status_flags_null_handle() {
+    let mut flags = StatusFlags {
+        write_errors: 0,
+        sample_rate: 0,
+        is_recording: false,
+        gate_idle: false,
+        disk_space_low: false,
+        stream_error: false,
+        sample_rate_changed: false,
+    };
+    let rc = blackbox_get_status_flags(std::ptr::null(), &raw mut flags);
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_HANDLE);
+}
+
+#[test]
+fn test_get_status_flags_null_out() {
+    let handle = blackbox_create(std::ptr::null());
+    let rc = blackbox_get_status_flags(handle, std::ptr::null_mut());
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_HANDLE);
+    blackbox_destroy(handle);
+}
+
+/// Status reads must remain lock-free with respect to other handle activity:
+/// hammer the status path from many threads concurrently and confirm no deadlock
+/// or crash. The handle is shared as `*const` (Send/Sync isn't auto-derived for
+/// raw pointers, but we wrap in `usize` to pass between threads — Swift does
+/// the same in practice via `OpaquePointer`).
+#[test]
+fn test_status_flags_concurrent_reads() {
+    let handle = blackbox_create(std::ptr::null());
+    assert!(!handle.is_null());
+    let handle_addr = handle as usize;
+
+    let mut threads = Vec::new();
+    for _ in 0..8 {
+        threads.push(std::thread::spawn(move || {
+            let h = handle_addr as *const BlackboxHandle;
+            let mut flags = StatusFlags {
+                write_errors: 0,
+                sample_rate: 0,
+                is_recording: false,
+                gate_idle: false,
+                disk_space_low: false,
+                stream_error: false,
+                sample_rate_changed: false,
+            };
+            for _ in 0..10_000 {
+                let rc = blackbox_get_status_flags(h, &raw mut flags);
+                assert_eq!(rc, BLACKBOX_OK);
+                assert!(!flags.is_recording);
+                let _ = blackbox_is_recording(h);
+                let _ = blackbox_is_monitoring(h);
+            }
+        }));
+    }
+    for t in threads {
+        t.join().expect("status reader panicked");
+    }
+
+    blackbox_destroy(handle);
+}

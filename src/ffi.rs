@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use crate::audio_processor::AudioProcessor;
 use crate::audio_recorder::AudioRecorder;
 use crate::config::AppConfig;
-use crate::cpal_processor::CpalAudioProcessor;
+use crate::cpal_processor::{CpalAudioProcessor, ProcessorStatus};
 use crate::error::BlackboxError;
 
 // ── FFI error codes (mirrored as #defines in blackbox_ffi.h) ─────────────
@@ -67,6 +67,14 @@ pub struct BlackboxHandle {
     /// Stored here so the 30 Hz meter poll can read atomics without
     /// locking the recorder mutex.
     peak_levels: Mutex<Arc<Vec<crate::constants::CacheAlignedPeak>>>,
+    /// Bundle of `Arc<Atomic*>` status flags from the active processor.
+    ///
+    /// The mutex is held only briefly during start/stop to swap in the
+    /// processor's atomics. Status-poll callers lock briefly to clone the
+    /// bundle (cheap `Arc` clones), drop the lock, then perform lock-free
+    /// atomic loads. This keeps the 1 Hz polling loop from blocking on the
+    /// multi-second device probe that runs under `recorder.lock()`.
+    status: Mutex<ProcessorStatus>,
 }
 
 impl BlackboxHandle {
@@ -193,6 +201,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
             recorder: Mutex::new(None),
             last_error: Mutex::new(None),
             peak_levels: Mutex::new(Arc::new(Vec::new())),
+            status: Mutex::new(ProcessorStatus::idle()),
         });
 
         Box::into_raw(handle)
@@ -259,13 +268,17 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
             return handle.set_error_from(format!("Failed to start recording: {e}"), &e);
         }
 
-        // Cache peak_levels Arc so the meter poll skips the recorder mutex.
-        if let Ok(mut pl) = handle.peak_levels.lock() {
-            *pl = recorder.get_processor().peak_levels_arc();
-        }
-
+        // Install recorder + cache its status atomics under the same lock
+        // sequence so a racing stop_recording cannot see "live" status flags
+        // pointing at a recorder that hasn't been installed yet.
         match handle.recorder.lock() {
             Ok(mut guard) => {
+                if let Ok(mut pl) = handle.peak_levels.lock() {
+                    *pl = recorder.get_processor().peak_levels_arc();
+                }
+                if let Ok(mut s) = handle.status.lock() {
+                    *s = recorder.get_processor().status_arcs();
+                }
                 *guard = Some(recorder);
                 BLACKBOX_OK
             }
@@ -286,13 +299,17 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
         };
         handle.clear_error();
 
-        // Clear cached peak levels before stopping.
-        if let Ok(mut pl) = handle.peak_levels.lock() {
-            *pl = Arc::new(Vec::new());
-        }
-
         match handle.recorder.lock() {
             Ok(mut guard) => {
+                // Clear cached status while holding the recorder lock so the
+                // FFI status path always sees a state consistent with the
+                // installed recorder.
+                if let Ok(mut pl) = handle.peak_levels.lock() {
+                    *pl = Arc::new(Vec::new());
+                }
+                if let Ok(mut s) = handle.status.lock() {
+                    *s = ProcessorStatus::idle();
+                }
                 if let Some(mut recorder) = guard.take()
                     && let Err(e) = recorder.processor_mut().stop_recording()
                 {
@@ -307,25 +324,36 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
 }
 
 /// Check whether recording is currently active.
+///
+/// Lock-free with respect to `blackbox_start_recording` / `blackbox_stop_recording`:
+/// reads the lifted `Arc<AtomicBool>` after a microsecond-scale `status` mutex
+/// acquire, so a racing start/stop holding the recorder mutex does not stall
+/// the UI poll.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
             return false;
         };
-        handle
-            .recorder
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().is_recording()))
-            .unwrap_or(false)
+        let Ok(status) = handle.status.lock() else {
+            return false;
+        };
+        // Clone the Arc out from under the lock so the load itself is lock-free.
+        let flag = Arc::clone(&status.recording_active);
+        drop(status);
+        flag.load(Ordering::Relaxed)
     })
     .unwrap_or(false)
 }
 
 /// Fill a `StatusFlags` struct with current engine status.
 ///
-/// Zero-allocation, no JSON, single mutex lock — designed for the 1 Hz polling loop.
+/// Zero-allocation, no JSON, no recorder mutex — designed for the 1 Hz polling
+/// loop. The `status` mutex is held only long enough to clone an `Arc` bundle;
+/// the actual flag loads are lock-free atomic reads. A racing start/stop
+/// blocks the poll for microseconds at most, never the multi-second device
+/// probe.
+///
 /// Returns `BLACKBOX_OK` on success, or a negative error code.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_status_flags(
@@ -340,33 +368,22 @@ pub extern "C" fn blackbox_get_status_flags(
             return BLACKBOX_ERR_INVALID_HANDLE;
         }
 
-        let flags = handle
-            .recorder
-            .lock()
-            .ok()
-            .and_then(|guard| {
-                guard.as_ref().map(|r| {
-                    let p = r.get_processor();
-                    StatusFlags {
-                        write_errors: p.write_error_count(),
-                        sample_rate: p.sample_rate(),
-                        is_recording: p.is_recording(),
-                        gate_idle: p.gate_idle(),
-                        disk_space_low: p.disk_space_low(),
-                        stream_error: p.stream_error(),
-                        sample_rate_changed: p.sample_rate_changed(),
-                    }
-                })
-            })
-            .unwrap_or(StatusFlags {
-                write_errors: 0,
-                sample_rate: 0,
-                is_recording: false,
-                gate_idle: false,
-                disk_space_low: false,
-                stream_error: false,
-                sample_rate_changed: false,
-            });
+        // Clone the bundle out from under the lock, then drop the lock before
+        // doing any atomic loads.
+        let status = match handle.status.lock() {
+            Ok(s) => (*s).clone(),
+            Err(_) => return handle.lock_poisoned("Status lock poisoned".to_string()),
+        };
+
+        let flags = StatusFlags {
+            write_errors: status.write_errors.load(Ordering::Relaxed),
+            sample_rate: status.sample_rate.load(Ordering::Relaxed),
+            is_recording: status.recording_active.load(Ordering::Relaxed),
+            gate_idle: status.gate_idle.load(Ordering::Relaxed),
+            disk_space_low: status.disk_space_low.load(Ordering::Relaxed),
+            stream_error: status.stream_error.load(Ordering::Relaxed),
+            sample_rate_changed: status.sample_rate_changed.load(Ordering::Relaxed),
+        };
 
         // Safety: out is non-null, and we write a POD struct.
         unsafe { out.write(flags) };
@@ -562,9 +579,13 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
             if let Err(e) = recorder.start_monitoring() {
                 return handle.set_error_from(format!("Failed to start monitoring: {e}"), &e);
             }
-            // Cache peak_levels Arc so the meter poll skips the recorder mutex.
+            // Cache peak_levels Arc and status atomics so the FFI poll path
+            // skips the recorder mutex.
             if let Ok(mut pl) = handle.peak_levels.lock() {
                 *pl = recorder.get_processor().peak_levels_arc();
+            }
+            if let Ok(mut s) = handle.status.lock() {
+                *s = recorder.get_processor().status_arcs();
             }
         }
 
@@ -584,13 +605,16 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
         };
         handle.clear_error();
 
-        // Clear cached peak levels before stopping.
-        if let Ok(mut pl) = handle.peak_levels.lock() {
-            *pl = Arc::new(Vec::new());
-        }
-
         match handle.recorder.lock() {
             Ok(mut guard) => {
+                // Clear cached peak / status under the recorder lock so the
+                // FFI poll path stays consistent with the installed recorder.
+                if let Ok(mut pl) = handle.peak_levels.lock() {
+                    *pl = Arc::new(Vec::new());
+                }
+                if let Ok(mut s) = handle.status.lock() {
+                    *s = ProcessorStatus::idle();
+                }
                 if let Some(recorder) = guard.as_mut() {
                     if let Err(e) = recorder.processor_mut().stop_monitoring() {
                         return handle
@@ -610,18 +634,20 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
 }
 
 /// Check whether audio monitoring is currently active.
+///
+/// Lock-free with respect to start/stop — see `blackbox_is_recording`.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_is_monitoring(handle: *const BlackboxHandle) -> bool {
     catch_unwind(|| {
         let Some(handle) = validate_handle(handle) else {
             return false;
         };
-        handle
-            .recorder
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|r| r.get_processor().is_monitoring()))
-            .unwrap_or(false)
+        let Ok(status) = handle.status.lock() else {
+            return false;
+        };
+        let flag = Arc::clone(&status.monitoring_active);
+        drop(status);
+        flag.load(Ordering::Relaxed)
     })
     .unwrap_or(false)
 }
