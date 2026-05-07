@@ -114,6 +114,20 @@ impl BlackboxHandle {
         self.magic.load(Ordering::Acquire) == HANDLE_MAGIC
     }
 
+    /// Test-only: clone the cached `ProcessorStatus` bundle so a test
+    /// can race a writer of the actual atomics that
+    /// `blackbox_get_status_flags` reads (DOLL-127). Production code
+    /// has no need for this: callers either go through the FFI shim
+    /// (which already grabs a clone under the lock internally) or live
+    /// inside the `ffi` module and access `self.status` directly.
+    #[cfg(test)]
+    pub(crate) fn test_status_bundle(&self) -> crate::cpal_processor::ProcessorStatus {
+        self.status
+            .lock()
+            .expect("status mutex poisoned in test")
+            .clone()
+    }
+
     fn set_error(&self, msg: String) {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(msg);
