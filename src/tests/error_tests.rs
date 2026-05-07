@@ -72,3 +72,19 @@ fn test_string_only_variants_have_no_source() {
         assert!(err.source().is_none(), "{err:?} should not carry a source");
     }
 }
+
+/// `Io(#[from] std::io::Error)` must expose its underlying io::Error via
+/// `source()` so log forwarders can downcast and inspect the OS error.
+/// Round 3 review (DOLL-130) found that `Io` had no targeted variant test
+/// — only the source-bearing struct variants were directly covered.
+#[test]
+fn test_io_variant_preserves_source() {
+    use std::io;
+    let inner = io::Error::new(io::ErrorKind::PermissionDenied, "denied");
+    let err: BlackboxError = inner.into();
+    let src = err.source().expect("Io must expose its source");
+    let downcast = src
+        .downcast_ref::<io::Error>()
+        .expect("Io::source should downcast to io::Error");
+    assert_eq!(downcast.kind(), io::ErrorKind::PermissionDenied);
+}
