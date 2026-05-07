@@ -631,7 +631,8 @@ impl WriterThreadState {
             error!("Silence gate: failed to open writers: {}", e);
         } else {
             self.gate_state = GateState::Recording;
-            self.gate_idle.store(false, Ordering::Release);
+            // Status flag only; no synchronizes-with relationship.
+            self.gate_idle.store(false, Ordering::Relaxed);
         }
     }
 
@@ -650,7 +651,8 @@ impl WriterThreadState {
             error!("Silence gate: finalize error: {}", e);
         }
         self.gate_state = GateState::Idle;
-        self.gate_idle.store(true, Ordering::Release);
+        // Status flag only; no synchronizes-with relationship.
+        self.gate_idle.store(true, Ordering::Relaxed);
         self.gate_silence_frames = 0;
     }
 
