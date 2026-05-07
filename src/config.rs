@@ -498,7 +498,14 @@ silence_gate_timeout_secs = {}
     }
 
     pub fn get_silence_threshold(&self) -> f32 {
-        self.silence_threshold.unwrap_or(DEFAULT_SILENCE_THRESHOLD)
+        // Reject NaN, ±Inf, and negatives — any of those break the gate's
+        // `max_peak > threshold` comparison or produce nonsensical thresholds.
+        let raw = self.silence_threshold.unwrap_or(DEFAULT_SILENCE_THRESHOLD);
+        if raw.is_finite() && raw >= 0.0 {
+            raw
+        } else {
+            DEFAULT_SILENCE_THRESHOLD
+        }
     }
 
     pub fn get_continuous_mode(&self) -> bool {
@@ -803,6 +810,34 @@ mod tests {
         assert_eq!(base_config.recording_cadence, Some(300)); // Unchanged
         assert_eq!(base_config.output_dir, Some("./recordings".to_string())); // Unchanged
         assert_eq!(base_config.performance_logging, Some(false)); // Unchanged
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // exact-value test: same literal in and out
+    fn test_silence_threshold_rejects_non_finite_or_negative() {
+        // NaN, ±Inf, and negative values fall back to the default rather
+        // than poison the gate's max_peak > threshold comparison.
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.1, -1.0] {
+            let config = AppConfig {
+                silence_threshold: Some(bad),
+                ..AppConfig::default()
+            };
+            assert_eq!(
+                config.get_silence_threshold(),
+                DEFAULT_SILENCE_THRESHOLD,
+                "silence_threshold = {} should fall back to default",
+                bad
+            );
+        }
+
+        // Zero and positive finite values pass through.
+        for good in [0.0_f32, 0.001, 0.5, 1.0] {
+            let config = AppConfig {
+                silence_threshold: Some(good),
+                ..AppConfig::default()
+            };
+            assert_eq!(config.get_silence_threshold(), good);
+        }
     }
 
     #[test]

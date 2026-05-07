@@ -312,3 +312,78 @@ fn test_peaks_tracked_while_gate_idle() {
         );
     });
 }
+
+// ===========================================================================
+// NaN guards (DOLL-81)
+// ===========================================================================
+
+#[test]
+#[allow(clippy::float_cmp)] // exact 0.0 expected when all input samples are filtered
+fn test_nan_sample_does_not_poison_peak_meter() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = make_gate_state(dir, true, 5, 0.9);
+
+        // Buffer of NaN samples — peak atomic should remain 0.0, not NaN.
+        let data: Vec<f32> = vec![f32::NAN; 4800];
+        state.write_samples(&data);
+
+        let peak_bits = state.peak_levels[0].value.load(Ordering::Relaxed);
+        let peak = f32::from_bits(peak_bits);
+        assert!(
+            peak.is_finite(),
+            "Peak meter must never publish NaN; got bits {:#x}",
+            peak_bits
+        );
+        assert_eq!(peak, 0.0, "All-NaN input should leave peak at 0.0");
+    });
+}
+
+#[test]
+fn test_nan_does_not_block_silence_gate_open() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        // Threshold 0.1 — clean 0.5 should open the gate.
+        let mut state = make_gate_state(dir, true, 5, 0.1);
+        assert_eq!(state.gate_state, GateState::Idle);
+
+        // Mix one NaN sample into otherwise-clean audio. NaN must not poison
+        // max_peak so that the > comparison stays usable.
+        let mut data: Vec<f32> = vec![0.5; 4800];
+        data[100] = f32::NAN;
+        state.write_samples(&data);
+
+        // Gate should have flagged for opening (the main loop transitions
+        // Idle→Recording on the next iteration via gate_pending_open).
+        assert!(
+            state.gate_pending_open,
+            "Silence gate must request open when finite signal exceeds threshold, even with NaN samples in the buffer"
+        );
+    });
+}
+
+#[test]
+#[allow(clippy::float_cmp)] // exact 0.0 expected when all input samples are filtered
+fn test_inf_sample_clamps_peak_meter_to_one() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = make_gate_state(dir, true, 5, 0.9);
+
+        // Buffer with ±Inf — also filtered by is_finite(); peak stays at 0.
+        let mut data: Vec<f32> = vec![0.0; 4800];
+        data[10] = f32::INFINITY;
+        data[20] = f32::NEG_INFINITY;
+        state.write_samples(&data);
+
+        let peak_bits = state.peak_levels[0].value.load(Ordering::Relaxed);
+        let peak = f32::from_bits(peak_bits);
+        assert!(peak.is_finite(), "Peak must be finite even with Inf input");
+        assert_eq!(peak, 0.0, "Inf samples must not contribute to peak");
+    });
+}
