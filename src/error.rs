@@ -1,5 +1,6 @@
 /// Custom error type for the blackbox audio recorder.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BlackboxError {
     #[error("Audio device error: {0}")]
     AudioDevice(String),
