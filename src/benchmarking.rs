@@ -182,6 +182,7 @@ fn write_to_log(path: &str, content: &str) -> std::io::Result<()> {
 }
 
 /// Measures elapsed time for a function and returns the duration
+#[allow(dead_code)] // only consumed by tests; signature kept stable for future use
 pub fn measure_execution_time<F, T>(f: F) -> (T, Duration)
 where
     F: FnOnce() -> T,

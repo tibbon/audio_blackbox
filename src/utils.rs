@@ -100,6 +100,7 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
 
 /// No-op implementation for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
+#[allow(clippy::unnecessary_wraps)] // signature must match the Linux variant
 pub fn check_alsa_availability() -> Result<(), BlackboxError> {
     Ok(())
 }

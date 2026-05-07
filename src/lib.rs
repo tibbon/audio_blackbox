@@ -41,22 +41,40 @@ mod writer_thread;
 #[cfg(test)]
 pub mod test_utils;
 
-// Re-exports for public API
+// ----------------------------------------------------------------------------
+// Public API re-exports
+// ----------------------------------------------------------------------------
+// These are consumed by the binaries (src/bin/) and external Rust crates.
+// Items used only inside this crate use pub(crate) re-exports below.
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
 #[cfg(feature = "benchmarking")]
-pub use benchmarking::{PerformanceMetrics, PerformanceTracker, measure_execution_time};
+pub use benchmarking::PerformanceTracker;
 pub use config::AppConfig;
-pub use constants::{
+pub use constants::{OutputMode, RING_BUFFER_SECONDS};
+pub use cpal_processor::CpalAudioProcessor;
+pub use error::BlackboxError;
+
+// ----------------------------------------------------------------------------
+// Crate-internal re-exports
+// ----------------------------------------------------------------------------
+// Used inside this crate (tests bring them in via `use super::*`; submodules
+// reference them through the lib root). Demoted from pub to pub(crate) — pub
+// is a SemVer contract, and these are impl details no external caller had a
+// reason to touch.
+#[cfg(feature = "benchmarking")]
+#[allow(unused_imports)]
+pub(crate) use benchmarking::{PerformanceMetrics, measure_execution_time};
+#[allow(unused_imports)]
+pub(crate) use constants::{
     CacheAlignedPeak, DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE,
     DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
     DEFAULT_SILENCE_GATE_ENABLED, DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
-    MAX_CHANNELS, OutputMode, RING_BUFFER_SECONDS, WRITER_THREAD_READ_CHUNK,
+    MAX_CHANNELS, WRITER_THREAD_READ_CHUNK,
 };
-pub use cpal_processor::CpalAudioProcessor;
-pub use error::BlackboxError;
-pub use utils::{
+#[allow(unused_imports)]
+pub(crate) use utils::{
     available_disk_space_mb, check_alsa_availability, is_silent, parse_channel_string,
 };
 
