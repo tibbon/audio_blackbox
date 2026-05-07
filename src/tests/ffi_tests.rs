@@ -60,8 +60,23 @@ fn test_create_with_valid_json() {
 fn test_create_with_invalid_json() {
     let json = CString::new("{not valid json}").unwrap();
     let handle = blackbox_create(json.as_ptr());
-    // Should fall back to defaults, not return null
     assert!(!handle.is_null());
+
+    // Read back the config and confirm it matches AppConfig::default().
+    // Without this anchor the test would still pass even if the fallback
+    // silently chose a non-default config (DOLL-109). Compare via the
+    // strongly-typed AppConfig (not JSON) to avoid f32/f64 round-trip
+    // precision artifacts.
+    let config_ptr = blackbox_get_config_json(handle);
+    let config_str = unsafe { read_and_free(config_ptr) }.expect("config readable");
+    let parsed: crate::AppConfig =
+        serde_json::from_str(&config_str).expect("config parseable as AppConfig");
+    let defaults = crate::AppConfig::default();
+    assert_eq!(
+        format!("{parsed:?}"),
+        format!("{defaults:?}"),
+        "invalid JSON must fall back to AppConfig::default()"
+    );
     blackbox_destroy(handle);
 }
 
@@ -266,19 +281,40 @@ fn test_get_status_flags_null_out() {
 
 
 /// Status reads must remain lock-free with respect to other handle activity:
-/// hammer the status path from many threads concurrently and confirm no deadlock
-/// or crash. The handle is shared as `*const` (Send/Sync isn't auto-derived for
-/// raw pointers, but we wrap in `usize` to pass between threads — Swift does
-/// the same in practice via `OpaquePointer`).
+/// Hammer the status path from 8 reader threads while a writer thread
+/// flips `last_error` and config values. The lock-free claim from DOLL-84
+/// is exercised here: readers never block on the recorder mutex, and they
+/// must never observe a torn read (e.g. mid-update bytes in `StatusFlags`).
+///
+/// The handle is shared as `usize` to cross thread boundaries, since
+/// Send/Sync aren't auto-derived for raw pointers — Swift does the same
+/// in practice via `OpaquePointer`.
 #[test]
 fn test_status_flags_concurrent_reads() {
     let handle = blackbox_create(std::ptr::null());
     assert!(!handle.is_null());
     let handle_addr = handle as usize;
 
-    let mut threads = Vec::new();
+    // Writer thread: flips config (acquires handle.config + handle.last_error
+    // mutexes) while readers hammer status. If status reads were not
+    // lock-free w.r.t. config writes, this would surface as readers
+    // observing wedged or torn state.
+    let writer_should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer_should_stop_w = std::sync::Arc::clone(&writer_should_stop);
+    let writer = std::thread::spawn(move || {
+        let h = handle_addr as *mut BlackboxHandle;
+        let mut counter: u32 = 0;
+        while !writer_should_stop_w.load(std::sync::atomic::Ordering::Relaxed) {
+            counter = counter.wrapping_add(1);
+            let json =
+                CString::new(format!(r#"{{"output_dir": "/tmp/race_{counter}"}}"#)).unwrap();
+            let _ = blackbox_set_config_json(h, json.as_ptr());
+        }
+    });
+
+    let mut readers = Vec::new();
     for _ in 0..8 {
-        threads.push(std::thread::spawn(move || {
+        readers.push(std::thread::spawn(move || {
             let h = handle_addr as *const BlackboxHandle;
             let mut flags = StatusFlags {
                 write_errors: 0,
@@ -292,15 +328,23 @@ fn test_status_flags_concurrent_reads() {
             for _ in 0..10_000 {
                 let rc = blackbox_get_status_flags(h, &raw mut flags);
                 assert_eq!(rc, BLACKBOX_OK);
+                // Idle handle → `is_recording` must always be false even
+                // under concurrent config writes. Torn reads or stale
+                // bytes would surface as `true` or out-of-domain values.
                 assert!(!flags.is_recording);
+                assert_eq!(flags.sample_rate, 0);
                 let _ = blackbox_is_recording(h);
                 let _ = blackbox_is_monitoring(h);
             }
         }));
     }
-    for t in threads {
+    for t in readers {
         t.join().expect("status reader panicked");
     }
+
+    // Stop the writer and join.
+    writer_should_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    writer.join().expect("config writer panicked");
 
     blackbox_destroy(handle);
 }

@@ -469,6 +469,17 @@ impl CpalAudioProcessor {
         Arc::clone(&self.peak_levels)
     }
 
+    /// Test-only: simulate the cpal err_fn callback firing. The real
+    /// production callback at `process_audio_impl` does this exact store
+    /// when cpal reports a stream error (e.g. device disconnect).
+    /// Tests use this to exercise the propagation path
+    /// (atomic store → trait method → FFI poll) without needing a
+    /// real audio device that can be disconnected mid-test.
+    #[cfg(test)]
+    pub fn simulate_stream_error(&self) {
+        self.stream_error.store(true, Ordering::Relaxed);
+    }
+
     /// Return a clone-able bundle of the processor's status atomics.
     ///
     /// Cloning is cheap (Arc clones); the FFI layer caches the result so the
