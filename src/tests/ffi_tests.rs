@@ -304,3 +304,41 @@ fn test_status_flags_concurrent_reads() {
 
     blackbox_destroy(handle);
 }
+
+#[test]
+fn test_get_peak_levels_null_handle() {
+    let mut buf = [0.0_f32; 8];
+    let rc = blackbox_get_peak_levels(std::ptr::null(), buf.as_mut_ptr(), 8);
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_HANDLE);
+}
+
+#[test]
+fn test_get_peak_levels_null_out() {
+    let handle = blackbox_create(std::ptr::null());
+    let rc = blackbox_get_peak_levels(handle, std::ptr::null_mut(), 8);
+    // Null OUT is an arg problem, not a handle problem — see DOLL-102/103.
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_ARG);
+    blackbox_destroy(handle);
+}
+
+#[test]
+fn test_get_peak_levels_negative_max() {
+    let handle = blackbox_create(std::ptr::null());
+    let mut buf = [0.0_f32; 8];
+    let rc = blackbox_get_peak_levels(handle, buf.as_mut_ptr(), -1);
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_ARG);
+    blackbox_destroy(handle);
+}
+
+#[test]
+fn test_get_peak_levels_idle_returns_zero_count() {
+    // Freshly created handle has no peaks — legitimate empty read returns 0
+    // (NOT a negative error code).
+    let handle = blackbox_create(std::ptr::null());
+    let mut buf = [99.0_f32; 8];
+    let rc = blackbox_get_peak_levels(handle, buf.as_mut_ptr(), 8);
+    assert_eq!(rc, 0);
+    // Buffer should be untouched since no channels were written.
+    assert_eq!(buf, [99.0_f32; 8]);
+    blackbox_destroy(handle);
+}

@@ -109,7 +109,10 @@ int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
 /*
  * Write current peak levels into a caller-provided float buffer.
  * out must point to an array of at least max_channels floats.
- * Returns the number of channels written, or a negative error code.
+ * Returns the number of channels written (>= 0), or one of:
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_ARG     — out null or max_channels <= 0
+ *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
  * Lightweight zero-allocation read for meter UIs.
  */
 int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
