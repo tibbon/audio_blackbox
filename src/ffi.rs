@@ -495,8 +495,12 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
 /// Write current peak levels into a caller-provided buffer.
 ///
 /// `out` must point to a float array of at least `max_channels` elements.
-/// Returns the number of channels actually written (may be less than `max_channels`),
-/// or -1 on error.
+/// Returns the number of channels actually written (>= 0), or one of these
+/// negative error codes on failure:
+///
+/// * `BLACKBOX_ERR_INVALID_HANDLE` — handle is null or freed.
+/// * `BLACKBOX_ERR_INVALID_ARG` — `out` is null or `max_channels` <= 0.
+/// * `BLACKBOX_ERR_LOCK_POISONED` — internal lock was poisoned by a prior panic.
 ///
 /// This is a lightweight alternative to `blackbox_get_status_json` for meter UIs —
 /// no JSON serialization, no string allocation, just atomic reads into the buffer.
@@ -510,7 +514,7 @@ pub extern "C" fn blackbox_get_peak_levels(
         return BLACKBOX_ERR_INVALID_HANDLE;
     };
     if out.is_null() || max_channels <= 0 {
-        return 0;
+        return BLACKBOX_ERR_INVALID_ARG;
     }
 
     let buf = unsafe { std::slice::from_raw_parts_mut(out, max_channels as usize) };
@@ -518,7 +522,7 @@ pub extern "C" fn blackbox_get_peak_levels(
     // Read from the cached Arc — no recorder mutex needed.
     let peaks = match handle.peak_levels.lock() {
         Ok(pl) => Arc::clone(&pl),
-        Err(_) => return 0,
+        Err(_) => return handle.lock_poisoned("peak_levels lock poisoned".to_string()),
     };
     let count = peaks.len().min(buf.len());
     for (dst, src) in buf[..count].iter_mut().zip(peaks.iter()) {
