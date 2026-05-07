@@ -46,3 +46,45 @@ pub fn generate_uniform_interleaved_f32(
         .collect();
     generate_interleaved_f32(total_channels, samples_per_channel, &pairs)
 }
+
+/// Deterministic, advance-on-demand timestamp source for rotation tests.
+///
+/// Each call returns `tick-{N:03}` where `N` is the current value of an
+/// internal atomic counter; tests bump the counter via `advance()` to make a
+/// rotation produce a distinct filename without sleeping past a wall-clock
+/// second.
+///
+/// The counter is shared between the test thread and the writer thread via
+/// `Arc<AtomicU64>`, so the test can advance the clock at the moment it
+/// signals a rotation.
+#[cfg(test)]
+#[derive(Clone, Default)]
+pub struct MockClock {
+    tick: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+#[cfg(test)]
+impl MockClock {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Advance the clock by one tick. Subsequent calls to the timestamp
+    /// closure will produce a new string.
+    pub fn advance(&self) {
+        self.tick
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Return a `Send + Sync` closure suitable to pass to
+    /// `WriterThreadState::set_timestamp_fn`.
+    pub fn as_timestamp_fn(
+        &self,
+    ) -> std::sync::Arc<dyn Fn() -> String + Send + Sync> {
+        let tick = std::sync::Arc::clone(&self.tick);
+        std::sync::Arc::new(move || {
+            let n = tick.load(std::sync::atomic::Ordering::Relaxed);
+            format!("tick-{n:03}")
+        })
+    }
+}

@@ -24,6 +24,12 @@ pub fn timestamp_now() -> String {
     Local::now().format("%Y-%m-%d-%H-%M-%S").to_string()
 }
 
+/// Pluggable source of timestamp strings used by `WriterThreadState` for filename
+/// stamps. Production uses `timestamp_now`; tests inject a deterministic source
+/// (see `crate::test_utils::MockClock`) so two rotations don't collide on the
+/// wall clock and don't need a real second to elapse between them.
+pub type TimestampFn = Arc<dyn Fn() -> String + Send + Sync>;
+
 /// Returns a `.recording.wav` temporary path for the given final `.wav` path.
 fn tmp_wav_path(final_path: &str) -> String {
     final_path.strip_suffix(".wav").map_or_else(
@@ -146,6 +152,10 @@ pub struct WriterThreadState {
     pub min_disk_space_mb: u64,
     /// Shared flag: set when disk space drops below threshold.
     pub disk_space_low: Arc<AtomicBool>,
+    /// Pluggable timestamp source for filename stamps. Production passes
+    /// `Arc::new(timestamp_now)`; tests pass a `MockClock` so rotations
+    /// produce distinct filenames without sleeping past a wall-clock second.
+    pub timestamp_fn: TimestampFn,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -252,6 +262,7 @@ impl WriterThreadState {
             silence_threshold,
             min_disk_space_mb,
             disk_space_low,
+            timestamp_fn: Arc::new(timestamp_now),
         };
 
         // When gate is enabled, start idle (no files). Writers are created on first signal.
@@ -319,11 +330,20 @@ impl WriterThreadState {
             silence_threshold: 0.0,
             min_disk_space_mb: 0,
             disk_space_low: Arc::new(AtomicBool::new(false)),
+            timestamp_fn: Arc::new(timestamp_now),
         }
     }
 
+    /// Replace the timestamp source used for filename stamps. Used by tests
+    /// to make rotations produce deterministic, collision-free filenames
+    /// without sleeping past a wall-clock second.
+    #[cfg(test)]
+    pub fn set_timestamp_fn(&mut self, f: TimestampFn) {
+        self.timestamp_fn = f;
+    }
+
     fn setup_split_mode(&mut self) -> Result<(), BlackboxError> {
-        let date_str = timestamp_now();
+        let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
         info!("Setting up split mode with {} channels", ch_count);
@@ -360,7 +380,7 @@ impl WriterThreadState {
     }
 
     fn setup_multichannel_mode(&mut self) -> Result<(), BlackboxError> {
-        let date_str = timestamp_now();
+        let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
         let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
@@ -385,7 +405,7 @@ impl WriterThreadState {
     }
 
     fn setup_standard_mode(&mut self) -> Result<(), BlackboxError> {
-        let date_str = timestamp_now();
+        let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
         info!("Setting up standard mode with {} channels", ch_count);
@@ -734,7 +754,7 @@ impl WriterThreadState {
 
         // Create new files for the next recording period
         let ch_count = self.channel_count as usize;
-        let date_str = timestamp_now();
+        let date_str = (self.timestamp_fn)();
         match self.output_mode {
             OutputMode::Split => {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
