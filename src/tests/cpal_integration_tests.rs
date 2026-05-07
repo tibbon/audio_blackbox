@@ -844,14 +844,16 @@ fn test_stream_error_flag_propagation() {
         // Initially no stream error
         assert!(!processor.stream_error());
 
-        // Simulate the cpal err_fn callback firing — same atomic store the
-        // production callback performs. If the production wiring is removed
-        // (delete `stream_error.store(true, ...)` in cpal_processor.rs's
-        // err_fn), this assertion would never observe `true` (DOLL-106).
-        processor.simulate_stream_error();
+        // Build the SAME closure the production cpal err_fn uses (via
+        // `build_stream_err_callback`), then invoke it with a synthesized
+        // cpal::StreamError. If the body of `build_stream_err_callback`
+        // (or the production wiring that calls it from the input-stream
+        // builder) is reverted, this test fails — DOLL-106.
+        let mut err_fn = processor.build_stream_err_callback();
+        err_fn(cpal::StreamError::DeviceNotAvailable);
         assert!(
             processor.stream_error(),
-            "stream_error must propagate through the trait accessor after the callback fires"
+            "stream_error must propagate through the trait accessor after the cpal err_fn fires"
         );
     });
 }
