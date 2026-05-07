@@ -187,16 +187,17 @@ fn to_c_string(s: &str) -> *mut c_char {
 /// closure (those would require `'static`, and `HandleRef<'a>` only
 /// promises `'a`).
 ///
-/// The `PhantomData<*const ()>` tightens this further (DOLL-121): without
-/// it, `'a` is unbound at the input (the input is a raw pointer, not a
-/// reference), so a caller could pick `'a = 'static` and return
-/// `HandleRef<'static>` from a non-FFI helper. The PhantomData makes
-/// `HandleRef<'a>` invariant in `'a`, so the lifetime can't be silently
-/// extended via subtyping. Combined with the field `&'a BlackboxHandle`
-/// — which inherits its lifetime from the local borrow site inside
-/// `validate_handle` — the only way to construct a `HandleRef<'static>`
-/// is to start from a `&'static BlackboxHandle`, which the function
-/// signature doesn't accept.
+/// The `PhantomData<*const ()>` tightens this further (DOLL-121): raw
+/// pointers are `!Send + !Sync`, so `HandleRef<'a>` is `!Send + !Sync`
+/// regardless of `'a`. A `thread::spawn(move || { ... handle ... })`
+/// captures cannot compile, even with an explicit `'static` annotation
+/// — `Send` is independent of lifetime.
+///
+/// Note: an explicit `let h: HandleRef<'static> = validate_handle(ptr).?;`
+/// in a non-FFI helper still type-checks (the function is generic in
+/// `'a`, and the caller can pick `'static`). Closing that hole would
+/// require the closure-pattern API; the PhantomData closes the more
+/// common "accidental capture into a Send context" misuse.
 struct HandleRef<'a> {
     handle: &'a BlackboxHandle,
     /// Invariant lifetime marker (DOLL-121). `*const ()` is invariant in
