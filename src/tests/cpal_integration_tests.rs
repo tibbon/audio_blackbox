@@ -9,7 +9,7 @@ use crate::cpal_processor::CpalAudioProcessor;
 use crate::test_utils::{
     generate_interleaved_f32, generate_silent_interleaved_f32, generate_uniform_interleaved_f32,
 };
-use crate::tests::default_test_env;
+use crate::test_utils::default_test_env;
 use crate::writer_thread::f32_to_wav_sample;
 
 // ---------------------------------------------------------------------------
@@ -19,14 +19,8 @@ use crate::writer_thread::f32_to_wav_sample;
 /// Test env with silence detection disabled (threshold=0).
 ///
 /// `CpalAudioProcessor` writes i16-range samples into a 16-bit WAV, but
-/// `is_silent()` normalizes by i32::MAX, so even loud signals appear silent.
-/// Disable silence detection for tests that don't specifically test it.
-fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
-    let mut env = default_test_env();
-    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0")));
-    env
-}
+// Test helpers consolidated to `crate::test_utils` (DOLL-118).
+use crate::test_utils::test_env_no_silence;
 
 /// Collect all `.wav` files (not `.recording.wav`) in a directory.
 fn wav_files_in(dir: &Path) -> Vec<std::path::PathBuf> {

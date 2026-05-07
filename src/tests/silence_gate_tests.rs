@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tempfile::tempdir;
 
 use crate::constants::{CacheAlignedPeak, OutputMode};
-use crate::tests::default_test_env;
 use crate::writer_thread::{GateState, WriterThreadState};
 
 /// Collect all `.wav` files (not `.recording.wav`) in a directory.
@@ -30,12 +29,8 @@ fn all_wav_like_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
         .collect()
 }
 
-fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
-    let mut env = default_test_env();
-    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0")));
-    env
-}
+// Test helper consolidated to `crate::test_utils` (DOLL-118).
+use crate::test_utils::test_env_no_silence;
 
 fn make_gate_state(
     dir: &str,

@@ -1,4 +1,5 @@
 use crate::constants::MAX_CHANNELS;
+use crate::error::BlackboxError;
 use crate::utils::parse_channel_string;
 
 #[test]
@@ -45,21 +46,33 @@ fn test_duplicate_channels() {
 
 #[test]
 fn test_invalid_channels() {
-    // Test channel number exceeding maximum
-    assert!(parse_channel_string(&MAX_CHANNELS.to_string()).is_err());
-    assert!(parse_channel_string("255").is_err());
-
-    // Test invalid range
-    assert!(parse_channel_string("2-1").is_err());
-    assert!(parse_channel_string("3-0").is_err());
-
-    // Test invalid format
-    assert!(parse_channel_string("").is_err());
-    assert!(parse_channel_string(",").is_err());
-    assert!(parse_channel_string("1-").is_err());
-    assert!(parse_channel_string("-1").is_err());
-    assert!(parse_channel_string("1--2").is_err());
-    assert!(parse_channel_string("abc").is_err());
+    // Pattern-match the variant rather than just `is_err()` (DOLL-117) —
+    // a regression that returned a different error category (e.g. Io
+    // instead of ChannelParse) would have silently passed the old test.
+    let cases = [
+        // Channel number exceeding maximum
+        MAX_CHANNELS.to_string(),
+        "255".to_string(),
+        // Invalid range
+        "2-1".to_string(),
+        "3-0".to_string(),
+        // Invalid format
+        String::new(),
+        ",".to_string(),
+        "1-".to_string(),
+        "-1".to_string(),
+        "1--2".to_string(),
+        "abc".to_string(),
+    ];
+    for s in &cases {
+        let err = parse_channel_string(s)
+            .err()
+            .unwrap_or_else(|| panic!("expected error from input {s:?}"));
+        assert!(
+            matches!(err, BlackboxError::ChannelParse(_)),
+            "input {s:?} produced wrong variant: {err:?}"
+        );
+    }
 }
 
 #[test]

@@ -31,6 +31,58 @@ pub fn generate_silent_interleaved_f32(
     vec![0.0_f32; total_channels * samples_per_channel]
 }
 
+/// Standard set of env-var overrides to isolate tests from the host
+/// environment. Sets the `*` (unprefixed) keys to defaults and clears
+/// every `BLACKBOX_*` override. Use with `temp_env::with_vars(...)`.
+///
+/// Consolidated here from previously duplicated copies in lib.rs +
+/// recorder_tests.rs (DOLL-118).
+#[cfg(test)]
+pub fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {
+    use crate::constants::{DEFAULT_CHANNELS, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE};
+    vec![
+        ("AUDIO_CHANNELS", Some(DEFAULT_CHANNELS)),
+        ("DEBUG", Some("false")),
+        ("RECORD_DURATION", Some("30")),
+        ("OUTPUT_MODE", Some(DEFAULT_OUTPUT_MODE)),
+        ("SILENCE_THRESHOLD", Some("0.01")),
+        ("CONTINUOUS_MODE", Some("false")),
+        ("RECORDING_CADENCE", Some("300")),
+        ("OUTPUT_DIR", Some(DEFAULT_OUTPUT_DIR)),
+        ("PERFORMANCE_LOGGING", Some("false")),
+        ("BLACKBOX_AUDIO_CHANNELS", None),
+        ("BLACKBOX_DEBUG", None),
+        ("BLACKBOX_DURATION", None),
+        ("BLACKBOX_OUTPUT_MODE", None),
+        ("BLACKBOX_SILENCE_THRESHOLD", None),
+        ("BLACKBOX_CONTINUOUS_MODE", None),
+        ("BLACKBOX_RECORDING_CADENCE", None),
+        ("BLACKBOX_OUTPUT_DIR", None),
+        ("BLACKBOX_PERFORMANCE_LOGGING", None),
+        ("BLACKBOX_INPUT_DEVICE", None),
+        ("INPUT_DEVICE", None),
+        ("BLACKBOX_MIN_DISK_SPACE_MB", None),
+        ("MIN_DISK_SPACE_MB", None),
+        ("BLACKBOX_BITS_PER_SAMPLE", None),
+        ("BITS_PER_SAMPLE", None),
+        ("BLACKBOX_SILENCE_GATE_ENABLED", None),
+        ("SILENCE_GATE_ENABLED", None),
+        ("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS", None),
+        ("SILENCE_GATE_TIMEOUT_SECS", None),
+        ("BLACKBOX_CONFIG", None),
+    ]
+}
+
+/// `default_test_env()` with `SILENCE_THRESHOLD` set to `0` so the
+/// silence-deletion code paths don't fire mid-test (DOLL-118).
+#[cfg(test)]
+pub fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
+    let mut env = default_test_env();
+    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
+    env.push(("SILENCE_THRESHOLD", Some("0")));
+    env
+}
+
 /// Generate interleaved f32 data where `selected_channels` all get a sine
 /// wave at the same `amplitude`.
 #[cfg(test)]

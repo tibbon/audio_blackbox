@@ -20,12 +20,8 @@ fn print_release_note() {
     }
 }
 
-fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
-    let mut env = crate::tests::default_test_env();
-    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0")));
-    env
-}
+// Test helper consolidated to `crate::test_utils` (DOLL-118).
+use crate::test_utils::test_env_no_silence;
 
 /// Generate `frames` of interleaved f32 data for `total_channels` channels.
 /// Uses a simple sine wave pattern — realistic enough for I/O benchmarks.
