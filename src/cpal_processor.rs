@@ -774,12 +774,12 @@ impl CpalAudioProcessor {
             );
         }
 
-        // Mirror the live state for lock-free external readers.
-        // Status flag only — no synchronizes-with relationship (matches the
-        // Relaxed convention used elsewhere in the FFI status path; readers
-        // never observe `stream` / `writer_thread` cross-thread, so program
-        // order within this fn is enough to make sense of `recording_active`).
-        self.recording_active.store(true, Ordering::Relaxed);
+        // Publish the live state to lock-free external readers via a
+        // Release store. Readers (FFI status poll) Acquire on the matching
+        // load; this synchronizes-with `sample_rate_atomic.store(rate, Relaxed)`
+        // above, so a reader observing `recording_active = true` is
+        // guaranteed to also see the matching `sample_rate` (DOLL-101).
+        self.recording_active.store(true, Ordering::Release);
 
         Ok(())
     }
@@ -799,8 +799,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn finalize(&mut self) -> Result<(), BlackboxError> {
         // Mirror state for lock-free readers before we begin teardown.
         // Cleared first so an FFI status poll racing finalize never sees
-        // "recording" while the stream is gone.
-        self.recording_active.store(false, Ordering::Relaxed);
+        // "recording" while the stream is gone. Release store so readers
+        // who Acquire-load `recording_active = false` also see any prior
+        // Relaxed clears (DOLL-101).
+        self.recording_active.store(false, Ordering::Release);
 
         let errors = self.write_errors.load(Ordering::Relaxed);
         if errors > 0 {
@@ -875,7 +877,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn is_recording(&self) -> bool {
         // Reads the lifted atomic mirror; the FFI status poll uses the same
         // flag via `status_arcs()` without needing the recorder mutex.
-        self.recording_active.load(Ordering::Relaxed)
+        // Acquire to synchronize-with the matching Release store; readers
+        // who see `true` here also see the prior `sample_rate_atomic` write
+        // (DOLL-101).
+        self.recording_active.load(Ordering::Acquire)
     }
 
     fn write_error_count(&self) -> u64 {
@@ -1036,8 +1041,10 @@ impl AudioProcessor for CpalAudioProcessor {
 
         self.stream = Some(Box::new(stream));
         self.monitoring = true;
-        // Mirror to atomic for lock-free readers (FFI status poll).
-        self.monitoring_active.store(true, Ordering::Relaxed);
+        // Release store synchronizes-with the Acquire load in
+        // `is_monitoring`; readers seeing `true` also observe the prior
+        // `sample_rate_atomic.store(rate, Relaxed)` (DOLL-101).
+        self.monitoring_active.store(true, Ordering::Release);
 
         Ok(())
     }
@@ -1070,15 +1077,18 @@ impl AudioProcessor for CpalAudioProcessor {
         }
 
         self.monitoring = false;
-        self.monitoring_active.store(false, Ordering::Relaxed);
+        // Order matters: Relaxed clear of sample_rate first, then Release
+        // store of `false` to monitoring_active. Readers Acquire-loading
+        // `monitoring_active = false` then see sample_rate_atomic = 0.
         self.sample_rate_atomic.store(0, Ordering::Relaxed);
+        self.monitoring_active.store(false, Ordering::Release);
         self.peak_levels = Arc::new(Vec::new());
 
         Ok(())
     }
 
     fn is_monitoring(&self) -> bool {
-        self.monitoring_active.load(Ordering::Relaxed)
+        self.monitoring_active.load(Ordering::Acquire)
     }
 
     fn gate_idle(&self) -> bool {
