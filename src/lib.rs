@@ -134,6 +134,7 @@ mod tests {
     mod channel_tests;
     mod config_tests;
     mod cpal_integration_tests;
+    mod error_tests;
     #[cfg(feature = "ffi")]
     mod ffi_tests;
     #[cfg(feature = "benchmarking")]

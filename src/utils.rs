@@ -159,8 +159,9 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
         return Ok(false);
     }
 
-    let reader = hound::WavReader::open(file_path).map_err(|e| {
-        BlackboxError::Wav(format!("Failed to open WAV file for silence check: {}", e))
+    let reader = hound::WavReader::open(file_path).map_err(|e| BlackboxError::WavSource {
+        context: format!("Failed to open WAV file for silence check: {file_path}"),
+        source: Box::new(e),
     })?;
 
     // Normalize by the actual bit depth — hound reads i32 but doesn't scale to i32 range.
@@ -179,7 +180,10 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
     let mut count: u64 = 0;
 
     for sample in reader.into_samples::<i32>() {
-        let s = sample.map_err(|e| BlackboxError::Wav(format!("Failed to read sample: {}", e)))?;
+        let s = sample.map_err(|e| BlackboxError::WavSource {
+            context: format!("Failed to read sample from {file_path}"),
+            source: Box::new(e),
+        })?;
         let normalized = f64::from(s) / norm;
         if normalized.abs() >= threshold_f64 {
             return Ok(false);

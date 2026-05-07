@@ -109,9 +109,18 @@ fn test_empty_file() {
 #[test]
 fn test_nonexistent_file() {
     let err = is_silent("nonexistent.wav", 0.1).expect_err("missing file must error");
+    let BlackboxError::WavSource { context, source } = &err else {
+        panic!("expected WavSource, got {err:?}");
+    };
     assert!(
-        matches!(&err, BlackboxError::Wav(msg) if msg.contains("Failed to open WAV file")),
-        "expected Wav(\"Failed to open WAV file...\"), got {err:?}"
+        context.contains("Failed to open WAV file") && context.contains("nonexistent.wav"),
+        "context should mention the file path: {context}"
+    );
+    // Source chain must be populated so callers can downcast to hound::Error.
+    assert!(
+        std::error::Error::source(&**source).is_some()
+            || source.downcast_ref::<hound::Error>().is_some(),
+        "source chain should be populated"
     );
 }
 
@@ -126,8 +135,8 @@ fn test_invalid_wav_file() {
     let err = is_silent(file_path.to_str().unwrap(), 0.1)
         .expect_err("non-WAV content must error");
     assert!(
-        matches!(err, BlackboxError::Wav(_)),
-        "expected Wav variant, got {err:?}"
+        matches!(err, BlackboxError::WavSource { .. }),
+        "expected WavSource variant, got {err:?}"
     );
 }
 

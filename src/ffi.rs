@@ -47,6 +47,7 @@ pub const BLACKBOX_ERR_CONFIG: i32 = -3;
 pub const BLACKBOX_ERR_IO: i32 = -4;
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
 pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
+pub const BLACKBOX_ERR_DISK_SPACE_LOW: i32 = -7;
 
 /// Lightweight C struct for status polling — no JSON, no string allocation.
 /// Fields match what the Swift `updateDuration()` loop actually reads.
@@ -112,9 +113,14 @@ impl BlackboxHandle {
     fn set_error_from(&self, msg: String, err: &BlackboxError) -> i32 {
         self.set_error(msg);
         match err {
-            BlackboxError::AudioDevice(_) => BLACKBOX_ERR_AUDIO_DEVICE,
+            BlackboxError::AudioDevice(_) | BlackboxError::AudioDeviceSource { .. } => {
+                BLACKBOX_ERR_AUDIO_DEVICE
+            }
             BlackboxError::Config(_) | BlackboxError::ChannelParse(_) => BLACKBOX_ERR_CONFIG,
-            BlackboxError::Io(_) | BlackboxError::Wav(_) => BLACKBOX_ERR_IO,
+            BlackboxError::Io(_) | BlackboxError::Wav(_) | BlackboxError::WavSource { .. } => {
+                BLACKBOX_ERR_IO
+            }
+            BlackboxError::InsufficientDiskSpace { .. } => BLACKBOX_ERR_DISK_SPACE_LOW,
         }
     }
 

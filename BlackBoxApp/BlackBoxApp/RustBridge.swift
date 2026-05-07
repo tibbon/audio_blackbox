@@ -10,6 +10,7 @@ enum BlackBoxError: Int32 {
     case io = -4
     case lockPoisoned = -5
     case `internal` = -6
+    case diskSpaceLow = -7
     case unknown = -99
 
     init(code: Int32) {
