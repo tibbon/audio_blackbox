@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
-use crate::constants::CacheAlignedPeak;
+use crate::constants::{CacheAlignedPeak, OutputMode};
 use crate::tests::default_test_env;
 use crate::writer_thread::{GateState, WriterThreadState};
 
@@ -48,7 +48,7 @@ fn make_gate_state(
         dir,
         48000,
         &[0],
-        "single",
+        OutputMode::Single,
         silence_threshold,
         Arc::new(AtomicU64::new(0)),
         0,

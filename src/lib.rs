@@ -213,7 +213,7 @@ mod tests {
             // Check that our processor got called correctly
             let processor = recorder.get_processor();
             assert!(processor.audio_processed);
-            assert_eq!(processor.output_mode, DEFAULT_OUTPUT_MODE);
+            assert_eq!(processor.output_mode, OutputMode::default());
         });
     }
 

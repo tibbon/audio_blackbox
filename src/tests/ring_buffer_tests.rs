@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
-use crate::constants::{CacheAlignedPeak, RING_BUFFER_SECONDS};
+use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
 use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
 use crate::tests::default_test_env;
 use crate::writer_thread::{
@@ -56,7 +56,7 @@ fn test_ring_buffer_overflow_counted() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -121,7 +121,7 @@ fn test_writer_thread_processes_all_samples() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -184,7 +184,7 @@ fn test_writer_thread_rotation() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -264,7 +264,7 @@ fn test_writer_thread_shutdown_drains() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -332,7 +332,7 @@ fn test_writer_thread_silence_on_rotation() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             10.0, // high threshold — everything is "silent"
             Arc::clone(&write_errors),
             0,
@@ -479,7 +479,7 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             10.0, // high threshold — everything is "silent"
             Arc::clone(&write_errors),
             0,
@@ -560,7 +560,7 @@ fn test_new_fails_when_disk_space_low() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             999_000_000, // 999 TB in MB
@@ -600,7 +600,7 @@ fn test_new_succeeds_when_disk_check_disabled() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -636,7 +636,7 @@ fn test_writer_thread_disk_space_check_sets_flag() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0, // Disable in constructor — we'll set it manually after creation
@@ -678,7 +678,7 @@ fn test_disk_stopped_skips_writes() {
             dir,
             44100,
             &[0],
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,

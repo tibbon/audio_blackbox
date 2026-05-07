@@ -8,7 +8,7 @@ use log::{debug, error, info, warn};
 
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
-use crate::constants::{CacheAlignedPeak, RING_BUFFER_SECONDS};
+use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
 use crate::error::BlackboxError;
 use crate::utils::{check_alsa_availability, parse_channel_string};
 use crate::writer_thread::{
@@ -298,7 +298,7 @@ pub struct CpalAudioProcessor {
     recording_cadence: u64,
     output_dir: String,
     channels: Vec<usize>,
-    output_mode: String,
+    output_mode: OutputMode,
     debug: bool,
     /// Counts write_sample errors and ring buffer overflow drops (atomic for RT safety).
     write_errors: Arc<AtomicU64>,
@@ -355,7 +355,7 @@ impl CpalAudioProcessor {
             recording_cadence,
             output_dir,
             channels: Vec::new(),
-            output_mode: String::new(),
+            output_mode: OutputMode::default(),
             debug: false,
             write_errors: Arc::new(AtomicU64::new(0)),
             disk_space_low: Arc::new(AtomicBool::new(false)),
@@ -454,7 +454,7 @@ impl CpalAudioProcessor {
     fn process_audio_impl(
         &mut self,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         debug: bool,
         app_config: &AppConfig,
     ) -> Result<(), BlackboxError> {
@@ -463,7 +463,7 @@ impl CpalAudioProcessor {
         }
 
         self.channels = channels.to_vec();
-        self.output_mode = output_mode.to_string();
+        self.output_mode = output_mode;
         self.debug = debug;
 
         // Reset counters from any prior recording session
@@ -518,14 +518,7 @@ impl CpalAudioProcessor {
 
         info!("Using channels: {:?}", actual_channels);
 
-        // Validate output mode
-        let valid_modes = ["split", "single"];
-        if !valid_modes.contains(&output_mode) {
-            return Err(BlackboxError::Config(format!(
-                "Invalid output mode: '{}'. Valid options are: {:?}",
-                output_mode, valid_modes
-            )));
-        }
+        // Output mode is now an enum — invalid values are impossible by construction.
 
         // Capture config values before entering the closure
         let silence_threshold = app_config.get_silence_threshold();
@@ -679,7 +672,7 @@ impl AudioProcessor for CpalAudioProcessor {
     fn process_audio(
         &mut self,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         debug: bool,
         config: &AppConfig,
     ) -> Result<(), BlackboxError> {
@@ -744,10 +737,10 @@ impl AudioProcessor for CpalAudioProcessor {
     fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
         let channels_str = config.get_audio_channels();
         let channels = parse_channel_string(&channels_str)?;
-        let output_mode = config.get_output_mode();
+        let output_mode = config.output_mode_parsed();
         let debug = config.get_debug();
 
-        self.process_audio_impl(&channels, &output_mode, debug, config)
+        self.process_audio_impl(&channels, output_mode, debug, config)
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {
@@ -983,7 +976,7 @@ impl CpalAudioProcessor {
         output_dir: &str,
         sample_rate: u32,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
     ) -> Result<Self, BlackboxError> {
         Self::new_for_test_with_bits(output_dir, sample_rate, channels, output_mode, 16)
     }
@@ -993,7 +986,7 @@ impl CpalAudioProcessor {
         output_dir: &str,
         sample_rate: u32,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         bits_per_sample: u16,
     ) -> Result<Self, BlackboxError> {
         if !Path::new(output_dir).exists() {
@@ -1034,7 +1027,7 @@ impl CpalAudioProcessor {
             recording_cadence: 0,
             output_dir: output_dir.to_string(),
             channels: channels.to_vec(),
-            output_mode: output_mode.to_string(),
+            output_mode,
             debug: false,
             write_errors,
             disk_space_low,

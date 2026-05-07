@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use tempfile::tempdir;
 
-use crate::constants::{CacheAlignedPeak, RING_BUFFER_SECONDS};
+use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
 use crate::writer_thread::{WriterCommand, WriterThreadState, writer_thread_main};
 
 // ===========================================================================
@@ -86,7 +86,7 @@ fn benchmark_direct_write_throughput() {
 
             let channels: Vec<usize> = (0..ch_count).collect();
             // Use "single" mode for >2 channels (multichannel), split for benchmarking split too
-            let output_mode = "single";
+            let output_mode = OutputMode::Single;
 
             let mut state = WriterThreadState::new(
                 dir,
@@ -191,7 +191,7 @@ fn benchmark_split_mode_throughput() {
                 dir,
                 sample_rate,
                 &channels,
-                "split",
+                OutputMode::Split,
                 0.0,
                 Arc::clone(&write_errors),
                 0,
@@ -275,7 +275,7 @@ fn benchmark_ring_buffer_pipeline() {
                 dir,
                 sample_rate,
                 &channels,
-                "single",
+                OutputMode::Single,
                 0.0,
                 Arc::clone(&write_errors),
                 0,
@@ -377,7 +377,7 @@ fn benchmark_rotation_overhead() {
     temp_env::with_vars(test_env_no_silence(), || {
         for &ch_count in channel_counts {
             // Test both single and split modes
-            for mode in &["single", "split"] {
+            for &mode in &[OutputMode::Single, OutputMode::Split] {
                 let temp_dir = tempdir().unwrap();
                 let dir = temp_dir.path().to_str().unwrap();
                 let write_errors = Arc::new(AtomicU64::new(0));
@@ -496,7 +496,7 @@ fn benchmark_monitor_vs_recording() {
                 dir,
                 sample_rate,
                 &channels,
-                "single",
+                OutputMode::Single,
                 0.0,
                 Arc::clone(&write_errors),
                 0,
@@ -703,7 +703,7 @@ fn benchmark_write_samples_overhead() {
             dir,
             sample_rate,
             &channels,
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -784,7 +784,7 @@ fn benchmark_ring_buffer_latency() {
             dir,
             sample_rate,
             &channels,
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -1028,7 +1028,7 @@ fn benchmark_sample_rate_scaling() {
                     dir,
                     sample_rate,
                     &channels,
-                    "single",
+                    OutputMode::Single,
                     0.0,
                     Arc::clone(&write_errors),
                     0,
@@ -1115,7 +1115,7 @@ fn benchmark_bit_depth_comparison() {
                     dir,
                     sample_rate,
                     &channels,
-                    "single",
+                    OutputMode::Single,
                     0.0,
                     Arc::clone(&write_errors),
                     0,

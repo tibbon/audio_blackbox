@@ -52,9 +52,10 @@ impl CacheAlignedPeak {
 /// Stored as a 1-byte enum instead of a heap-allocated `String` so the hot-path
 /// match in `write_samples()` compiles to a jump table (single integer comparison)
 /// rather than a string comparison per frame chunk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutputMode {
     /// Single file: mono/stereo for ≤2 channels, interleaved multichannel for >2.
+    #[default]
     Single,
     /// One WAV file per channel.
     Split,
@@ -75,5 +76,11 @@ impl OutputMode {
             Self::Single => "single",
             Self::Split => "split",
         }
+    }
+}
+
+impl std::fmt::Display for OutputMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
