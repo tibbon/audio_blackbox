@@ -76,6 +76,20 @@ const _: () = assert!(std::mem::size_of::<StatusFlags>() == 24);
 /// Magic number to detect use-after-free or corrupted handles.
 const HANDLE_MAGIC: u64 = 0xB1AC_B015_A11D_1000;
 
+/// Canonical lock acquisition order for `BlackboxHandle` mutexes (DOLL-124):
+///
+/// 1. `recorder` — outermost. Held across multi-second device probing
+///    (`CpalAudioProcessor::with_config`, `recorder.start_recording()`).
+/// 2. The remaining mutexes (`config`, `last_error`, `peak_levels`,
+///    `status`) are taken **alone**, never nested with each other.
+///    Each is acquired, mutated, and released in a brief critical
+///    section. Inside an `extern "C"` body that holds `recorder`,
+///    these inner locks are taken sequentially and dropped between
+///    acquisitions.
+///
+/// Any future code path that needs two of the inner mutexes
+/// simultaneously must add them here in a defined order to prevent
+/// AB/BA deadlock with another such path.
 pub struct BlackboxHandle {
     magic: AtomicU64,
     config: Mutex<AppConfig>,
