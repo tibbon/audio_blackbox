@@ -54,7 +54,6 @@ pub use config::AppConfig;
 pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
-pub use writer_thread::f32_to_wav_sample;
 
 // ----------------------------------------------------------------------------
 // Crate-internal re-exports
