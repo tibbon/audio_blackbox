@@ -27,6 +27,8 @@ extern "C" {
 #define BLACKBOX_ERR_LOCK_POISONED  -5
 #define BLACKBOX_ERR_INTERNAL       -6
 #define BLACKBOX_ERR_DISK_SPACE_LOW -7
+/* Null or otherwise invalid non-handle argument (e.g. null OUT pointer, null JSON). */
+#define BLACKBOX_ERR_INVALID_ARG    -8
 
 /* Opaque handle to the Rust audio engine. */
 typedef struct BlackboxHandle BlackboxHandle;

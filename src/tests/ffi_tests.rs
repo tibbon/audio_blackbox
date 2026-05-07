@@ -148,7 +148,8 @@ fn test_set_config_json() {
 fn test_set_config_json_null_json() {
     let handle = blackbox_create(std::ptr::null());
     let result = blackbox_set_config_json(handle, std::ptr::null());
-    assert_eq!(result, BLACKBOX_ERR_INVALID_HANDLE);
+    // Null JSON is an arg problem, not a handle problem — see DOLL-103.
+    assert_eq!(result, BLACKBOX_ERR_INVALID_ARG);
     blackbox_destroy(handle);
 }
 
@@ -258,9 +259,11 @@ fn test_get_status_flags_null_handle() {
 fn test_get_status_flags_null_out() {
     let handle = blackbox_create(std::ptr::null());
     let rc = blackbox_get_status_flags(handle, std::ptr::null_mut());
-    assert_eq!(rc, BLACKBOX_ERR_INVALID_HANDLE);
+    // Null OUT is an arg problem, not a handle problem — see DOLL-103.
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_ARG);
     blackbox_destroy(handle);
 }
+
 
 /// Status reads must remain lock-free with respect to other handle activity:
 /// hammer the status path from many threads concurrently and confirm no deadlock
