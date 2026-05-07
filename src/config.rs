@@ -18,6 +18,7 @@ use crate::error::BlackboxError;
 /// or with default values. Values are resolved with environment variables having
 /// the highest precedence, followed by the config file, and then defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AppConfig {
     /// Audio channels to record (comma-separated or range)
     pub audio_channels: Option<String>,

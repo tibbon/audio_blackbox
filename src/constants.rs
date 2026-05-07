@@ -53,6 +53,7 @@ impl CacheAlignedPeak {
 /// match in `write_samples()` compiles to a jump table (single integer comparison)
 /// rather than a string comparison per frame chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum OutputMode {
     /// Single file: mono/stereo for ≤2 channels, interleaved multichannel for >2.
     #[default]
