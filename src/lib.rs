@@ -218,20 +218,23 @@ mod tests {
             let temp_path = temp_dir.path().to_str().unwrap();
             let file_name = format!("{}/test.wav", temp_path);
 
-            // Create a MockAudioProcessor
             let processor = MockAudioProcessor::new(&file_name);
-
-            // Create recorder with custom processor
             let mut recorder = AudioRecorder::new(processor);
 
-            // Start recording with default parameters
-            let record_result = recorder.start_recording();
-            assert!(record_result.is_ok());
+            recorder.start_recording().expect("start_recording");
 
-            // Check that our processor got called correctly
-            let processor = recorder.get_processor();
-            assert!(processor.audio_processed);
-            assert_eq!(processor.output_mode, OutputMode::default());
+            // Real post-condition: a valid WAV exists on disk and the
+            // recorder is configured for the default output mode. The
+            // mock's `audio_processed` boolean is set unconditionally and
+            // would not catch a recorder that short-circuited.
+            let r = hound::WavReader::open(&file_name)
+                .expect("recorder should have produced a readable WAV");
+            assert_eq!(r.spec().sample_rate, 44100);
+            assert!(r.len() > 0, "WAV should contain samples");
+            assert_eq!(
+                recorder.get_processor().output_mode,
+                OutputMode::default()
+            );
         });
     }
 

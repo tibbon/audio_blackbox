@@ -1,3 +1,4 @@
+use crate::error::BlackboxError;
 use crate::utils::is_silent;
 use hound::WavSpec;
 use hound::WavWriter;
@@ -107,7 +108,11 @@ fn test_empty_file() {
 
 #[test]
 fn test_nonexistent_file() {
-    assert!(is_silent("nonexistent.wav", 0.1).is_err());
+    let err = is_silent("nonexistent.wav", 0.1).expect_err("missing file must error");
+    assert!(
+        matches!(&err, BlackboxError::Wav(msg) if msg.contains("Failed to open WAV file")),
+        "expected Wav(\"Failed to open WAV file...\"), got {err:?}"
+    );
 }
 
 #[test]
@@ -118,7 +123,12 @@ fn test_invalid_wav_file() {
     // Create an invalid WAV file
     fs::write(&file_path, "not a wav file").unwrap();
 
-    assert!(is_silent(file_path.to_str().unwrap(), 0.1).is_err());
+    let err = is_silent(file_path.to_str().unwrap(), 0.1)
+        .expect_err("non-WAV content must error");
+    assert!(
+        matches!(err, BlackboxError::Wav(_)),
+        "expected Wav variant, got {err:?}"
+    );
 }
 
 #[test]
