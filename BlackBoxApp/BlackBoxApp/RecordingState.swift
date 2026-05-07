@@ -85,7 +85,14 @@ enum SleepWakePolicy {
         bridge = RustBridge()
         guard !Self.isTesting else { return }
         refreshDevices()
-        restoreOutputDirBookmark()
+        // DOLL-114: defer bookmark restoration off the launch path. The
+        // synchronous URL+startAccessingSecurityScopedResource+setConfig
+        // chain hit disk / IPC and delayed first menu-bar appearance.
+        // Defer to a background Task so the menu bar appears with default
+        // config; the real bookmarked path lands a moment later.
+        Task { [weak self] in
+            await self?.restoreOutputDirBookmark()
+        }
         restoreSavedSettings()
         restoreGlobalHotkey()
 
@@ -464,8 +471,13 @@ enum SleepWakePolicy {
             url = URL(fileURLWithPath: cwd).appendingPathComponent(dir)
         }
 
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(url)
+        // DOLL-114: defer the FileManager + NSWorkspace I/O off the main
+        // actor. Both calls hit disk / Launch Services and were
+        // synchronously blocking the UI on this user action.
+        Task.detached {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            await MainActor.run { NSWorkspace.shared.open(url) }
+        }
     }
 
     func refreshDevices() {
@@ -788,7 +800,11 @@ enum SleepWakePolicy {
     }
 
     /// Restore the security-scoped bookmark on launch.
-    private func restoreOutputDirBookmark() {
+    ///
+    /// DOLL-114: declared `async` so the bookmark resolution + security
+    /// scope acquisition + bridge.setConfig (each of which can hit disk
+    /// or IPC) run off the main actor's launch path.
+    private func restoreOutputDirBookmark() async {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
             Self.log.info("No saved output directory bookmark")
             return

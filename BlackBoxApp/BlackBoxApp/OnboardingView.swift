@@ -393,7 +393,13 @@ struct OnboardingView: View {
     /// Skip onboarding with default settings (experienced users).
     private func skipOnboarding() {
         let url = defaultDir
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        // DOLL-114: defer the synchronous createDirectory off the main
+        // actor. Bookmark save still runs on the main actor (it touches
+        // UserDefaults / @Observable state) but the directory creation
+        // — disk I/O — does not need to.
+        Task.detached {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
         recorder.saveOutputDirBookmark(for: url)
 
         let defaults = UserDefaults.standard
@@ -424,7 +430,10 @@ struct OnboardingView: View {
         // Only update the bookmark if the user explicitly picked a new directory.
         // Re-running onboarding without changing the dir preserves the existing bookmark.
         if dirChangedByUser {
-            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            // DOLL-114: defer the disk I/O off the main actor.
+            Task.detached {
+                try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
             recorder.saveOutputDirBookmark(for: url)
         }
 
