@@ -39,8 +39,22 @@ impl RawWavWriter {
         let byte_width = (spec.bits_per_sample / 8) as u8;
 
         // Write the 44-byte RIFF/WAV header with placeholder sizes.
-        let byte_rate = spec.sample_rate * u32::from(spec.channels) * u32::from(byte_width);
-        let block_align = spec.channels * u16::from(byte_width);
+        // Saturating arithmetic so an extreme spec (e.g. 384 kHz × 32-bit
+        // × hundreds of channels) caps the header value rather than
+        // wrapping silently into an OS-accepted-but-misinterpreted u32
+        // (DOLL-111). Defense-in-depth alongside DOLL-95's data_size fix.
+        let byte_rate = spec
+            .sample_rate
+            .saturating_mul(u32::from(spec.channels))
+            .saturating_mul(u32::from(byte_width));
+        // Widen the multiply to u32 to avoid wrapping inside u16 for
+        // hypothetical >16k-channel specs; truncate via try_into. With
+        // MAX_CHANNELS = 255 this can't actually exceed u16, but the
+        // explicit widening documents the invariant.
+        let block_align: u16 = u32::from(spec.channels)
+            .saturating_mul(u32::from(byte_width))
+            .try_into()
+            .unwrap_or(u16::MAX);
 
         writer.write_all(b"RIFF")?;
         writer.write_all(&0_u32.to_le_bytes())?; // placeholder file size
@@ -110,5 +124,52 @@ impl RawWavWriter {
         self.writer.write_all(&data_size.to_le_bytes())?;
         self.writer.seek(SeekFrom::Start(pos))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// Reads byte_rate (offset 28-31) and block_align (offset 32-33) from a WAV header.
+    fn read_header_fields(path: &str) -> (u32, u16) {
+        let bytes = std::fs::read(path).unwrap();
+        let byte_rate = u32::from_le_bytes(bytes[28..32].try_into().unwrap());
+        let block_align = u16::from_le_bytes(bytes[32..34].try_into().unwrap());
+        (byte_rate, block_align)
+    }
+
+    #[test]
+    fn test_header_byte_rate_normal_spec() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("normal.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+        };
+        drop(RawWavWriter::create(&path, spec).unwrap()); // close the file
+        let (byte_rate, block_align) = read_header_fields(&path);
+        assert_eq!(byte_rate, 44100 * 2 * 2);
+        assert_eq!(block_align, 2 * 2);
+    }
+
+    #[test]
+    fn test_header_byte_rate_extreme_spec_does_not_wrap() {
+        // 384 kHz × 32-bit × 255 channels = ~3.92e8, well within u32 — but
+        // verify the saturating chain doesn't accidentally break the
+        // straightforward case (DOLL-111).
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("extreme.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 255,
+            sample_rate: 384_000,
+            bits_per_sample: 32,
+        };
+        drop(RawWavWriter::create(&path, spec).unwrap());
+        let (byte_rate, block_align) = read_header_fields(&path);
+        assert_eq!(byte_rate, 384_000_u32 * 255 * 4);
+        assert_eq!(block_align, 255 * 4);
     }
 }
