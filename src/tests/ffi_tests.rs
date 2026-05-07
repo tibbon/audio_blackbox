@@ -331,6 +331,16 @@ fn test_get_peak_levels_negative_max() {
 }
 
 #[test]
+fn test_get_device_channel_count_invalid_utf8() {
+    // A standalone 0xFF byte followed by a NUL is valid C but invalid UTF-8.
+    let bad: [u8; 2] = [0xFF, 0];
+    let rc = blackbox_get_device_channel_count(bad.as_ptr().cast::<std::os::raw::c_char>());
+    // DOLL-104: this used to silently fall back to the system default device.
+    // Now it returns INVALID_ARG so the caller can detect a corrupt buffer.
+    assert_eq!(rc, BLACKBOX_ERR_INVALID_ARG);
+}
+
+#[test]
 fn test_get_peak_levels_idle_returns_zero_count() {
     // Freshly created handle has no peaks — legitimate empty read returns 0
     // (NOT a negative error code).
