@@ -575,13 +575,37 @@ impl WriterThreadState {
             *p = 0.0;
         }
 
+        // Pre-filter `ch_slice` to only contain channels in range for this
+        // device's frame size. This hoists the bounds check OUT of the
+        // per-frame loop so `frame.get_unchecked` is sound in the hot path
+        // (DOLL-126). Out-of-range channels (e.g. a config that requested
+        // ch5 on a 2-channel device) are skipped for the batch — same
+        // graceful-skip behavior the prior `frame.get()` Option-match
+        // produced, but the test for that runs once per batch instead of
+        // per-sample.
+        //
+        // Inline stack array (no heap alloc): MAX_CHANNELS = 255 = u8::MAX.
+        let mut active_indices: [u8; MAX_CHANNELS] = [0; MAX_CHANNELS];
+        let mut active_count = 0_usize;
+        for (idx, &channel) in ch_slice.iter().enumerate() {
+            if (channel as usize) < frame_size {
+                active_indices[active_count] = idx as u8;
+                active_count += 1;
+            }
+        }
+        let active_idx_slice = &active_indices[..active_count];
+
         if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
             // Monitor mode or gate idle: only track peaks, no disk writes
             for frame in frame_data.chunks_exact(frame_size) {
-                for (idx, &channel) in ch_slice.iter().enumerate() {
-                    if let Some(&s) = frame.get(channel as usize)
-                        && s.is_finite()
-                    {
+                for &active_idx in active_idx_slice {
+                    let idx = active_idx as usize;
+                    let channel = ch_slice[idx] as usize;
+                    // SAFETY: pre-filter above guaranteed `channel < frame_size`,
+                    // and `chunks_exact` yields frames of exactly `frame_size`
+                    // samples — so `channel` is in bounds.
+                    let s = unsafe { *frame.get_unchecked(channel) };
+                    if s.is_finite() {
                         self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                     }
                 }
@@ -590,16 +614,18 @@ impl WriterThreadState {
             match self.output_mode {
                 OutputMode::Split => {
                     for frame in frame_data.chunks_exact(frame_size) {
-                        for (idx, &channel) in ch_slice.iter().enumerate() {
-                            if let Some(&s) = frame.get(channel as usize) {
-                                if s.is_finite() {
-                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                                }
-                                if let Some(w) = &mut self.multichannel_writers[idx]
-                                    && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err()
-                                {
-                                    self.write_errors.fetch_add(1, Ordering::Relaxed);
-                                }
+                        for &active_idx in active_idx_slice {
+                            let idx = active_idx as usize;
+                            let channel = ch_slice[idx] as usize;
+                            // SAFETY: see comment above.
+                            let s = unsafe { *frame.get_unchecked(channel) };
+                            if s.is_finite() {
+                                self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                            }
+                            if let Some(w) = &mut self.multichannel_writers[idx]
+                                && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err()
+                            {
+                                self.write_errors.fetch_add(1, Ordering::Relaxed);
                             }
                         }
                     }
@@ -607,14 +633,16 @@ impl WriterThreadState {
                 OutputMode::Single => {
                     if let Some(w) = &mut self.writer {
                         for frame in frame_data.chunks_exact(frame_size) {
-                            for (idx, &channel) in ch_slice.iter().enumerate() {
-                                if let Some(&s) = frame.get(channel as usize) {
-                                    if s.is_finite() {
-                                        self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                                    }
-                                    if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err() {
-                                        self.write_errors.fetch_add(1, Ordering::Relaxed);
-                                    }
+                            for &active_idx in active_idx_slice {
+                                let idx = active_idx as usize;
+                                let channel = ch_slice[idx] as usize;
+                                // SAFETY: see comment above.
+                                let s = unsafe { *frame.get_unchecked(channel) };
+                                if s.is_finite() {
+                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                }
+                                if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err() {
+                                    self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
                         }
