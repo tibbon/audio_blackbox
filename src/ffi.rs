@@ -108,10 +108,24 @@ impl BlackboxHandle {
 // ---------------------------------------------------------------------------
 
 /// Convert a `*const c_char` to a `&str`, returning `None` on null or invalid UTF-8.
+///
+/// # Safety
+///
+/// Caller must ensure that:
+/// - `ptr` is either null OR points to a NUL-terminated C string.
+/// - The pointed-to bytes remain valid and unmutated for the entire lifetime
+///   `'a` chosen by the caller.
+///
+/// The lifetime `'a` is unbound at the function signature; the caller picks it.
+/// In practice every call site in this module consumes the returned `&str`
+/// inside the same `catch_unwind` block, so the pointer is provably valid for
+/// that scope. Storing the returned `&str` past the call is unsound.
 unsafe fn cstr_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         return None;
     }
+    // SAFETY: caller guarantees `ptr` is NUL-terminated and valid for `'a`
+    // (see function-level Safety doc above).
     unsafe { CStr::from_ptr(ptr) }.to_str().ok()
 }
 
@@ -123,10 +137,30 @@ fn to_c_string(s: &str) -> *mut c_char {
 
 /// Validate a handle pointer: non-null and magic number matches.
 /// Returns `None` if invalid.
+///
+/// # FFI contract (caller must uphold)
+///
+/// - `handle` is either null OR a pointer that originated from a successful
+///   call to `blackbox_create` (which `Box::leak`-s a `BlackboxHandle`).
+/// - The Swift side does not call `blackbox_destroy(h)` concurrently with any
+///   other `blackbox_*` call against the same `h`. Concurrent destroy + read
+///   is a data race the magic check cannot detect (a freed allocation could
+///   be reused with the magic word still in place).
+///
+/// The returned `'static` lifetime is a polite fiction — the underlying
+/// allocation is freed by `blackbox_destroy`. It is sound for the FFI call's
+/// duration only because:
+/// 1. Every public `extern "C" fn` that uses the borrow consumes it inside a
+///    `catch_unwind` block that returns before `validate_handle` returns.
+/// 2. Swift owns the destroy decision and the contract above forbids it
+///    happening concurrently.
 fn validate_handle(handle: *const BlackboxHandle) -> Option<&'static BlackboxHandle> {
     if handle.is_null() {
         return None;
     }
+    // SAFETY: per the FFI contract documented above, `handle` originated from
+    // `blackbox_create` (Box::leak) and is not concurrently freed. The magic
+    // word check is a UAF mitigation, not a soundness argument.
     let h = unsafe { &*handle };
     if h.is_valid() { Some(h) } else { None }
 }

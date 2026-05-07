@@ -99,7 +99,23 @@ mod sample_rate_listener {
         client_data: *mut c_void,
     }
 
-    // SAFETY: `client_data` points to an `AtomicBool` (Send+Sync), `device_id` is Copy.
+    // SAFETY: this listener can be transferred between threads because:
+    //
+    // 1. The pointed-to data is `Arc<AtomicBool>`. Both `Arc` and `AtomicBool`
+    //    are `Send + Sync`, and we hold one strong reference whose ownership
+    //    moves with the listener.
+    // 2. The CoreAudio thread that calls `on_rate_changed` only does an
+    //    atomic store on the bool — no Rust-state access that requires
+    //    higher-level synchronization.
+    // 3. CoreAudio serializes registration (`new`) and removal (`drop`)
+    //    against its own internal callback dispatch. There is no scenario
+    //    where Drop runs concurrently with a callback against the same
+    //    `client_data`.
+    // 4. If `AudioObjectRemovePropertyListener` fails in Drop (line 158
+    //    below), the Arc is intentionally leaked to avoid UAF: the listener
+    //    is still registered on the CoreAudio side and could fire after
+    //    Drop returns. Leaking the strong reference keeps the AtomicBool
+    //    valid for any straggler callback.
     unsafe impl Send for SampleRateListener {}
 
     impl SampleRateListener {
