@@ -124,7 +124,7 @@ struct BlackBoxApp: App {
                 normalMenu
             }
         } label: {
-            Image(nsImage: menuBarNSImage)
+            menuBarLabel
                 .accessibilityLabel(menuBarAccessibilityLabel)
                 .background(StatusItemTooltip(tooltip: menuBarTooltip))
         }
@@ -269,34 +269,26 @@ struct BlackBoxApp: App {
         }
     }
 
-    private var menuBarNSImage: NSImage {
-        let name: String
-        let description: String
+    /// Whether the user has asked the system to reduce motion in
+    /// `System Settings → Accessibility → Display`. Honoured for the
+    /// recording-state pulse so motion-sensitive users see a static red icon.
+    private var prefersReducedMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
+    @ViewBuilder
+    private var menuBarLabel: some View {
         if !hasCompletedOnboarding {
-            name = "questionmark.circle"
-            description = "Setup Required"
+            Image(systemName: "questionmark.circle")
         } else if recorder.errorMessage != nil {
-            name = "exclamationmark.circle"
-            description = "Error"
+            Image(systemName: "exclamationmark.circle")
         } else if recorder.isRecording {
-            name = "record.circle.fill"
-            description = "Recording"
+            Image(systemName: "record.circle.fill")
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, options: .repeating, isActive: !prefersReducedMotion)
         } else {
-            name = "record.circle"
-            description = "BlackBox"
+            Image(systemName: "record.circle")
         }
-
-        if recorder.isRecording {
-            let config = NSImage.SymbolConfiguration(paletteColors: [.systemRed])
-            if let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?
-                .withSymbolConfiguration(config) {
-                image.isTemplate = false
-                return image
-            }
-        }
-
-        return NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
     }
 
     private var menuBarTooltip: String {
