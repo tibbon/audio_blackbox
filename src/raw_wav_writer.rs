@@ -98,7 +98,10 @@ impl RawWavWriter {
     /// Seek back and write the correct RIFF and data chunk sizes.
     fn update_header(&mut self) -> io::Result<()> {
         let data_size = self.data_bytes_written.min(u64::from(u32::MAX)) as u32;
-        let file_size = data_size + 36; // 44-byte header minus 8-byte RIFF preamble
+        // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
+        // in release and panic in debug. The header value can't represent more
+        // than u32::MAX anyway, so saturating is the most-honest answer.
+        let file_size = data_size.saturating_add(36); // 44-byte header minus 8-byte RIFF preamble
 
         let pos = self.writer.stream_position()?;
         self.writer.seek(SeekFrom::Start(4))?;
