@@ -57,7 +57,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         let channels = parse_channel_string(&requested_channels)?;
 
         // Get the output mode
-        let output_mode = self.config.get_output_mode();
+        let output_mode = self.config.output_mode_parsed();
 
         // Log audio configuration
         info!("Starting recording:");
@@ -82,7 +82,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
 
         // Start the processor with the selected configuration
         self.processor
-            .process_audio(&channels, &output_mode, debug, &self.config)?;
+            .process_audio(&channels, output_mode, debug, &self.config)?;
 
         Ok(format!("Recording started with channels {:?}", channels))
     }

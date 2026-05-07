@@ -2,20 +2,18 @@ use log::{debug, error};
 
 use crate::audio_processor::AudioProcessor;
 use crate::config::AppConfig;
+use crate::constants::OutputMode;
 use crate::error::BlackboxError;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-
-#[cfg(test)]
-use crate::constants::DEFAULT_OUTPUT_MODE;
 
 /// MockAudioProcessor simulates audio processing for testing purposes
 /// without requiring actual audio hardware.
 #[allow(clippy::struct_excessive_bools)]
 pub struct MockAudioProcessor {
     pub channels: Vec<usize>,
-    pub output_mode: String,
+    pub output_mode: OutputMode,
     pub debug: bool,
     pub audio_processed: bool,
     pub finalized: bool,
@@ -34,7 +32,7 @@ impl MockAudioProcessor {
     pub fn new(file_name: &str) -> Self {
         MockAudioProcessor {
             channels: Vec::new(),
-            output_mode: DEFAULT_OUTPUT_MODE.to_string(),
+            output_mode: OutputMode::default(),
             debug: false,
             audio_processed: false,
             finalized: false,
@@ -50,12 +48,12 @@ impl AudioProcessor for MockAudioProcessor {
     fn process_audio(
         &mut self,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         debug: bool,
         _config: &crate::config::AppConfig,
     ) -> Result<(), BlackboxError> {
         self.channels = channels.to_vec();
-        self.output_mode = output_mode.to_string();
+        self.output_mode = output_mode;
         self.debug = debug;
         self.audio_processed = true;
         self.created_files.clear();
@@ -72,7 +70,7 @@ impl AudioProcessor for MockAudioProcessor {
 
         // Always create the main file
         let spec = hound::WavSpec {
-            channels: if output_mode == "split" { 1 } else { 2 },
+            channels: if matches!(output_mode, OutputMode::Split) { 1 } else { 2 },
             sample_rate: 44100,
             bits_per_sample: 24,
             sample_format: hound::SampleFormat::Int,
@@ -83,7 +81,7 @@ impl AudioProcessor for MockAudioProcessor {
                 for i in 0..1000 {
                     let sample = (i % 100) * amplitude;
                     let _ = writer.write_sample(sample);
-                    if output_mode != "split" {
+                    if !matches!(output_mode, OutputMode::Split) {
                         let _ = writer.write_sample(sample);
                     }
                 }
@@ -96,7 +94,7 @@ impl AudioProcessor for MockAudioProcessor {
 
         self.created_files.push(self.file_name.clone());
 
-        if output_mode == "split" {
+        if matches!(output_mode, OutputMode::Split) {
             // Create an empty WAV file for each channel
             for &channel in channels {
                 let base_path = Path::new(&self.file_name);
@@ -185,14 +183,14 @@ impl AudioProcessor for MockAudioProcessor {
     }
 
     fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
-        // Clone the values to avoid borrowing self mutably and immutably
+        // Clone channels to avoid borrowing self mutably and immutably; output_mode is Copy.
         let channels = self.channels.clone();
-        let output_mode = self.output_mode.clone();
+        let output_mode = self.output_mode;
         let debug = self.debug;
 
         // In the mock, we'll just simulate this by immediately processing audio
         // with the stored configuration
-        self.process_audio(&channels, &output_mode, debug, config)
+        self.process_audio(&channels, output_mode, debug, config)
     }
 
     fn stop_recording(&mut self) -> Result<(), BlackboxError> {

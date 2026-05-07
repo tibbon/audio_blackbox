@@ -165,7 +165,7 @@ impl WriterThreadState {
         output_dir: &str,
         sample_rate: u32,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         silence_threshold: f32,
         write_errors: Arc<AtomicU64>,
         min_disk_space_mb: u64,
@@ -190,10 +190,6 @@ impl WriterThreadState {
                 available_mb, min_disk_space_mb
             ))));
         }
-
-        let mode = OutputMode::parse(output_mode).ok_or_else(|| {
-            BlackboxError::Config(format!("Invalid output mode: '{}'", output_mode))
-        })?;
 
         let sample_scale = match bits_per_sample {
             16 => f32::from(i16::MAX),
@@ -221,7 +217,7 @@ impl WriterThreadState {
             disk_stopped: false,
             gate_enabled,
             gate_state: initial_gate_state,
-            output_mode: mode,
+            output_mode,
             channel_count: channel_count as u8,
             total_device_channels: 0, // set by caller or process_audio
             disk_check_counter: 0,
@@ -257,7 +253,7 @@ impl WriterThreadState {
 
         // When gate is enabled, start idle (no files). Writers are created on first signal.
         if !gate_enabled {
-            match mode {
+            match output_mode {
                 OutputMode::Split => state.setup_split_mode()?,
                 OutputMode::Single if channels.len() <= 2 => state.setup_standard_mode()?,
                 OutputMode::Single => state.setup_multichannel_mode()?,

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use tempfile::tempdir;
 
 use crate::alloc_counter;
-use crate::constants::CacheAlignedPeak;
+use crate::constants::{CacheAlignedPeak, OutputMode};
 use crate::writer_thread::WriterThreadState;
 
 fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
@@ -93,7 +93,7 @@ fn test_write_samples_zero_alloc_recording() {
             dir,
             sample_rate,
             &channels,
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,
@@ -160,7 +160,7 @@ fn test_write_samples_zero_alloc_partial_frames() {
             dir,
             sample_rate,
             &channels,
-            "single",
+            OutputMode::Single,
             0.0,
             Arc::clone(&write_errors),
             0,

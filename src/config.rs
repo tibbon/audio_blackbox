@@ -8,7 +8,7 @@ use crate::constants::{
     DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG,
     DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
     DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_GATE_ENABLED,
-    DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
+    DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD, OutputMode,
 };
 use crate::error::BlackboxError;
 
@@ -486,6 +486,15 @@ silence_gate_timeout_secs = {}
         self.output_mode
             .clone()
             .unwrap_or_else(|| DEFAULT_OUTPUT_MODE.to_string())
+    }
+
+    /// Parsed output mode. Falls back to the default if the configured value
+    /// is missing or unparseable, matching the historical lenient behaviour.
+    pub fn output_mode_parsed(&self) -> OutputMode {
+        self.output_mode
+            .as_deref()
+            .and_then(OutputMode::parse)
+            .unwrap_or_default()
     }
 
     pub fn get_silence_threshold(&self) -> f32 {

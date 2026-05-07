@@ -136,7 +136,7 @@ fn test_recorder_split_mode() {
 
             let result = recorder.start_recording();
             assert!(result.is_ok());
-            assert_eq!(recorder.get_processor().output_mode, "split");
+            assert_eq!(recorder.get_processor().output_mode, OutputMode::Split);
             assert!(recorder.get_processor().created_files.len() > 1);
         },
     );
@@ -144,10 +144,11 @@ fn test_recorder_split_mode() {
 
 #[test]
 fn test_recorder_multichannel_mode() {
+    // "single" with >2 channels is the multichannel path (interleaved single file).
     temp_env::with_vars(
         vec![
             ("AUDIO_CHANNELS", Some("0,1,2")),
-            ("OUTPUT_MODE", Some("multichannel")),
+            ("OUTPUT_MODE", Some("single")),
             ("BLACKBOX_AUDIO_CHANNELS", None),
             ("BLACKBOX_OUTPUT_MODE", None),
             ("BLACKBOX_CONFIG", None),
@@ -163,7 +164,7 @@ fn test_recorder_multichannel_mode() {
 
             let result = recorder.start_recording();
             assert!(result.is_ok());
-            assert_eq!(recorder.get_processor().output_mode, "multichannel");
+            assert_eq!(recorder.get_processor().output_mode, OutputMode::Single);
         },
     );
 }

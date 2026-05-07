@@ -3,6 +3,7 @@
 /// Implementations of this trait are responsible for handling the actual audio
 /// processing, including recording from input devices and writing to WAV files.
 use crate::config::AppConfig;
+use crate::constants::OutputMode;
 use crate::error::BlackboxError;
 
 pub trait AudioProcessor {
@@ -10,7 +11,7 @@ pub trait AudioProcessor {
     fn process_audio(
         &mut self,
         channels: &[usize],
-        output_mode: &str,
+        output_mode: OutputMode,
         debug: bool,
         config: &AppConfig,
     ) -> Result<(), BlackboxError>;
