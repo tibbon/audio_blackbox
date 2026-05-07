@@ -28,7 +28,7 @@ pub fn timestamp_now() -> String {
 /// stamps. Production uses `timestamp_now`; tests inject a deterministic source
 /// (see `crate::test_utils::MockClock`) so two rotations don't collide on the
 /// wall clock and don't need a real second to elapse between them.
-pub type TimestampFn = Arc<dyn Fn() -> String + Send + Sync>;
+type TimestampFn = Arc<dyn Fn() -> String + Send + Sync>;
 
 /// Returns a `.recording.wav` temporary path for the given final `.wav` path.
 fn tmp_wav_path(final_path: &str) -> String {
@@ -155,7 +155,7 @@ pub struct WriterThreadState {
     /// Pluggable timestamp source for filename stamps. Production passes
     /// `Arc::new(timestamp_now)`; tests pass a `MockClock` so rotations
     /// produce distinct filenames without sleeping past a wall-clock second.
-    pub timestamp_fn: TimestampFn,
+    pub(crate) timestamp_fn: TimestampFn,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -338,7 +338,7 @@ impl WriterThreadState {
     /// to make rotations produce deterministic, collision-free filenames
     /// without sleeping past a wall-clock second.
     #[cfg(test)]
-    pub fn set_timestamp_fn(&mut self, f: TimestampFn) {
+    pub(crate) fn set_timestamp_fn(&mut self, f: TimestampFn) {
         self.timestamp_fn = f;
     }
 
