@@ -441,16 +441,26 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
 /// Get the input channel count for a device by name.
 ///
 /// Pass an empty string or null for the system default device.
-/// Returns the channel count (>= 1), or `BLACKBOX_ERR_AUDIO_DEVICE` on error.
+/// Returns the channel count (>= 1), `BLACKBOX_ERR_AUDIO_DEVICE` if the
+/// device is missing or unreadable, or `BLACKBOX_ERR_INVALID_ARG` if the
+/// supplied `device_name` contains invalid UTF-8.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) -> i32 {
-    let name = if device_name.is_null() {
+    // Distinguish three cases (DOLL-104):
+    //   null      → use system default device
+    //   valid UTF-8 → look up by name
+    //   invalid UTF-8 → fail loudly so the caller can fix the buffer
+    //                   instead of silently getting the default device
+    let name: &str = if device_name.is_null() {
         ""
     } else {
-        unsafe { cstr_to_str(device_name) }.unwrap_or("")
+        match unsafe { cstr_to_str(device_name) } {
+            Some(s) => s,
+            None => return BLACKBOX_ERR_INVALID_ARG,
+        }
     };
     CpalAudioProcessor::get_device_channel_count(name)
-        .map_or(BLACKBOX_ERR_AUDIO_DEVICE, |ch| i32::from(ch))
+        .map_or(BLACKBOX_ERR_AUDIO_DEVICE, i32::from)
 }
 
 /// Update the configuration from a JSON string.
