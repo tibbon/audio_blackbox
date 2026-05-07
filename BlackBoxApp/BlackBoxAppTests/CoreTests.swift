@@ -216,8 +216,15 @@ final class RustBridgeTests: XCTestCase {
     func testFillPeakLevelsWhenNotRecording() {
         let bridge = RustBridge()
         var buffer = [Float](repeating: 0, count: 255)
-        let count = bridge.fillPeakLevels(into: &buffer)
-        XCTAssertEqual(count, 0)
+        // DOLL-125: fillPeakLevels now returns Result<Int, BlackBoxError>;
+        // when not recording, the FFI returns 0 (success) — not an error.
+        let result = bridge.fillPeakLevels(into: &buffer)
+        switch result {
+        case .success(let count):
+            XCTAssertEqual(count, 0)
+        case .failure(let err):
+            XCTFail("expected success(0) when not recording, got error \(err)")
+        }
     }
 
     func testListInputDevices() throws {
