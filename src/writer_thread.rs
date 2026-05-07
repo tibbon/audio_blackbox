@@ -155,7 +155,7 @@ pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
         24 => 8_388_607.0_f32,     // 2^23 - 1
         _ => i32::MAX as f32,      // 2^31 - 1
     };
-    (sample * scale) as i32
+    (sample.clamp(-1.0, 1.0) * scale).round() as i32
 }
 
 impl WriterThreadState {
@@ -546,7 +546,7 @@ impl WriterThreadState {
                             if let Some(&s) = frame.get(channel as usize) {
                                 self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                 if let Some(w) = &mut self.multichannel_writers[idx]
-                                    && w.write_sample((s * scale) as i32).is_err()
+                                    && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err()
                                 {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
@@ -560,7 +560,7 @@ impl WriterThreadState {
                             for (idx, &channel) in ch_slice.iter().enumerate() {
                                 if let Some(&s) = frame.get(channel as usize) {
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                                    if w.write_sample((s * scale) as i32).is_err() {
+                                    if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err() {
                                         self.write_errors.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
