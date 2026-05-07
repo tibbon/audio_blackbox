@@ -273,7 +273,7 @@ fn run_pipeline(
                                 for &channel in &channel_indices {
                                     if channel < frame.len() {
                                         // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                        let sample = f32_to_wav_sample(frame[channel], 24);
+                                        let sample = f32_to_wav_sample(frame[channel], 24);
                                         if writer.write_sample(sample).is_err() {
                                             write_errors_writer.fetch_add(1, Ordering::Relaxed);
                                         }
