@@ -641,7 +641,8 @@ impl CpalAudioProcessor {
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
         self.sample_rate = sample_rate;
-        self.sample_rate_atomic.store(sample_rate, Ordering::Relaxed);
+        self.sample_rate_atomic
+            .store(sample_rate, Ordering::Relaxed);
 
         // Auto-adapt to available channels
         let mut actual_channels: Vec<usize> = Vec::new();
@@ -778,11 +779,7 @@ impl CpalAudioProcessor {
                                 }
                             }
 
-                            push_samples_with_overflow_count(
-                                &mut producer,
-                                data,
-                                &write_errors,
-                            );
+                            push_samples_with_overflow_count(&mut producer, data, &write_errors);
                         },
                         err_fn,
                         None,
@@ -986,7 +983,8 @@ impl AudioProcessor for CpalAudioProcessor {
         let total_channels = stream_config.channels() as usize;
         let sample_rate = stream_config.sample_rate();
         self.sample_rate = sample_rate;
-        self.sample_rate_atomic.store(sample_rate, Ordering::Relaxed);
+        self.sample_rate_atomic
+            .store(sample_rate, Ordering::Relaxed);
 
         // Determine which channels to monitor
         let channels_str = config.get_audio_channels();

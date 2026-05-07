@@ -119,7 +119,11 @@ fn test_multiple_shutdown_attempts() {
 
     // First finalize: succeeds, sets finalized.
     let first_finalize = recorder.processor_mut().finalize();
-    assert!(first_finalize.is_ok(), "first finalize: {:?}", first_finalize);
+    assert!(
+        first_finalize.is_ok(),
+        "first finalize: {:?}",
+        first_finalize
+    );
     assert!(recorder.get_processor().finalized);
 
     // Second finalize: also Ok (mock does not error on double-finalize unless

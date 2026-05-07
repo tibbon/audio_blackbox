@@ -724,12 +724,16 @@ mod tests {
                 let config_path = temp_dir.path().join("bad.toml");
                 fs::write(&config_path, "this is not valid toml [[[").unwrap();
 
-                temp_env::with_var("BLACKBOX_CONFIG", Some(config_path.to_str().unwrap()), || {
-                    let config = AppConfig::load();
-                    // Should fall back to defaults, not crash
-                    assert_eq!(config.get_audio_channels(), DEFAULT_CHANNELS);
-                    assert_eq!(config.get_debug(), DEFAULT_DEBUG);
-                });
+                temp_env::with_var(
+                    "BLACKBOX_CONFIG",
+                    Some(config_path.to_str().unwrap()),
+                    || {
+                        let config = AppConfig::load();
+                        // Should fall back to defaults, not crash
+                        assert_eq!(config.get_audio_channels(), DEFAULT_CHANNELS);
+                        assert_eq!(config.get_debug(), DEFAULT_DEBUG);
+                    },
+                );
             },
         );
     }

@@ -213,10 +213,7 @@ mod tests {
                 .expect("recorder should have produced a readable WAV");
             assert_eq!(r.spec().sample_rate, 44100);
             assert!(r.len() > 0, "WAV should contain samples");
-            assert_eq!(
-                recorder.get_processor().output_mode,
-                OutputMode::default()
-            );
+            assert_eq!(recorder.get_processor().output_mode, OutputMode::default());
         });
     }
 

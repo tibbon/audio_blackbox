@@ -279,7 +279,6 @@ fn test_get_status_flags_null_out() {
     blackbox_destroy(handle);
 }
 
-
 /// Status reads must remain lock-free with respect to other handle activity:
 /// Hammer the status path from 8 reader threads while a writer thread
 /// flips `last_error` and config values. The lock-free claim from DOLL-84
@@ -316,8 +315,7 @@ fn test_status_flags_concurrent_reads() {
         let mut counter: u32 = 0;
         while !writer_should_stop_c.load(std::sync::atomic::Ordering::Relaxed) {
             counter = counter.wrapping_add(1);
-            let json =
-                CString::new(format!(r#"{{"output_dir": "/tmp/race_{counter}"}}"#)).unwrap();
+            let json = CString::new(format!(r#"{{"output_dir": "/tmp/race_{counter}"}}"#)).unwrap();
             let _ = blackbox_set_config_json(h, json.as_ptr());
         }
     });

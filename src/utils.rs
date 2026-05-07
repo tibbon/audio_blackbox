@@ -81,6 +81,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
 /// Returns a warning message if ALSA is not available, but does not
 /// prevent execution as CPAL might fall back to another backend.
 #[cfg(target_os = "linux")]
+#[allow(clippy::unnecessary_wraps)] // signature must match the non-Linux variant
 pub fn check_alsa_availability() -> Result<(), BlackboxError> {
     // Check if alsa is available using pkg-config
     let output = Command::new("pkg-config")

@@ -368,7 +368,6 @@ impl WriterThreadState {
         self.timestamp_fn = f;
     }
 
-
     fn setup_split_mode(&mut self) -> Result<(), BlackboxError> {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
@@ -632,7 +631,8 @@ impl WriterThreadState {
                                 self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                             }
                             if let Some(w) = &mut self.multichannel_writers[idx]
-                                && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err()
+                                && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
+                                    .is_err()
                             {
                                 self.write_errors.fetch_add(1, Ordering::Relaxed);
                             }
@@ -650,7 +650,9 @@ impl WriterThreadState {
                                 if s.is_finite() {
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                 }
-                                if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err() {
+                                if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
+                                    .is_err()
+                                {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
@@ -971,10 +973,7 @@ impl SilenceCheckWorker {
                 // check work runs at lower priority than the audio
                 // writer thread.
                 unsafe {
-                    libc::pthread_set_qos_class_self_np(
-                        libc::qos_class_t::QOS_CLASS_BACKGROUND,
-                        0,
-                    );
+                    libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_BACKGROUND, 0);
                 }
                 while let Ok(files) = rx.recv() {
                     check_and_delete_silent_files(&files, threshold);

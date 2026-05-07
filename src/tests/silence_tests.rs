@@ -132,8 +132,7 @@ fn test_invalid_wav_file() {
     // Create an invalid WAV file
     fs::write(&file_path, "not a wav file").unwrap();
 
-    let err = is_silent(file_path.to_str().unwrap(), 0.1)
-        .expect_err("non-WAV content must error");
+    let err = is_silent(file_path.to_str().unwrap(), 0.1).expect_err("non-WAV content must error");
     assert!(
         matches!(err, BlackboxError::WavSource { .. }),
         "expected WavSource variant, got {err:?}"

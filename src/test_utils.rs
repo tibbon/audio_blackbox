@@ -69,10 +69,7 @@ pub fn wait_for_samples_consumed(
 /// rotation request (the writer flips `rotation_needed` back to `false`
 /// after rotating). Replaces a fixed `thread::sleep` rendezvous (DOLL-127).
 #[cfg(test)]
-pub fn wait_for_flag_cleared(
-    flag: &std::sync::atomic::AtomicBool,
-    timeout: std::time::Duration,
-) {
+pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std::time::Duration) {
     let start = std::time::Instant::now();
     while flag.load(std::sync::atomic::Ordering::Relaxed) {
         assert!(
@@ -176,15 +173,12 @@ impl MockClock {
     /// Advance the clock by one tick. Subsequent calls to the timestamp
     /// closure will produce a new string.
     pub fn advance(&self) {
-        self.tick
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Return a `Send + Sync` closure suitable to pass to
     /// `WriterThreadState::set_timestamp_fn`.
-    pub fn as_timestamp_fn(
-        &self,
-    ) -> std::sync::Arc<dyn Fn() -> String + Send + Sync> {
+    pub fn as_timestamp_fn(&self) -> std::sync::Arc<dyn Fn() -> String + Send + Sync> {
         let tick = std::sync::Arc::clone(&self.tick);
         std::sync::Arc::new(move || {
             let n = tick.load(std::sync::atomic::Ordering::Relaxed);
@@ -192,4 +186,3 @@ impl MockClock {
         })
     }
 }
-
