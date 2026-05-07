@@ -620,9 +620,19 @@ enum SleepWakePolicy {
         }
 
         if needsUpdate {
-            // Single assignment triggers one @Observable notification instead of N
-            // (subscript mutations each trigger separate withMutation calls)
-            peakLevels = Array(peakBuffer.prefix(count))
+            // DOLL-113: avoid the per-tick `Array(peakBuffer.prefix(count))`
+            // alloc + copy. When the channel count is unchanged (the common
+            // case in steady-state recording), `replaceSubrange` reuses
+            // the existing storage. We still trigger one @Observable
+            // notification per call.
+            if peakLevels.count == count {
+                peakLevels.replaceSubrange(0..<count, with: peakBuffer[0..<count])
+            } else {
+                // Channel count changed (e.g. recording started/stopped, or
+                // device switched mid-session). Realloc is fine here — it
+                // happens at most once per state transition, not per tick.
+                peakLevels = Array(peakBuffer.prefix(count))
+            }
         }
 
         if let start {
