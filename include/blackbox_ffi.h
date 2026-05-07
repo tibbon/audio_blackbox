@@ -25,6 +25,10 @@ extern "C" {
 #define BLACKBOX_ERR_CONFIG         -3
 #define BLACKBOX_ERR_IO             -4
 #define BLACKBOX_ERR_LOCK_POISONED  -5
+/* -6 is reserved (was BLACKBOX_ERR_INTERNAL; the catch_unwind path that
+ * produced it was removed in DOLL-90 and no FFI function currently
+ * returns this code). The slot is kept reserved so a future error
+ * does not silently reuse a value the Swift bridge already maps. */
 #define BLACKBOX_ERR_INTERNAL       -6
 #define BLACKBOX_ERR_DISK_SPACE_LOW -7
 /* Null or otherwise invalid non-handle argument (e.g. null OUT pointer, null JSON). */
@@ -80,7 +84,10 @@ bool blackbox_is_recording(const BlackboxHandle *handle);
 /*
  * Fill a StatusFlags struct with current engine status.
  * Zero-allocation, no JSON — designed for the 1 Hz polling loop.
- * Returns BLACKBOX_OK on success, or a negative error code.
+ * Returns BLACKBOX_OK on success, or one of:
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_ARG     — out null
+ *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
  */
 int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out);
 
@@ -95,14 +102,21 @@ char *blackbox_list_input_devices(void);
 /*
  * Get the input channel count for a device by name.
  * Pass NULL or "" for the system default device.
- * Returns the channel count (>= 1), or BLACKBOX_ERR_AUDIO_DEVICE on error.
+ * Returns the channel count (>= 1), or one of:
+ *   BLACKBOX_ERR_AUDIO_DEVICE  — device missing or unreadable
+ *   BLACKBOX_ERR_INVALID_ARG   — device_name contains invalid UTF-8 (DOLL-104)
  */
 int32_t blackbox_get_device_channel_count(const char *device_name);
 
 /*
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
- * Returns BLACKBOX_OK on success, or a negative error code.
+ * Returns BLACKBOX_OK on success, or one of:
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_ARG     — json null (DOLL-103)
+ *   BLACKBOX_ERR_CONFIG          — invalid UTF-8 or json failed to parse
+ *                                  as an AppConfig patch
+ *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
  */
 int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
 

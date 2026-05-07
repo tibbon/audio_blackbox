@@ -9,6 +9,9 @@ enum BlackBoxError: Int32, Error {
     case config = -3
     case io = -4
     case lockPoisoned = -5
+    /// Reserved (DOLL-128). No FFI function currently returns -6 — the
+    /// catch_unwind path that produced it was removed in DOLL-90. Kept
+    /// to maintain a stable mapping if a future error claims the slot.
     case `internal` = -6
     case diskSpaceLow = -7
     case invalidArg = -8

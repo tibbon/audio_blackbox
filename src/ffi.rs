@@ -46,6 +46,11 @@ pub const BLACKBOX_ERR_AUDIO_DEVICE: i32 = -2;
 pub const BLACKBOX_ERR_CONFIG: i32 = -3;
 pub const BLACKBOX_ERR_IO: i32 = -4;
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
+/// Reserved (DOLL-128). The catch_unwind path that produced this code
+/// was removed in DOLL-90; no FFI function currently returns -6. Kept
+/// in the surface so a future error doesn't silently reuse the slot
+/// the Swift bridge already maps to `BlackBoxError.internal`.
+#[allow(dead_code)]
 pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
 pub const BLACKBOX_ERR_DISK_SPACE_LOW: i32 = -7;
 /// Caller passed a null or otherwise invalid argument that isn't the handle
