@@ -185,17 +185,32 @@ fn to_c_string(s: &str) -> *mut c_char {
 /// Wraps `&'a BlackboxHandle` so the borrow cannot be stored past the call
 /// — e.g. into a `'static` collection or moved into a `thread::spawn`
 /// closure (those would require `'static`, and `HandleRef<'a>` only
-/// promises `'a`). This keeps the FFI contract enforceable at compile time:
-/// the borrow's validity is bounded by the `extern "C"` body's scope, so a
-/// concurrent `blackbox_destroy` racing some other `blackbox_*` call is
-/// the only way to violate it (which the FFI doc-contract on
-/// `blackbox_destroy` already forbids).
-struct HandleRef<'a>(&'a BlackboxHandle);
+/// promises `'a`).
+///
+/// The `PhantomData<*const ()>` tightens this further (DOLL-121): without
+/// it, `'a` is unbound at the input (the input is a raw pointer, not a
+/// reference), so a caller could pick `'a = 'static` and return
+/// `HandleRef<'static>` from a non-FFI helper. The PhantomData makes
+/// `HandleRef<'a>` invariant in `'a`, so the lifetime can't be silently
+/// extended via subtyping. Combined with the field `&'a BlackboxHandle`
+/// — which inherits its lifetime from the local borrow site inside
+/// `validate_handle` — the only way to construct a `HandleRef<'static>`
+/// is to start from a `&'static BlackboxHandle`, which the function
+/// signature doesn't accept.
+struct HandleRef<'a> {
+    handle: &'a BlackboxHandle,
+    /// Invariant lifetime marker (DOLL-121). `*const ()` is invariant in
+    /// its lifetime parameter; `PhantomData<*const ()>` doesn't actually
+    /// store anything but tells the compiler `HandleRef` is invariant
+    /// in `'a`. This prevents a future maintainer from using subtyping
+    /// to shorten or extend `'a` at a call site outside `extern "C"`.
+    _invariant: std::marker::PhantomData<*const ()>,
+}
 
 impl<'a> std::ops::Deref for HandleRef<'a> {
     type Target = BlackboxHandle;
     fn deref(&self) -> &BlackboxHandle {
-        self.0
+        self.handle
     }
 }
 
@@ -223,7 +238,14 @@ fn validate_handle<'a>(handle: *const BlackboxHandle) -> Option<HandleRef<'a>> {
     // `blackbox_create` (Box::leak) and is not concurrently freed. The magic
     // word check is a UAF mitigation, not a soundness argument.
     let h: &'a BlackboxHandle = unsafe { &*handle };
-    if h.is_valid() { Some(HandleRef(h)) } else { None }
+    if h.is_valid() {
+        Some(HandleRef {
+            handle: h,
+            _invariant: std::marker::PhantomData,
+        })
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
