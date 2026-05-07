@@ -915,6 +915,10 @@ impl SilenceCheckWorker {
             .name("blackbox-silence".to_string())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
+                // SAFETY: macOS-only libc QoS call. No pointer args;
+                // sets the calling thread's QoS class so the silence-
+                // check work runs at lower priority than the audio
+                // writer thread.
                 unsafe {
                     libc::pthread_set_qos_class_self_np(
                         libc::qos_class_t::QOS_CLASS_BACKGROUND,

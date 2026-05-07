@@ -96,18 +96,31 @@ mod alloc_counter {
 
     pub struct CountingAllocator;
 
+    // SAFETY: `CountingAllocator` is a transparent wrapper around `System`.
+    // Each method delegates directly with the same `Layout`/`ptr`
+    // arguments, preserving every invariant `GlobalAlloc` requires.
+    // The added `fetch_add` only writes to a `AtomicU64`, which has no
+    // safety implications for the allocator contract.
     unsafe impl GlobalAlloc for CountingAllocator {
         unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            // SAFETY: forwards `layout` unmodified to `System::alloc`,
+            // whose contract we satisfy by virtue of being called from
+            // a `GlobalAlloc::alloc` impl.
             unsafe { System.alloc(layout) }
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: caller's `GlobalAlloc::dealloc` contract pinned `ptr`
+            // to a previous `alloc` of the same `layout`; we forward both
+            // unmodified.
             unsafe { System.dealloc(ptr, layout) }
         }
 
         unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            // SAFETY: same as `dealloc` plus `new_size` validity — we
+            // forward all three args unmodified to `System::realloc`.
             unsafe { System.realloc(ptr, layout, new_size) }
         }
     }

@@ -119,7 +119,14 @@ pub fn available_disk_space_mb(path: &str) -> Option<u64> {
 /// heap allocation per call. Used by the writer thread's periodic check.
 #[cfg(unix)]
 pub fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
+    // SAFETY: `libc::statvfs` is a POSIX POD struct with no padding-
+    // significance; the all-zero bit pattern is a valid representation
+    // and the libc call overwrites the entire struct on success.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `c_path.as_ptr()` is a NUL-terminated path valid for the
+    // call's duration (CStr invariant). The OUT pointer points to the
+    // local `stat` which lives long enough. libc's `statvfs(3)`
+    // contract is satisfied.
     let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
     if result == 0 {
         // Both fields can be u32 on some platforms (Linux) and u64 on others

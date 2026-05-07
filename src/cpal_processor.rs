@@ -304,7 +304,11 @@ mod sample_rate_listener {
             return None;
         }
 
-        // Caller owns the returned CFString (AudioObject API contract).
+        // SAFETY: `name_ref` was just verified non-null. CoreAudio's
+        // `kAudioObjectPropertyName` is documented to return a +1
+        // retained CFStringRef; `wrap_under_create_rule` consumes that
+        // retain count without re-retaining, so the wrapper drops it
+        // exactly once.
         let cf = unsafe { CFString::wrap_under_create_rule(name_ref) };
         Some(cf.to_string())
     }
@@ -696,6 +700,10 @@ impl CpalAudioProcessor {
             .name("blackbox-writer".to_string())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
+                // SAFETY: macOS-only libc call that takes a QoS class enum
+                // value and a relative priority offset. No pointer args;
+                // affects only the current thread's QoS attribute. Cannot
+                // produce UB on any input.
                 unsafe {
                     libc::pthread_set_qos_class_self_np(
                         libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
@@ -999,6 +1007,9 @@ impl AudioProcessor for CpalAudioProcessor {
             .name("blackbox-monitor".to_string())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
+                // SAFETY: same as the recording-writer site above —
+                // libc QoS call with no pointer args, affects only this
+                // thread's QoS class.
                 unsafe {
                     libc::pthread_set_qos_class_self_np(
                         libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
