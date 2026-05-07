@@ -533,7 +533,9 @@ impl WriterThreadState {
             // Monitor mode or gate idle: only track peaks, no disk writes
             for frame in frame_data.chunks_exact(frame_size) {
                 for (idx, &channel) in ch_slice.iter().enumerate() {
-                    if let Some(&s) = frame.get(channel as usize) {
+                    if let Some(&s) = frame.get(channel as usize)
+                        && s.is_finite()
+                    {
                         self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                     }
                 }
@@ -544,7 +546,9 @@ impl WriterThreadState {
                     for frame in frame_data.chunks_exact(frame_size) {
                         for (idx, &channel) in ch_slice.iter().enumerate() {
                             if let Some(&s) = frame.get(channel as usize) {
-                                self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                if s.is_finite() {
+                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                }
                                 if let Some(w) = &mut self.multichannel_writers[idx]
                                     && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err()
                                 {
@@ -559,7 +563,9 @@ impl WriterThreadState {
                         for frame in frame_data.chunks_exact(frame_size) {
                             for (idx, &channel) in ch_slice.iter().enumerate() {
                                 if let Some(&s) = frame.get(channel as usize) {
-                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                    if s.is_finite() {
+                                        self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                                    }
                                     if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32).is_err() {
                                         self.write_errors.fetch_add(1, Ordering::Relaxed);
                                     }
