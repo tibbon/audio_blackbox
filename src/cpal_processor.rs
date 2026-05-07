@@ -798,10 +798,12 @@ impl AudioProcessor for CpalAudioProcessor {
 
     fn finalize(&mut self) -> Result<(), BlackboxError> {
         // Mirror state for lock-free readers before we begin teardown.
-        // Cleared first so an FFI status poll racing finalize never sees
-        // "recording" while the stream is gone. Release store so readers
-        // who Acquire-load `recording_active = false` also see any prior
-        // Relaxed clears (DOLL-101).
+        // Order matters: clear sample_rate_atomic Relaxed first, then
+        // Release-store `recording_active = false`. Readers who
+        // Acquire-load `recording_active = false` then observe
+        // sample_rate = 0 — matches the symmetry of stop_monitoring and
+        // the start-side ordering (DOLL-101).
+        self.sample_rate_atomic.store(0, Ordering::Relaxed);
         self.recording_active.store(false, Ordering::Release);
 
         let errors = self.write_errors.load(Ordering::Relaxed);
@@ -852,12 +854,11 @@ impl AudioProcessor for CpalAudioProcessor {
 
         #[cfg(test)]
         if let Some(mut state) = self.direct_state.take() {
-            let result = state.finalize_all();
-            self.sample_rate_atomic.store(0, Ordering::Relaxed);
-            return result;
+            return state.finalize_all();
         }
 
-        self.sample_rate_atomic.store(0, Ordering::Relaxed);
+        // sample_rate_atomic was already cleared at the top of finalize
+        // alongside the Release store on recording_active.
         Ok(())
     }
 
