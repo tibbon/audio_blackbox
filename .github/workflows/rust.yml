@@ -156,7 +156,7 @@ jobs:
         sudo apt-get install -y libasound2-dev pkg-config
 
     - name: Build bench binary (release)
-      run: cargo build --release --bin bench-writer
+      run: cargo build --release --bin bench-writer --features benchmarking
 
     # 10x is well below the documented worst case (19x) so noisy GH runners
     # don't flap, but enough to catch a ~50% regression.

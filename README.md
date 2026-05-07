@@ -82,7 +82,7 @@ Channel specs support individual channels and ranges: `"0,2-4,7"` records channe
 ```bash
 cargo run                            # Run with defaults (blackbox binary)
 cargo run -- --menu-bar              # Run with macOS menu bar UI
-cargo run --bin bench-writer -- --channels 64 --seconds 10 --mode single  # Run benchmarks
+cargo run --bin bench-writer --features benchmarking -- --channels 64 --seconds 10 --mode single  # Run benchmarks
 ```
 
 ## Architecture
@@ -113,10 +113,10 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 
 ## Benchmarking
 
-A standalone benchmark binary is included for profiling:
+A standalone benchmark binary is included for profiling. The `benchmarking` feature pulls in `sysinfo` and is off by default so the shipped binary stays small — pass `--features benchmarking` when building or running it.
 
 ```bash
-cargo build --release --bin bench-writer
+cargo build --release --bin bench-writer --features benchmarking
 
 # Direct write throughput (no threading overhead)
 target/release/bench-writer --channels 64 --seconds 30 --mode single
@@ -138,7 +138,7 @@ samply record target/release/bench-writer --channels 64 --seconds 30 --mode pipe
 In-tree benchmark tests (run manually, not in CI):
 
 ```bash
-cargo test benchmark -- --ignored --nocapture
+cargo test benchmark --features benchmarking -- --ignored --nocapture
 ```
 
 ### Performance (Apple Silicon, release build, 24-bit)
