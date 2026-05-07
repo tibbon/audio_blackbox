@@ -325,7 +325,18 @@ struct RecordingSettingsTab: View {
     /// Clamps selected channels to what the device supports and applies config
     /// directly (no confirmation dialog — device-initiated, not user-initiated).
     private func refreshChannelCount() {
-        deviceChannelCount = RustBridge.getDeviceChannelCount(deviceName: selectedDevice) ?? 0
+        // DOLL-125: getDeviceChannelCount returns Result so audioDevice
+        // (-2) and invalidArg (-8) are distinguishable. Treat both as
+        // "unknown channel count = 0" for UI purposes — same observable
+        // behavior as before — but the failure mode is now logged
+        // instead of silently nil'd.
+        switch RustBridge.getDeviceChannelCount(deviceName: selectedDevice) {
+        case .success(let n):
+            deviceChannelCount = n
+        case .failure(let err):
+            print("getDeviceChannelCount failed for \(selectedDevice): \(err)")
+            deviceChannelCount = 0
+        }
         if deviceChannelCount > 0 {
             selectedChannels = selectedChannels.filter { $0 <= deviceChannelCount }
             if selectedChannels.isEmpty { selectedChannels = [1] }

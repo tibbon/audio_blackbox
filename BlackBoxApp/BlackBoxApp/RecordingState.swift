@@ -614,7 +614,19 @@ enum SleepWakePolicy {
             return
         }
 
-        let count = bridge.fillPeakLevels(into: &peakBuffer)
+        // DOLL-125: fillPeakLevels now returns Result so callers can
+        // distinguish lock-poison / invalid-arg / invalid-handle from a
+        // legitimate empty read. On error, log + leave peakLevels alone
+        // (UI keeps showing the last good values rather than collapsing
+        // to 0 channels every tick).
+        let count: Int
+        switch bridge.fillPeakLevels(into: &peakBuffer) {
+        case .success(let n):
+            count = n
+        case .failure(let err):
+            Self.log.error("fillPeakLevels failed: \(String(describing: err))")
+            return
+        }
 
         // Only publish when values have visibly changed (avoids SwiftUI diffing overhead)
         let needsUpdate: Bool
