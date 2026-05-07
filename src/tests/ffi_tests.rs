@@ -289,22 +289,32 @@ fn test_get_status_flags_null_out() {
 /// The handle is shared as `usize` to cross thread boundaries, since
 /// Send/Sync aren't auto-derived for raw pointers — Swift does the same
 /// in practice via `OpaquePointer`.
+///
+/// DOLL-127 round-3 tightening: the original test only had a config-mutex
+/// writer, so the atomic flags read by the status path were never raced.
+/// A second writer now flips `disk_space_low` directly on the cached
+/// `ProcessorStatus` bundle, and readers count observations — so reverting
+/// `blackbox_get_status_flags` to hardcode flag values would no longer pass.
 #[test]
 fn test_status_flags_concurrent_reads() {
     let handle = blackbox_create(std::ptr::null());
     assert!(!handle.is_null());
     let handle_addr = handle as usize;
 
-    // Writer thread: flips config (acquires handle.config + handle.last_error
+    // Snapshot the status atomics bundle so a parallel writer can
+    // mutate the SAME atomics that `blackbox_get_status_flags` reads.
+    let bundle_w = unsafe { (*handle).test_status_bundle() };
+
+    // Writer 1: flips config (acquires handle.config + handle.last_error
     // mutexes) while readers hammer status. If status reads were not
     // lock-free w.r.t. config writes, this would surface as readers
     // observing wedged or torn state.
     let writer_should_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer_should_stop_w = std::sync::Arc::clone(&writer_should_stop);
-    let writer = std::thread::spawn(move || {
+    let writer_should_stop_c = std::sync::Arc::clone(&writer_should_stop);
+    let config_writer = std::thread::spawn(move || {
         let h = handle_addr as *mut BlackboxHandle;
         let mut counter: u32 = 0;
-        while !writer_should_stop_w.load(std::sync::atomic::Ordering::Relaxed) {
+        while !writer_should_stop_c.load(std::sync::atomic::Ordering::Relaxed) {
             counter = counter.wrapping_add(1);
             let json =
                 CString::new(format!(r#"{{"output_dir": "/tmp/race_{counter}"}}"#)).unwrap();
@@ -312,8 +322,27 @@ fn test_status_flags_concurrent_reads() {
         }
     });
 
+    // Writer 2: flips one of the atomic flags consumed by the status
+    // path. Readers track sightings of the toggled state — without this,
+    // the status path could be reverted to hardcode `false` and the
+    // test would still pass (DOLL-127).
+    let writer_should_stop_a = std::sync::Arc::clone(&writer_should_stop);
+    let atomic_writer = std::thread::spawn(move || {
+        while !writer_should_stop_a.load(std::sync::atomic::Ordering::Relaxed) {
+            bundle_w
+                .disk_space_low
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            bundle_w
+                .disk_space_low
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+
+    let saw_disk_low_true = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     let mut readers = Vec::new();
     for _ in 0..8 {
+        let saw_true = std::sync::Arc::clone(&saw_disk_low_true);
         readers.push(std::thread::spawn(move || {
             let h = handle_addr as *const BlackboxHandle;
             let mut flags = StatusFlags {
@@ -333,6 +362,9 @@ fn test_status_flags_concurrent_reads() {
                 // bytes would surface as `true` or out-of-domain values.
                 assert!(!flags.is_recording);
                 assert_eq!(flags.sample_rate, 0);
+                if flags.disk_space_low {
+                    saw_true.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 let _ = blackbox_is_recording(h);
                 let _ = blackbox_is_monitoring(h);
             }
@@ -342,9 +374,19 @@ fn test_status_flags_concurrent_reads() {
         t.join().expect("status reader panicked");
     }
 
-    // Stop the writer and join.
+    // Stop the writers and join.
     writer_should_stop.store(true, std::sync::atomic::Ordering::Relaxed);
-    writer.join().expect("config writer panicked");
+    config_writer.join().expect("config writer panicked");
+    atomic_writer.join().expect("atomic writer panicked");
+
+    // Killer-question: if the status path was reverted to hardcode
+    // `disk_space_low = false` (or to skip the atomic load entirely),
+    // no reader could ever observe the writer's flip.
+    assert!(
+        saw_disk_low_true.load(std::sync::atomic::Ordering::Relaxed),
+        "no reader ever observed disk_space_low=true — status path may not be \
+         reading the cached atomic"
+    );
 
     blackbox_destroy(handle);
 }

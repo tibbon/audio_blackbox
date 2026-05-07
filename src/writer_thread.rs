@@ -160,6 +160,13 @@ pub struct WriterThreadState {
     /// silence and deletes them. `Some` when `silence_threshold > 0`,
     /// `None` otherwise. Joined when `WriterThreadState` is dropped.
     silence_worker: Option<SilenceCheckWorker>,
+    /// Cumulative count of samples consumed via `read_available`. Tests
+    /// poll this to know when the writer thread has drained a known
+    /// number of samples — replaces the prior `thread::sleep(50ms)`
+    /// rendezvous with deterministic state (DOLL-127). Production code
+    /// never reads it.
+    #[allow(dead_code)]
+    pub(crate) samples_consumed_total: Arc<AtomicU64>,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -279,6 +286,7 @@ impl WriterThreadState {
             } else {
                 None
             },
+            samples_consumed_total: Arc::new(AtomicU64::new(0)),
         };
 
         // When gate is enabled, start idle (no files). Writers are created on first signal.
@@ -348,6 +356,7 @@ impl WriterThreadState {
             disk_space_low: Arc::new(AtomicBool::new(false)),
             timestamp_fn: Arc::new(timestamp_now),
             silence_worker: None, // monitor mode never writes files, so no silence checks
+            samples_consumed_total: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -916,6 +925,12 @@ fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadSt
             state.write_samples(second);
         }
         chunk.commit_all();
+        // Bump cumulative-sample counter so tests can rendezvous on
+        // "writer has consumed N samples" instead of `thread::sleep`
+        // (DOLL-127). Production code never reads this counter.
+        state
+            .samples_consumed_total
+            .fetch_add(n as u64, Ordering::Relaxed);
         n
     })
 }

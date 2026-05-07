@@ -196,6 +196,7 @@ fn test_writer_thread_rotation() {
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
+        let samples_counter = Arc::clone(&state.samples_consumed_total);
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
@@ -208,17 +209,25 @@ fn test_writer_thread_rotation() {
             chunk.fill_from_iter(data1.iter().copied());
         }
 
-        // Brief wait so the writer thread has consumed the first batch before
-        // we trigger rotation. (No wall-clock-second crossing required.)
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Rendezvous on writer-has-drained-batch-1 (DOLL-127): replaces a
+        // 50ms sleep that hoped the writer had caught up.
+        crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            200,
+            std::time::Duration::from_secs(2),
+        );
 
         // Advance the mock clock and signal rotation. The newly created file
         // gets a different stamp than the closed one.
         clock.advance();
         rotation_signal.store(true, Ordering::Release);
 
-        // Wait for rotation to happen
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Rendezvous on writer-has-acknowledged-rotation: the writer clears
+        // the flag back to false after finalizing the previous file.
+        crate::test_utils::wait_for_flag_cleared(
+            &rotation_signal,
+            std::time::Duration::from_secs(2),
+        );
 
         // Push second batch
         let data2 = generate_uniform_interleaved_f32(1, 200, &[0], 0.6);
@@ -226,9 +235,8 @@ fn test_writer_thread_rotation() {
             chunk.fill_from_iter(data2.iter().copied());
         }
 
-        // Wait and shutdown
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
+        // Shutdown drains the ring buffer before returning the reply, so
+        // no rendezvous on batch 2 is needed.
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
         reply_rx.recv().unwrap().unwrap();
@@ -346,6 +354,7 @@ fn test_writer_thread_silence_on_rotation() {
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
+        let samples_counter = Arc::clone(&state.samples_consumed_total);
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
@@ -358,14 +367,21 @@ fn test_writer_thread_silence_on_rotation() {
             chunk.fill_from_iter(data.iter().copied());
         }
 
-        // Wait for writer to process
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Rendezvous on writer-drained-batch-1 (DOLL-127).
+        crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            500,
+            std::time::Duration::from_secs(2),
+        );
 
         // Signal rotation — this triggers silence check on the rotated file
         rotation_signal.store(true, Ordering::Release);
 
-        // Wait for rotation
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Rendezvous on writer-acknowledged-rotation.
+        crate::test_utils::wait_for_flag_cleared(
+            &rotation_signal,
+            std::time::Duration::from_secs(2),
+        );
 
         // The first file (silent) should have been deleted during rotation
         // Push some more data for the new file and shutdown
@@ -373,8 +389,6 @@ fn test_writer_thread_silence_on_rotation() {
         if let Ok(chunk) = producer.write_chunk_uninit(data2.len()) {
             chunk.fill_from_iter(data2.iter().copied());
         }
-
-        std::thread::sleep(std::time::Duration::from_millis(50));
 
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
@@ -460,6 +474,15 @@ fn test_check_and_delete_silent_files_skips_missing() {
 fn test_rotation_silence_thread_does_not_block_writer() {
     // Verify that after rotation, the writer thread continues accepting
     // new samples immediately (the silence check happens in background).
+    //
+    // DOLL-127 round-3 tightening: the original test used a huge ring
+    // (44100 * RING_BUFFER_SECONDS) and a tiny push (700 samples), so a
+    // synchronous silence check that held the writer for seconds would
+    // still pass `write_errors == 0`. The current shape uses a tiny ring
+    // and a flooding producer — and asserts the writer's
+    // `samples_consumed_total` advanced during the post-rotation window.
+    // If `rotate_files` was reverted to perform the silence check on the
+    // writer thread, the counter would stall and this test would fail.
     let mut env = default_test_env();
     env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
     env.push(("SILENCE_THRESHOLD", Some("10")));
@@ -469,8 +492,12 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
 
-        let ring_size = 44100 * RING_BUFFER_SECONDS;
-        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
+        // Small ring (~5.8ms of audio at 44100 Hz) — under flooding any
+        // writer pause surfaces immediately as the producer can't keep
+        // pushing without waiting for drain.
+        let ring_size = 256;
+        let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
+        let producer = Arc::new(std::sync::Mutex::new(producer));
 
         let mut state = WriterThreadState::new(
             dir,
@@ -497,51 +524,75 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
+        let samples_counter = Arc::clone(&state.samples_consumed_total);
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
-        let handle = std::thread::spawn(move || {
+        let writer_handle = std::thread::spawn(move || {
             writer_thread_main(consumer, rotation_clone, command_rx, state);
         });
 
-        // Push first batch
-        let data1 = generate_uniform_interleaved_f32(1, 200, &[0], 0.3);
-        if let Ok(chunk) = producer.write_chunk_uninit(data1.len()) {
-            chunk.fill_from_iter(data1.iter().copied());
-        }
+        // Producer thread: floods 64-sample chunks into the tiny ring.
+        // The writer is doing real WAV writes so the producer outpaces
+        // it slightly — modest baseline overflow is expected. The signal
+        // we care about is the writer's `samples_consumed_total` advance,
+        // not the absolute overflow count.
+        let producer_should_stop = Arc::new(AtomicBool::new(false));
+        let producer_should_stop_c = Arc::clone(&producer_should_stop);
+        let producer_we = Arc::clone(&write_errors);
+        let producer_arc = Arc::clone(&producer);
+        let producer_handle = std::thread::spawn(move || {
+            let chunk = generate_uniform_interleaved_f32(1, 64, &[0], 0.3);
+            while !producer_should_stop_c.load(Ordering::Relaxed) {
+                if let Ok(mut p) = producer_arc.lock() {
+                    crate::cpal_processor::push_samples_with_overflow_count(
+                        &mut p, &chunk, &producer_we,
+                    );
+                }
+                std::thread::yield_now();
+            }
+        });
 
-        // Brief wait so the writer processes the first batch.
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Let the system reach a steady state under flooding.
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let pre_rotation_consumed = samples_counter.load(Ordering::Relaxed);
 
-        // Advance the mock clock and signal rotation.
+        // Signal rotation while the producer is still flooding.
         clock.advance();
         rotation_signal.store(true, Ordering::Release);
 
-        // Immediately push a second batch — writer thread should accept it
-        // without waiting for the silence check to finish
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        let data2 = generate_uniform_interleaved_f32(1, 500, &[0], 0.3);
-        if let Ok(chunk) = producer.write_chunk_uninit(data2.len()) {
-            chunk.fill_from_iter(data2.iter().copied());
-        }
+        // Writer should acknowledge rotation almost immediately — if it
+        // were blocked on a synchronous silence check this would time
+        // out (300ms is comfortably above any transient writer activity
+        // on a healthy machine, but well below the seconds a synchronous
+        // silence check on a real recording would take).
+        crate::test_utils::wait_for_flag_cleared(
+            &rotation_signal,
+            std::time::Duration::from_millis(300),
+        );
 
-        // Give time for processing
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Measure forward progress during the post-rotation window.
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let post_rotation_consumed = samples_counter.load(Ordering::Relaxed);
 
-        // Shutdown
+        producer_should_stop.store(true, Ordering::Relaxed);
+        producer_handle.join().expect("producer thread panicked");
+
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
         reply_rx.recv().unwrap().unwrap();
-        handle.join().unwrap();
+        writer_handle.join().unwrap();
 
-        // Allow background silence thread to complete
-        std::thread::sleep(std::time::Duration::from_millis(200));
-
-        // No write errors should have occurred — the writer thread was
-        // never blocked by silence detection
-        assert_eq!(
-            write_errors.load(Ordering::Relaxed),
-            0,
-            "No write errors expected — writer thread should not be blocked by silence check"
+        // Killer-question: if `rotate_files` was reverted to run the
+        // silence check synchronously on the writer thread, the writer
+        // would stop draining the ring during that window and
+        // `samples_consumed_total` would not advance. Asserting it
+        // advanced by a non-trivial amount catches that regression.
+        let consumed_during_rotation = post_rotation_consumed - pre_rotation_consumed;
+        assert!(
+            consumed_during_rotation > 0,
+            "writer made no progress during the post-rotation window — \
+             silence check may be blocking the writer thread \
+             (consumed_during_rotation={consumed_during_rotation})"
         );
     });
 }

@@ -31,6 +31,58 @@ pub fn generate_silent_interleaved_f32(
     vec![0.0_f32; total_channels * samples_per_channel]
 }
 
+/// Block until `counter` reaches at least `target`, returning the final value.
+///
+/// Used by rotation tests to rendezvous on "writer has consumed N samples"
+/// instead of `thread::sleep` for an arbitrary "long enough" duration
+/// (DOLL-127).
+///
+/// Panics if the timeout elapses before the counter reaches target —
+/// the caller's expectation is that the writer thread WILL drain the
+/// pushed samples, so a timeout indicates a real test failure
+/// (writer wedged, lost samples, etc.) rather than a flake.
+#[cfg(test)]
+pub fn wait_for_samples_consumed(
+    counter: &std::sync::atomic::AtomicU64,
+    target: u64,
+    timeout: std::time::Duration,
+) -> u64 {
+    let start = std::time::Instant::now();
+    loop {
+        let n = counter.load(std::sync::atomic::Ordering::Relaxed);
+        if n >= target {
+            return n;
+        }
+        assert!(
+            start.elapsed() < timeout,
+            "writer thread did not consume {target} samples within {timeout:?} \
+             (final count: {n})"
+        );
+        // 1ms poll keeps the test responsive without busy-waiting.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Block until `flag` is cleared (becomes `false`).
+///
+/// Used by rotation tests to wait for the writer thread to acknowledge a
+/// rotation request (the writer flips `rotation_needed` back to `false`
+/// after rotating). Replaces a fixed `thread::sleep` rendezvous (DOLL-127).
+#[cfg(test)]
+pub fn wait_for_flag_cleared(
+    flag: &std::sync::atomic::AtomicBool,
+    timeout: std::time::Duration,
+) {
+    let start = std::time::Instant::now();
+    while flag.load(std::sync::atomic::Ordering::Relaxed) {
+        assert!(
+            start.elapsed() < timeout,
+            "flag did not clear within {timeout:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 /// Standard set of env-var overrides to isolate tests from the host
 /// environment. Sets the `*` (unprefixed) keys to defaults and clears
 /// every `BLACKBOX_*` override. Use with `temp_env::with_vars(...)`.
