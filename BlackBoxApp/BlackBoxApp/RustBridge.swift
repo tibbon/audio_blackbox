@@ -2,7 +2,7 @@ import Foundation
 import BlackBoxFFI
 
 /// Typed error codes matching the Rust FFI BLACKBOX_ERR_* constants.
-enum BlackBoxError: Int32 {
+enum BlackBoxError: Int32, Error {
     case ok = 0
     case invalidHandle = -1
     case audioDevice = -2

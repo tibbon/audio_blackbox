@@ -208,7 +208,9 @@ impl MenuBarApp {
     /// Updates the recording status
     #[allow(dead_code)]
     pub fn update_status(&mut self, is_recording: bool) {
-        self.state.is_recording.store(is_recording, Ordering::Relaxed);
+        self.state
+            .is_recording
+            .store(is_recording, Ordering::Relaxed);
     }
 
     #[allow(dead_code)]

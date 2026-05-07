@@ -540,8 +540,7 @@ pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) 
             None => return BLACKBOX_ERR_INVALID_ARG,
         }
     };
-    CpalAudioProcessor::get_device_channel_count(name)
-        .map_or(BLACKBOX_ERR_AUDIO_DEVICE, i32::from)
+    CpalAudioProcessor::get_device_channel_count(name).map_or(BLACKBOX_ERR_AUDIO_DEVICE, i32::from)
 }
 
 /// Update the configuration from a JSON string.
@@ -688,8 +687,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
         let processor = match CpalAudioProcessor::with_config(&config) {
             Ok(p) => p,
             Err(e) => {
-                return handle
-                    .set_error_from(format!("Failed to create audio processor: {e}"), &e);
+                return handle.set_error_from(format!("Failed to create audio processor: {e}"), &e);
             }
         };
         *guard = Some(AudioRecorder::with_config(processor, config));
@@ -747,8 +745,7 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
             }
             if let Some(recorder) = guard.as_mut() {
                 if let Err(e) = recorder.processor_mut().stop_monitoring() {
-                    return handle
-                        .set_error_from(format!("Failed to stop monitoring: {e}"), &e);
+                    return handle.set_error_from(format!("Failed to stop monitoring: {e}"), &e);
                 }
                 // If not recording, drop the recorder to release resources
                 if !recorder.get_processor().is_recording() {

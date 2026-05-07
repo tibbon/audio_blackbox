@@ -36,7 +36,12 @@ fn test_measure_execution_time() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_basic() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -54,7 +59,12 @@ fn test_performance_tracker_basic() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_disabled() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(false, &log_path, 10, 1);
     tracker.start();
@@ -73,7 +83,12 @@ fn test_performance_tracker_disabled() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_history() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
     tracker.start();
@@ -95,7 +110,12 @@ fn test_performance_tracker_history() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_stop_start() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
 
@@ -126,7 +146,12 @@ fn test_performance_tracker_stop_start() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_metrics_range() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -146,7 +171,12 @@ fn test_performance_tracker_metrics_range() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_log_file() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -164,7 +194,12 @@ fn test_performance_tracker_log_file() {
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_multiple_starts() {
     let temp_dir = tempdir().unwrap();
-    let log_path = temp_dir.path().join("perf.log").to_str().unwrap().to_string();
+    let log_path = temp_dir
+        .path()
+        .join("perf.log")
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
 

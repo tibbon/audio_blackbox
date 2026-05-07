@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tempfile::tempdir;
 
 use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
-use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
 use crate::test_utils::default_test_env;
+use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
 use crate::writer_thread::{
     WriterCommand, WriterThreadState, check_and_delete_silent_files, writer_thread_main,
 };
@@ -545,7 +545,9 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             while !producer_should_stop_c.load(Ordering::Relaxed) {
                 if let Ok(mut p) = producer_arc.lock() {
                     crate::cpal_processor::push_samples_with_overflow_count(
-                        &mut p, &chunk, &producer_we,
+                        &mut p,
+                        &chunk,
+                        &producer_we,
                     );
                 }
                 std::thread::yield_now();

@@ -6,10 +6,10 @@ use tempfile::tempdir;
 use crate::audio_processor::AudioProcessor;
 use crate::constants::OutputMode;
 use crate::cpal_processor::CpalAudioProcessor;
+use crate::test_utils::default_test_env;
 use crate::test_utils::{
     generate_interleaved_f32, generate_silent_interleaved_f32, generate_uniform_interleaved_f32,
 };
-use crate::test_utils::default_test_env;
 use crate::writer_thread::f32_to_wav_sample;
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,8 @@ fn test_standard_mode_mono() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = generate_uniform_interleaved_f32(1, 1000, &[0], 0.5);
         processor.feed_test_data(&data, 1);
@@ -125,7 +126,8 @@ fn test_standard_mode_data_accuracy() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         // Feed a constant 0.5 signal
         let data = vec![0.5_f32; 100];
@@ -157,7 +159,8 @@ fn test_split_mode_two_channels() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
 
         let data = generate_uniform_interleaved_f32(2, 500, &[0, 1], 0.3);
         processor.feed_test_data(&data, 2);
@@ -180,7 +183,8 @@ fn test_split_mode_channel_isolation() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 2], OutputMode::Split).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0, 2], OutputMode::Split).unwrap();
 
         // Channel 0 at 0.8 amplitude, channel 2 at 0.1 amplitude (4-ch device)
         let data = generate_interleaved_f32(4, 1000, &[(0, 0.8), (2, 0.1)]);
@@ -308,7 +312,8 @@ fn test_recording_files_before_finalize() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = generate_uniform_interleaved_f32(1, 100, &[0], 0.5);
         processor.feed_test_data(&data, 1);
@@ -346,7 +351,8 @@ fn test_no_stale_temp_files_after_finalize() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
 
         let data = generate_uniform_interleaved_f32(2, 100, &[0, 1], 0.4);
         processor.feed_test_data(&data, 2);
@@ -371,7 +377,8 @@ fn test_write_errors_initially_zero() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
         assert_eq!(processor.test_write_error_count(), 0);
     });
 }
@@ -382,7 +389,8 @@ fn test_write_errors_counter_accessible() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         // Feed valid data — no errors expected
         let data = generate_uniform_interleaved_f32(1, 10, &[0], 0.1);
@@ -406,7 +414,8 @@ fn test_finalize_deletes_silent_file() {
     env.push(("SILENCE_THRESHOLD", Some("10")));
 
     temp_env::with_vars(env, || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = generate_silent_interleaved_f32(1, 1000);
         processor.feed_test_data(&data, 1);
@@ -435,7 +444,8 @@ fn test_finalize_keeps_non_silent_file() {
     env.push(("SILENCE_THRESHOLD", Some("0.01")));
 
     temp_env::with_vars(env, || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = generate_uniform_interleaved_f32(1, 1000, &[0], 0.8);
         processor.feed_test_data(&data, 1);
@@ -457,7 +467,8 @@ fn test_silence_detection_disabled() {
     env.push(("SILENCE_THRESHOLD", Some("0")));
 
     temp_env::with_vars(env, || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = generate_silent_interleaved_f32(1, 1000);
         processor.feed_test_data(&data, 1);
@@ -483,7 +494,8 @@ fn test_split_mode_silence_per_channel() {
     env.push(("SILENCE_THRESHOLD", Some("0.01")));
 
     temp_env::with_vars(env, || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1], OutputMode::Split).unwrap();
 
         // ch0 silent, ch1 loud
         let data = generate_interleaved_f32(2, 1000, &[(1, 0.9)]);
@@ -521,7 +533,8 @@ fn test_channel_beyond_device_range() {
     temp_env::with_vars(test_env_no_silence(), || {
         // Processor configured for channels [0, 5] but device only has 2 channels.
         // Channel 5 should be skipped gracefully (no panic).
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0, 5], OutputMode::Split).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0, 5], OutputMode::Split).unwrap();
 
         // 2-channel device data
         let data = generate_uniform_interleaved_f32(2, 200, &[0], 0.5);
@@ -545,7 +558,8 @@ fn test_multiple_feed_calls_accumulate() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data1 = generate_uniform_interleaved_f32(1, 500, &[0], 0.3);
         let data2 = generate_uniform_interleaved_f32(1, 300, &[0], 0.6);
@@ -575,7 +589,8 @@ fn test_24bit_recording() {
 
     temp_env::with_vars(test_env_no_silence(), || {
         let mut processor =
-            CpalAudioProcessor::new_for_test_with_bits(dir, 44100, &[0], OutputMode::Single, 24).unwrap();
+            CpalAudioProcessor::new_for_test_with_bits(dir, 44100, &[0], OutputMode::Single, 24)
+                .unwrap();
 
         let data = vec![0.5_f32; 100];
         processor.feed_test_data(&data, 1);
@@ -607,7 +622,8 @@ fn test_32bit_recording() {
 
     temp_env::with_vars(test_env_no_silence(), || {
         let mut processor =
-            CpalAudioProcessor::new_for_test_with_bits(dir, 44100, &[0], OutputMode::Single, 32).unwrap();
+            CpalAudioProcessor::new_for_test_with_bits(dir, 44100, &[0], OutputMode::Single, 32)
+                .unwrap();
 
         let data = vec![0.5_f32; 100];
         processor.feed_test_data(&data, 1);
@@ -638,7 +654,8 @@ fn test_16bit_backward_compat() {
 
     temp_env::with_vars(test_env_no_silence(), || {
         // new_for_test defaults to 16-bit
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         let data = vec![0.5_f32; 100];
         processor.feed_test_data(&data, 1);
@@ -663,7 +680,10 @@ fn test_f32_to_wav_sample_conversion() {
     assert_eq!(f32_to_wav_sample(1.0, 16), 32767);
     assert_eq!(f32_to_wav_sample(-1.0, 16), -32767);
     // 0.5 * 32767.0 = 16383.5; round-half-away-from-zero → 16384
-    assert_eq!(f32_to_wav_sample(0.5, 16), (0.5_f32 * 32767.0).round() as i32);
+    assert_eq!(
+        f32_to_wav_sample(0.5, 16),
+        (0.5_f32 * 32767.0).round() as i32
+    );
 
     // 24-bit
     assert_eq!(f32_to_wav_sample(0.0, 24), 0);
@@ -833,7 +853,8 @@ fn test_stream_error_flag_propagation() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         // Initially no stream error
         assert!(!processor.stream_error());
@@ -925,7 +946,8 @@ fn test_peak_levels_silent() {
     let dir = temp_dir.path().to_str().unwrap();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let mut processor = CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
 
         // Feed silence
         let data = generate_silent_interleaved_f32(1, 100);

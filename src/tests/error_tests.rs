@@ -34,7 +34,9 @@ fn test_audio_device_source_chain_preserved() {
         source: Box::new(inner),
     };
 
-    let src = err.source().expect("AudioDeviceSource must expose its source");
+    let src = err
+        .source()
+        .expect("AudioDeviceSource must expose its source");
     assert!(
         src.downcast_ref::<io::Error>().is_some(),
         "source should downcast to io::Error, got {src:?}"
@@ -67,9 +69,6 @@ fn test_string_only_variants_have_no_source() {
         BlackboxError::Wav("oops".into()),
     ];
     for err in cases {
-        assert!(
-            err.source().is_none(),
-            "{err:?} should not carry a source"
-        );
+        assert!(err.source().is_none(), "{err:?} should not carry a source");
     }
 }
