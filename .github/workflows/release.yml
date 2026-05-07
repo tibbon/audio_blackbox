@@ -13,6 +13,9 @@ on:
         options:
           - beta
           - metadata
+          - submit_review
+          - fetch_metadata
+          - cancel_review
           - check
 
 concurrency:
