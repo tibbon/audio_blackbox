@@ -469,15 +469,19 @@ impl CpalAudioProcessor {
         Arc::clone(&self.peak_levels)
     }
 
-    /// Test-only: simulate the cpal err_fn callback firing. The real
-    /// production callback at `process_audio_impl` does this exact store
-    /// when cpal reports a stream error (e.g. device disconnect).
-    /// Tests use this to exercise the propagation path
-    /// (atomic store → trait method → FFI poll) without needing a
-    /// real audio device that can be disconnected mid-test.
-    #[cfg(test)]
-    pub fn simulate_stream_error(&self) {
-        self.stream_error.store(true, Ordering::Relaxed);
+    /// Build the cpal err_fn callback used when constructing the input
+    /// stream. Extracted as a method so the SAME closure the production
+    /// stream uses can be exercised by tests — reverting the body here
+    /// breaks both production wiring AND the test (DOLL-106).
+    pub(crate) fn build_stream_err_callback(
+        &self,
+    ) -> impl FnMut(cpal::StreamError) + Send + 'static {
+        let stream_error = Arc::clone(&self.stream_error);
+        move |err| {
+            error!("an error occurred on stream: {}", err);
+            // status flag only; reader at stream_error() loads Relaxed.
+            stream_error.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Return a clone-able bundle of the processor's status atomics.
@@ -716,13 +720,12 @@ impl CpalAudioProcessor {
         let recording_cadence = self.recording_cadence;
         let rotation_needed_cb = Arc::clone(&rotation_needed);
 
-        // Error callback — set atomic flag so Swift UI can detect device disconnects
-        let stream_error = Arc::clone(&self.stream_error);
-        let err_fn = move |err| {
-            error!("an error occurred on stream: {}", err);
-            // status flag only; reader at stream_error() loads Relaxed.
-            stream_error.store(true, Ordering::Relaxed);
-        };
+        // Error callback — set atomic flag so Swift UI can detect device
+        // disconnects. Built via a method on `self` so the same closure
+        // can be exercised by tests; reverting the body of
+        // `build_stream_err_callback` now fails both production wiring
+        // and the propagation test (DOLL-106).
+        let err_fn = self.build_stream_err_callback();
 
         // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
         let rotation_threshold = sample_rate as u64 * total_channels as u64 * recording_cadence;
@@ -1016,12 +1019,8 @@ impl AudioProcessor for CpalAudioProcessor {
         // Clone write_errors for the callback
         let write_errors = Arc::clone(&self.write_errors);
 
-        let stream_error = Arc::clone(&self.stream_error);
-        let err_fn = move |err| {
-            error!("an error occurred on stream: {}", err);
-            // status flag only; reader at stream_error() loads Relaxed.
-            stream_error.store(true, Ordering::Relaxed);
-        };
+        // Error callback — same shared method as the recording path.
+        let err_fn = self.build_stream_err_callback();
 
         let stream = match stream_config.sample_format() {
             SampleFormat::F32 => device
