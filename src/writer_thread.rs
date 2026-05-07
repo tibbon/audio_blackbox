@@ -37,8 +37,10 @@ fn create_wav_writer(
     path: &str,
     spec: crate::raw_wav_writer::WavSpec,
 ) -> Result<RawWavWriter, BlackboxError> {
-    RawWavWriter::create(path, spec)
-        .map_err(|e| BlackboxError::Wav(format!("Failed to create WAV file: {e}")))
+    RawWavWriter::create(path, spec).map_err(|e| BlackboxError::WavSource {
+        context: format!("Failed to create WAV file at {path}"),
+        source: Box::new(e),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -186,10 +188,10 @@ impl WriterThreadState {
         {
             // status flag only; reader at disk_space_low() loads Relaxed.
             disk_space_low.store(true, Ordering::Relaxed);
-            return Err(BlackboxError::Io(std::io::Error::other(format!(
-                "Insufficient disk space: {}MB available, {}MB required",
-                available_mb, min_disk_space_mb
-            ))));
+            return Err(BlackboxError::InsufficientDiskSpace {
+                available_mb,
+                required_mb: min_disk_space_mb,
+            });
         }
 
         let sample_scale = match bits_per_sample {

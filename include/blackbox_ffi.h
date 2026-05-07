@@ -26,6 +26,7 @@ extern "C" {
 #define BLACKBOX_ERR_IO             -4
 #define BLACKBOX_ERR_LOCK_POISONED  -5
 #define BLACKBOX_ERR_INTERNAL       -6
+#define BLACKBOX_ERR_DISK_SPACE_LOW -7
 
 /* Opaque handle to the Rust audio engine. */
 typedef struct BlackboxHandle BlackboxHandle;
