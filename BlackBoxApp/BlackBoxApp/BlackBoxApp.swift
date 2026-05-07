@@ -109,8 +109,7 @@ struct BlackBoxApp: App {
                 Divider()
 
                 Button("Set Up BlackBox\u{2026}") {
-                    NSApp.activate()
-                    openWindow(id: "onboarding")
+                    bringOnboardingForward()
                 }
 
                 Divider()
@@ -266,7 +265,31 @@ struct BlackBoxApp: App {
         didAutoOpenOnboarding = true  // Set immediately to prevent duplicate Tasks
         Task {
             try? await Task.sleep(for: .milliseconds(300))
-            NSApp.activate()
+            bringOnboardingForward()
+        }
+    }
+
+    /// Open the onboarding window, or bring it to the foreground if it
+    /// is already open. SwiftUI's `openWindow(id:)` is a no-op when the
+    /// window already exists (e.g. user opened it, then Cmd-Tabbed away),
+    /// which leaves the user looking at a dead "Set Up BlackBox…" button.
+    /// We look for the existing NSWindow and `makeKeyAndOrderFront` it,
+    /// falling back to `openWindow` only if the window has actually been
+    /// closed.
+    @MainActor
+    private func bringOnboardingForward() {
+        // `activate(ignoringOtherApps:)` is deprecated on macOS 14+, but the
+        // no-arg `activate()` does not reliably foreground a background
+        // accessory app from a user-initiated menu click. Keep the
+        // load-bearing form.
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = NSApp.windows.first(where: { window in
+            window.identifier?.rawValue.contains("onboarding") == true
+                || window.title == "Welcome to BlackBox"
+        }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
             openWindow(id: "onboarding")
         }
     }
