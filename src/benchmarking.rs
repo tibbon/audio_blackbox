@@ -94,11 +94,16 @@ impl PerformanceTracker {
                         memory_percent,
                     };
 
-                    // Add to metrics queue and limit its size
-                    let mut metrics_guard = metrics.lock().unwrap();
-                    metrics_guard.push_back(metric.clone());
-                    while metrics_guard.len() > history_length {
-                        metrics_guard.pop_front();
+                    // Add to metrics queue and limit its size. Mirrors the
+                    // DOLL-115 `.lock().ok()` pattern: a poisoned lock here
+                    // means an earlier panic on the metrics-collector
+                    // thread; we'd rather drop a sample than abort the
+                    // whole tracker thread.
+                    if let Ok(mut metrics_guard) = metrics.lock() {
+                        metrics_guard.push_back(metric.clone());
+                        while metrics_guard.len() > history_length {
+                            metrics_guard.pop_front();
+                        }
                     }
 
                     // Log to file
@@ -135,7 +140,10 @@ impl PerformanceTracker {
             return None;
         }
 
-        let metrics = self.metrics.lock().unwrap();
+        // Match the DOLL-115 `.lock().ok()` convention — poisoned-lock
+        // means a tracker thread panicked; surface as None rather than
+        // re-panicking on the caller's thread.
+        let metrics = self.metrics.lock().ok()?;
         metrics.back().cloned()
     }
 
@@ -145,7 +153,7 @@ impl PerformanceTracker {
             return None;
         }
 
-        let metrics = self.metrics.lock().unwrap();
+        let metrics = self.metrics.lock().ok()?;
         if metrics.is_empty() {
             return None;
         }
