@@ -369,9 +369,12 @@ pub extern "C" fn blackbox_is_recording(handle: *const BlackboxHandle) -> bool {
         return false;
     };
     // Clone the Arc out from under the lock so the load itself is lock-free.
+    // Acquire so a `true` observation synchronizes-with the matching
+    // Release store on the audio side, making sample_rate_atomic visible
+    // to a subsequent get_status_flags call (DOLL-101).
     let flag = Arc::clone(&status.recording_active);
     drop(status);
-    flag.load(Ordering::Relaxed)
+    flag.load(Ordering::Acquire)
 }
 
 /// Fill a `StatusFlags` struct with current engine status.
@@ -402,10 +405,15 @@ pub extern "C" fn blackbox_get_status_flags(
         Err(_) => return handle.lock_poisoned("Status lock poisoned".to_string()),
     };
 
+    // Load `recording_active` first with Acquire — this synchronizes-with
+    // the Release store on the audio side, so the subsequent Relaxed loads
+    // (especially `sample_rate`) are guaranteed to observe their matching
+    // values when `recording_active = true` (DOLL-101).
+    let is_recording = status.recording_active.load(Ordering::Acquire);
     let flags = StatusFlags {
         write_errors: status.write_errors.load(Ordering::Relaxed),
         sample_rate: status.sample_rate.load(Ordering::Relaxed),
-        is_recording: status.recording_active.load(Ordering::Relaxed),
+        is_recording,
         gate_idle: status.gate_idle.load(Ordering::Relaxed),
         disk_space_low: status.disk_space_low.load(Ordering::Relaxed),
         stream_error: status.stream_error.load(Ordering::Relaxed),
@@ -667,7 +675,10 @@ pub extern "C" fn blackbox_is_monitoring(handle: *const BlackboxHandle) -> bool 
     };
     let flag = Arc::clone(&status.monitoring_active);
     drop(status);
-    flag.load(Ordering::Relaxed)
+    // Acquire mirrors the Release store in `start_monitoring` — readers
+    // who see `true` also observe the prior `sample_rate_atomic` write
+    // (DOLL-101).
+    flag.load(Ordering::Acquire)
 }
 
 /// Return the current configuration as a JSON string.
