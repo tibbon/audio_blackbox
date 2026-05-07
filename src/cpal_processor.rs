@@ -315,30 +315,37 @@ mod sample_rate_listener {
 }
 
 /// Bundle of `Arc<Atomic*>` status flags shared between `CpalAudioProcessor` and
-/// outside readers (e.g. the FFI status-poll path).
+/// the FFI status-poll path.
 ///
 /// Cloning the bundle clones `Arc`s only — readers can lock a containing `Mutex`
 /// briefly to obtain a clone, drop the lock, and then perform lock-free atomic
 /// loads. This lets the FFI status query stay lock-free with respect to the
 /// multi-second device probe that runs under the recorder mutex.
+///
+/// Crate-private and gated behind the `ffi` feature: only `ffi.rs` consumes
+/// this bundle, so leaving it on the public API would lock in the exact
+/// 8-field shape as a SemVer contract (DOLL-120). Adding a 9th flag stays
+/// a no-op for downstream consumers.
+#[cfg(feature = "ffi")]
 #[derive(Clone)]
-pub struct ProcessorStatus {
+pub(crate) struct ProcessorStatus {
     /// True between the end of `process_audio_impl` and the start of `finalize`.
-    pub recording_active: Arc<AtomicBool>,
+    pub(crate) recording_active: Arc<AtomicBool>,
     /// True between the end of `start_monitoring` and the start of `stop_monitoring`.
-    pub monitoring_active: Arc<AtomicBool>,
+    pub(crate) monitoring_active: Arc<AtomicBool>,
     /// Mirrors the active stream's sample rate; 0 when idle.
-    pub sample_rate: Arc<AtomicU32>,
-    pub write_errors: Arc<AtomicU64>,
-    pub disk_space_low: Arc<AtomicBool>,
-    pub stream_error: Arc<AtomicBool>,
-    pub sample_rate_changed: Arc<AtomicBool>,
-    pub gate_idle: Arc<AtomicBool>,
+    pub(crate) sample_rate: Arc<AtomicU32>,
+    pub(crate) write_errors: Arc<AtomicU64>,
+    pub(crate) disk_space_low: Arc<AtomicBool>,
+    pub(crate) stream_error: Arc<AtomicBool>,
+    pub(crate) sample_rate_changed: Arc<AtomicBool>,
+    pub(crate) gate_idle: Arc<AtomicBool>,
 }
 
+#[cfg(feature = "ffi")]
 impl ProcessorStatus {
     /// Construct an idle bundle (all flags false, counters zero).
-    pub fn idle() -> Self {
+    pub(crate) fn idle() -> Self {
         ProcessorStatus {
             recording_active: Arc::new(AtomicBool::new(false)),
             monitoring_active: Arc::new(AtomicBool::new(false)),
@@ -495,7 +502,8 @@ impl CpalAudioProcessor {
     /// Note that `gate_idle` and `peak_levels` are re-allocated on every
     /// recording start, so callers must re-fetch this bundle after each
     /// start to avoid reading a stale gate from the previous session.
-    pub fn status_arcs(&self) -> ProcessorStatus {
+    #[cfg(feature = "ffi")]
+    pub(crate) fn status_arcs(&self) -> ProcessorStatus {
         ProcessorStatus {
             recording_active: Arc::clone(&self.recording_active),
             monitoring_active: Arc::clone(&self.monitoring_active),
