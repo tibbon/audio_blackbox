@@ -5,7 +5,7 @@ use tempfile::tempdir;
 
 use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
 use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
-use crate::tests::default_test_env;
+use crate::test_utils::default_test_env;
 use crate::writer_thread::{
     WriterCommand, WriterThreadState, check_and_delete_silent_files, writer_thread_main,
 };
@@ -30,13 +30,8 @@ fn read_wav(path: &std::path::Path) -> (hound::WavSpec, Vec<i32>) {
     (spec, samples)
 }
 
-/// Test env with silence detection disabled (threshold=0).
-fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
-    let mut env = default_test_env();
-    env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-    env.push(("SILENCE_THRESHOLD", Some("0")));
-    env
-}
+// Test helper consolidated to `crate::test_utils` (DOLL-118).
+use crate::test_utils::test_env_no_silence;
 
 // ===========================================================================
 // Ring buffer overflow test

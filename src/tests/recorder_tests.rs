@@ -8,30 +8,8 @@ use crate::mock_processor::MockAudioProcessor;
 use std::path::Path;
 use tempfile::tempdir;
 
-/// Helper to create a standard set of env var overrides for test isolation.
-fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {
-    vec![
-        ("AUDIO_CHANNELS", Some(DEFAULT_CHANNELS)),
-        ("DEBUG", Some("false")),
-        ("RECORD_DURATION", Some("30")),
-        ("OUTPUT_MODE", Some(DEFAULT_OUTPUT_MODE)),
-        ("SILENCE_THRESHOLD", Some("0.01")),
-        ("CONTINUOUS_MODE", Some("false")),
-        ("RECORDING_CADENCE", Some("300")),
-        ("OUTPUT_DIR", Some(DEFAULT_OUTPUT_DIR)),
-        ("PERFORMANCE_LOGGING", Some("false")),
-        ("BLACKBOX_AUDIO_CHANNELS", None),
-        ("BLACKBOX_DEBUG", None),
-        ("BLACKBOX_DURATION", None),
-        ("BLACKBOX_OUTPUT_MODE", None),
-        ("BLACKBOX_SILENCE_THRESHOLD", None),
-        ("BLACKBOX_CONTINUOUS_MODE", None),
-        ("BLACKBOX_RECORDING_CADENCE", None),
-        ("BLACKBOX_OUTPUT_DIR", None),
-        ("BLACKBOX_PERFORMANCE_LOGGING", None),
-        ("BLACKBOX_CONFIG", None),
-    ]
-}
+// Test helper consolidated to `crate::test_utils` (DOLL-118).
+use crate::test_utils::default_test_env;
 
 #[test]
 fn test_recorder_with_config() {

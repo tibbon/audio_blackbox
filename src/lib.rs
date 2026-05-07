@@ -151,41 +151,8 @@ mod tests {
         env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok()
     }
 
-    /// Standard set of env var overrides to isolate tests from the host environment.
-    /// Clears all BLACKBOX_* prefixed vars and sets unprefixed vars to defaults.
-    fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {
-        vec![
-            ("AUDIO_CHANNELS", Some(DEFAULT_CHANNELS)),
-            ("DEBUG", Some("false")),
-            ("RECORD_DURATION", Some("30")),
-            ("OUTPUT_MODE", Some(DEFAULT_OUTPUT_MODE)),
-            ("SILENCE_THRESHOLD", Some("0.01")),
-            ("CONTINUOUS_MODE", Some("false")),
-            ("RECORDING_CADENCE", Some("300")),
-            ("OUTPUT_DIR", Some(DEFAULT_OUTPUT_DIR)),
-            ("PERFORMANCE_LOGGING", Some("false")),
-            ("BLACKBOX_AUDIO_CHANNELS", None),
-            ("BLACKBOX_DEBUG", None),
-            ("BLACKBOX_DURATION", None),
-            ("BLACKBOX_OUTPUT_MODE", None),
-            ("BLACKBOX_SILENCE_THRESHOLD", None),
-            ("BLACKBOX_CONTINUOUS_MODE", None),
-            ("BLACKBOX_RECORDING_CADENCE", None),
-            ("BLACKBOX_OUTPUT_DIR", None),
-            ("BLACKBOX_PERFORMANCE_LOGGING", None),
-            ("BLACKBOX_INPUT_DEVICE", None),
-            ("INPUT_DEVICE", None),
-            ("BLACKBOX_MIN_DISK_SPACE_MB", None),
-            ("MIN_DISK_SPACE_MB", None),
-            ("BLACKBOX_BITS_PER_SAMPLE", None),
-            ("BITS_PER_SAMPLE", None),
-            ("BLACKBOX_SILENCE_GATE_ENABLED", None),
-            ("SILENCE_GATE_ENABLED", None),
-            ("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS", None),
-            ("SILENCE_GATE_TIMEOUT_SECS", None),
-            ("BLACKBOX_CONFIG", None),
-        ]
-    }
+    /// Re-export the consolidated helper (DOLL-118) for inline tests below.
+    use crate::test_utils::default_test_env;
 
     // Test environment variable handling
     #[test]
