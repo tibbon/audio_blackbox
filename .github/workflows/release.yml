@@ -78,7 +78,7 @@ jobs:
         ditto -c -k --keepParent "BlackBox Audio Recorder.app" "BlackBox-Audio-Recorder.app.zip"
 
     - name: Upload CLI binary
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         files: ${{ matrix.artifact }}
         draft: false
@@ -88,7 +88,7 @@ jobs:
 
     - name: Upload macOS app bundle
       if: matrix.os == 'macos-latest'
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         files: BlackBox-Audio-Recorder.app.zip
         draft: false
