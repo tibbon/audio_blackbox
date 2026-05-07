@@ -18,6 +18,10 @@
 //! abort profile. Code in this module is still written defensively (null
 //! checks, lock-poison handling, validated handles) so the panic-on-bug
 //! surface stays small.
+//!
+//! Note: the `dev` profile still unwinds. Non-release builds of this crate
+//! must not be linked into FFI consumers — only `--release` artifacts are
+//! safe to expose across `extern "C"`.
 
 // FFI functions inherently receive raw pointers from C callers. Every function
 // performs a null check before dereferencing, so marking each function `unsafe`
