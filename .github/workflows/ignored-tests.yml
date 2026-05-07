@@ -1,0 +1,52 @@
+name: Ignored tests
+
+# Long-running benchmark / performance / allocation tests are marked
+# `#[ignore]` so they don't run on the per-PR `cargo test` lane (DOLL-131).
+# They still exercise real code paths; this lane runs them on a cadence
+# so they don't silently rot as production evolves.
+#
+# Triggers:
+#   - weekly schedule (Monday 08:00 UTC)
+#   - manual workflow_dispatch (anyone with write access can kick off)
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  ignored:
+    name: "Run ignored tests"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ignored-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ignored-
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+
+      # --test-threads=1 matches the per-PR `test` lane and avoids
+      # contention between benchmarks that allocate / measure throughput.
+      - name: Run ignored tests
+        run: cargo test --no-default-features -- --ignored --test-threads=1
