@@ -156,6 +156,10 @@ pub struct WriterThreadState {
     /// `Arc::new(timestamp_now)`; tests pass a `MockClock` so rotations
     /// produce distinct filenames without sleeping past a wall-clock second.
     pub(crate) timestamp_fn: TimestampFn,
+    /// Single dedicated worker that scans recently-rotated files for
+    /// silence and deletes them. `Some` when `silence_threshold > 0`,
+    /// `None` otherwise. Joined when `WriterThreadState` is dropped.
+    silence_worker: Option<SilenceCheckWorker>,
 }
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
@@ -263,6 +267,11 @@ impl WriterThreadState {
             min_disk_space_mb,
             disk_space_low,
             timestamp_fn: Arc::new(timestamp_now),
+            silence_worker: if silence_threshold > 0.0 {
+                Some(SilenceCheckWorker::new(silence_threshold))
+            } else {
+                None
+            },
         };
 
         // When gate is enabled, start idle (no files). Writers are created on first signal.
@@ -331,6 +340,7 @@ impl WriterThreadState {
             min_disk_space_mb: 0,
             disk_space_low: Arc::new(AtomicBool::new(false)),
             timestamp_fn: Arc::new(timestamp_now),
+            silence_worker: None, // monitor mode never writes files, so no silence checks
         }
     }
 
@@ -341,6 +351,7 @@ impl WriterThreadState {
     pub(crate) fn set_timestamp_fn(&mut self, f: TimestampFn) {
         self.timestamp_fn = f;
     }
+
 
     fn setup_split_mode(&mut self) -> Result<(), BlackboxError> {
         let date_str = (self.timestamp_fn)();
@@ -733,23 +744,13 @@ impl WriterThreadState {
             }
         }
 
-        // Check for silence on a background thread so the writer thread can
-        // immediately resume draining the ring buffer during rotation.
-        if self.silence_threshold > 0.0 && !final_files.is_empty() {
-            let threshold = self.silence_threshold;
-            std::thread::Builder::new()
-                .name("blackbox-silence".to_string())
-                .spawn(move || {
-                    #[cfg(target_os = "macos")]
-                    unsafe {
-                        libc::pthread_set_qos_class_self_np(
-                            libc::qos_class_t::QOS_CLASS_BACKGROUND,
-                            0,
-                        );
-                    }
-                    check_and_delete_silent_files(&final_files, threshold);
-                })
-                .ok(); // If thread spawn fails, skip silence check rather than block
+        // Hand the recently-rotated files to the dedicated silence-check
+        // worker. The writer thread immediately resumes draining the ring
+        // buffer during rotation; silence detection happens off-thread.
+        if !final_files.is_empty()
+            && let Some(worker) = self.silence_worker.as_ref()
+        {
+            worker.submit(final_files);
         }
 
         // Create new files for the next recording period
@@ -842,24 +843,15 @@ impl WriterThreadState {
             }
         }
 
-        // Spawn silence check on a background thread so finalize returns quickly.
-        // Files may not be cleaned up immediately on quit, but the thread completes
-        // within seconds (and with early-exit, much faster for non-silent files).
-        if self.silence_threshold > 0.0 && !final_files.is_empty() {
-            let threshold = self.silence_threshold;
-            std::thread::Builder::new()
-                .name("blackbox-silence-final".to_string())
-                .spawn(move || {
-                    #[cfg(target_os = "macos")]
-                    unsafe {
-                        libc::pthread_set_qos_class_self_np(
-                            libc::qos_class_t::QOS_CLASS_BACKGROUND,
-                            0,
-                        );
-                    }
-                    check_and_delete_silent_files(&final_files, threshold);
-                })
-                .ok();
+        // Hand finalized files to the silence-check worker. Drop of the
+        // worker (when WriterThreadState is dropped) joins the worker
+        // thread, so any in-flight check completes before the process
+        // tears down — eliminating the race the prior detached spawn had
+        // with file-system teardown on shutdown.
+        if !final_files.is_empty()
+            && let Some(worker) = self.silence_worker.as_ref()
+        {
+            worker.submit(final_files);
         }
 
         Ok(())
@@ -887,6 +879,82 @@ fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadSt
         chunk.commit_all();
         n
     })
+}
+
+/// Owns a single dedicated silence-check thread fed via a bounded channel.
+///
+/// Replaces the prior fire-and-forget pattern of spawning a fresh thread per
+/// rotation. Benefits: bounded thread count regardless of rotation churn,
+/// shutdown joins the worker (no detached thread races with file-system
+/// teardown), and an atomic counter that tests can poll instead of sleeping
+/// for an arbitrary "long enough" time.
+struct SilenceCheckWorker {
+    /// Channel sender. Wrapped in `Option` so `Drop` can take + drop it
+    /// before joining, which closes the channel and lets the worker exit
+    /// its `recv()` loop cleanly.
+    tx: Option<std::sync::mpsc::SyncSender<Vec<String>>>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    /// Incremented after each batch is processed. Currently unused outside
+    /// the worker thread itself, but kept on the struct so a future test
+    /// or observability hook can read it without re-plumbing the Arc.
+    #[allow(dead_code)]
+    completed: Arc<AtomicU64>,
+}
+
+impl SilenceCheckWorker {
+    fn new(threshold: f32) -> Self {
+        // Bounded channel: 8 batches in flight is generous given that
+        // rotation cadence is per-second at the fastest. Backpressure on
+        // the rotation path (a brief block on `send`) is preferable to
+        // unbounded memory growth.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<String>>(8);
+        let completed = Arc::new(AtomicU64::new(0));
+        let completed_worker = Arc::clone(&completed);
+        let handle = std::thread::Builder::new()
+            .name("blackbox-silence".to_string())
+            .spawn(move || {
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    libc::pthread_set_qos_class_self_np(
+                        libc::qos_class_t::QOS_CLASS_BACKGROUND,
+                        0,
+                    );
+                }
+                while let Ok(files) = rx.recv() {
+                    check_and_delete_silent_files(&files, threshold);
+                    // Bump after the batch so a test can wait for "this
+                    // many checks completed" and trust the post-condition.
+                    completed_worker.fetch_add(1, Ordering::Relaxed);
+                }
+            })
+            .expect("failed to spawn silence-check worker thread");
+
+        SilenceCheckWorker {
+            tx: Some(tx),
+            handle: Some(handle),
+            completed,
+        }
+    }
+
+    /// Submit a batch of file paths for silence checking. Best-effort: if
+    /// the channel is closed (worker died), the batch is silently dropped
+    /// — matches the prior `spawn(...).ok()` behavior.
+    fn submit(&self, files: Vec<String>) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(files);
+        }
+    }
+}
+
+impl Drop for SilenceCheckWorker {
+    fn drop(&mut self) {
+        // Drop the sender first to close the channel; the worker's
+        // `recv()` returns Err and the loop exits.
+        self.tx.take();
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
 }
 
 /// Check each file for silence and delete silent ones. Used by both the
