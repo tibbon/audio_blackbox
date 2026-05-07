@@ -183,6 +183,11 @@ fn test_gate_reopens_produces_separate_files() {
         let mut state = make_gate_state(dir, true, 1, 0.0);
         state.silence_threshold = 0.01; // gate uses this for signal detection
 
+        // Inject a deterministic clock so the second open of the gate
+        // produces a distinct filename without sleeping a real second.
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+
         // First signal burst — opens the gate
         let signal: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
         state.write_samples(&signal);
@@ -202,8 +207,8 @@ fn test_gate_reopens_produces_separate_files() {
         let first_count = first_files.len();
         assert!(first_count > 0, "First gate cycle should produce files");
 
-        // Need distinct timestamp for new file
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        // Advance the mock clock so the next opened file gets a distinct name.
+        clock.advance();
 
         // Second signal burst — reopens the gate
         state.write_samples(&signal);

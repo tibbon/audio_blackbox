@@ -197,6 +197,11 @@ fn test_writer_thread_rotation() {
         .unwrap();
         state.total_device_channels = 1;
 
+        // Inject a deterministic clock so the rotation produces a distinct
+        // filename without sleeping past a wall-clock second.
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
@@ -212,11 +217,13 @@ fn test_writer_thread_rotation() {
             chunk.fill_from_iter(data1.iter().copied());
         }
 
-        // Wait for writer to process, then sleep past the second boundary
-        // so the rotated file gets a distinct timestamp.
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        // Brief wait so the writer thread has consumed the first batch before
+        // we trigger rotation. (No wall-clock-second crossing required.)
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Signal rotation
+        // Advance the mock clock and signal rotation. The newly created file
+        // gets a different stamp than the closed one.
+        clock.advance();
         rotation_signal.store(true, Ordering::Release);
 
         // Wait for rotation to happen
@@ -492,6 +499,11 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         .unwrap();
         state.total_device_channels = 1;
 
+        // Inject a deterministic clock so rotation produces a distinct
+        // filename without needing a wall-clock second to elapse.
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
@@ -507,10 +519,11 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             chunk.fill_from_iter(data1.iter().copied());
         }
 
-        // Wait for processing, then cross second boundary for distinct timestamp
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        // Brief wait so the writer processes the first batch.
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Signal rotation
+        // Advance the mock clock and signal rotation.
+        clock.advance();
         rotation_signal.store(true, Ordering::Release);
 
         // Immediately push a second batch — writer thread should accept it
