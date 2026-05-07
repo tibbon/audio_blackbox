@@ -132,7 +132,9 @@ struct BlackBoxApp: App {
         Window("Welcome to BlackBox", id: "onboarding") {
             OnboardingView(recorder: recorder)
         }
-        .defaultSize(width: 460, height: 380)
+        // Sized for the tallest step (recordingModeStep): icon + title + subtitle
+        // + two recording-mode cards + divider + silence toggle + button row.
+        .defaultSize(width: 460, height: 540)
         .windowResizability(.contentSize)
 
         Window("Settings", id: "settings") {
