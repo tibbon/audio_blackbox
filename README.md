@@ -185,7 +185,11 @@ CI runs on every push to `main` and on pull requests. Seven parallel jobs:
 | **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
 
-Dependabot is configured for weekly dependency update PRs (both Cargo crates and GitHub Actions).
+Dependabot is configured for weekly dependency update PRs (Cargo crates, GitHub Actions, and Bundler).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes per version.
 
 ## License
 
