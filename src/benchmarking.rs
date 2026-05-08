@@ -17,6 +17,11 @@ pub struct PerformanceTracker {
     running: Arc<AtomicBool>,
     history_length: usize,
     interval_secs: u64,
+    /// JoinHandle for the worker thread spawned in `start`. Wrapped in
+    /// a Mutex<Option> because `stop` and `Drop` take `&self` and need
+    /// to consume the handle (DOLL-143). Mirrors `SilenceCheckWorker`'s
+    /// join-on-drop pattern in `writer_thread.rs`.
+    handle: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 /// Struct to store a single performance snapshot
@@ -38,6 +43,7 @@ impl PerformanceTracker {
             running: Arc::new(AtomicBool::new(false)),
             history_length,
             interval_secs,
+            handle: Mutex::new(None),
         }
     }
 
@@ -62,7 +68,7 @@ impl PerformanceTracker {
         let history_length = self.history_length;
         let interval_secs = self.interval_secs;
 
-        thread::spawn(move || {
+        let join_handle = thread::spawn(move || {
             let mut sys = System::new_all();
             let pid = std::process::id();
 
@@ -123,15 +129,37 @@ impl PerformanceTracker {
                 thread::sleep(Duration::from_secs(interval_secs));
             }
         });
+
+        // Stash the handle so `stop` / `Drop` can join the worker
+        // (DOLL-143). A poisoned mutex here would mean an earlier
+        // panic on a caller of `start`/`stop`; falling through is
+        // fine — the worker still exits when `running` flips.
+        if let Ok(mut guard) = self.handle.lock() {
+            *guard = Some(join_handle);
+        }
     }
 
-    /// Stop the performance tracking
+    /// Stop the performance tracking and join the worker thread.
+    ///
+    /// The worker may still be mid-iteration when `stop` is called; it
+    /// observes `running == false` on its next loop check (worst case
+    /// `interval_secs` later) and exits, then this method blocks until
+    /// the join completes. Mirrors the join-on-drop pattern used by
+    /// `SilenceCheckWorker` in `writer_thread.rs`.
     pub fn stop(&self) {
         if !self.enabled {
             return;
         }
 
         self.running.store(false, Ordering::Relaxed);
+
+        // Take the JoinHandle out from under the mutex and join. If
+        // `stop` is called twice, the second call sees None and is a
+        // no-op (matches AtomicBool::store idempotence).
+        let handle = self.handle.lock().ok().and_then(|mut g| g.take());
+        if let Some(h) = handle {
+            let _ = h.join();
+        }
     }
 
     /// Get the current performance metrics
@@ -175,6 +203,16 @@ impl PerformanceTracker {
             memory_usage: (memory_sum as f32 / len) as u64,
             memory_percent: memory_percent_sum / len,
         })
+    }
+}
+
+impl Drop for PerformanceTracker {
+    /// Ensure the worker thread is joined when the tracker goes out
+    /// of scope (DOLL-143). Calls `stop`, which is idempotent w.r.t.
+    /// the running flag and a no-op on the second join. Symmetric
+    /// with `SilenceCheckWorker::drop` in `writer_thread.rs`.
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
