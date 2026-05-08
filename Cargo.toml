@@ -73,7 +73,6 @@ default = []
 # #[ignore]-d benchmark tests. Off by default so the shipped App Store
 # build does not link sysinfo.
 benchmarking = ["dep:sysinfo"]
-menu-bar = []
 ffi = []
 
 # These lints will only be activated when using cargo clippy

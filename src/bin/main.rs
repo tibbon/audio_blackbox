@@ -7,11 +7,8 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::needless_pass_by_ref_mut)]
 
-use std::env;
 use std::fs;
 use std::path::Path;
-#[cfg(not(target_os = "macos"))]
-use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -26,36 +23,8 @@ use blackbox::CpalAudioProcessor;
 #[cfg(feature = "benchmarking")]
 use blackbox::PerformanceTracker;
 
-#[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-use crate::macos::MenuBarApp;
-
 fn main() {
     env_logger::init();
-
-    // Check if we should run the macOS menu bar app
-    let args: Vec<String> = env::args().collect();
-    if args.contains(&"--menu-bar".to_string()) {
-        info!("Menu bar flag detected, starting in macOS menu bar mode");
-
-        #[cfg(target_os = "macos")]
-        {
-            info!("Creating MenuBarApp instance...");
-            let mut menu_app = MenuBarApp::new();
-            info!("Menu bar app created successfully");
-            info!("Running MenuBarApp...");
-            menu_app.run();
-            return;
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            error!("Menu bar mode is only available on macOS");
-            process::exit(1);
-        }
-    }
 
     // Check for configuration file
     let config_path = Path::new("blackbox.toml");
@@ -125,11 +94,6 @@ fn main() {
 
     let mut recorder = AudioRecorder::with_config(processor, config.clone());
 
-    // Create macOS menu bar app if we're on macOS
-    #[cfg(target_os = "macos")]
-    #[cfg(feature = "menu-bar")]
-    let mut menu_app = MenuBarApp::new();
-
     // Start recording
     let mode_label = if config.get_continuous_mode() {
         "continuous"
@@ -137,10 +101,6 @@ fn main() {
         "single"
     };
     info!("Starting {mode_label} recording");
-
-    #[cfg(target_os = "macos")]
-    #[cfg(feature = "menu-bar")]
-    menu_app.update_status(true);
 
     match recorder.start_recording() {
         Ok(_) => info!("Recording started!"),
@@ -194,10 +154,6 @@ fn main() {
 
     // Stop recording
     info!("Stopping recording...");
-
-    #[cfg(target_os = "macos")]
-    #[cfg(feature = "menu-bar")]
-    menu_app.update_status(false);
 
     // Finalize the recording
     if let Err(e) = recorder.processor_mut().finalize() {
