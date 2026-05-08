@@ -107,8 +107,15 @@ platform :mac do
       force: true,
       price_tier: 50,
       metadata_path: "./fastlane/metadata",
-      screenshots_path: "./fastlane/screenshots",
-      app_rating_config_path: "./fastlane/age_rating_config.json"
+      screenshots_path: "./fastlane/screenshots"
+      # NOTE: `app_rating_config_path: "./fastlane/age_rating_config.json"`
+      # was removed because the file uses old App Store Connect attribute
+      # names (e.g. SEXUAL_CONTENT_GRAPHIC_NUDITY, CARTOON_FANTASY_VIOLENCE).
+      # Apple renamed these to forms like SEXUAL_CONTENT_GRAPHIC_AND_NUDITY
+      # / VIOLENCE_CARTOON_OR_FANTASY and the API now rejects unknown keys
+      # outright. Until the JSON is regenerated against the current schema
+      # (e.g. via `fastlane fetch_metadata`), skip the age-rating sync —
+      # the existing rating on App Store Connect is preserved.
     }
     version = resolve_app_version(options)
     deliver_opts[:app_version] = version if version
