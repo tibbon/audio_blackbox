@@ -81,9 +81,11 @@ Channel specs support individual channels and ranges: `"0,2-4,7"` records channe
 
 ```bash
 cargo run                            # Run with defaults (blackbox binary)
-cargo run -- --menu-bar              # Run with macOS menu bar UI
 cargo run --bin bench-writer --features benchmarking -- --channels 64 --seconds 10 --mode single  # Run benchmarks
 ```
+
+The macOS menu bar UI is the dedicated SwiftUI app under `BlackBoxApp/` —
+build with `make app` or open `BlackBoxApp/BlackBoxApp.xcodeproj` in Xcode.
 
 ## Architecture
 
