@@ -50,7 +50,13 @@ platform :mac do
   desc "Build Rust lib, archive, and upload to TestFlight"
   lane :beta do |options|
     api_key = asc_api_key
-    team_id = ENV["DEVELOPMENT_TEAM"] || "FB8QBNNT6D"
+    # team_id resolution priority (DOLL-151):
+    #   1. ENV["DEVELOPMENT_TEAM"] — CI override via secret
+    #   2. Appfile's team_id(...) — single canonical source
+    # Removes the prior `|| "FB8QBNNT6D"` literal fallback so a team
+    # move only needs editing Appfile (+ ExportOptions.plist).
+    team_id = ENV["DEVELOPMENT_TEAM"] ||
+              CredentialsManager::AppfileConfig.try_fetch_value(:team_id)
 
     # Set version from tag (CI) or options, bump build number
     version = options[:version] || ENV["RELEASE_VERSION"]

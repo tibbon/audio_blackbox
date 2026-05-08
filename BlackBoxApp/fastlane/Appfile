@@ -1,3 +1,9 @@
+# Canonical source for the App Store Connect team ID (DOLL-151).
+# Fastfile's beta lane reads from here via
+# CredentialsManager::AppfileConfig.try_fetch_value(:team_id).
+# When moving the app to a new Apple Developer account, update this
+# value AND ../../../ExportOptions.plist (used by the non-fastlane
+# `make archive` / `make export` paths).
 app_identifier("com.dollhousemediatech.blackbox")
 apple_id(ENV["APPLE_ID"] || "tibbon@gmail.com")
 team_id("FB8QBNNT6D")
