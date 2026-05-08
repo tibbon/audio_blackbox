@@ -92,27 +92,19 @@ jobs:
     - name: Copy CLI binary
       run: cp target/release/blackbox blackbox-macos-arm64
 
-    - name: Build SwiftUI app
-      run: |
-        cargo build --release --features ffi
-        xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
-        BUILT_APP=$(xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //')
-        cp -R "$BUILT_APP/BlackBox Audio Recorder.app" "BlackBox Audio Recorder.app"
-        ditto -c -k --keepParent "BlackBox Audio Recorder.app" "BlackBox-Audio-Recorder.app.zip"
+    # Note (DOLL-152): the SwiftUI .app.zip used to be built and uploaded
+    # here, but we'd been signing it ad-hoc (CODE_SIGN_IDENTITY="-") and
+    # users hit Gatekeeper rejection on download. The Mac App Store /
+    # TestFlight (the testflight job below, which signs + notarizes via
+    # fastlane) is the canonical distribution channel; the GitHub
+    # Release artifact is just the CLI binary. If a notarized .app.zip
+    # is needed for direct distribution again, do it via the testflight
+    # job's keychain context, not as ad-hoc here.
 
     - name: Upload CLI binary
       uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3
       with:
         files: blackbox-macos-arm64
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload macOS app bundle
-      uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3
-      with:
-        files: BlackBox-Audio-Recorder.app.zip
         draft: false
         prerelease: false
       env:
