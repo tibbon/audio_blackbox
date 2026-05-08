@@ -30,7 +30,8 @@ A cross-platform audio recording application in Rust with macOS menu bar integra
 ```bash
 cargo build                          # Debug build
 cargo build --release                # Release build
-cargo test                           # Run all tests (148 total: 136 lib + 12 binary)
+cargo test                           # Run all tests (121 lib tests, 14 ignored benchmarks)
+cargo test --features ffi            # 147 lib tests (adds the FFI suite)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 ```
@@ -173,17 +174,20 @@ File rotation overhead is <1ms in single mode and ~10ms in 64-channel split mode
 
 ## CI
 
-CI runs on every push to `main` and on pull requests. Seven parallel jobs:
+CI runs on every push to `main` and on pull requests:
 
 | Job | What it checks |
 |-----|---------------|
-| **Format** | `cargo fmt --check` |
+| **Format** | `cargo fmt --all -- --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **Test (Ubuntu)** | 122 lib tests (14 benchmarks ignored) |
-| **Test (macOS)** | 122 lib + 12 macOS binary tests (14 benchmarks ignored) |
+| **MSRV (1.95)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
+| **Test (Ubuntu)** | 121 lib tests (14 benchmarks ignored) |
+| **Test (macOS)** | 121 lib tests (14 benchmarks ignored) |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
-| **Benchmark smoke test** | Builds release binary, runs 64-channel smoke tests in all modes |
+| **Benchmark smoke test** | Builds release binary, asserts ≥10× real-time throughput in all modes |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
+
+A separate **Ignored tests** workflow runs the long `#[ignore]`-marked benchmark / perf tests weekly (Mondays 08:00 UTC) and on manual `workflow_dispatch`. The **Release** workflow runs on `v*` tag pushes and via `workflow_dispatch`, gated on a fresh test run.
 
 Dependabot is configured for weekly dependency update PRs (Cargo crates, GitHub Actions, and Bundler).
 
