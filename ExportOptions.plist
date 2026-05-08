@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Used by `make archive` / `make export` (xcodebuild -exportOptionsPlist).
+     The Fastlane release path reads team_id from BlackBoxApp/fastlane/Appfile
+     (DOLL-151). When moving the app to a new Apple Developer account,
+     update both this file and Appfile in lockstep. -->
 <plist version="1.0">
 <dict>
 	<key>method</key>
