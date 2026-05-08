@@ -181,7 +181,6 @@ CI runs on every push to `main` and on pull requests:
 | **Format** | `cargo fmt --all -- --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
 | **MSRV (1.95)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
-| **Test (Ubuntu)** | 121 lib tests (14 benchmarks ignored) |
 | **Test (macOS)** | 121 lib tests (14 benchmarks ignored) |
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, asserts ≥10× real-time throughput in all modes |
