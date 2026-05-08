@@ -16,9 +16,6 @@ use crate::writer_thread::f32_to_wav_sample;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Test env with silence detection disabled (threshold=0).
-///
-/// `CpalAudioProcessor` writes i16-range samples into a 16-bit WAV, but
 // Test helpers consolidated to `crate::test_utils` (DOLL-118).
 use crate::test_utils::test_env_no_silence;
 
