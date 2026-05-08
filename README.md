@@ -2,38 +2,47 @@
 
 [![CI](https://github.com/tibbon/audio_blackbox/actions/workflows/rust.yml/badge.svg)](https://github.com/tibbon/audio_blackbox/actions/workflows/rust.yml)
 
-A cross-platform audio recording application in Rust with macOS menu bar integration. Records from configurable input channels, saves as WAV files, supports silence detection, continuous recording with automatic file rotation, and handles up to 64+ channels with real-time performance.
+**Set-and-forget continuous audio recording for macOS.** Captures from any input device — built-in mic, USB interface, multichannel audio interface — and never loses a take when the app, the Mac, or the power decides otherwise. Designed for audio engineers, podcasters, and field recorders who want a quiet menu-bar utility that just runs.
+
+> Built around a lock-free real-time audio pipeline so the recording thread never blocks on disk I/O, mutex locks, or allocations — captures are clean even on heavy-load systems.
+
+## Install
+
+**Mac App Store:** see the [App Store listing](https://apps.apple.com/app/blackbox-audio-recorder/id6502949317) (or search "BlackBox Audio Recorder"). The shipped product is the SwiftUI menu-bar app — settings, level meter, onboarding, and security-scoped output-folder picker included.
+
+**Build from source** (CLI binary, or for development):
+
+```bash
+git clone https://github.com/tibbon/audio_blackbox.git
+cd audio_blackbox
+make app           # SwiftUI app — opens in Xcode build
+# or
+cargo build --release   # CLI binary at target/release/blackbox
+```
+
+Prerequisites: Rust stable toolchain (edition 2024). macOS users also need Xcode command-line tools. Linux users (CLI only — there is no Linux GUI) additionally need `libasound2-dev` and `pkg-config`.
 
 ## Features
 
-- **Multi-channel recording** — record 1 to 64+ channels simultaneously
-- **Configurable bit depth** — 16-bit, 24-bit (default, pro standard), or 32-bit WAV
-- **Two output modes** — `single` (one file, automatically multichannel for 3+ channels), `split` (one file per channel)
-- **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes
-- **Silence gate** — pauses recording during silence, resumes when audio is detected (configurable threshold and timeout)
-- **Disk space monitoring** — automatically stops recording when free space drops below a configurable threshold
-- **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer
-- **Per-channel peak metering** — tracked on the writer thread at zero extra cost, exposed via FFI
-- **macOS menu bar app** — native SwiftUI menu bar app with onboarding, settings, and security-scoped bookmarks
-- **Flexible configuration** — TOML config file, environment variables, or `BLACKBOX_*` prefixed env vars
+- **Multi-channel recording** — 1 to 64+ channels simultaneously.
+- **Configurable bit depth** — 16-bit, 24-bit (default, pro standard), or 32-bit WAV.
+- **Two output modes** — `single` (one file, automatically multichannel for 3+ channels) or `split` (one file per channel).
+- **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes.
+- **Silence gate** — pauses recording during silence, resumes when audio is detected (configurable threshold and timeout).
+- **Disk-space monitoring** — automatically stops recording when free space drops below a configurable threshold.
+- **Lock-free RT architecture** — audio callback uses zero file I/O, zero mutex locks, zero allocations; all writes happen on a dedicated writer thread via a SPSC ring buffer.
+- **Per-channel peak metering** — tracked on the writer thread at zero extra cost, exposed via FFI to the SwiftUI app.
+- **Privacy-respecting** — no network access, all recordings stay local.
 
-## Building
-
-### Prerequisites
-
-- Rust stable toolchain (edition 2024)
-- **macOS**: Xcode command line tools
-- **Linux**: `libasound2-dev` and `pkg-config`
-
-### Commands
+## Quick start (CLI)
 
 ```bash
-cargo build                          # Debug build
-cargo build --release                # Release build
+cargo run                            # Run with defaults
 cargo test                           # Run all tests (121 lib tests, 14 ignored benchmarks)
 cargo test --features ffi            # 147 lib tests (adds the FFI suite)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
+make verify                          # Kitchen-sink local check (fmt + clippy + tests + ASC metadata lint + Swift tests)
 ```
 
 ## Configuration
@@ -78,27 +87,18 @@ min_disk_space_mb = 500
 
 Channel specs support individual channels and ranges: `"0,2-4,7"` records channels 0, 2, 3, 4, and 7.
 
-## Running
-
-```bash
-cargo run                            # Run with defaults (blackbox binary)
-cargo run --bin bench-writer --features benchmarking -- --channels 64 --seconds 10 --mode single  # Run benchmarks
-```
-
-The macOS menu bar UI is the dedicated SwiftUI app under `BlackBoxApp/` —
-build with `make app` or open `BlackBoxApp/BlackBoxApp.xcodeproj` in Xcode.
-
 ## Architecture
 
-The core recording pipeline uses a lock-free architecture to prevent audio glitches:
+The recording pipeline is lock-free at the audio-thread boundary so dropouts can't be introduced by I/O latency:
 
 ```
-Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer thread → WAV files
+Audio device → cpal callback (RT thread) → rtrb ring buffer → Writer thread → WAV files
 ```
 
-- **RT callback**: only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
-- **Writer thread**: reads from the ring buffer, converts f32 to the configured bit depth, writes WAV directly (custom `RawWavWriter`, no third-party WAV library in the hot path), tracks per-channel peak levels, handles file rotation and disk space monitoring.
-- **Ring buffer**: sized for 5 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O even at high channel counts.
+- **RT callback** only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
+- **Writer thread** reads from the ring buffer, converts f32 to the configured bit depth, writes WAV directly (custom `RawWavWriter`, no third-party WAV library in the hot path), tracks per-channel peak levels, and handles file rotation and disk-space monitoring.
+- **Ring buffer** is sized for 5 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O even at high channel counts.
+- **Silence-check worker** is a single dedicated thread fed via a bounded channel; the writer thread submits rotated files to it without blocking.
 
 ### Key modules
 
@@ -108,11 +108,10 @@ Audio Device → cpal callback (RT thread) → rtrb ring buffer → Writer threa
 | `src/cpal_processor.rs` | Real audio I/O implementation using cpal |
 | `src/writer_thread.rs` | Writer thread, ring buffer consumer, WAV file management |
 | `src/config.rs` | TOML + env var configuration with `BLACKBOX_*` prefix support |
-| `src/constants.rs` | Default values, type aliases |
-| `src/ffi.rs` | C FFI layer for Swift/SwiftUI frontend |
-| `src/error.rs` | Custom error type via thiserror |
-| `src/bin/macos/` | objc2-based macOS menu bar UI (feature-gated) |
-| `BlackBoxApp/` | SwiftUI menu bar app (Xcode project, calls Rust via FFI) |
+| `src/ffi.rs` | C FFI layer consumed by the SwiftUI app |
+| `src/raw_wav_writer.rs` | Hand-rolled WAV writer for the hot path (zero hound) |
+| `src/error.rs` | Typed error enum with `thiserror` |
+| `BlackBoxApp/` | SwiftUI menu-bar app (Xcode project, calls Rust via FFI) |
 
 ## Benchmarking
 
@@ -185,6 +184,7 @@ CI runs on every push to `main` and on pull requests:
 | **Security audit** | `cargo audit` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, asserts ≥10× real-time throughput in all modes |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
+| **CodeQL** | Static analysis on Rust + Swift + GitHub Actions YAML |
 
 A separate **Ignored tests** workflow runs the long `#[ignore]`-marked benchmark / perf tests weekly (Mondays 08:00 UTC) and on manual `workflow_dispatch`. The **Release** workflow runs on `v*` tag pushes and via `workflow_dispatch`, gated on a fresh test run.
 
