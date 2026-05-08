@@ -70,6 +70,42 @@ jobs:
     - name: Check Cargo.lock is up-to-date
       run: cargo update --locked --dry-run
 
+  # ── MSRV verification ─────────────────────────────────────────────
+  # Cargo.toml claims `rust-version = "1.95"`. Without this job an
+  # MSRV regression (someone adopting a 1.96-only feature) ships
+  # silently because every other job uses `@stable`. Pin to the MSRV
+  # toolchain and `cargo check`. Bump the toolchain ref in lockstep
+  # with `Cargo.toml`'s `rust-version` field. (DOLL-150)
+  msrv:
+    name: MSRV (1.95)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Install Rust 1.95
+      uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582  # 1.95
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-msrv-1.95-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-msrv-1.95-
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config
+
+    - name: cargo check (MSRV)
+      run: cargo check --all-targets --no-default-features
+
   # ── Tests ──────────────────────────────────────────────────────────
   # Run on both Ubuntu and macOS. cargo test compiles everything, so
   # no separate build step is needed.
