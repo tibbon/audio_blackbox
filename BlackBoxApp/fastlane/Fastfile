@@ -98,6 +98,18 @@ platform :mac do
   end
 
   desc "Upload metadata and screenshots to App Store Connect"
+  #
+  # Intentionally narrow scope: this lane syncs *text* metadata
+  # (release notes, description, keywords, screenshots). It does NOT
+  # touch age ratings or pricing — those have moved through several
+  # ASC API schema revisions that fastlane lags behind, so each release
+  # would otherwise fail on a new attribute rename. They're set once in
+  # the App Store Connect web UI and persist across versions.
+  #
+  # If age rating / pricing need updating, use the web UI, or pull the
+  # current shape with `fastlane fetch_metadata` and regenerate the
+  # local config from what Apple currently accepts (DOLL-128/132 style
+  # rather than guessing keys).
   lane :metadata do |options|
     api_key = asc_api_key
     deliver_opts = {
@@ -105,17 +117,16 @@ platform :mac do
       platform: "osx",
       skip_binary_upload: true,
       force: true,
-      price_tier: 50,
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots"
-      # NOTE: `app_rating_config_path: "./fastlane/age_rating_config.json"`
-      # was removed because the file uses old App Store Connect attribute
-      # names (e.g. SEXUAL_CONTENT_GRAPHIC_NUDITY, CARTOON_FANTASY_VIOLENCE).
-      # Apple renamed these to forms like SEXUAL_CONTENT_GRAPHIC_AND_NUDITY
-      # / VIOLENCE_CARTOON_OR_FANTASY and the API now rejects unknown keys
-      # outright. Until the JSON is regenerated against the current schema
-      # (e.g. via `fastlane fetch_metadata`), skip the age-rating sync —
-      # the existing rating on App Store Connect is preserved.
+      # `price_tier:` removed — the old prices/availableTerritories
+      # relationships on `apps` no longer exist; Apple uses
+      # appPricePoints + appPriceSchedules now. fastlane's price_tier
+      # still hits the dead endpoint and gets a 400.
+      #
+      # `app_rating_config_path:` removed — the JSON used pre-rename
+      # attribute names (SEXUAL_CONTENT_GRAPHIC_NUDITY etc.) that ASC
+      # now hard-rejects.
     }
     version = resolve_app_version(options)
     deliver_opts[:app_version] = version if version
