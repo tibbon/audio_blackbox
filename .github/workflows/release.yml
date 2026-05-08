@@ -25,11 +25,49 @@ concurrency:
 permissions: {}
 
 jobs:
+  # ── Test gate ─────────────────────────────────────────────────────
+  # Re-run the Rust test suite on the tag's exact SHA before any release
+  # artifact is published. Without this, a tag pushed from a branch that
+  # didn't go through PR review (or whose tests went red after merge)
+  # would still upload to TestFlight and create a GitHub Release. Both
+  # the github-release and testflight jobs `needs:` this so a red test
+  # blocks both. (DOLL-136)
+  tests:
+    name: Test gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-release-tests-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-release-tests-
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
+
+    - name: Run tests
+      run: cargo test --no-default-features -- --test-threads=1
+
   # ── GitHub Release binaries ───────────────────────────────────────
   # Builds CLI binaries on Linux and macOS. macOS also includes the
   # SwiftUI .app bundle as a zip.
   github-release:
     name: GitHub Release (${{ matrix.os }})
+    needs: tests
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     permissions:
@@ -104,6 +142,7 @@ jobs:
   # manual approval from the repo owner.
   testflight:
     name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
+    needs: tests
     runs-on: macos-latest
     environment: release
     permissions:
