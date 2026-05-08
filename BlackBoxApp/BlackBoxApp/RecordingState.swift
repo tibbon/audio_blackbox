@@ -64,7 +64,6 @@ enum SleepWakePolicy {
     private var meterTimerTask: Task<Void, Never>?
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
-    private var hasRequestedNotificationAuth = false
     private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
@@ -95,6 +94,13 @@ enum SleepWakePolicy {
         }
         restoreSavedSettings()
         restoreGlobalHotkey()
+
+        // Request notification authorization eagerly at launch (DOLL-134).
+        // Previously this was deferred to first manual `startRecordingInternal`,
+        // so the very-first auto-record-on-launch notification fired before
+        // auth and was silently dropped. Auth status is sticky across
+        // launches; calling once here is a no-op on subsequent runs.
+        requestNotificationAuth()
 
         // Auto-record on launch if enabled (skip if onboarding not complete)
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
@@ -244,11 +250,8 @@ enum SleepWakePolicy {
     }
 
     private func startRecordingInternal() {
-        // Request notification permission on first recording start (contextually relevant)
-        if !hasRequestedNotificationAuth {
-            hasRequestedNotificationAuth = true
-            requestNotificationAuth()
-        }
+        // Notification authorization was requested at init() time (DOLL-134),
+        // so we don't need a lazy request here.
 
         // Stop monitoring first — recording will take over the audio stream
         if isMonitoring {
