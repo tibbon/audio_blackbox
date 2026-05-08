@@ -87,6 +87,7 @@ struct BlackBoxApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var recorder = RecordingState()
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
@@ -136,7 +137,12 @@ struct BlackBoxApp: App {
         .defaultSize(width: 460, height: 540)
         .windowResizability(.contentSize)
 
-        Window("Settings", id: "settings") {
+        // DOLL-148: SwiftUI Settings scene rather than a generic Window.
+        // This gives us the standard macOS Settings affordance — `⌘,`
+        // reopen, system-managed close-on-`⌘W` semantics, and a standard
+        // app-menu position — instead of a custom Window that only the
+        // menu-bar Settings… button knew how to surface.
+        Settings {
             SettingsView(recorder: recorder)
         }
         .defaultSize(width: 480, height: 500)
@@ -239,7 +245,7 @@ struct BlackBoxApp: App {
 
         Button("Settings\u{2026}") {
             NSApp.activate()
-            openWindow(id: "settings")
+            openSettings()
         }
         .keyboardShortcut(",")
 
