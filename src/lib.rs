@@ -31,9 +31,12 @@ mod cpal_processor;
 pub mod error;
 #[cfg(feature = "ffi")]
 pub mod ffi;
+#[cfg(target_os = "macos")]
+mod macos_sample_rate_listener;
 #[cfg(test)]
 mod mock_processor;
 mod raw_wav_writer;
+mod silence_check_worker;
 mod utils;
 mod writer_thread;
 
