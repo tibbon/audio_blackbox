@@ -148,18 +148,35 @@ pub fn available_disk_space_mb(_path: &str) -> Option<u64> {
     None
 }
 
-/// Helper function that checks if a WAV file is mostly silent by calculating its RMS amplitude
-/// and comparing it to the provided threshold.
+/// Check whether a WAV file is silent enough to delete.
+///
+/// Two-stage check:
+/// 1. **Peak fast-path**: stream samples and early-return `Ok(false)` if
+///    any single sample's normalized absolute value is `>= threshold`.
+///    A loud transient anywhere in the file keeps the file. This makes
+///    audible recordings complete in O(first-loud-sample) rather than
+///    scanning every sample.
+/// 2. **RMS fallback**: if no sample tripped the peak check, compute
+///    RMS over all samples and return `Ok(rms < threshold)`.
+///
+/// The peak fast-path is conservative — a single loud sample is enough
+/// to keep the file regardless of the surrounding silence — which is
+/// exactly the safety property we want for the auto-delete rotation
+/// path.
 ///
 /// Parameters:
-/// - file_path: Path to the WAV file to analyze
-/// - threshold: RMS amplitude threshold. If the file's RMS is below this value, it's considered silent.
-///   A threshold of 0 or negative disables silence detection.
+/// - `file_path`: Path to the WAV file to analyze.
+/// - `threshold`: Normalized amplitude threshold ([0.0, 1.0]). A value
+///   of 0 or negative disables silence detection (returns `Ok(false)`).
 ///
 /// Returns:
-/// - Ok(true) if the file is silent (RMS < threshold)
-/// - Ok(false) if the file is not silent (RMS >= threshold) or if silence detection is disabled
-/// - Err if there was an error reading or analyzing the file
+/// - `Ok(true)` if both the peak and RMS checks consider the file silent.
+/// - `Ok(false)` if any sample peaks above threshold, the RMS exceeds
+///   threshold, or silence detection is disabled.
+/// - `Err` if reading or decoding the file failed.
+///
+/// Doc/code drift fix: the previous doc described only the RMS path
+/// (DOLL-144).
 pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError> {
     let threshold_f64 = threshold as f64;
 
