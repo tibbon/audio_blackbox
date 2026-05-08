@@ -131,6 +131,9 @@ jobs:
 
     - name: Extract version (tag or Info.plist fallback)
       id: version
+      # No `working-directory` override — `..` resolves outside
+      # $GITHUB_WORKSPACE on hosted runners, which silently breaks
+      # relative file reads. Use the absolute workspace path instead.
       run: |
         if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
           VERSION="${GITHUB_REF#refs/tags/v}"
@@ -139,11 +142,10 @@ jobs:
           # workflow_dispatch — read the marketing version straight out
           # of the committed Info.plist so metadata/submit_review lanes
           # know which App Store version to target.
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" BlackBoxApp/BlackBoxApp/Info.plist)
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$GITHUB_WORKSPACE/BlackBoxApp/BlackBoxApp/Info.plist")
           echo "Manual run — using version $VERSION (from Info.plist)"
         fi
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      working-directory: ..
 
     - name: Build Rust static library (FFI)
       run: cd .. && make rust-lib
