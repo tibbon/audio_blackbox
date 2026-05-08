@@ -117,6 +117,12 @@ platform :mac do
       platform: "osx",
       skip_binary_upload: true,
       force: true,
+      # Precheck can't validate IAPs under API-key auth (only Apple ID
+      # login), and we have no IAPs anyway. Skip the entire precheck
+      # rather than toggle precheck_include_in_app_purchases — fewer
+      # moving parts. Submission goes through review at submit_review
+      # time, which has its own checks.
+      run_precheck_before_submit: false,
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots"
       # `price_tier:` removed — the old prices/availableTerritories
