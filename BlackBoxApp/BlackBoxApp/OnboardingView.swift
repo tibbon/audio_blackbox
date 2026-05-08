@@ -104,13 +104,19 @@ struct OnboardingView: View {
         .frame(minWidth: 460, maxWidth: 460, minHeight: 540)
         .background(OnboardingWindowConfigurator())
         .onAppear {
-            // On re-run, preserve the user's existing output directory
+            // On re-run, preserve the user's existing output directory.
+            // On first run, treat the auto-populated default folder as a
+            // deliberate selection so completeOnboarding() saves a
+            // security-scoped bookmark for it (DOLL-133). Without this,
+            // first-run users got dropped at "Output Directory Unavailable"
+            // on the next launch because no bookmark existed.
             if let savedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) {
                 outputDir = savedPath
                 chosenURL = URL(fileURLWithPath: savedPath)
             } else {
                 outputDir = defaultDir.path
                 chosenURL = defaultDir
+                dirChangedByUser = true
             }
             checkMicStatus()
         }
