@@ -58,7 +58,7 @@ clean:
 
 # Verify: fmt + clippy + test + build + Swift tests (run before committing)
 .PHONY: verify
-verify:
+verify: check-app-store
 	$(CARGO_BIN) fmt --all -- --check
 	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) test -- --test-threads=1
@@ -152,6 +152,13 @@ upload: archive
 .PHONY: check-versions
 check-versions:
 	@./scripts/check-versions.sh
+
+# Lint Fastlane / App Store metadata against Apple's current OpenAPI spec
+# so schema drift is caught locally instead of mid-deploy on the CI runner.
+# Caches the spec at .cache/asc-openapi.json (~3 MB JSON).
+.PHONY: check-app-store
+check-app-store:
+	@python3 ./scripts/lint-app-store-metadata.py
 
 # Tag a release and push — CI handles build, TestFlight, and GitHub Release.
 # Usage: make release VERSION=1.0.1

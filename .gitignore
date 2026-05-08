@@ -10,3 +10,4 @@ CLAUDE.md
 profile.json.gz
 .env
 *.p8
+.cache/
