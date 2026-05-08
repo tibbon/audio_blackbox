@@ -46,7 +46,11 @@ jobs:
       matrix:
         include:
           - language: swift
-            build-mode: autobuild
+            # Manual build: the Xcode project links against the Rust
+            # static library produced by `cargo build --features ffi`,
+            # which `autobuild` can't infer. Run an explicit build
+            # step below before CodeQL traces.
+            build-mode: manual
           - language: rust
             build-mode: none
           - language: actions
@@ -56,11 +60,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
+      - name: Install Rust (Swift only)
+        if: matrix.language == 'swift'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache Rust dependencies (Swift only)
+        # Without this, every CodeQL Swift run rebuilds the Rust FFI
+        # static lib from a cold target/ — that was most of the 21
+        # minutes the first failing run took. Cache key matches the
+        # `swift-app` job's so they share warm artifacts.
+        if: matrix.language == 'swift'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-swift-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@5e316336eb4f107009e477d4bfbfff13d7250fae  # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+
+      - name: Build Swift app for CodeQL trace
+        if: matrix.language == 'swift'
+        run: |
+          # CodeQL traces the swiftc invocations during this build, so
+          # everything that ends up in the .app must be compiled here.
+          cargo build --release --features ffi
+          xcodebuild \
+            -project BlackBoxApp/BlackBoxApp.xcodeproj \
+            -scheme BlackBoxApp \
+            -configuration Release \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="-" \
+            build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@5e316336eb4f107009e477d4bfbfff13d7250fae  # v4
