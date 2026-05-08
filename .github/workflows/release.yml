@@ -129,17 +129,20 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-release-
 
-    - name: Extract version from tag
+    - name: Extract version (tag or Info.plist fallback)
       id: version
       run: |
         if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
           VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing version $VERSION"
+          echo "Releasing version $VERSION (from tag)"
         else
-          echo "version=" >> "$GITHUB_OUTPUT"
-          echo "Manual run — using version from Xcode project"
+          # workflow_dispatch — read the marketing version straight out
+          # of the committed Info.plist so metadata/submit_review lanes
+          # know which App Store version to target.
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" BlackBoxApp/BlackBoxApp/Info.plist)
+          echo "Manual run — using version $VERSION (from Info.plist)"
         fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       working-directory: ..
 
     - name: Build Rust static library (FFI)
