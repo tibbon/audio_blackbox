@@ -1,0 +1,68 @@
+name: "CodeQL"
+
+# Manual / advanced CodeQL setup. The repo previously used GitHub's
+# Default setup which auto-detected every language in the tree —
+# Python (one stdlib script), Ruby (Fastfile + Gemfile), etc. — and
+# burned analysis time on languages where there's nothing meaningful
+# to scan. After this lands, disable Default setup at:
+#   https://github.com/tibbon/audio_blackbox/settings/security_analysis
+# under "Code scanning > Default setup > Disable".
+#
+# Languages scanned:
+#   - swift   (the SwiftUI app — highest-signal target)
+#   - rust    (the audio engine + FFI; CodeQL Rust support GA'd in 2025)
+#   - actions (lints workflow YAML for things like injection-via-${{}})
+#
+# All third-party action references are pinned to commit SHAs per
+# DOLL-138's supply-chain policy.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Weekly run catches advisories added since last manual scan.
+    - cron: "18 2 * * 0"
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # Swift autobuild needs xcodebuild → macOS runner. Rust + Actions
+    # run fine on Linux runners (and Linux is cheaper).
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: swift
+            build-mode: autobuild
+          - language: rust
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5e316336eb4f107009e477d4bfbfff13d7250fae  # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@5e316336eb4f107009e477d4bfbfff13d7250fae  # v4
+        with:
+          category: "/language:${{ matrix.language }}"
