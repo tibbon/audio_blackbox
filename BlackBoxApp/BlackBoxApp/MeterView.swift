@@ -101,11 +101,20 @@ private struct MeterBar: View {
         CGFloat((peakHold + 60) / 60)
     }
 
+    /// VoiceOver value for the meter. Bucketed to a small set of fixed
+    /// thresholds so the value only changes when crossing a meaningful
+    /// audio boundary (DOLL-142). Previously the middle range emitted
+    /// `"\(Int(dBFS)) decibels"` which changed every ~30 Hz tick — VO
+    /// users got a stream of "-17 decibels", "-18 decibels"… on any
+    /// non-clipping non-silent signal. The buckets line up with the
+    /// existing visual gradient stops (-12, -24, -48).
     private var meterAccessibilityValue: String {
         if dBFS > -3 { return "Clipping: signal is too loud and may distort" }
         if dBFS > -12 { return "Hot: signal is high, reduce input gain" }
         if dBFS <= -60 { return "Silent" }
-        return "\(Int(dBFS)) decibels"
+        if dBFS <= -48 { return "Very low, below -48 decibels" }
+        if dBFS <= -24 { return "Low, between -48 and -24 decibels" }
+        return "Moderate, between -24 and -12 decibels"
     }
 
     private var dBLabel: String {
