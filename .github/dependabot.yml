@@ -21,3 +21,16 @@ updates:
     labels:
       - "ci"
     open-pull-requests-limit: 5
+
+  # Fastlane (and transitive Ruby gems) — pinned via Gemfile.lock,
+  # bumped through dependabot to defeat schema-drift mid-deploy
+  # surprises (DOLL-137).
+  - package-ecosystem: "bundler"
+    directory: "/BlackBoxApp"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "ci"
+    open-pull-requests-limit: 3

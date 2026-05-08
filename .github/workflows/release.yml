@@ -213,14 +213,16 @@ jobs:
           -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
         security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
-    - name: Set up Ruby
+    - name: Set up Ruby + bundler cache
+      # bundler-cache: true reads BlackBoxApp/Gemfile.lock to install
+      # the pinned fastlane (DOLL-137) and caches the gem set keyed on
+      # the lockfile hash. No more "next minor fastlane release breaks
+      # deliver mid-deploy" — bumps go through dependabot review.
       uses: ruby/setup-ruby@c4e5b1316158f92e3d49443a9d58b31d25ac0f8f  # v1.306.0
       with:
         ruby-version: "3.3"
         working-directory: BlackBoxApp
-
-    - name: Install Fastlane
-      run: gem install fastlane
+        bundler-cache: true
 
     - name: Write ASC API key file
       env:
@@ -245,7 +247,7 @@ jobs:
       run: |
         # Decode base64 key content for Fastlane API auth
         export ASC_KEY_CONTENT=$(echo "$ASC_KEY_CONTENT" | base64 --decode)
-        fastlane "${{ github.event.inputs.lane || 'beta' }}"
+        bundle exec fastlane "${{ github.event.inputs.lane || 'beta' }}"
 
     - name: Clean up secrets
       if: always()

@@ -1,0 +1,7 @@
+source "https://rubygems.org"
+
+# Pinned via DOLL-137 to make the App Store release reproducible and
+# defeat the "next minor fastlane release breaks deliver" footgun we
+# hit four times shipping 1.1.0. Bumping the pin happens via a
+# regular dependabot PR.
+gem "fastlane", "~> 2.233"
