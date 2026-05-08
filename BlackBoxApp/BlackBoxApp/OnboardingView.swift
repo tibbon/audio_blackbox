@@ -22,19 +22,30 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // DOLL-141: each dot is a Button with a per-step label/hint
+            // so VoiceOver users can reach completed steps via VO Right-arrow
+            // instead of seeing only "Step N of 4" with no navigation. The
+            // current step gets `.isSelected`; reachable past steps stay
+            // actionable; future steps are flagged hidden so VO doesn't
+            // try to navigate to inert dots.
             HStack(spacing: 8) {
                 ForEach(0..<4) { i in
-                    Circle()
-                        .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                        .contentShape(Circle())
-                        .onTapGesture {
-                            if i < step { animateStep { step = i } }
-                        }
+                    Button {
+                        if i < step { animateStep { step = i } }
+                    } label: {
+                        Circle()
+                            .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .accessibilityLabel("Onboarding step \(i + 1) of 4")
+                    .accessibilityHint(i < step ? "Go back to this step" : "")
+                    .accessibilityAddTraits(i == step ? [.isSelected] : [])
+                    .accessibilityHidden(i > step)
+                    .disabled(i >= step)
                 }
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Step \(step + 1) of 4")
             .padding(.top, 20)
 
             Spacer()
@@ -284,6 +295,16 @@ struct OnboardingView: View {
                 }
             }
             .frame(maxWidth: 380)
+            // DOLL-141: replace the accessibility tree of the two visual
+            // "cards" with a real single-select Picker so VoiceOver
+            // announces them as one group ("Recording mode, Continuous
+            // Recording, 1 of 2") rather than two unrelated buttons.
+            .accessibilityRepresentation {
+                Picker("Recording mode", selection: $continuousMode) {
+                    Text("Continuous Recording (Recommended)").tag(true)
+                    Text("Manual Saves Only").tag(false)
+                }
+            }
 
             Divider()
                 .frame(maxWidth: 380)
