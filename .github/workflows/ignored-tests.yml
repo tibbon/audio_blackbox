@@ -21,7 +21,7 @@ env:
 jobs:
   ignored:
     name: "Run ignored tests"
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -40,11 +40,6 @@ jobs:
           key: ${{ runner.os }}-ignored-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-ignored-
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config alsa-utils
 
       # --test-threads=1 matches the per-PR `test` lane and avoids
       # contention between benchmarks that allocate / measure throughput.

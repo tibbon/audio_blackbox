@@ -19,7 +19,7 @@ jobs:
   # Fast check — fails early before burning CI minutes on builds.
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -37,7 +37,7 @@ jobs:
   # Clippy on all targets (lib, bins, tests, benchmarks).
   lint:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -59,11 +59,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-clippy-
 
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
-
     - name: Run clippy (all targets)
       run: cargo clippy --all-targets --no-default-features -- -D warnings
 
@@ -78,7 +73,7 @@ jobs:
   # with `Cargo.toml`'s `rust-version` field. (DOLL-150)
   msrv:
     name: MSRV (1.95)
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -98,26 +93,17 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-msrv-1.95-
 
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
-
     - name: cargo check (MSRV)
       run: cargo check --all-targets --no-default-features
 
   # ── Tests ──────────────────────────────────────────────────────────
-  # Run on both Ubuntu and macOS. cargo test compiles everything, so
-  # no separate build step is needed.
+  # macOS-only — the shipped product is Mac App Store; Ubuntu added cost
+  # without adding signal for the SwiftUI / CoreAudio surface (DOLL-153).
   test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Test (macos-latest)
+    runs-on: macos-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -136,12 +122,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-test-
 
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
-
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1
 
@@ -149,7 +129,7 @@ jobs:
   # Check dependencies for known vulnerabilities (RUSTSEC advisories).
   audit:
     name: Security audit
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -166,7 +146,7 @@ jobs:
   # to catch regressions. Not for perf numbers (CI runners are noisy).
   bench:
     name: Benchmark smoke test
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -185,11 +165,6 @@ jobs:
         key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-bench-
-
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config
 
     - name: Build bench binary (release)
       run: cargo build --release --bin bench-writer --features benchmarking
