@@ -3,15 +3,24 @@ default_platform(:mac)
 # App Store Connect API key authentication (no 2FA needed).
 # Generate a key at: https://appstoreconnect.apple.com/access/integrations/api
 #
-# Local usage (set in .env):
+# Local usage (set in .env at repo root, or in shell rc):
 #   ASC_KEY_ID       — Key ID from App Store Connect
 #   ASC_ISSUER_ID    — Issuer ID from App Store Connect
-#   ASC_KEY_PATH     — Path to the .p8 private key file
+#   ASC_KEY_PATH     — Absolute path to the .p8 private key file. The
+#                      file MUST live OUTSIDE the repo (DOLL-155 moved
+#                      it because a real .p8 sitting at the repo root
+#                      is one git-add-f away from leaking). Recommended
+#                      path:
+#                        ~/Library/Application Support/com.dollhousemediatech.blackbox/keys/AuthKey_<KEY_ID>.p8
+#                      See .env.example at the repo root for the
+#                      canonical export form.
 #
 # CI usage (GitHub Actions secrets):
 #   ASC_KEY_ID       — Key ID
 #   ASC_ISSUER_ID    — Issuer ID
-#   ASC_KEY_CONTENT  — Base64-encoded .p8 key content
+#   ASC_KEY_CONTENT  — Base64-encoded .p8 key content (the workflow
+#                      decodes this to a temp file at runtime — see
+#                      .github/workflows/release.yml).
 def asc_api_key
   key_opts = {
     key_id: ENV["ASC_KEY_ID"],
