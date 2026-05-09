@@ -55,9 +55,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-clippy-
+          ${{ runner.os }}-cargo-
 
     - name: Run clippy (all targets)
       run: cargo clippy --all-targets --no-default-features -- -D warnings
@@ -118,9 +118,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-test-
+          ${{ runner.os }}-cargo-
 
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1
@@ -167,9 +167,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-bench-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-bench-
+          ${{ runner.os }}-cargo-
 
     - name: Build bench binary (release)
       run: cargo build --release --bin bench-writer --features benchmarking
@@ -206,9 +206,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-swift-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-swift-
+          ${{ runner.os }}-cargo-
 
     - name: Build Rust static library (FFI)
       run: cargo build --release --features ffi
