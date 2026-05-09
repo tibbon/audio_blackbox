@@ -271,6 +271,7 @@ final class RustBridgeTests: XCTestCase {
 
 // MARK: - AppDelegate Tests
 
+@MainActor
 final class AppDelegateTests: XCTestCase {
 
     func testExplicitQuitDefaultsFalse() {
