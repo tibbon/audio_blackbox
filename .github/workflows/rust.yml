@@ -139,7 +139,12 @@ jobs:
       uses: taiki-e/install-action@e96017355c8b613bff850d75294a872bbc98a6ef  # cargo-audit
 
     - name: Run audit
-      run: cargo audit
+      # --deny warnings escalates RUSTSEC unmaintained/yanked advisories
+      # from notice-only to lane-failing. Without this, deps that age out
+      # (cpal-style) print warnings but the lane stays green for months.
+      # If a specific advisory needs a temporary exemption, add it to
+      # audit.toml with a rationale + expiry rather than dropping the flag.
+      run: cargo audit --deny warnings
 
   # ── Benchmark smoke test ───────────────────────────────────────────
   # Builds the bench binary in release mode and runs a quick smoke test
