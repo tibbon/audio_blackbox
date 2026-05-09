@@ -16,7 +16,7 @@ use crate::utils::{available_disk_space_mb, is_silent};
 use chrono::prelude::*;
 
 // ---------------------------------------------------------------------------
-// Helper functions (moved from cpal_processor.rs)
+// File-rotation helpers — timestamp formatting and tmp/.wav path derivation.
 // ---------------------------------------------------------------------------
 
 /// Returns a timestamp string like "2024-01-15-14-30-05" from the current local time.
