@@ -545,9 +545,13 @@ struct OutputSettingsTab: View {
                 .accessibilityLabel("Output mode")
                 .accessibilityHint("One file per channel or one multichannel file")
                 if outputMode == "single" {
-                    Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
-                        .font(.caption)
-                        .foregroundStyle(Color(nsColor: .systemOrange))
+                    Label {
+                        Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
                 } else {
                     Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
                         .font(.caption)
@@ -801,9 +805,13 @@ struct GeneralSettingsTab: View {
                     : "Click to record a new shortcut")
 
                 if let shortcutError {
-                    Text(shortcutError)
-                        .font(.caption)
-                        .foregroundStyle(Color(nsColor: .systemRed))
+                    Label {
+                        Text(shortcutError)
+                    } icon: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemRed))
                 } else {
                     Text("Works from any app. Click the button and press your desired key combination.")
                         .font(.caption)
