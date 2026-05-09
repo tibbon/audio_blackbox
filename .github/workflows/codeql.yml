@@ -16,18 +16,21 @@ name: "CodeQL"
 # All third-party action references are pinned to commit SHAs per
 # DOLL-138's supply-chain policy.
 
+# Triggers: weekly schedule + manual dispatch only.
+#
+# The Swift CodeQL run takes ~25–45 minutes (cold-cache xcodebuild +
+# CodeQL extractor tracing every swiftc invocation), which is too slow
+# to gate normal PR / merge work. Security scanning isn't a per-PR
+# blocker the way tests are; running it weekly + on-demand catches
+# advisories with the same fidelity as on-push without burning runner
+# minutes on every change.
+#
+# To run a scan on demand: GitHub Actions → CodeQL → "Run workflow".
 on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
   schedule:
-    # Weekly run catches advisories added since last manual scan.
+    # Weekly Sunday 02:18 UTC.
     - cron: "18 2 * * 0"
-
-concurrency:
-  group: codeql-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
 
 jobs:
   analyze:
