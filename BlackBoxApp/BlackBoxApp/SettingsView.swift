@@ -948,6 +948,7 @@ struct ShortcutRecorderButton: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
+    @MainActor
     class Coordinator {
         let parent: ShortcutRecorderButton
         var localMonitor: Any?
@@ -956,7 +957,14 @@ struct ShortcutRecorderButton: NSViewRepresentable {
             self.parent = parent
         }
 
-        deinit { stopRecording() }
+        // deinit is nonisolated — clean up the event monitor directly rather
+        // than calling stopRecording(), which is @MainActor (it also mutates
+        // parent state we can't reach from a nonisolated deinit).
+        deinit {
+            if let monitor = localMonitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
 
         func startRecording() {
             parent.isRecording = true
