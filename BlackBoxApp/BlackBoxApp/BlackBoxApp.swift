@@ -197,8 +197,7 @@ struct BlackBoxApp: App {
         }
 
         Button("Level Meter\u{2026}") {
-            NSApp.activate()
-            openWindow(id: "meter")
+            bringWindowForward(id: "meter", titleHint: "Level Meter")
         }
 
         Divider()
@@ -239,8 +238,7 @@ struct BlackBoxApp: App {
         Divider()
 
         Button("About BlackBox\u{2026}") {
-            NSApp.activate()
-            openWindow(id: "about")
+            bringWindowForward(id: "about", titleHint: "About BlackBox")
         }
 
         Button("Settings\u{2026}") {
@@ -276,14 +274,19 @@ struct BlackBoxApp: App {
     }
 
     /// Open the onboarding window, or bring it to the foreground if it
-    /// is already open. SwiftUI's `openWindow(id:)` is a no-op when the
-    /// window already exists (e.g. user opened it, then Cmd-Tabbed away),
-    /// which leaves the user looking at a dead "Set Up BlackBox…" button.
-    /// We look for the existing NSWindow and `makeKeyAndOrderFront` it,
-    /// falling back to `openWindow` only if the window has actually been
-    /// closed.
+    /// is already open.
     @MainActor
     private func bringOnboardingForward() {
+        bringWindowForward(id: "onboarding", titleHint: "Welcome to BlackBox")
+    }
+
+    /// Open the SwiftUI `Window(id:)` matching `id`, or — if the user
+    /// previously opened it and Cmd-Tabbed away — bring the existing
+    /// NSWindow to the front. SwiftUI's `openWindow(id:)` is a no-op
+    /// when the window already exists, so naively calling it leaves the
+    /// menu item looking dead.
+    @MainActor
+    private func bringWindowForward(id: String, titleHint: String) {
         // `activate(ignoringOtherApps:)` is deprecated on macOS 14+, but the
         // no-arg `activate()` does not reliably foreground a background
         // accessory app from a user-initiated menu click. Keep the
@@ -291,12 +294,12 @@ struct BlackBoxApp: App {
         NSApp.activate(ignoringOtherApps: true)
 
         if let window = NSApp.windows.first(where: { window in
-            window.identifier?.rawValue.contains("onboarding") == true
-                || window.title == "Welcome to BlackBox"
+            window.identifier?.rawValue.contains(id) == true
+                || window.title == titleHint
         }) {
             window.makeKeyAndOrderFront(nil)
         } else {
-            openWindow(id: "onboarding")
+            openWindow(id: id)
         }
     }
 
