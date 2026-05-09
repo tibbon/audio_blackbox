@@ -7,7 +7,11 @@ use crate::error::BlackboxError;
 /// Implementations of this trait are responsible for handling the actual audio
 /// processing, including recording from input devices and writing to WAV files.
 pub trait AudioProcessor {
-    /// Process audio from the specified channels with the given output mode and debug flag.
+    /// Configure the audio pipeline for the given channel selection and
+    /// output mode without starting capture. Builds the cpal stream,
+    /// allocates the ring buffer, opens output files, and spawns the
+    /// writer thread. Idempotent during a single recording session;
+    /// callers typically pair with [`start_recording`](Self::start_recording).
     fn process_audio(
         &mut self,
         channels: &[usize],
@@ -16,11 +20,29 @@ pub trait AudioProcessor {
         config: &AppConfig,
     ) -> Result<(), BlackboxError>;
 
-    /// Finalize the audio processing, closing any open files or resources.
+    /// Stop the audio stream, drain the ring buffer, finalize WAV
+    /// headers, and join the writer + silence-check threads. Must be
+    /// called before drop to avoid losing the tail of the recording.
+    /// Returns the first I/O error encountered; subsequent files are
+    /// still finalized on a best-effort basis.
     fn finalize(&mut self) -> Result<(), BlackboxError>;
 
+    /// Begin the cpal stream so samples flow into the ring buffer.
+    /// Requires [`process_audio`](Self::process_audio) to have been
+    /// called first to set up the pipeline. Returns immediately —
+    /// recording continues asynchronously until `stop_recording` or
+    /// `finalize`.
     fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError>;
+
+    /// Pause the cpal stream without finalizing files. The pipeline
+    /// stays configured so a subsequent `start_recording` resumes
+    /// without re-allocating the ring buffer or reopening files. Use
+    /// `finalize` to fully tear down.
     fn stop_recording(&mut self) -> Result<(), BlackboxError>;
+
+    /// Whether the cpal stream is currently running. False after
+    /// `stop_recording` or `finalize`, before `start_recording`, or
+    /// when configuration failed.
     fn is_recording(&self) -> bool;
 
     /// Return the number of audio samples lost due to write errors or buffer overflows.
