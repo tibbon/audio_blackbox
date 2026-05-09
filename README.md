@@ -89,29 +89,13 @@ Channel specs support individual channels and ranges: `"0,2-4,7"` records channe
 
 ## Architecture
 
-The recording pipeline is lock-free at the audio-thread boundary so dropouts can't be introduced by I/O latency:
-
 ```
 Audio device → cpal callback (RT thread) → rtrb ring buffer → Writer thread → WAV files
 ```
 
-- **RT callback** only pushes raw f32 samples into the ring buffer and checks an `AtomicBool` for rotation timing. No file I/O, no mutexes, no allocations.
-- **Writer thread** reads from the ring buffer, converts f32 to the configured bit depth, writes WAV directly (custom `RawWavWriter`, no third-party WAV library in the hot path), tracks per-channel peak levels, and handles file rotation and disk-space monitoring.
-- **Ring buffer** is sized for 5 seconds of audio at the device's sample rate and channel count, providing ample runway for file rotation I/O even at high channel counts.
-- **Silence-check worker** is a single dedicated thread fed via a bounded channel; the writer thread submits rotated files to it without blocking.
+The recording pipeline is lock-free at the audio-thread boundary so dropouts can't be introduced by I/O latency. The RT callback only pushes f32 samples and updates atomic flags; a dedicated writer thread does all WAV encoding, peak metering, and disk I/O; a silence-check worker runs file post-processing on its own thread.
 
-### Key modules
-
-| Module | Purpose |
-|--------|---------|
-| `src/audio_processor.rs` | `AudioProcessor` trait — central abstraction |
-| `src/cpal_processor.rs` | Real audio I/O implementation using cpal |
-| `src/writer_thread.rs` | Writer thread, ring buffer consumer, WAV file management |
-| `src/config.rs` | TOML + env var configuration with `BLACKBOX_*` prefix support |
-| `src/ffi.rs` | C FFI layer consumed by the SwiftUI app |
-| `src/raw_wav_writer.rs` | Hand-rolled WAV writer for the hot path (zero hound) |
-| `src/error.rs` | Typed error enum with `thiserror` |
-| `BlackBoxApp/` | SwiftUI menu-bar app (Xcode project, calls Rust via FFI) |
+For the full contract — threading rules, lock-acquisition order, FFI panic policy, sample-rate-listener invariants, atomic-ordering rationale, and the module map — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Benchmarking
 
