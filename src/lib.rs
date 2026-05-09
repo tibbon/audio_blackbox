@@ -1,6 +1,27 @@
 // BlackBox Audio Recorder — Copyright (C) 2023-2026, David Fisher
 // Licensed under the Business Source License 1.1 (BUSL-1.1). See LICENSE.
 
+//! BlackBox audio recording engine.
+//!
+//! Lock-free real-time audio capture for macOS (and Linux, CLI only).
+//! The audio callback only pushes raw f32 samples into a `rtrb` ring
+//! buffer; a dedicated writer thread converts to the configured bit
+//! depth and writes WAV files. No file I/O, locks, or allocations
+//! happen on the RT thread.
+//!
+//! # Public surface
+//!
+//! - [`AudioRecorder`] — the high-level entry point. Wraps an
+//!   [`AudioProcessor`] (typically [`CpalAudioProcessor`]) and an
+//!   [`AppConfig`] and drives recording start/stop/finalize.
+//! - [`AppConfig`] — configuration loaded from `blackbox.toml` or
+//!   `BLACKBOX_*` environment variables.
+//! - [`OutputMode`] — single-file vs. file-per-channel.
+//! - [`BlackboxError`] — typed error enum.
+//! - [`ffi`] (feature `ffi`) — C ABI consumed by the SwiftUI app.
+//!
+//! See `README.md` for the architecture diagram and benchmark numbers.
+
 // Lint configuration: keep pedantic/nursery suppressions that match codebase patterns.
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_possible_truncation)]
