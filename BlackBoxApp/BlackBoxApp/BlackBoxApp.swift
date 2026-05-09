@@ -5,6 +5,11 @@ import SwiftUI
 ///
 /// Also prevents SwiftUI from terminating the app when the last Window scene closes,
 /// which is a known issue with MenuBarExtra + Window combinations.
+///
+/// Main-actor-isolated: NSWorkspace observers below pass `queue: .main`, so the
+/// closures already deliver on the main thread. The annotation makes the
+/// isolation explicit for Swift 6 strict concurrency.
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recorder: RecordingState?
 
