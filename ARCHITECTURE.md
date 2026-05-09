@@ -35,7 +35,7 @@ The RT thread never blocks on I/O, locks, or allocations. The writer thread does
 - **Push samples** into the `rtrb` SPSC ring buffer. The buffer is sized for `RING_BUFFER_SECONDS = 5` (`src/constants.rs`) of audio at the device's rate × channel count, providing runway for stalls in the writer.
 - **Atomic loads / stores** with Relaxed or Release ordering. No allocator calls, no mutex acquisition, no syscalls.
 
-A test-time `CountingAllocator` (`src/lib.rs:113-134`) wraps the system allocator with `AtomicU64::fetch_add`, and `tests/alloc_tests.rs` asserts the hot path produces zero allocations.
+A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `tests/alloc_tests.rs` asserts the hot path produces zero allocations.
 
 ### Writer thread
 
@@ -61,7 +61,7 @@ If you "fix" this by adding `Arc::from_raw` to Drop, you reintroduce a use-after
 
 ## Lock acquisition order (FFI)
 
-Copied verbatim from `src/ffi.rs:84-97`. Any future code path that takes two of the inner mutexes simultaneously must add itself to this order.
+Copied verbatim from the canonical comment block on `BlackboxHandle` in `src/ffi.rs`. Any future code path that takes two of the inner mutexes simultaneously must add itself to this order.
 
 1. `recorder` — outermost. Held across multi-second device probing (`CpalAudioProcessor::with_config`, `recorder.start_recording()`).
 2. The remaining mutexes (`config`, `last_error`, `peak_levels`, `status`) are taken **alone**, never nested with each other. Each is acquired, mutated, and released in a brief critical section. Inside an `extern "C"` body that holds `recorder`, these inner locks are taken sequentially and dropped between acquisitions.

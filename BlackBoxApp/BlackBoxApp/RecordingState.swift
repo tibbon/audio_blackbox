@@ -278,8 +278,18 @@ enum SleepWakePolicy {
     }
 
     func start() {
+        // Debounce: rapid double-start (e.g. hotkey held, accessibility
+        // automation) would otherwise launch two requestAccess flows in
+        // parallel. The Task hop below means isRecording stays false during
+        // the await, so this guard is the only thing protecting against
+        // re-entry from the same MainActor turn.
+        guard !isRecording else { return }
         errorMessage = nil
         Task { @MainActor in
+            // The Task scope ends naturally when this function returns;
+            // app termination cancels in-flight Tasks via Swift's
+            // structured-concurrency cooperation, so no explicit
+            // Task.cancel is required from applicationShouldTerminate.
             if await self.checkMicrophonePermission() {
                 self.startRecordingInternal()
             } else {
@@ -384,7 +394,7 @@ enum SleepWakePolicy {
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
 
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                 NSWorkspace.shared.open(url)
@@ -459,7 +469,7 @@ enum SleepWakePolicy {
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
 
@@ -897,7 +907,7 @@ enum SleepWakePolicy {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Choose Directory\u{2026}")
             alert.addButton(withTitle: "Use Default")
-            NSApp.activate()
+            NSApp.activate(ignoringOtherApps: true)
             if alert.runModal() == .alertFirstButtonReturn {
                 let panel = NSOpenPanel()
                 panel.canChooseDirectories = true

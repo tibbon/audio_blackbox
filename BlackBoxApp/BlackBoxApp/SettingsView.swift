@@ -549,6 +549,7 @@ struct OutputSettingsTab: View {
                         Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
+                            .accessibilityHidden(true)
                     }
                     .font(.caption)
                     .foregroundStyle(Color(nsColor: .systemOrange))
@@ -783,13 +784,26 @@ struct GeneralSettingsTab: View {
 
             Section("Global Shortcut") {
                 HStack {
-                    Text("Toggle Recording:")
-                    Spacer()
-                    ShortcutRecorderButton(
-                        shortcutLabel: $shortcutLabel,
-                        isRecording: $isRecordingShortcut,
-                        error: $shortcutError
-                    )
+                    // Combine just the label + recorder into one a11y element
+                    // so VoiceOver gets one announcement with label, value,
+                    // and hint. Clear stays as a sibling so VO can still
+                    // focus and activate it.
+                    HStack {
+                        Text("Toggle Recording:")
+                        Spacer()
+                        ShortcutRecorderButton(
+                            shortcutLabel: $shortcutLabel,
+                            isRecording: $isRecordingShortcut,
+                            error: $shortcutError
+                        )
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Global keyboard shortcut for toggling recording")
+                    .accessibilityValue(shortcutLabel == "None" ? "No shortcut set" : shortcutLabel)
+                    .accessibilityHint(isRecordingShortcut
+                        ? "Press a key combination, or Escape to cancel"
+                        : "Click to record a new shortcut")
+
                     if shortcutLabel != "None" {
                         Button("Clear") {
                             clearShortcut()
@@ -797,18 +811,13 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                     }
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Global keyboard shortcut for toggling recording")
-                .accessibilityValue(shortcutLabel == "None" ? "no shortcut set" : shortcutLabel)
-                .accessibilityHint(isRecordingShortcut
-                    ? "Press a key combination, or Escape to cancel"
-                    : "Click to record a new shortcut")
 
                 if let shortcutError {
                     Label {
                         Text(shortcutError)
                     } icon: {
                         Image(systemName: "xmark.circle.fill")
+                            .accessibilityHidden(true)
                     }
                     .font(.caption)
                     .foregroundStyle(Color(nsColor: .systemRed))

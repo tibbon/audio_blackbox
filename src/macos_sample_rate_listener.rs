@@ -141,16 +141,20 @@ impl Drop for SampleRateListener {
         if status != 0 {
             warn!("Failed to remove sample rate listener (status {})", status);
         }
-        // Unconditionally leak the Arc strong reference. Apple's docs do
-        // not guarantee that callbacks already in flight on another thread
-        // have ceased by the time `AudioObjectRemovePropertyListener`
-        // returns — only that no *new* callbacks start. Reclaiming the
-        // Arc here would race a straggler callback's atomic load against
-        // a freed `AtomicBool`. Leaking is bounded: one byte per listener,
-        // and listeners are tied to recordings (not unbounded).
+        // LEAKS BY DESIGN — see SAFETY block on `unsafe impl Send` above.
+        // Apple's docs don't guarantee that callbacks already in flight on
+        // another thread have ceased by the time
+        // `AudioObjectRemovePropertyListener` returns; only that no *new*
+        // callbacks start. Reclaiming the Arc here would race a straggler
+        // callback's atomic load against a freed `AtomicBool`. Cost: one
+        // `sizeof(AtomicBool) = 1` byte per listener, bounded by the
+        // recording lifecycle.
         //
-        // Equivalent to `Arc::into_raw` having transferred ownership to
-        // the listener for the lifetime of the process.
+        // Reconstitute and forget rather than letting the raw pointer fall
+        // off the stack — the explicit `mem::forget` is grep-able and
+        // makes the intent obvious to a future reader.
+        let arc_back = unsafe { Arc::from_raw(self.client_data as *const AtomicBool) };
+        std::mem::forget(arc_back);
     }
 }
 
