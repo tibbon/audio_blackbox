@@ -50,9 +50,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-release-tests-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-release-tests-
+          ${{ runner.os }}-cargo-
 
     - name: Run tests
       run: cargo test --no-default-features -- --test-threads=1
@@ -82,9 +82,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-release-
+          ${{ runner.os }}-cargo-
 
     - name: Build CLI release
       run: cargo build --release
@@ -137,9 +137,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-release-
+          ${{ runner.os }}-cargo-
 
     - name: Extract version (tag or Info.plist fallback)
       id: version

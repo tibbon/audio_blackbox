@@ -44,9 +44,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-ignored-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-ignored-
+            ${{ runner.os }}-cargo-
 
       # --test-threads=1 matches the per-PR `test` lane and avoids
       # contention between benchmarks that allocate / measure throughput.

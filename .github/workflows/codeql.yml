@@ -87,9 +87,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-swift-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-swift-
+            ${{ runner.os }}-cargo-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@5e316336eb4f107009e477d4bfbfff13d7250fae  # v4
