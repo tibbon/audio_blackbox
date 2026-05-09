@@ -221,8 +221,10 @@ enum SleepWakePolicy {
         manager.action = { [weak self] in
             self?.toggle()
         }
-        if let shortcut = manager.loadSaved() {
-            manager.register(shortcut)
+        if let shortcut = manager.loadSaved(), !manager.register(shortcut) {
+            Self.log.warning(
+                "Saved hotkey \(shortcut.displayString, privacy: .public) failed to register on launch"
+            )
         }
     }
 
