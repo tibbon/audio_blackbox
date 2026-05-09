@@ -1,10 +1,8 @@
-Reliability and polish across the recording engine.
+Reliability and accessibility polish.
 
-• The menu bar icon now pulses while recording so you can see at a glance that capture is live.
-• Onboarding window no longer clips on the recording-mode step and reopens to the foreground if you've dismissed it.
-• Faster app launch — the menu bar appears immediately instead of waiting on a folder probe.
-• Smoother level meters during long sessions.
-• More precise error reporting — failures from the audio engine now surface specific reasons (device unavailable, low disk space, etc.) instead of a generic message.
-• Hardened audio-sample conversion against malformed input from unusual devices — bad samples can no longer freeze the level meter or skew silence detection.
-• Smaller download (~26% reduction).
-• Updated to the latest Rust toolchain and audio dependencies.
+• Settings now opens via the standard ⌘, shortcut from anywhere in the app and inherits macOS's normal Settings window behavior.
+• First-run onboarding correctly remembers your choice of recording folder — no more "Output Directory Unavailable" prompt on second launch when you accepted the default.
+• "Recording Started" notifications appear reliably on the first auto-record-on-launch, instead of being dropped before notification permission was requested.
+• Onboarding accessibility: VoiceOver users can now navigate the recording-mode picker as a single-select group, and step back through completed onboarding steps via the indicator dots.
+• Level-meter VoiceOver readouts are throttled to threshold crossings (Silent / Low / Moderate / Hot / Clipping) instead of streaming a new dB reading every screen tick.
+• Internal cleanups: removed leftover scaffolding code, modernized the build pipeline, hardened the supply chain.

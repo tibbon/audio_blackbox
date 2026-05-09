@@ -41,13 +41,13 @@ targets:
         ARCHS: arm64
         MACOSX_DEPLOYMENT_TARGET: "15.0"
         CURRENT_PROJECT_VERSION: "11"
-        MARKETING_VERSION: "1.1.0"
+        MARKETING_VERSION: "1.2.0"
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
     info:
       path: BlackBoxApp/Info.plist
       properties:
-        CFBundleShortVersionString: "1.1.0"
+        CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "11"
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"

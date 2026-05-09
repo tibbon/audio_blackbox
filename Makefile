@@ -2,7 +2,7 @@
 
 # Configuration
 APP_NAME = BlackBox Audio Recorder
-APP_VERSION = 1.1.0
+APP_VERSION = 1.2.0
 BUNDLE_ID = com.dollhousemediatech.blackbox
 CARGO_BIN = cargo
 
