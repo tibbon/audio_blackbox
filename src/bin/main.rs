@@ -1,11 +1,6 @@
 #![allow(clippy::too_many_lines)]
-#![allow(clippy::redundant_clone)]
-#![allow(clippy::useless_let_if_seq)]
-#![allow(clippy::needless_collect)]
-#![allow(clippy::branches_sharing_code)]
 #![allow(clippy::use_self)]
 #![allow(clippy::cast_precision_loss)]
-#![allow(clippy::needless_pass_by_ref_mut)]
 
 use std::fs;
 use std::path::Path;
@@ -65,9 +60,8 @@ fn main() {
 
     // Set up signal handling for clean shutdown
     let running = Arc::new(AtomicBool::new(true));
-    let shutdown_in_progress = Arc::new(AtomicBool::new(false));
     let r = running.clone();
-    let s = shutdown_in_progress.clone();
+    let s = Arc::new(AtomicBool::new(false));
     if let Err(e) = ::ctrlc::set_handler(move || {
         // Status flags only — single-bit signal, no synchronizes-with payload.
         if !s.load(Ordering::Relaxed) {
