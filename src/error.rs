@@ -7,6 +7,10 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BlackboxError {
+    /// Audio-device-layer error from a context that has no underlying
+    /// error to wrap (e.g. a synthesized message about device discovery
+    /// state). Prefer [`AudioDeviceSource`](Self::AudioDeviceSource)
+    /// when a concrete underlying error is available.
     #[error("Audio device error: {0}")]
     AudioDevice(String),
 
@@ -19,15 +23,25 @@ pub enum BlackboxError {
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
 
+    /// Configuration validation failure — bad TOML, out-of-range value,
+    /// or an env-var override that doesn't parse. Carries a human
+    /// message; no underlying error.
     #[error("Configuration error: {0}")]
     Config(String),
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Channel-spec parse failure (e.g. `"1,bogus,3"` or a range like
+    /// `"5-2"` with end < start). The string is the offending input
+    /// formatted for user display.
     #[error("Channel parse error: {0}")]
     ChannelParse(String),
 
+    /// WAV-layer error from a context that has no underlying error to
+    /// wrap (e.g. an internal validation message). Prefer
+    /// [`WavSource`](Self::WavSource) when a concrete `hound::Error` or
+    /// other underlying error is available.
     #[error("WAV error: {0}")]
     Wav(String),
 
