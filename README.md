@@ -194,6 +194,10 @@ Dependabot is configured for weekly dependency update PRs (Cargo crates, GitHub 
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes per version.
 
+## Acknowledgments
+
+See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
 ## License
 
 This project is licensed under the [Business Source License 1.1](LICENSE). Personal, non-commercial use is permitted. Commercial use requires a license from the author. On 2030-03-01, the code converts to Apache License 2.0.
