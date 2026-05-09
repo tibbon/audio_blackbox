@@ -1,11 +1,14 @@
 import AppKit
 import Carbon
 import Foundation
+import os.log
 
 /// Manages a single system-wide keyboard shortcut using the Carbon Events API.
 /// Works in sandboxed apps. No default shortcut — user configures in Settings.
 final class GlobalHotkeyManager {
     static let shared = GlobalHotkeyManager()
+
+    private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "GlobalHotkeyManager")
 
     /// Persisted shortcut representation.
     struct Shortcut: Codable, Equatable {
@@ -36,8 +39,10 @@ final class GlobalHotkeyManager {
 
     // MARK: - Public
 
-    /// Register (or re-register) a global hotkey.
-    func register(_ shortcut: Shortcut) {
+    /// Register (or re-register) a global hotkey. Returns `true` on success.
+    /// On failure, leaves no partial state behind so a subsequent call starts clean.
+    @discardableResult
+    func register(_ shortcut: Shortcut) -> Bool {
         unregister()
         currentShortcut = shortcut
 
@@ -47,7 +52,7 @@ final class GlobalHotkeyManager {
         )
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(
+        let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData -> OSStatus in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
@@ -61,12 +66,18 @@ final class GlobalHotkeyManager {
             selfPtr,
             &handlerRef
         )
+        if installStatus != noErr {
+            Self.log.error("InstallEventHandler failed: OSStatus \(installStatus, privacy: .public)")
+            handlerRef = nil
+            currentShortcut = nil
+            return false
+        }
 
-        var hotkeyID = EventHotKeyID(
+        let hotkeyID = EventHotKeyID(
             signature: OSType(0x424C_4B58), // "BLKX"
             id: 1
         )
-        RegisterEventHotKey(
+        let registerStatus = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.carbonModifiers,
             hotkeyID,
@@ -74,6 +85,20 @@ final class GlobalHotkeyManager {
             0,
             &hotkeyRef
         )
+        if registerStatus != noErr {
+            Self.log.error(
+                "RegisterEventHotKey failed for \(shortcut.displayString, privacy: .public): OSStatus \(registerStatus, privacy: .public)"
+            )
+            // -9878 (eventHotKeyExistsErr) means another app or system shortcut owns this combo.
+            if let ref = handlerRef {
+                RemoveEventHandler(ref)
+                handlerRef = nil
+            }
+            hotkeyRef = nil
+            currentShortcut = nil
+            return false
+        }
+        return true
     }
 
     /// Unregister the current global hotkey.
