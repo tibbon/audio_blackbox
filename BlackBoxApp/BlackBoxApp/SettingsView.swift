@@ -793,7 +793,12 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                     }
                 }
+                .accessibilityElement(children: .combine)
                 .accessibilityLabel("Global keyboard shortcut for toggling recording")
+                .accessibilityValue(shortcutLabel == "None" ? "no shortcut set" : shortcutLabel)
+                .accessibilityHint(isRecordingShortcut
+                    ? "Press a key combination, or Escape to cancel"
+                    : "Click to record a new shortcut")
 
                 if let shortcutError {
                     Text(shortcutError)
