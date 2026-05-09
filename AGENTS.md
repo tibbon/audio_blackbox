@@ -18,7 +18,7 @@ These are non-obvious and have bitten past releases. Read before changing relate
 - **`make rust-lib` before `xcodebuild`.** The Xcode project links against `target/release/libblackbox.a` produced by `cargo build --features ffi`. Without it, the link step fails with `library not found for -lblackbox`. `make swift-app` and `make archive` depend on it; running `xcodebuild` directly does not. CI handles this in the `swift-app` lane.
 - **`BLACKBOX_*` env vars take precedence over `blackbox.toml`.** See `src/config.rs`. Tests inject configuration via env vars to avoid touching the config file.
 - **`panic = "abort"` is a release-build invariant (DOLL-90).** Any panic in production is a bug we want to surface via crash report — *not* unwind across the FFI boundary. Do not add `catch_unwind` wrappers; do not flip `panic = "unwind"` for release.
-- **`make check-app-store` gates `fastlane mac metadata`.** The OpenAPI lint validates the metadata directory against the App Store Connect schema fastlane targets. `make verify` and the `make fl-metadata` flow both depend on it; if it fails, fix the metadata, do not bypass.
+- **`make check-app-store` is the OpenAPI lint that catches schema drift before `fastlane mac metadata`.** It validates the metadata directory against the App Store Connect schema fastlane targets. `make verify` runs it; `make fl-metadata` does NOT (you must run `check-app-store` yourself, or run `make verify` first). If it fails, fix the metadata; don't bypass it — Apple's web upload will reject the same payload.
 - **`project.yml` is the source of truth for the Xcode project**, but the generated `.xcodeproj` is committed too. Drift recovery is currently manual (DOLL-160 parked the auto-check pending a design decision around fastlane's release-time pbxproj mutations).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the threading model, lock-acquisition order, and the deeper invariants behind the audio path / FFI boundary.
@@ -30,5 +30,5 @@ Tag-driven via the release workflow. `scripts/check-versions.sh` enforces alignm
 ## Style
 
 - **Comments**: explain *why*, not *what*. Reference Linear ticket IDs for context that isn't obvious from the diff.
-- **Tests**: integration tests live in `src/tests/`; the inline `mod tests` in `src/lib.rs` is for tiny smoke tests only (DOLL-170 deduped two that overlapped).
+- **Tests**: integration tests live in `src/tests/`; the inline `mod tests` in `src/lib.rs` is for tiny smoke tests only — anything substantial belongs in a dedicated file under `src/tests/`.
 - **CI is macOS-only** (DOLL-153). The shipped product is the Mac App Store app; running Ubuntu lanes added cost without adding signal for the SwiftUI / CoreAudio surface.

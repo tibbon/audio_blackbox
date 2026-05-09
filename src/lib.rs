@@ -3,7 +3,9 @@
 
 //! BlackBox audio recording engine.
 //!
-//! Lock-free real-time audio capture for macOS (and Linux, CLI only).
+//! Lock-free real-time audio capture for macOS. Linux builds compile
+//! (CLI only — no GUI) but are not exercised in CI; treat support as
+//! best-effort, not maintained.
 //! The audio callback only pushes raw f32 samples into a `rtrb` ring
 //! buffer; a dedicated writer thread converts to the configured bit
 //! depth and writes WAV files. No file I/O, locks, or allocations

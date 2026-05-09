@@ -29,6 +29,11 @@ pub enum BlackboxError {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    /// Filesystem-layer error, automatically converted from
+    /// `std::io::Error` via `?` (the `#[from]` derives `From<io::Error>`).
+    /// Used for WAV-file I/O, output-directory creation, and disk-space
+    /// queries; the underlying `io::Error` is recoverable via
+    /// `std::error::Error::source()`.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

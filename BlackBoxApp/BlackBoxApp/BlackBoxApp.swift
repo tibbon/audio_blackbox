@@ -247,7 +247,7 @@ struct BlackBoxApp: App {
         }
 
         Button("Settings\u{2026}") {
-            NSApp.activate()
+            NSApp.activate(ignoringOtherApps: true)
             openSettings()
         }
         .keyboardShortcut(",")
@@ -298,8 +298,13 @@ struct BlackBoxApp: App {
         // load-bearing form.
         NSApp.activate(ignoringOtherApps: true)
 
+        // SwiftUI assigns the exact `id` string as the NSWindow identifier's
+        // rawValue, so an `==` match is correct (and tighter than substring,
+        // which would collide if any future window id were a substring of
+        // another). titleHint is a fallback for environments where the
+        // identifier isn't set yet.
         if let window = NSApp.windows.first(where: { window in
-            window.identifier?.rawValue.contains(id) == true
+            window.identifier?.rawValue == id
                 || window.title == titleHint
         }) {
             window.makeKeyAndOrderFront(nil)
