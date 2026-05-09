@@ -18,7 +18,7 @@
 //!   `BLACKBOX_*` environment variables.
 //! - [`OutputMode`] — single-file vs. file-per-channel.
 //! - [`BlackboxError`] — typed error enum.
-//! - [`ffi`] (feature `ffi`) — C ABI consumed by the SwiftUI app.
+//! - The `ffi` module (feature `ffi`) — C ABI consumed by the SwiftUI app.
 //!
 //! See `README.md` for the architecture diagram and benchmark numbers.
 
