@@ -352,6 +352,7 @@ enum SleepWakePolicy {
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
 
+        NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                 NSWorkspace.shared.open(url)
