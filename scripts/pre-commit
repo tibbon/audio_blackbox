@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== Pre-commit: running make verify ==="
-make verify
-echo "=== Pre-commit: all checks passed ==="
+# Pre-commit hook — fast by default so commits aren't a minute-long stall.
+#
+# Default: fmt + clippy --no-deps. Runs in seconds; CI catches everything
+# else. The full `make verify` (tests + xcodebuild test + ASC metadata
+# lint) used to run here, but multi-minute hooks get bypassed with
+# --no-verify in practice — a fast hook that you actually run beats a
+# thorough hook that you don't.
+#
+# Set SKIP_TESTS=0 to run the full `make verify` for paranoid commits
+# (e.g. before a release, after a refactor that touched FFI). Anything
+# else (unset, "1", "yes") keeps the fast path.
+
+if [[ "${SKIP_TESTS:-1}" == "0" ]]; then
+    echo "=== Pre-commit: SKIP_TESTS=0 — running full make verify ==="
+    make verify
+else
+    echo "=== Pre-commit: fmt + clippy (set SKIP_TESTS=0 for full verify) ==="
+    cargo fmt --all -- --check
+    cargo clippy --all-targets --no-default-features --no-deps -- -D warnings
+fi
+
+echo "=== Pre-commit: passed ==="
