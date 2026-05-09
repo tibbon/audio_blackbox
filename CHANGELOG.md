@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-05-08
+
+Polish-pass-5: 21 tickets focused on accessibility, supply-chain
+hardening, and dev-experience improvements on top of 1.1.0. No
+breaking changes.
+
+### Added
+- Manual CodeQL workflow (`.github/workflows/codeql.yml`) scanning
+  Swift + Rust + GitHub Actions, replacing the auto-detect default
+  setup that wasted analysis time on Python and Ruby.
+- MSRV verification job in CI — `cargo check` on the pinned 1.95
+  toolchain so MSRV regressions can no longer ship silently.
+- Release-time test gate: `release.yml` runs the test suite on the
+  tag's exact SHA before any TestFlight upload or GitHub Release
+  artifact is published.
+- `BlackBoxApp/Gemfile` + `Gemfile.lock` pinning fastlane via
+  bundler-cache, so the next minor fastlane regression can no
+  longer break `deliver` mid-deploy.
+- Dependabot now monitors the Bundler ecosystem alongside Cargo
+  and GitHub Actions.
+
+### Changed
+- Settings now uses the SwiftUI `Settings` scene instead of a
+  generic `Window`. `⌘,` opens it from anywhere in the app, and it
+  inherits the platform's normal close-and-reopen semantics.
+- Onboarding accessibility: VoiceOver announces the recording-mode
+  cards as a single-select Picker group, and the step-indicator
+  dots are reachable per-step Buttons (so VO users can step back
+  through completed steps).
+- Level-meter VoiceOver value bucketed to threshold crossings
+  (Silent / Low / Moderate / Hot / Clipping) — no more flood of
+  per-tick dB readings on every signal level.
+- README rewritten to lead with the Mac App Store product instead
+  of `cargo build` instructions.
+- `cpal_processor.rs` and `writer_thread.rs` split along natural
+  seams — CoreAudio sample-rate listener and the silence-check
+  worker are now their own modules.
+- All third-party GitHub Action references pinned to commit SHAs.
+- Apple Team ID is now sourced from `Appfile` (canonical) rather
+  than duplicated in Fastfile.
+- CI runs macOS-only — Ubuntu lanes dropped since the shipped
+  product is Mac App Store.
+
+### Fixed
+- First-run onboarding now saves a security-scoped bookmark when
+  the user accepts the auto-populated default folder, preventing
+  the "Output Directory Unavailable" prompt on the next launch.
+- Auto-record-on-launch notification authorization is requested
+  eagerly at init instead of lazily on first record, so the very
+  first "Recording Started" banner on a fresh install is no longer
+  silently dropped.
+- `PerformanceTracker` now joins its worker thread on stop and
+  drop, matching the join-on-drop pattern used elsewhere in the
+  codebase.
+- `is_silent` doc rewritten to describe the actual two-stage
+  algorithm (peak fast-path, RMS fallback) rather than only RMS.
+- `audio_processor.rs` trait doc-comment relocated off the `use`
+  statements so rustdoc actually attaches it to `AudioProcessor`.
+- README test-count and CI-job claims re-derived from reality after
+  drift.
+
+### Removed
+- Dead-stub `bin/macos/MenuBarApp` module — leftover scaffolding
+  from before the SwiftUI app existed; the actual menu-bar UI was
+  always in `BlackBoxApp/`. Drops the `--menu-bar` CLI flag and
+  the `menu-bar` Cargo feature.
+- Ad-hoc-signed `.app.zip` artifact from the public GitHub Release
+  — Gatekeeper-rejected for downloaders. TestFlight + Mac App
+  Store remain the canonical distribution channels; the GitHub
+  Release ships the CLI binary only.
+- Orphaned mid-sentence doc comment in
+  `tests/cpal_integration_tests.rs`, leftover from DOLL-118.
+
 ## [1.1.0] — 2026-05-07
 
 Reliability and polish across the recording engine. Fifty-three tickets
@@ -114,7 +187,8 @@ Initial Mac App Store release. CLI binary plus SwiftUI menu-bar app.
 - Privacy-respecting design: no network access, all recordings stay
   local.
 
-[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/tibbon/audio_blackbox/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/tibbon/audio_blackbox/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/tibbon/audio_blackbox/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tibbon/audio_blackbox/releases/tag/v1.0.1
