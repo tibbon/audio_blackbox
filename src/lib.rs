@@ -219,26 +219,8 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_channel_parsing() {
-        // Channel parsing is pure logic — no env vars needed
-        assert_eq!(parse_channel_string("0,1,2").unwrap(), vec![0, 1, 2]);
-        assert_eq!(parse_channel_string("0-3").unwrap(), vec![0, 1, 2, 3]);
-        assert_eq!(
-            parse_channel_string("0,2-4,6").unwrap(),
-            vec![0, 2, 3, 4, 6]
-        );
-        assert_eq!(parse_channel_string("0,0,1,1").unwrap(), vec![0, 1]);
-        assert!(parse_channel_string("invalid").is_err());
-
-        let too_many = (0..=MAX_CHANNELS)
-            .collect::<Vec<_>>()
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        assert!(parse_channel_string(&too_many).is_err());
-    }
+    // test_channel_parsing removed — every case here is covered exhaustively
+    // in src/tests/channel_tests.rs.
 
     #[test]
     fn test_silence_detection() {
@@ -266,30 +248,9 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_silence_deletion() {
-        let mut env = default_test_env();
-        env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
-        env.push(("SILENCE_THRESHOLD", Some("10")));
-
-        temp_env::with_vars(env, || {
-            let temp_dir = tempdir().unwrap();
-            let temp_path = temp_dir.path().to_str().unwrap();
-
-            let file_name = format!("{}/silent-test.wav", temp_path);
-            let mut processor = MockAudioProcessor::new(&file_name);
-            processor.create_silent_file = true;
-
-            let mut recorder = AudioRecorder::new(processor);
-            let result = recorder.start_recording();
-            assert!(result.is_ok());
-
-            let _ = recorder.processor_mut().finalize();
-
-            let path = Path::new(&file_name);
-            assert!(!path.exists(), "Silent file should have been deleted");
-        });
-    }
+    // test_silence_deletion removed — strictly subsumed by
+    // test_silence_detection above, which asserts the file existed
+    // before finalize and was gone after.
 
     #[test]
     fn test_normal_file_not_deleted() {
