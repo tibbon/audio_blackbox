@@ -5,6 +5,12 @@ import os.log
 
 /// Manages a single system-wide keyboard shortcut using the Carbon Events API.
 /// Works in sandboxed apps. No default shortcut — user configures in Settings.
+///
+/// Main-actor-isolated: registration, unregistration, and action dispatch
+/// all run on the main thread. The Carbon Events API delivers hotkey events
+/// on the main run loop after `InstallEventHandler` is called from main, so
+/// `MainActor.assumeIsolated` at the C callback boundary is safe.
+@MainActor
 final class GlobalHotkeyManager {
     static let shared = GlobalHotkeyManager()
 
@@ -33,7 +39,7 @@ final class GlobalHotkeyManager {
 
     /// The action invoked on the main thread when the hotkey fires.
     /// Must be set before calling `register()`.
-    var action: (() -> Void)?
+    var action: (@MainActor () -> Void)?
 
     private init() {}
 
@@ -54,11 +60,15 @@ final class GlobalHotkeyManager {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, event, userData -> OSStatus in
+            { _, _, userData -> OSStatus in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
-                let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData)
-                    .takeUnretainedValue()
-                Task { @MainActor in manager.action?() }
+                // Carbon delivers hotkey events on the main run loop, so the
+                // callback is already main-actor-isolated in practice.
+                MainActor.assumeIsolated {
+                    let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData)
+                        .takeUnretainedValue()
+                    manager.action?()
+                }
                 return noErr
             },
             1,
