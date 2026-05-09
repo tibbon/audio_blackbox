@@ -240,9 +240,8 @@ enum SleepWakePolicy {
 
     func start() {
         errorMessage = nil
-        checkMicrophonePermission { [weak self] granted in
-            guard let self else { return }
-            if granted {
+        Task { @MainActor in
+            if await self.checkMicrophonePermission() {
                 self.startRecordingInternal()
             } else {
                 self.errorMessage = "Microphone access denied. Open System Settings to allow access."
@@ -294,16 +293,14 @@ enum SleepWakePolicy {
     // MARK: - Monitoring
 
     func startMonitoring() {
-        checkMicrophonePermission { [weak self] granted in
-            guard let self else { return }
-            if granted {
-                let result = self.bridge.startMonitoring()
-                if result.isSuccess {
-                    self.isMonitoring = true
-                    Self.log.info("Audio monitoring started")
-                } else {
-                    Self.log.error("Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")")
-                }
+        Task { @MainActor in
+            guard await self.checkMicrophonePermission() else { return }
+            let result = self.bridge.startMonitoring()
+            if result.isSuccess {
+                self.isMonitoring = true
+                Self.log.info("Audio monitoring started")
+            } else {
+                Self.log.error("Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")")
             }
         }
     }
@@ -326,23 +323,17 @@ enum SleepWakePolicy {
 
     // MARK: - Microphone Permission
 
-    private func checkMicrophonePermission(completion: @escaping (Bool) -> Void) {
+    private func checkMicrophonePermission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
-            Task { @MainActor in
-                completion(true)
-            }
+            return true
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                Task { @MainActor in
-                    completion(granted)
-                }
-            }
+            return await AVCaptureDevice.requestAccess(for: .audio)
         case .denied, .restricted:
             showMicrophonePermissionAlert()
-            completion(false)
+            return false
         @unknown default:
-            completion(false)
+            return false
         }
     }
 
