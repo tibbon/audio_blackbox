@@ -58,14 +58,38 @@ platform :mac do
     team_id = ENV["DEVELOPMENT_TEAM"] ||
               CredentialsManager::AppfileConfig.try_fetch_value(:team_id)
 
-    # Set version from tag (CI) or options, bump build number
+    # Set version from tag (CI) or options
     version = options[:version] || ENV["RELEASE_VERSION"]
     if version
       increment_version_number(version_number: version, xcodeproj: "BlackBoxApp.xcodeproj")
       UI.message("Set marketing version to #{version}")
     end
-    build_number = increment_build_number(xcodeproj: "BlackBoxApp.xcodeproj")
-    UI.message("Build number: #{build_number}")
+
+    # DOLL-154: derive the next build number from Apple's actual state
+    # rather than just the committed pbxproj. The committed value drifts
+    # every release because increment_build_number mutates pbxproj in
+    # memory but never commits the bump back — so the next release would
+    # start from the same N as last time and collide with the N+1 already
+    # on Apple. Querying TestFlight for the highest build across ALL
+    # versions (Apple's CFBundleVersion uniqueness rule is global, not
+    # per-marketing-version) removes the local file as a source of truth.
+    #
+    # Take max(remote, local) + 1 so a fresh-account scenario (Apple has
+    # nothing yet but pbxproj has been hand-bumped) doesn't regress.
+    latest_remote = latest_testflight_build_number(
+      api_key: api_key,
+      initial_build_number: 0
+    )
+    local_committed = get_build_number(xcodeproj: "BlackBoxApp.xcodeproj").to_i
+    build_number = [latest_remote, local_committed].max + 1
+    increment_build_number(
+      build_number: build_number,
+      xcodeproj: "BlackBoxApp.xcodeproj"
+    )
+    UI.message(
+      "Build number: #{build_number} " \
+      "(max of remote=#{latest_remote}, local=#{local_committed} + 1)"
+    )
 
     # Build Rust static library (skip if already built, e.g. by CI)
     unless ENV["SKIP_RUST_BUILD"]
