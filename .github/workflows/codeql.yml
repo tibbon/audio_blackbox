@@ -32,6 +32,14 @@ on:
     - cron: "18 2 * * 0"
   workflow_dispatch:
 
+# Cancel an in-progress run if a new one starts on the same ref. A
+# manual workflow_dispatch overlapping the cron run would otherwise
+# kick off a second 25–45-minute Swift CodeQL trace on top of the
+# first.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

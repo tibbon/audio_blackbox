@@ -14,6 +14,13 @@ on:
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
+# Cancel an in-progress run if a new one starts on the same ref —
+# a manual workflow_dispatch overlapping the weekly cron would
+# otherwise pile two long ignored-tests runs on top of each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
