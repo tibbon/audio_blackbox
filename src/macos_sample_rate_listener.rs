@@ -3,10 +3,6 @@
 //! When the sample rate changes, sets an `AtomicBool` flag that the
 //! Swift UI polling loop can detect and restart the recording with
 //! the correct sample rate in the new WAV header.
-//!
-//! Extracted from `cpal_processor.rs` in DOLL-147 — the inline
-//! `mod sample_rate_listener` had grown to ~290 lines of CoreAudio
-//! FFI inside a 1300-line file.
 
 use std::ffi::c_void;
 use std::sync::Arc;
