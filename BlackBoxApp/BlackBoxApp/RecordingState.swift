@@ -33,15 +33,54 @@ enum SleepWakePolicy {
 }
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
+///
+/// Every public stored property here is a SwiftUI binding target. Views observe
+/// these via `@Observable` change tracking; updates land on the main thread
+/// (the class is `@MainActor`-isolated) so binding reads are race-free.
 @MainActor
 @Observable final class RecordingState {
+    /// `true` while a recording session is active. Flips on a successful
+    /// `start()` and clears on `stop()` or any FFI-reported failure.
+    /// Drives the menu bar icon, the Start/Stop button, and the menu's
+    /// "currently recording" caption.
     var isRecording = false
+
+    /// `true` while the level meter is actively pulling peak levels from
+    /// the audio engine without persisting to disk. Mutually exclusive
+    /// with `isRecording` in practice — starting recording stops monitoring.
     var isMonitoring = false
+
+    /// Short status string for the menu's headline row ("Ready",
+    /// "Recording...", "Error", elapsed time during a session). Always
+    /// non-empty; defaults to "Ready" pre-launch.
     var statusText = "Ready"
+
+    /// Latest user-visible error, or `nil` when the app is healthy.
+    /// Set by `setTransientError(_:)` (which auto-clears after a delay)
+    /// or by hard failures like denied output-folder access. SwiftUI
+    /// renders this in a red caption directly below `statusText`.
     var errorMessage: String?
+
+    /// Names of input devices CoreAudio currently exposes. Populated by
+    /// `refreshDevices()` at init and on user-triggered "Refresh Devices".
+    /// Empty until refresh completes; the menu shows "No Input Devices"
+    /// in that case.
     var availableDevices: [String] = []
+
+    /// Per-channel peak amplitude in linear scale, 0.0...1.0. Updated at
+    /// ~30 Hz while a recording or monitoring session is active, and
+    /// only when the meter window is open (the timer is paused otherwise
+    /// to avoid pointless FFI calls). Empty until the first poll lands.
     var peakLevels: [Float] = []
+
+    /// Active capture sample rate in Hz, or `0` when no session is running.
+    /// Persisted to UserDefaults at session start so the meter window can
+    /// label its grid before the next session brings the engine up.
     var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
+
+    /// Tracks whether the level meter window is currently visible. Setting
+    /// this starts/stops the meter polling timer and (when not recording)
+    /// the underlying monitoring stream.
     var isMeterWindowOpen: Bool = false {
         didSet {
             if isMeterWindowOpen {
