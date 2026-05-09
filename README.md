@@ -194,6 +194,10 @@ Dependabot is configured for weekly dependency update PRs (Cargo crates, GitHub 
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes per version.
 
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for the contributor workflow and the project's load-bearing invariants.
+
 ## Acknowledgments
 
 See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
