@@ -219,6 +219,13 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
+    # DOLL-190: hand-maintained include/blackbox_ffi.h drift check.
+    # Runs *before* the Rust build so a header mismatch fails fast
+    # (the actual build / Swift tests would also catch most cases,
+    # but only after a multi-minute rebuild).
+    - name: Check FFI header parity
+      run: ./scripts/check-ffi-header.sh
+
     - name: Build Rust static library (FFI)
       run: cargo build --release --features ffi
 

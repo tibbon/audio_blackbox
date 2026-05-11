@@ -7,23 +7,42 @@
 #   ./scripts/bump-version.sh 0.2.0    # Set version + increment build number
 #
 # Updates:
-#   - Cargo.toml (package version) — only when version argument given
-#   - Makefile (APP_VERSION) — only when version argument given
+#   - Cargo.toml (package version AND package.metadata.bundle version)
+#   - Makefile (APP_VERSION)
 #   - BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString + CFBundleVersion)
 #   - BlackBoxApp/project.yml (CFBundleShortVersionString + CFBundleVersion)
+#
+# Portability: uses `sed -i.bak` everywhere (both BSD and GNU sed accept
+# this form) and cleans up the .bak files at the end (DOLL-193). The
+# script is still macOS-only in practice — PlistBuddy is only available
+# on macOS — but the sed pattern works on GNU sed for any contributor
+# who runs the marketing-version path on Linux.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$REPO_ROOT/BlackBoxApp/BlackBoxApp/Info.plist"
 PROJECT_YML="$REPO_ROOT/BlackBoxApp/project.yml"
+CARGO_TOML="$REPO_ROOT/Cargo.toml"
+MAKEFILE="$REPO_ROOT/Makefile"
+
+# Helper: portable in-place sed. Both BSD and GNU sed accept -i.bak;
+# we delete the backup immediately. This avoids the BSD-only -i '' /
+# GNU-only --in-place / -i divergence.
+sed_inplace() {
+    local pattern="$1"
+    local file="$2"
+    sed -i.bak -E "$pattern" "$file"
+    rm -f "${file}.bak"
+}
 
 # Always increment CFBundleVersion (build number)
 CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST" 2>/dev/null || echo "0")
 NEW_BUILD=$((CURRENT_BUILD + 1))
-sed -i '' "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST"
-sed -i '' "s/CFBundleVersion: \"[^\"]*\"/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
-sed -i '' "s/CURRENT_PROJECT_VERSION: \"[^\"]*\"/CURRENT_PROJECT_VERSION: \"$NEW_BUILD\"/" "$PROJECT_YML"
+sed -i.bak "/<key>CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_BUILD<\/string>/;}" "$PLIST"
+rm -f "${PLIST}.bak"
+sed_inplace "s/CFBundleVersion: \"[^\"]*\"/CFBundleVersion: \"$NEW_BUILD\"/" "$PROJECT_YML"
+sed_inplace "s/CURRENT_PROJECT_VERSION: \"[^\"]*\"/CURRENT_PROJECT_VERSION: \"$NEW_BUILD\"/" "$PROJECT_YML"
 echo "  CFBundleVersion: $CURRENT_BUILD → $NEW_BUILD"
 
 # Optionally update marketing version if argument provided
@@ -38,21 +57,26 @@ if [[ $# -ge 1 ]]; then
 
     echo "Bumping version to $NEW_VERSION..."
 
-    # Cargo.toml — package version
-    sed -i '' "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$NEW_VERSION\"/" "$REPO_ROOT/Cargo.toml"
-    echo "  Updated Cargo.toml"
+    # Cargo.toml — both [package].version AND [package.metadata.bundle].version
+    # (DOLL-193: the prior `^version = ` pattern relied on BSD-sed's
+    # multi-line default; this version uses `$`-anchored end-of-line to
+    # match unambiguously on both BSD and GNU sed, hitting every
+    # standalone `version = "X.Y.Z"` line.)
+    sed_inplace "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"\$/version = \"$NEW_VERSION\"/" "$CARGO_TOML"
+    echo "  Updated Cargo.toml (package + metadata.bundle)"
 
     # Makefile — APP_VERSION
-    sed -i '' "s/^APP_VERSION = .*/APP_VERSION = $NEW_VERSION/" "$REPO_ROOT/Makefile"
+    sed_inplace "s/^APP_VERSION = .*/APP_VERSION = $NEW_VERSION/" "$MAKEFILE"
     echo "  Updated Makefile"
 
     # Info.plist — CFBundleShortVersionString
-    sed -i '' "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST"
+    sed -i.bak "/<key>CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>$NEW_VERSION<\/string>/;}" "$PLIST"
+    rm -f "${PLIST}.bak"
     echo "  Updated Info.plist"
 
     # project.yml — CFBundleShortVersionString + MARKETING_VERSION
-    sed -i '' "s/CFBundleShortVersionString: \"[^\"]*\"/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
-    sed -i '' "s/MARKETING_VERSION: \"[^\"]*\"/MARKETING_VERSION: \"$NEW_VERSION\"/" "$PROJECT_YML"
+    sed_inplace "s/CFBundleShortVersionString: \"[^\"]*\"/CFBundleShortVersionString: \"$NEW_VERSION\"/" "$PROJECT_YML"
+    sed_inplace "s/MARKETING_VERSION: \"[^\"]*\"/MARKETING_VERSION: \"$NEW_VERSION\"/" "$PROJECT_YML"
     echo "  Updated project.yml"
 
     echo ""
