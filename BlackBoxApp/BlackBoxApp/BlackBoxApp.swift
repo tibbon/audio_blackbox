@@ -64,6 +64,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.recorder?.handleSessionDidBecomeActive()
         }
+
+        // DOLL-185: re-check notification authorization when the app
+        // becomes active. NSApplication.didBecomeActiveNotification
+        // fires when the user clicks back into the app after granting
+        // permission in System Settings, so the recorder picks up the
+        // new state without a relaunch.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recorder?.refreshNotificationAuthorization()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

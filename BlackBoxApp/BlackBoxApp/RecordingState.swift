@@ -78,6 +78,14 @@ enum SleepWakePolicy {
     /// label its grid before the next session brings the engine up.
     var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
 
+    /// `true` once `UNUserNotificationCenter` reports authorization granted,
+    /// `false` when the user denied or hasn't yet responded. Updated by the
+    /// init-time auth request and re-checked when the app becomes active
+    /// (so granting in System Settings is picked up without a relaunch).
+    /// Observed by UI that needs to fall back when notifications are off
+    /// (DOLL-185).
+    var notificationsAuthorized: Bool = false
+
     /// Tracks whether the level meter window is currently visible. Setting
     /// this starts/stops the meter polling timer and (when not recording)
     /// the underlying monitoring stream.
@@ -264,6 +272,13 @@ enum SleepWakePolicy {
             Self.log.warning(
                 "Saved hotkey \(shortcut.displayString, privacy: .public) failed to register on launch"
             )
+            // DOLL-184: surface the failure to the user instead of relying
+            // on the log. The menu's existing errorMessage Label renders
+            // this; the transient timer clears it after a while so the
+            // user isn't permanently nagged.
+            setTransientError(
+                "Shortcut \(shortcut.displayString) couldn't be registered — another app may be using it. Pick a new shortcut in Settings."
+            )
         }
     }
 
@@ -406,7 +421,17 @@ enum SleepWakePolicy {
 
     private func requestNotificationAuth() {
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // DOLL-185: capture the granted bool. Without this, a denial
+        // silently drops every later postNotification (sleep-paused,
+        // recording-stopped, wake events) and the user has no signal.
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            if let error {
+                Self.log.warning("Notification auth request failed: \(error.localizedDescription, privacy: .public)")
+            }
+            Task { @MainActor in
+                self?.notificationsAuthorized = granted
+            }
+        }
 
         // Register "Restart Recording" action on recording-stopped notifications
         let restartAction = UNNotificationAction(
@@ -418,6 +443,19 @@ enum SleepWakePolicy {
             intentIdentifiers: [])
         center.setNotificationCategories([category])
         center.delegate = notificationDelegate
+    }
+
+    /// Re-query notification authorization. Called from app-becomes-active
+    /// so a user who grants permission in System Settings has the app
+    /// pick that up without a relaunch (DOLL-185).
+    func refreshNotificationAuthorization() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let granted = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            Task { @MainActor in
+                self?.notificationsAuthorized = granted
+            }
+        }
     }
 
     /// Delegate that handles notification action responses (e.g. "Restart Recording").
