@@ -78,6 +78,12 @@ struct RecordingSettingsTab: View {
     @State private var selectedChannels: Set<Int> = [1]
     @State private var prevBitDepth: Int = 24
     @State private var prevChannelSpec: String = "1"
+    /// Trailing debounce for the silence-threshold slider (DOLL-195).
+    /// Slider's `onChange` fires per drag tick; without this, every
+    /// drag dispatches a full setConfig() through the FFI dozens of
+    /// times per second. Settle for 150 ms after the last change before
+    /// pushing to Rust.
+    @State private var thresholdDebounceTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -159,7 +165,17 @@ struct RecordingSettingsTab: View {
                         Slider(value: $silenceThreshold, in: 0.001...0.1, step: 0.005) {
                             Text("Threshold")
                         }
-                        .onChange(of: silenceThreshold) { applyConfig() }
+                        .onChange(of: silenceThreshold) {
+                            // DOLL-195: debounce 150 ms before pushing
+                            // to Rust. Cancels any pending settle on
+                            // the next drag tick.
+                            thresholdDebounceTask?.cancel()
+                            thresholdDebounceTask = Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(150))
+                                guard !Task.isCancelled else { return }
+                                applyConfig()
+                            }
+                        }
                         .accessibilityLabel("Silence threshold")
                         .accessibilityValue(thresholdDescription)
 
@@ -223,8 +239,27 @@ struct RecordingSettingsTab: View {
         .onAppear {
             syncCheckboxesFromChannelSpec()  // Load saved spec FIRST
             refreshChannelCount()            // Then clamp to device capabilities
+            migrateStalePickerValues()       // DOLL-197
             prevBitDepth = bitDepth
             prevChannelSpec = channelSpec
+        }
+    }
+
+    /// DOLL-197: migrate stale UserDefaults values for this tab's
+    /// pickers. See OutputSettingsTab.migrateStalePickerValues for
+    /// rationale.
+    private func migrateStalePickerValues() {
+        let bitDepthPresets: Set<Int> = [16, 24, 32]
+        if !bitDepthPresets.contains(bitDepth) {
+            bitDepth = 24
+        }
+
+        let silenceGateTimeoutPresets: Set<Int> = [60, 120, 300, 600, 1800]
+        if !silenceGateTimeoutPresets.contains(silenceGateTimeout) {
+            let original = silenceGateTimeout
+            silenceGateTimeout = silenceGateTimeoutPresets.min(by: {
+                abs($0 - original) < abs($1 - original)
+            }) ?? 300
         }
     }
 
@@ -492,6 +527,12 @@ struct OutputSettingsTab: View {
     @State private var outputDir: String = "recordings"
     @State private var cadenceSelection: Int = 300
     @State private var prevOutputMode: String = "split"
+    /// Tracks focus on the custom-cadence TextField so DOLL-196 can
+    /// clamp + applyConfig only when the user commits (focus loss /
+    /// Return), not on every keystroke. The old onChange-clamp made a
+    /// user typing "60" briefly see the field jump as intermediate
+    /// values were clipped to the lower bound.
+    @FocusState private var customCadenceFocused: Bool
 
     var body: some View {
         Form {
@@ -590,10 +631,14 @@ struct OutputSettingsTab: View {
                             TextField("", value: $recordingCadence, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
-                                .onChange(of: recordingCadence) {
-                                    if recordingCadence < 1 { recordingCadence = 1 }
-                                    else if recordingCadence > 86400 { recordingCadence = 86400 }
-                                    applyConfig()
+                                .focused($customCadenceFocused)
+                                // DOLL-196: clamp + applyConfig on focus
+                                // loss / Return, not on every keystroke.
+                                // The old onChange-clamp made the field
+                                // jump to 1 mid-typing.
+                                .onSubmit { commitCustomCadence() }
+                                .onChange(of: customCadenceFocused) { _, focused in
+                                    if !focused { commitCustomCadence() }
                                 }
                                 .accessibilityLabel("Custom rotation interval")
                                 .accessibilityValue("\(recordingCadence) seconds")
@@ -638,7 +683,30 @@ struct OutputSettingsTab: View {
         .onAppear {
             loadOutputDir()
             syncCadenceSelection()
+            migrateStalePickerValues()
             prevOutputMode = outputMode
+        }
+    }
+
+    /// DOLL-197: migrate stale UserDefaults values to the nearest
+    /// supported preset for this tab's pickers. Without this, a Picker
+    /// reading a stale value (cross-version, hand-edited, old preset
+    /// removed) silently selects nothing and writes the first tag on
+    /// next interaction — user's preference lost without a signal.
+    /// cadenceSelection already handles this via "Custom"; the others
+    /// need a one-shot migration.
+    private func migrateStalePickerValues() {
+        let minDiskSpacePresets: Set<Int> = [0, 500, 1000, 2000, 5000, 10000]
+        if !minDiskSpacePresets.contains(minDiskSpaceMB) {
+            let original = minDiskSpaceMB
+            // Snap to the nearest preset.
+            minDiskSpaceMB = minDiskSpacePresets.min(by: { abs($0 - original) < abs($1 - original) })
+                ?? 500
+        }
+
+        let outputModePresets: Set<String> = ["single", "split"]
+        if !outputModePresets.contains(outputMode) {
+            outputMode = "split"
         }
     }
 
@@ -699,6 +767,19 @@ struct OutputSettingsTab: View {
 
     private func syncCadenceSelection() {
         cadenceSelection = Self.cadencePresets.contains(recordingCadence) ? recordingCadence : -1
+    }
+
+    /// Commit the custom-cadence TextField on focus loss / Return.
+    /// DOLL-196: validation happens once here instead of on every
+    /// keystroke; a user typing "60" no longer sees the field jump to
+    /// 1 mid-typing.
+    private func commitCustomCadence() {
+        if recordingCadence < 1 {
+            recordingCadence = 1
+        } else if recordingCadence > 86400 {
+            recordingCadence = 86400
+        }
+        applyConfig()
     }
 
     private func loadOutputDir() {
@@ -860,6 +941,10 @@ struct GeneralSettingsTab: View {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             if let shortcut = GlobalHotkeyManager.shared.loadSaved() {
                 shortcutLabel = shortcut.displayString
+            }
+            // DOLL-197: migrate stale sleepBehavior to a supported tag.
+            if sleepBehavior != "resume" && sleepBehavior != "stop" {
+                sleepBehavior = "resume"
             }
         }
     }
