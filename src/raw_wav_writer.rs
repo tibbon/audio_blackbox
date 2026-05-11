@@ -111,6 +111,21 @@ impl RawWavWriter {
 
     /// Seek back and write the correct RIFF and data chunk sizes.
     fn update_header(&mut self) -> io::Result<()> {
+        // DOLL-204: WAV's chunk-size field is `u32`, so the on-disk header
+        // can't represent more than 4 GiB of audio data. Files larger
+        // than that keep growing on disk but the data-chunk-size cap
+        // out at `u32::MAX` — readers fail to import or silently
+        // truncate to the first 4 GiB. Log a warning so the operator
+        // knows their recording will be partially unreadable;
+        // upgrading to RF64 / W64 is out of scope.
+        if self.data_bytes_written > u64::from(u32::MAX) {
+            log::error!(
+                "WAV file exceeds 4 GiB ({} bytes); header data-chunk-size capped at u32::MAX. \
+                 Players may fail to import or truncate to the first 4 GiB. \
+                 Reduce recording_cadence or channel count to stay under the cap.",
+                self.data_bytes_written
+            );
+        }
         let data_size = self.data_bytes_written.min(u64::from(u32::MAX)) as u32;
         // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
         // in release and panic in debug. The header value can't represent more
