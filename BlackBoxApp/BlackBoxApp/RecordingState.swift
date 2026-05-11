@@ -109,6 +109,13 @@ enum SleepWakePolicy {
     private var activityToken: (any NSObjectProtocol)?
     private var wasSleepInterrupted = false
 
+    /// Bookmark-restore Task (DOLL-181). Stored so auto-record can `await`
+    /// it before starting, preventing a race where auto-record fires with
+    /// the default output dir because the bookmark Task hadn't completed
+    /// yet. `nil` until init kicks the Task off; `nil` after restoration
+    /// completes (we never read it later so dropping the reference is fine).
+    private var bookmarkRestoreTask: Task<Void, Never>?
+
     private static let bookmarkKey = "outputDirBookmark"
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
 
@@ -128,7 +135,12 @@ enum SleepWakePolicy {
         // chain hit disk / IPC and delayed first menu-bar appearance.
         // Defer to a background Task so the menu bar appears with default
         // config; the real bookmarked path lands a moment later.
-        Task { [weak self] in
+        //
+        // DOLL-181: stash the Task so auto-record can `await` it before
+        // calling `start()`. The old code raced — a 500 ms sleep wasn't
+        // enough to guarantee the bookmark Task had completed first, and
+        // a slow restore would auto-record into the sandbox default dir.
+        bookmarkRestoreTask = Task { [weak self] in
             await self?.restoreOutputDirBookmark()
         }
         restoreSavedSettings()
@@ -146,6 +158,11 @@ enum SleepWakePolicy {
             && UserDefaults.standard.bool(forKey: SettingsKeys.autoRecord)
         {
             Task { [weak self] in
+                // Wait for bookmark restoration before starting — without this,
+                // auto-record would race the bookmark restore Task and may write
+                // to the sandbox default directory instead of the user's chosen
+                // folder (DOLL-181).
+                await self?.bookmarkRestoreTask?.value
                 try? await Task.sleep(for: .milliseconds(500))
                 guard let self else { return }
                 self.start()
@@ -484,6 +501,11 @@ enum SleepWakePolicy {
             peakLevels = []
             errorMessage = nil
             statusText = "Ready"
+            // DOLL-182: clear the resume-on-wake flag here. Without this,
+            // a manual stop within the 1.5s deferred-resume window after
+            // sleep/wake or session resign/activate would let the deferred
+            // start() resurrect a recording the user explicitly stopped.
+            wasSleepInterrupted = false
             Self.log.info("Recording stopped")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                                  userInfo: [.announcement: "Recording stopped"])
