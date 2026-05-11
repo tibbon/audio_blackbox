@@ -38,8 +38,8 @@ Prerequisites: Rust stable toolchain (edition 2024). macOS users also need Xcode
 
 ```bash
 cargo run                            # Run with defaults
-cargo test                           # Run all tests (121 lib tests, 14 ignored benchmarks)
-cargo test --features ffi            # 147 lib tests (adds the FFI suite)
+cargo test                           # Run all tests (119 lib tests, 14 ignored benchmarks)
+cargo test --features ffi            # 145 lib tests (adds the FFI suite)
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 make verify                          # Kitchen-sink local check (fmt + clippy + tests + ASC metadata lint + Swift tests)
@@ -164,11 +164,13 @@ CI runs on every push to `main` and on pull requests:
 | **Format** | `cargo fmt --all -- --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
 | **MSRV (1.95)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
-| **Test (macOS)** | 121 lib tests (14 benchmarks ignored) |
-| **Security audit** | `cargo audit` against RUSTSEC advisory database |
+| **Test (macOS)** | 119 lib tests (14 benchmarks ignored) |
+| **Security audit** | `cargo audit --deny warnings` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, asserts ≥10× real-time throughput in all modes |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
-| **CodeQL** | Static analysis on Rust + Swift + GitHub Actions YAML |
+| **CodeQL**¹ | Static analysis on Rust + Swift + GitHub Actions YAML |
+
+¹ CodeQL runs weekly + on manual `workflow_dispatch`; it's **not** a merge gate (Swift CodeQL traces take 25–45 min and would be too slow per-PR).
 
 A separate **Ignored tests** workflow runs the long `#[ignore]`-marked benchmark / perf tests weekly (Mondays 08:00 UTC) and on manual `workflow_dispatch`. The **Release** workflow runs on `v*` tag pushes and via `workflow_dispatch`, gated on a fresh test run.
 

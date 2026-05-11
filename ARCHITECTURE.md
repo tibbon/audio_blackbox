@@ -35,7 +35,7 @@ The RT thread never blocks on I/O, locks, or allocations. The writer thread does
 - **Push samples** into the `rtrb` SPSC ring buffer. The buffer is sized for `RING_BUFFER_SECONDS = 5` (`src/constants.rs`) of audio at the device's rate × channel count, providing runway for stalls in the writer.
 - **Atomic loads / stores** with Relaxed or Release ordering. No allocator calls, no mutex acquisition, no syscalls.
 
-A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `tests/alloc_tests.rs` asserts the hot path produces zero allocations.
+A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `src/tests/alloc_tests.rs` (no top-level `tests/` directory; all tests live under `src/tests/` to share `pub(crate)` access) asserts the hot path produces zero allocations.
 
 ### Writer thread
 
