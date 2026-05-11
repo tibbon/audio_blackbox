@@ -1153,25 +1153,4 @@ class ShortcutRecorderNSButton: NSButton {
     }
 }
 
-// MARK: - Settings Keys
-
-/// Centralized UserDefaults keys for all persisted settings.
-enum SettingsKeys {
-    static let inputDevice = "inputDevice"
-    static let audioChannels = "audioChannels"
-    static let outputMode = "outputMode"
-    static let silenceEnabled = "silenceEnabled"
-    static let silenceThreshold = "silenceThreshold"
-    static let continuousMode = "continuousMode"
-    static let recordingCadence = "recordingCadence"
-    static let launchAtLogin = "launchAtLogin"
-    static let autoRecord = "autoRecord"
-    static let minDiskSpaceMB = "minDiskSpaceMB"
-    static let hasCompletedOnboarding = "hasCompletedOnboarding"
-    static let bitDepth = "bitDepth"
-    static let lastOutputDirPath = "lastOutputDirPath"
-    static let silenceGateEnabled = "silenceGateEnabled"
-    static let silenceGateTimeout = "silenceGateTimeout"
-    static let sleepBehavior = "sleepBehavior"
-    static let preventSleep = "preventSleep"
-}
+// SettingsKeys moved to SettingsKeys.swift (DOLL-203).

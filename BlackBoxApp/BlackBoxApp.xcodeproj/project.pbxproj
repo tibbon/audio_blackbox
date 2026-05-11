@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
+		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
 		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
@@ -41,6 +43,8 @@
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
+		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		BE10D00516431CD06B0874FE /* SettingsKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsKeys.swift; sourceTree = "<group>"; };
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
 		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
@@ -78,6 +82,7 @@
 		BA337CCE7A5957FF5AD4D45C /* BlackBoxApp */ = {
 			isa = PBXGroup;
 			children = (
+				B4713B5D81249F6C8AF904AE /* AboutView.swift */,
 				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
@@ -87,6 +92,7 @@
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
+				BE10D00516431CD06B0874FE /* SettingsKeys.swift */,
 				FD293BB00932B1C1871E349D /* SettingsView.swift */,
 			);
 			path = BlackBoxApp;
@@ -146,7 +152,6 @@
 				};
 			};
 			buildConfigurationList = A270336424195CA52B515B29 /* Build configuration list for PBXProject "BlackBoxApp" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -156,6 +161,7 @@
 			mainGroup = 7F01E7D61DE30C7E836DED8F;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 9B0C183B2A902029D8F0A18D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -191,12 +197,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */,
 				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
 				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
 				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
 				E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */,
 				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
+				427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */,
 				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -232,7 +240,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",
@@ -329,7 +337,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",

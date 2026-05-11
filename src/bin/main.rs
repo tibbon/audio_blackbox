@@ -172,5 +172,13 @@ fn main() {
     }
 
     info!("Recording finished!");
-    std::process::exit(0);
+    // DOLL-205: return normally instead of `std::process::exit(0)`.
+    // `exit` skips destructors on the stack-rooted `recorder` —
+    // notably `SilenceCheckWorker::Drop`, which closes the send side
+    // of the silence-check channel and joins the worker. Without that
+    // join, a Ctrl-C during recording with `silence_threshold > 0` and
+    // pending silence checks on rotated files would cut those checks
+    // short, leaving silent files on disk that should have been
+    // auto-deleted. Returning from `main` runs all destructors in
+    // reverse declaration order.
 }
