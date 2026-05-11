@@ -58,7 +58,7 @@ clean:
 
 # Verify: fmt + clippy + test + build + Swift tests (run before committing)
 .PHONY: verify
-verify: check-app-store
+verify: check-app-store check-ffi-header
 	$(CARGO_BIN) fmt --all -- --check
 	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) test -- --test-threads=1
@@ -159,6 +159,13 @@ upload: archive
 .PHONY: check-versions
 check-versions:
 	@./scripts/check-versions.sh
+
+# Verify src/ffi.rs and include/blackbox_ffi.h declare the same symbols.
+# The header is hand-maintained (no cbindgen) — this catches drift
+# before it surfaces as a broken Swift build (DOLL-190).
+.PHONY: check-ffi-header
+check-ffi-header:
+	@./scripts/check-ffi-header.sh
 
 # Lint Fastlane / App Store metadata against Apple's current OpenAPI spec
 # so schema drift is caught locally instead of mid-deploy on the CI runner.

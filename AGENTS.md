@@ -20,6 +20,7 @@ These are non-obvious and have bitten past releases. Read before changing relate
 - **`panic = "abort"` is a release-build invariant (DOLL-90).** Any panic in production is a bug we want to surface via crash report — *not* unwind across the FFI boundary. Do not add `catch_unwind` wrappers; do not flip `panic = "unwind"` for release.
 - **`make check-app-store` is the OpenAPI lint that catches schema drift before `fastlane mac metadata`.** It validates the metadata directory against the App Store Connect schema fastlane targets. `make verify` runs it; `make fl-metadata` does NOT (you must run `check-app-store` yourself, or run `make verify` first). If it fails, fix the metadata; don't bypass it — Apple's web upload will reject the same payload.
 - **`project.yml` is the source of truth for the Xcode project**, but the generated `.xcodeproj` is committed too. Drift recovery is currently manual (DOLL-160 parked the auto-check pending a design decision around fastlane's release-time pbxproj mutations).
+- **`include/blackbox_ffi.h` is hand-maintained** (no cbindgen). When you add or remove a `pub extern "C" fn` in `src/ffi.rs`, edit the header by hand and confirm with `make check-ffi-header`. The swift-app CI lane runs the same check before building, so missing-header drift fails fast there too (DOLL-190).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the threading model, lock-acquisition order, and the deeper invariants behind the audio path / FFI boundary.
 
