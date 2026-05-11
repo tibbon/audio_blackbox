@@ -23,11 +23,12 @@ pub enum BlackboxError {
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
 
-    /// Configuration validation failure — bad TOML, out-of-range value,
-    /// or an env-var override that doesn't parse. Carries a human
-    /// message; no underlying error.
-    #[error("Configuration error: {0}")]
-    Config(String),
+    // `Config(String)` was removed in DOLL-189 — config validation is
+    // forgiving (bad TOML / bad env vars log + fall back to defaults).
+    // No production path constructs this; FFI now maps ChannelParse to
+    // BLACKBOX_ERR_CONFIG on its own. If strict validation is wanted in
+    // the future, reintroduce the variant alongside actually returning
+    // it from `AppConfig::load` / `apply_env_vars`.
 
     /// Filesystem-layer error, automatically converted from
     /// `std::io::Error` via `?` (the `#[from]` derives `From<io::Error>`).

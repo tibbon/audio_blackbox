@@ -51,13 +51,6 @@ breaking changes.
   product is Mac App Store.
 
 ### Fixed
-- First-run onboarding now saves a security-scoped bookmark when
-  the user accepts the auto-populated default folder, preventing
-  the "Output Directory Unavailable" prompt on the next launch.
-- Auto-record-on-launch notification authorization is requested
-  eagerly at init instead of lazily on first record, so the very
-  first "Recording Started" banner on a fresh install is no longer
-  silently dropped.
 - `PerformanceTracker` now joins its worker thread on stop and
   drop, matching the join-on-drop pattern used elsewhere in the
   codebase.
