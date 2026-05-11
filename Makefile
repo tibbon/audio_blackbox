@@ -65,7 +65,10 @@ verify: check-app-store
 	$(CARGO_BIN) build
 	@if command -v xcodebuild >/dev/null 2>&1; then \
 		echo "Running Swift tests..."; \
-		$(CARGO_BIN) build --release --no-default-features --features ffi && \
+		: "DOLL-188: match CI's swift-app lane (cargo build --release --features ffi)."; \
+		: "Without this, make verify and CI would diverge silently if any default"; \
+		: "feature ever reappears. CI runs with default features ON."; \
+		$(CARGO_BIN) build --release --features ffi && \
 		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
 			-destination 'platform=macOS' CODE_SIGN_IDENTITY="-" -quiet; \
 		echo "Swift tests passed."; \
@@ -79,16 +82,20 @@ XCODE_CONFIG = Release
 SWIFT_APP_DIR = BlackBoxApp
 SWIFT_APP_BUNDLE = $(RELEASE_DIR)/$(APP_NAME).app
 
-# Build the Rust static library with FFI exports
+# Build the Rust static library with FFI exports.
+# DOLL-188: matches CI's swift-app lane (cargo build --release --features ffi)
+# — default features ON. Today default = [] so this is identical to
+# --no-default-features, but using --features ffi keeps local/CI aligned
+# if a default feature ever reappears.
 .PHONY: rust-lib
 rust-lib:
-	$(CARGO_BIN) build --release --no-default-features --features ffi
+	$(CARGO_BIN) build --release --features ffi
 
 # Build universal (fat) Rust static library for aarch64 + x86_64
 .PHONY: rust-lib-universal
 rust-lib-universal:
-	$(CARGO_BIN) build --release --no-default-features --features ffi --target=aarch64-apple-darwin
-	$(CARGO_BIN) build --release --no-default-features --features ffi --target=x86_64-apple-darwin
+	$(CARGO_BIN) build --release --features ffi --target=aarch64-apple-darwin
+	$(CARGO_BIN) build --release --features ffi --target=x86_64-apple-darwin
 	@mkdir -p $(TARGET_DIR)/universal
 	lipo -create \
 		$(TARGET_DIR)/aarch64-apple-darwin/release/libblackbox.a \
