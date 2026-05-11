@@ -152,7 +152,7 @@ impl BlackboxHandle {
             BlackboxError::AudioDevice(_) | BlackboxError::AudioDeviceSource { .. } => {
                 BLACKBOX_ERR_AUDIO_DEVICE
             }
-            BlackboxError::Config(_) | BlackboxError::ChannelParse(_) => BLACKBOX_ERR_CONFIG,
+            BlackboxError::ChannelParse(_) => BLACKBOX_ERR_CONFIG,
             BlackboxError::Io(_) | BlackboxError::Wav(_) | BlackboxError::WavSource { .. } => {
                 BLACKBOX_ERR_IO
             }

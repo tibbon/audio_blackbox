@@ -1,7 +1,16 @@
 //! Standalone benchmark binary for profiling the writer thread hot path.
 //!
+//! **Caveat (DOLL-192):** the `single` and `split` direct-write modes use
+//! the `hound` crate's `WavWriter`, NOT the production `RawWavWriter`.
+//! Numbers from those modes are useful as relative measurements (e.g.,
+//! comparing channel counts or sample rates) but should NOT be quoted as
+//! production write throughput — `RawWavWriter` is what ships and has
+//! different buffering / header behaviour. The `pipeline` mode goes
+//! through the real writer thread (producer → rtrb → writer thread → WAV
+//! via `RawWavWriter`), so it IS representative.
+//!
 //! Usage:
-//!   cargo build --release --bin bench-writer
+//!   cargo build --release --bin bench-writer --features benchmarking
 //!   samply record target/release/bench-writer [OPTIONS]
 //!
 //! Options:

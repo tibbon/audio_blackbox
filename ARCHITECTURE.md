@@ -44,7 +44,7 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 - Drain the ring buffer, convert f32 to the configured bit depth, write WAV via `RawWavWriter` (a hand-rolled writer; we don't drag `hound` into the hot path).
 - Maintain per-channel peak levels in cache-aligned `AtomicI32` slots — read by the FFI 30 Hz meter poll.
 - Rotate files on `rotation_needed.swap(false, Ordering::Acquire)` (Release-paired with the RT thread's store at `cpal_processor.rs:476`).
-- Submit rotated files to the silence-check worker over a bounded mpsc channel. Never blocks.
+- Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. In practice unreachable under normal rotation cadence (rotation is ≥ 60 s; silence checks complete in milliseconds for normal-size files, so 8-deep buffering is ample).
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
 
 ### Silence-check worker

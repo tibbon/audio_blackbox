@@ -64,7 +64,6 @@ fn test_insufficient_disk_space_display_and_no_source() {
 fn test_string_only_variants_have_no_source() {
     let cases: &[BlackboxError] = &[
         BlackboxError::AudioDevice("oops".into()),
-        BlackboxError::Config("oops".into()),
         BlackboxError::ChannelParse("oops".into()),
         BlackboxError::Wav("oops".into()),
     ];
