@@ -81,6 +81,57 @@ The codebase has two flavors of atomic flag:
 
 If you're adding a new atomic flag: ask whether a reader observing this flag's set state needs to also observe other state set by the same writer. If yes → Acquire/Release. If no → Relaxed.
 
+## Swift app shell
+
+The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackBoxApp/`). The Rust engine is consumed via the FFI surface in `src/ffi.rs`; everything below is Swift-side.
+
+### MenuBarExtra + Window-scene termination
+
+`AppDelegate` (in `BlackBoxApp.swift`) handles a known SwiftUI quirk: closing the last `Window` scene fires `applicationShouldTerminate`. The delegate returns `.terminateCancel` unless `explicitQuit == true`, so the app stays alive while keeping its menu bar item. Explicit Quit (menu bar, system shutdown) sets the flag then calls `terminate(nil)`.
+
+### Sleep / wake matrix
+
+`SleepWakePolicy` is a pure-logic enum + static methods (extracted for unit testing — the live `@MainActor` handlers are awkward to test directly). The decisions:
+
+| Event | `isRecording` = true | Action |
+|-------|--------------------|--------|
+| `willSleep` (behavior=resume) | yes | `.pauseForResume` → stop + mark `wasSleepInterrupted = true` |
+| `willSleep` (behavior=stop) | yes | `.stop` → stop, do not mark |
+| `willSleep` | no | `.ignore` |
+| `didWake` | `wasSleepInterrupted` set | deferred `Task.sleep(1500ms) → start()` |
+| `sessionDidResignActive` | yes | `.pauseForResume` (always; fast-user-switch / screen-saver is recoverable) |
+| `sessionDidBecomeActive` | `wasSleepInterrupted` set | deferred `start()`, same as `didWake` |
+| `willPowerOff` | any | drain immediately via `recorder?.stop()` (DOLL-183) |
+
+`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop()` (DOLL-182 — otherwise a manual stop within the 1.5s deferred-resume window would let the deferred Task resurrect the recording).
+
+### Security-scoped bookmark lifecycle
+
+The user-picked output directory is persisted as a security-scoped bookmark in UserDefaults. Lifecycle:
+
+1. **Save**: in `OnboardingView` / `SettingsView` directory-picker; `URL.bookmarkData(options: .withSecurityScope)`.
+2. **Restore on launch**: a deferred `Task` (`bookmarkRestoreTask`, DOLL-114) resolves the bookmark, calls `startAccessingSecurityScopedResource`, and pushes the path into the Rust engine. Auto-record waits on this Task (DOLL-181).
+3. **Hold during runtime**: the URL stays scoped from restore until quit.
+4. **Release on quit**: `applicationShouldTerminate` calls `releaseOutputDirAccess` after `stop()`.
+
+A stale bookmark (folder deleted, volume unmounted) prompts the user to re-pick via `promptToReselectOutputDir`.
+
+### Carbon hotkey lifecycle
+
+`GlobalHotkeyManager` is a `@MainActor` singleton wrapping the Carbon Event Hot Key API. `Shortcut` is `Codable` (persisted to UserDefaults under `globalShortcut`). The C callback uses `MainActor.assumeIsolated` since Carbon delivers hotkey events on the main run loop after `InstallEventHandler` is called from main (DOLL-161). Registration surfaces failures to the user — both at Settings-time (DOLL-157) and at launch-restoration (DOLL-184).
+
+### Notification authorization (DOLL-134, DOLL-185)
+
+`UNUserNotificationCenter` authorization is requested eagerly at init so the very-first auto-record-on-launch notification isn't dropped. The granted bool is captured into `notificationsAuthorized` and re-checked on `NSApplication.didBecomeActiveNotification` — granting in System Settings is picked up without a relaunch.
+
+### Meter polling cadence
+
+`RecordingState.isMeterWindowOpen` drives the meter Task. When the window is open and the engine is recording or monitoring, a Task polls `bridge.fillPeakLevels(into:)` at ~30 Hz. The Task is paused / cancelled when the window closes — no FFI calls happen with a closed meter.
+
+### `@Observable RecordingState` pattern
+
+`RecordingState` is `@MainActor`-isolated and `@Observable` (Swift macro). It's passed by value into views (not via `@Environment`); SwiftUI's observation system propagates change notifications. View-model mutation off-main is a compile error because of `@MainActor`.
+
 ## Module map
 
 | Module | Role |
