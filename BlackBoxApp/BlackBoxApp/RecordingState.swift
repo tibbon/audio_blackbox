@@ -5,27 +5,55 @@ import Observation
 import os.log
 import UserNotifications
 
-/// Pure decision logic for sleep/wake handling, extracted for testability.
+/// Pure decision logic for sleep/wake handling, extracted from
+/// `RecordingState` for testability (the live `@MainActor` methods
+/// are awkward to unit-test). All entry points are pure functions over
+/// the relevant inputs; no I/O, no side effects.
+///
+/// Callers (`handleWillSleep` / `handleSessionDidResignActive`) must
+/// check the returned action before mutating state. The mapping is:
+/// - `.ignore` → no recording running; do nothing.
+/// - `.pauseForResume` → stop the current recording AND mark
+///   `wasSleepInterrupted = true` so the next wake / session-active
+///   restarts it.
+/// - `.stop` → stop the current recording without marking for resume.
 enum SleepWakePolicy {
+    /// The action a sleep / session-resign event should trigger.
     enum SleepAction: Equatable {
+        /// Stop now and mark the session as interrupted so it can
+        /// resume on wake / session-active.
         case pauseForResume
+        /// Stop now; do not auto-resume on wake.
         case stop
+        /// Do nothing — there's no active recording to interrupt.
         case ignore
     }
 
+    /// Decision for `NSWorkspace.willSleepNotification`.
+    /// - `behavior` is the user's "When Mac sleeps" preference
+    ///   (`"resume"` or `"stop"`; anything else is treated as `"stop"`).
     static func sleepAction(isRecording: Bool, behavior: String) -> SleepAction {
         guard isRecording else { return .ignore }
         return behavior == "resume" ? .pauseForResume : .stop
     }
 
+    /// Decision for `NSWorkspace.didWakeNotification`. Resume only if
+    /// the prior `willSleep` set `wasSleepInterrupted = true`.
     static func shouldResumeOnWake(wasInterrupted: Bool) -> Bool {
         wasInterrupted
     }
 
+    /// Whether to add `.idleSystemSleepDisabled` to the
+    /// `ProcessInfo.beginActivity` options. App Nap is always
+    /// prevented while recording; idle-sleep prevention is opt-in.
     static func shouldPreventSleep(settingEnabled: Bool) -> Bool {
         settingEnabled
     }
 
+    /// Decision for `NSWorkspace.sessionDidResignActiveNotification`
+    /// (fast user switch / screen-saver activate). Always
+    /// `.pauseForResume` when recording — session-resign is
+    /// recoverable; session-become-active triggers a restart.
     static func sessionResignAction(isRecording: Bool) -> SleepAction {
         guard isRecording else { return .ignore }
         return .pauseForResume
@@ -109,6 +137,14 @@ enum SleepWakePolicy {
     private var recordingStartTime: Date?
     private var timerTask: Task<Void, Never>?
     private var meterTimerTask: Task<Void, Never>?
+
+    // wasSleepInterrupted (declared below) is set by both `handleWillSleep`
+    // and `handleSessionDidResignActive` when their `SleepWakePolicy`
+    // decision is `.pauseForResume`. It's cleared by `handleDidWake`,
+    // `handleSessionDidBecomeActive`, and `stop()` (DOLL-182 — without
+    // that last reset, a manual stop inside the 1.5s deferred-resume
+    // window let the resume Task resurrect a recording the user
+    // explicitly stopped).
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
     private var peakBuffer = [Float](repeating: 0, count: 255)

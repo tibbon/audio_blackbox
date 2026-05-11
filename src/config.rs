@@ -1,3 +1,18 @@
+//! Configuration loading and validation.
+//!
+//! **Precedence**: env vars override TOML, TOML overrides defaults.
+//! Inside the env-var tier, `BLACKBOX_*`-prefixed names take precedence
+//! over the unprefixed legacy names (e.g. `BLACKBOX_DURATION` wins over
+//! `RECORD_DURATION`). See `apply_env_vars` for the full map.
+//!
+//! **Forgiving validation**: bad TOML, unparseable env vars, and
+//! out-of-range numerics log a warning and fall back to defaults rather
+//! than surfacing an error. This is deliberate — the App Store-shipped
+//! product runs with whatever it can parse, never aborts on bad config.
+//! If you need strict validation in the future, reintroduce
+//! `BlackboxError::Config(_)` (deleted in DOLL-189) and produce it from
+//! `AppConfig::load` / `apply_env_vars`.
+
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -20,33 +35,62 @@ use crate::error::BlackboxError;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AppConfig {
-    /// Audio channels to record (comma-separated or range)
+    /// Audio channels to record. String form (`"0"`, `"0,2-4,7"`)
+    /// parsed by `parse_channel_string`. Channel indices are 0-based at
+    /// the engine; the Swift UI displays 1-based and converts at the
+    /// boundary. `None` falls back to `DEFAULT_CHANNELS` ("0").
     pub audio_channels: Option<String>,
-    /// Enable debug output
+    /// Enable debug output (extra log lines from the writer thread).
+    /// `None` falls back to `DEFAULT_DEBUG` (false).
     pub debug: Option<bool>,
-    /// Recording duration in seconds
+    /// Recording duration in seconds. `0` means unlimited (run until
+    /// Ctrl-C / stop). `None` falls back to `DEFAULT_DURATION` (30).
     pub duration: Option<u64>,
-    /// Output mode: "single" or "split"
+    /// Output mode: `"single"` (one multichannel file) or `"split"`
+    /// (one file per channel). Parsed via `OutputMode::parse` at the
+    /// config boundary; downstream code uses the enum. `None` falls
+    /// back to `DEFAULT_OUTPUT_MODE` ("single").
     pub output_mode: Option<String>,
-    /// Threshold for silence detection
+    /// Silence-detection threshold in **percent** of full-scale
+    /// amplitude (0.0 to 100.0). `0` or negative disables detection.
+    /// NaN / ±Inf are rejected by `get_silence_threshold` and treated
+    /// as disabled. `None` falls back to `DEFAULT_SILENCE_THRESHOLD`.
     pub silence_threshold: Option<f32>,
-    /// Enable continuous recording
+    /// Enable continuous recording — file rotates at
+    /// `recording_cadence` intervals. `None` falls back to
+    /// `DEFAULT_CONTINUOUS_MODE` (false).
     pub continuous_mode: Option<bool>,
-    /// How often to rotate files in continuous mode (seconds)
+    /// File-rotation cadence in seconds (continuous mode only). Must
+    /// be > 0; `0` is treated as "no rotation" by the writer thread.
+    /// `None` falls back to `DEFAULT_RECORDING_CADENCE` (300, i.e. 5 min).
     pub recording_cadence: Option<u64>,
-    /// Directory for saving audio files
+    /// Output directory for WAV files. Relative paths are resolved
+    /// against the working directory. `None` falls back to
+    /// `DEFAULT_OUTPUT_DIR` ("recordings").
     pub output_dir: Option<String>,
-    /// Enable performance metrics collection
+    /// Enable performance-metric collection (writes
+    /// `performance.log` next to recordings). Requires the
+    /// `benchmarking` feature. `None` falls back to
+    /// `DEFAULT_PERFORMANCE_LOGGING` (false).
     pub performance_logging: Option<bool>,
-    /// Input device name (None = system default)
+    /// Input device name (cpal-reported). `None` = system default.
     pub input_device: Option<String>,
-    /// Minimum free disk space in MB before stopping recording (0 = disabled)
+    /// Minimum free disk space in MB before stopping recording.
+    /// `0` disables the check. `None` falls back to
+    /// `DEFAULT_MIN_DISK_SPACE_MB`.
     pub min_disk_space_mb: Option<u64>,
-    /// Bits per sample for WAV output: 16, 24, or 32 (default: 24)
+    /// Bits per sample for WAV output. Valid values: 16, 24, 32.
+    /// Anything else is rejected by `get_bits_per_sample` and falls
+    /// back to `DEFAULT_BITS_PER_SAMPLE` (24). `None` falls back the
+    /// same way.
     pub bits_per_sample: Option<u16>,
-    /// Enable silence gate: pause disk I/O during silence, resume on signal
+    /// Enable the silence gate: writer thread closes files during
+    /// extended silence, reopens on signal. `None` falls back to
+    /// `DEFAULT_SILENCE_GATE_ENABLED` (true).
     pub silence_gate_enabled: Option<bool>,
-    /// Seconds of silence before the gate closes and finalizes files
+    /// Seconds of silence before the gate closes and finalizes the
+    /// current open file. Must be > 0. `None` falls back to
+    /// `DEFAULT_SILENCE_GATE_TIMEOUT_SECS` (300).
     pub silence_gate_timeout_secs: Option<u64>,
 }
 

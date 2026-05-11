@@ -1,3 +1,14 @@
+//! Shared helpers.
+//!
+//! - `parse_channel_string` — `"0,2-4,7"` style channel-spec parser
+//!   used by both CLI and Swift FFI paths. Dedupes via `BTreeSet`,
+//!   rejects out-of-range and unparseable input.
+//! - `is_silent` — two-stage WAV-file silence check (peak fast-path,
+//!   RMS fallback). Used by the silence-check worker.
+//! - `available_disk_space_mb` — `statvfs`-backed; has a CStr fast-path
+//!   for the writer thread so the periodic check doesn't allocate.
+//! - Linux-only ALSA presence check (warn-only at startup).
+
 use std::collections::BTreeSet;
 
 use crate::constants::MAX_CHANNELS;

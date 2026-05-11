@@ -1,3 +1,18 @@
+//! Compile-time constants for the recording engine.
+//!
+//! Two categories:
+//! 1. **`DEFAULT_*`** — values `AppConfig` falls back to when neither
+//!    TOML nor env vars supply one. Documented inline; the canonical
+//!    surface for "what do you get if you do nothing" is here.
+//! 2. **Tunables** — `MAX_CHANNELS` (255, the FFI / `peakBuffer` cap),
+//!    `RING_BUFFER_SECONDS` (5, RT-thread runway), `WRITER_THREAD_READ_CHUNK`
+//!    (16k samples per drain), `CacheAlignedPeak` (64-byte aligned
+//!    `AtomicU32` to prevent false sharing with the UI reader thread).
+//! 3. **`OutputMode`** — the `single` / `split` enum threaded through
+//!    the `AudioProcessor` trait. Use `OutputMode::parse` /
+//!    `OutputMode::as_str` at config-load boundaries; downstream code
+//!    pattern-matches on the enum.
+
 pub const DEFAULT_CHANNELS: &str = "0";
 pub const DEFAULT_DEBUG: bool = false;
 pub const DEFAULT_DURATION: u64 = 30;

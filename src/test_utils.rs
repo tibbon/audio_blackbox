@@ -1,3 +1,16 @@
+//! Test-only helpers shared across `src/tests/*.rs`.
+//!
+//! - `generate_interleaved_f32` — synth test audio with distinct
+//!   per-channel sine frequencies for channel-isolation assertions.
+//! - `default_test_env` — canonical set of env vars wired through
+//!   `temp_env::with_vars` so config-touching tests are deterministic.
+//! - `test_env_no_silence` — variant that disables silence detection.
+//! - `MockClock` — deterministic timestamp source for rotation tests;
+//!   eliminates wall-clock dependency in filename uniqueness.
+//!
+//! Add to `default_test_env` (rather than copy-paste-modify per test)
+//! when a new env var enters config and you need cross-test parity.
+
 /// Generate properly interleaved multi-channel f32 data.
 ///
 /// Each channel in `channel_amplitudes` receives a sine wave at a distinct

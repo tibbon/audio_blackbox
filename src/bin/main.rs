@@ -2,6 +2,17 @@
 #![allow(clippy::use_self)]
 #![allow(clippy::cast_precision_loss)]
 
+//! `blackbox` — CLI entry point.
+//!
+//! Distinct from the `SwiftUI` app (which calls Rust via FFI). The CLI:
+//! 1. Loads `blackbox.toml` (creates a default if missing), applies
+//!    `BLACKBOX_*` env overrides on top.
+//! 2. Installs a Ctrl-C handler with a `shutdown_in_progress` debounce
+//!    so double-tap doesn't fan out work.
+//! 3. Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`,
+//!    and runs until duration expires or Ctrl-C fires.
+//! 4. Finalizes the recording explicitly before exit.
+
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
