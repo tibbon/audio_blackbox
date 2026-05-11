@@ -29,7 +29,6 @@ pub enum BlackboxError {
     // BLACKBOX_ERR_CONFIG on its own. If strict validation is wanted in
     // the future, reintroduce the variant alongside actually returning
     // it from `AppConfig::load` / `apply_env_vars`.
-
     /// Filesystem-layer error, automatically converted from
     /// `std::io::Error` via `?` (the `#[from]` derives `From<io::Error>`).
     /// Used for WAV-file I/O, output-directory creation, and disk-space
