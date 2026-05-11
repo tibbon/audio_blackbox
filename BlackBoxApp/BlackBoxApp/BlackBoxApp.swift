@@ -30,7 +30,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            // DOLL-183: drain the recording directly here, not in the later
+            // applicationShouldTerminate dispatch. macOS gives ~5s for
+            // shutdown; if SwiftUI is slow to deliver
+            // applicationShouldTerminate (other apps holding the run loop,
+            // scene teardown), the recording can be killed before finalize
+            // and the WAV header is left without correct RIFF/data sizes.
+            // stop() is fast and the subsequent applicationShouldTerminate
+            // will no-op on the already-stopped recorder.
             self?.explicitQuit = true
+            if let recorder = self?.recorder, recorder.isRecording {
+                recorder.stop()
+            }
         }
 
         wsnc.addObserver(
