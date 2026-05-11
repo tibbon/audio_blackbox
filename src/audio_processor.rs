@@ -1,3 +1,12 @@
+//! `AudioProcessor` — central trait abstracting over real (cpal) and
+//! mock processors.
+//!
+//! Production code uses `CpalAudioProcessor`; tests use
+//! `MockAudioProcessor` for deterministic behavior without hardware.
+//! The trait surface is the only thing `AudioRecorder` knows about,
+//! which lets the test suite swap implementations without touching the
+//! recorder loop.
+
 use crate::config::AppConfig;
 use crate::constants::OutputMode;
 use crate::error::BlackboxError;

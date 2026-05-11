@@ -1,3 +1,9 @@
+//! High-level driver wrapping an `AudioProcessor` + an `AppConfig`.
+//!
+//! Used by the CLI binary (`bin/main.rs`). The FFI layer bypasses this
+//! type and drives `CpalAudioProcessor` directly — `AudioRecorder` is
+//! a CLI-oriented convenience.
+
 use log::info;
 
 use crate::audio_processor::AudioProcessor;

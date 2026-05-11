@@ -1,3 +1,18 @@
+//! Typed errors for the recording engine.
+//!
+//! Source-chain contract:
+//! - `*Source` variants (`AudioDeviceSource`, `WavSource`) carry
+//!   `#[source]` so callers recover the underlying `cpal::*Error` /
+//!   `hound::Error` via `std::error::Error::source()`.
+//! - `Io(#[from] std::io::Error)` likewise exposes the underlying
+//!   `io::Error`.
+//! - String-only variants (`AudioDevice`, `ChannelParse`, `Wav`) and
+//!   `InsufficientDiskSpace` carry no source — `error.source()` returns
+//!   `None`. Use them when there's no concrete underlying error to
+//!   wrap (e.g. a synthesized message).
+//!
+//! Mapping to FFI codes lives in `src/ffi.rs` (`BLACKBOX_ERR_*`).
+
 /// Custom error type for the blackbox audio recorder.
 ///
 /// Some variants carry a `#[source]` chain so callers can recover the
