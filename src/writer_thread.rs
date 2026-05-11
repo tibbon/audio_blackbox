@@ -39,6 +39,42 @@ fn tmp_wav_path(final_path: &str) -> String {
     )
 }
 
+/// Returns a path that doesn't collide with an existing file (DOLL-207).
+///
+/// During a DST backward jump (one hour rolled back), a wall-clock
+/// second can repeat — if two rotations land in that second, the
+/// second rotation's `fs::rename` would silently overwrite the first
+/// file. Probability is roughly zero in practice (DST jumps × in-flight
+/// recording × in-flight rotation × same second) but data loss is
+/// unrecoverable when it does happen.
+///
+/// If `final_path` exists, this returns `final_path-1.wav`, `-2.wav`,
+/// etc. up to `-1000` (after which it gives up and returns the
+/// original — preferring the original overwrite to an infinite loop).
+fn disambiguate_path(final_path: &str) -> String {
+    if !Path::new(final_path).exists() {
+        return final_path.to_string();
+    }
+    // Match `.wav` only as the literal lowercase suffix our writer
+    // emits — the clippy `case_sensitive_file_extension_comparisons`
+    // warning is for cross-platform path APIs, not our deterministic
+    // lowercase suffix.
+    let (stem, ext) = final_path
+        .strip_suffix(".wav")
+        .map_or((final_path, ""), |stem| (stem, ".wav"));
+    for n in 1..1000 {
+        let candidate = format!("{stem}-{n}{ext}");
+        if !Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+    log::warn!(
+        "Path disambiguation exhausted (>1000 collisions) for {}; returning original",
+        final_path
+    );
+    final_path.to_string()
+}
+
 /// Create a WAV writer using our direct-write `RawWavWriter`.
 fn create_wav_writer(
     path: &str,
@@ -384,7 +420,10 @@ impl WriterThreadState {
         }
 
         for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-            let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
+            let final_path = disambiguate_path(&format!(
+                "{}/{}-ch{}.wav",
+                self.output_dir, date_str, channel
+            ));
             let tmp_path = tmp_wav_path(&final_path);
 
             let spec = crate::raw_wav_writer::WavSpec {
@@ -413,7 +452,10 @@ impl WriterThreadState {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
-        let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
+        let final_path = disambiguate_path(&format!(
+            "{}/{}-multichannel.wav",
+            self.output_dir, date_str
+        ));
         let tmp_path = tmp_wav_path(&final_path);
 
         info!("Setting up multichannel mode with {} channels", ch_count);
@@ -442,7 +484,7 @@ impl WriterThreadState {
 
         let num_channels = if ch_count == 1 { 1 } else { 2 };
 
-        let final_path = format!("{}/{}.wav", self.output_dir, date_str);
+        let final_path = disambiguate_path(&format!("{}/{}.wav", self.output_dir, date_str));
         let tmp_path = tmp_wav_path(&final_path);
 
         let spec = crate::raw_wav_writer::WavSpec {
@@ -813,7 +855,10 @@ impl WriterThreadState {
         match self.output_mode {
             OutputMode::Split => {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-                    let final_path = format!("{}/{}-ch{}.wav", self.output_dir, date_str, channel);
+                    let final_path = disambiguate_path(&format!(
+                        "{}/{}-ch{}.wav",
+                        self.output_dir, date_str, channel
+                    ));
                     let tmp = tmp_wav_path(&final_path);
                     let spec = crate::raw_wav_writer::WavSpec {
                         channels: 1,
@@ -833,7 +878,10 @@ impl WriterThreadState {
                 }
             }
             OutputMode::Single if ch_count > 2 => {
-                let final_path = format!("{}/{}-multichannel.wav", self.output_dir, date_str);
+                let final_path = disambiguate_path(&format!(
+                    "{}/{}-multichannel.wav",
+                    self.output_dir, date_str
+                ));
                 let tmp = tmp_wav_path(&final_path);
                 let spec = crate::raw_wav_writer::WavSpec {
                     channels: self.channel_count as u16,
@@ -852,7 +900,8 @@ impl WriterThreadState {
                 }
             }
             OutputMode::Single => {
-                let final_path = format!("{}/{}.wav", self.output_dir, date_str);
+                let final_path =
+                    disambiguate_path(&format!("{}/{}.wav", self.output_dir, date_str));
                 let tmp = tmp_wav_path(&final_path);
                 match create_wav_writer(&tmp, self.current_spec) {
                     Ok(w) => {
