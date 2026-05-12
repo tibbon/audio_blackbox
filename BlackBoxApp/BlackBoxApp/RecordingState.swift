@@ -841,9 +841,12 @@ enum SleepWakePolicy {
                 notifyUser(title: "Recording Stopped", message: msg)
                 return
             }
-            // Show "Waiting for audio..." when silence gate is idle
+            // DOLL-216: surface the silence-gate idle state as "Armed
+            // (waiting for signal)". The previous "Waiting for audio…"
+            // read as a passive failure mode; "Armed" reframes it as
+            // ready-and-listening, which matches what the app is doing.
             if status.gate_idle {
-                statusText = "Waiting for audio\u{2026}"
+                statusText = "Armed (waiting for signal)"
             }
 
             // Sample rate changed on the audio device — restart to pick up new rate
