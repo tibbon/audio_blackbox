@@ -203,9 +203,13 @@ struct RecordingSettingsTab: View {
                     }
                 }
 
-                Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
+                // DOLL-224: "Pause recording during silence" implied the
+                // whole recording stops; the silence gate actually finalizes
+                // the current file and opens a new one on the next signal.
+                // "Auto-split on silence" describes the real behavior.
+                Toggle("Auto-split on silence", isOn: $silenceGateEnabled)
                     .onChange(of: silenceGateEnabled) { applyConfig() }
-                    .accessibilityHint("Stop writing to disk when all channels are silent")
+                    .accessibilityHint("Finalize the current file when audio goes silent and start a new one on the next signal")
 
                 if silenceGateEnabled {
                     Picker("Resume after:", selection: $silenceGateTimeout) {

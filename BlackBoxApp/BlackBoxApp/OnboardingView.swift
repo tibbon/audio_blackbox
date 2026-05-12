@@ -317,7 +317,8 @@ struct OnboardingView: View {
                 .frame(maxWidth: 380)
 
             VStack(alignment: .leading, spacing: 4) {
-                Toggle("Pause recording during silence", isOn: $silenceGateEnabled)
+                // DOLL-224: see SettingsView for the rationale on this wording.
+                Toggle("Auto-split on silence", isOn: $silenceGateEnabled)
                 Text("When enabled, BlackBox waits for audio before creating files. Saves disk space when no one is speaking.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

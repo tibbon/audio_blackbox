@@ -451,7 +451,8 @@ performance_logging = {}
 # Default: {}
 bits_per_sample = {}
 
-# Silence gate: pause recording during silence, resume on signal (true/false)
+# Silence gate: auto-split on silence (finalize the current file and open a
+# new one on next signal) (true/false)
 # Default: {}
 silence_gate_enabled = {}
 
