@@ -121,6 +121,11 @@ struct BlackBoxApp: App {
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @State private var didAutoOpenOnboarding = false
+    // DOLL-208: one-shot nudge on the menu-bar icon after onboarding finishes.
+    // Defaults to false on every launch, so it only fires on the false→true
+    // transition that happens during a live onboarding completion — never on
+    // cold-launch of an already-onboarded user.
+    @State private var shouldShowDiscoveryNudge = false
 
     var body: some Scene {
         // Wire up delegate so applicationShouldTerminate can finalize recordings
@@ -156,6 +161,14 @@ struct BlackBoxApp: App {
             menuBarLabel
                 .accessibilityLabel(menuBarAccessibilityLabel)
                 .background(StatusItemTooltip(tooltip: menuBarTooltip))
+                .onChange(of: hasCompletedOnboarding) { oldValue, newValue in
+                    guard !oldValue, newValue else { return }
+                    shouldShowDiscoveryNudge = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(5))
+                        shouldShowDiscoveryNudge = false
+                    }
+                }
         }
 
         Window("Welcome to BlackBox", id: "onboarding") {
@@ -355,7 +368,14 @@ struct BlackBoxApp: App {
                 .foregroundStyle(.red)
                 .symbolEffect(.pulse, options: .repeating, isActive: !prefersReducedMotion)
         } else {
+            // DOLL-208: bounce the idle icon for ~3 hops when onboarding
+            // completes, so the user notices where the app lives.
             Image(systemName: "record.circle")
+                .symbolEffect(
+                    .bounce,
+                    options: .repeat(3),
+                    isActive: shouldShowDiscoveryNudge && !prefersReducedMotion
+                )
         }
     }
 
