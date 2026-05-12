@@ -29,7 +29,7 @@ struct OnboardingView: View {
             // actionable; future steps are flagged hidden so VO doesn't
             // try to navigate to inert dots.
             HStack(spacing: 8) {
-                ForEach(0..<4) { i in
+                ForEach(0..<5) { i in
                     Button {
                         if i < step { animateStep { step = i } }
                     } label: {
@@ -39,7 +39,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.plain)
                     .contentShape(Circle())
-                    .accessibilityLabel("Onboarding step \(i + 1) of 4")
+                    .accessibilityLabel("Onboarding step \(i + 1) of 5")
                     .accessibilityHint(i < step ? "Go back to this step" : "")
                     .accessibilityAddTraits(i == step ? [.isSelected] : [])
                     .accessibilityHidden(i > step)
@@ -58,8 +58,10 @@ struct OnboardingView: View {
                     microphoneStep
                 case 2:
                     recordingModeStep
-                default:
+                case 3:
                     directoryStep
+                default:
+                    menuBarDiscoveryStep
                 }
             }
             .transition(.opacity)
@@ -97,12 +99,17 @@ struct OnboardingView: View {
                         animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
+                case 3:
+                    Button("Continue") {
+                        animateStep { step += 1 }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(chosenURL == nil)
                 default:
                     Button("Start Using BlackBox") {
                         completeOnboarding()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(chosenURL == nil)
                 }
             }
             .padding(.horizontal, 32)
@@ -317,6 +324,35 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 380, alignment: .leading)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    // DOLL-208: final onboarding step pointing the user at the menu bar.
+    // Runtime telemetry on a real install showed a user who completed
+    // onboarding then never recorded — the most likely cause is they
+    // didn't realise the app lives in the menu bar. A post-dismiss
+    // .bounce on the icon (wired in BlackBoxApp.swift) reinforces this.
+    private var menuBarDiscoveryStep: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+
+            Image(systemName: "record.circle")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Text("You're all set")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("BlackBox lives in your menu bar at the top of your screen. Click the icon above to start recording.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 360)
         }
         .padding(.horizontal, 32)
     }
