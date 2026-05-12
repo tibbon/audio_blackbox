@@ -12,7 +12,7 @@ HOW TO TEST RECORDING:
 6. Click "Show in Finder" to locate the saved WAV file(s).
 
 SILENCE GATE (enabled by default):
-When the silence gate is on, the status shows "Waiting for audio..." after you click Start Recording. This is intentional — the app waits for audio signal above the threshold before creating files. Once it detects sound, recording begins and files are created. If the silence gate is off (configurable in Settings > Audio tab), recording and file creation start immediately.
+When the silence gate is on, the status shows "Armed (waiting for signal)" after you click Start Recording. This is intentional — the app waits for audio signal above the threshold before creating files. Once it detects sound, recording begins and files are created. If the silence gate is off (configurable in Settings > Audio tab), recording and file creation start immediately.
 
 RECORDINGS:
 - Files are saved as standard WAV audio in the directory shown under "Show in Finder"
