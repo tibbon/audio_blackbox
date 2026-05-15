@@ -47,6 +47,16 @@ struct MeterView: View {
         return String(format: "%.1f kHz", kHz)
     }
 
+    /// Window title with a state suffix so a glance at the title bar (or
+    /// the Window menu) tells the user whether bars they're looking at
+    /// represent a live recording, a passive monitor, or stale state.
+    /// DOLL-218.
+    private var windowTitle: String {
+        if recorder.isRecording { return "Level Meter (Recording)" }
+        if recorder.isMonitoring { return "Level Meter (Monitoring)" }
+        return "Level Meter"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // DOLL-219: persistent header so the user always sees which
@@ -104,11 +114,17 @@ struct MeterView: View {
                         Image(systemName: "waveform")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No audio input")
+                        // DOLL-218: "No audio input" read like a hardware
+                        // error; in practice this state shows briefly while
+                        // monitoring spins up (or persistently if no input
+                        // device is configured). "Listening for signal"
+                        // matches the DOLL-216 "Armed" framing and works
+                        // for both cases without alarming the user.
+                        Text("Listening for signal\u{2026}")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Level meter: No audio input")
+                    .accessibilityLabel("Level meter: Listening for signal")
                     Spacer()
                 }
                 Spacer()
@@ -118,6 +134,7 @@ struct MeterView: View {
         // minHeight bumped from 100 to 130 to accommodate the DOLL-219
         // header row above the meter bars / empty-state placeholder.
         .frame(minWidth: 300, minHeight: 130)
+        .navigationTitle(windowTitle)
         .background(MeterWindowConfigurator())
         .onAppear { recorder.isMeterWindowOpen = true }
         .onDisappear { recorder.isMeterWindowOpen = false }
