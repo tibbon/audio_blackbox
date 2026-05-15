@@ -224,6 +224,17 @@ struct BlackBoxApp: App {
             Text("\(device) \u{00B7} \(chCount) ch")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            // DOLL-223: surface the running drop count when non-zero so
+            // sub-warning drops (1\u{2013}500 samples) aren't invisible.
+            // Bigger counts already trigger an errorMessage and auto-stop
+            // via the existing engine-side thresholds.
+            if recorder.writeErrorsCount > 0 {
+                Text("\(recorder.writeErrorsCount) samples dropped")
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .accessibilityLabel("Warning: \(recorder.writeErrorsCount) samples dropped during this recording")
+            }
         }
 
         if let error = recorder.errorMessage {

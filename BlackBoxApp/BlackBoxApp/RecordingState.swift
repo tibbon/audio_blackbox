@@ -154,6 +154,13 @@ enum SleepWakePolicy {
     // explicitly stopped).
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
+
+    /// Total samples dropped since the active recording started. Mirrors
+    /// `status.write_errors` from the engine, surfaced for UI display
+    /// (DOLL-223). 0 means clean; non-zero means the writer fell behind
+    /// the audio thread at some point. Reset to 0 on stop and restart so
+    /// the value reflects the *current* recording, not lifetime totals.
+    var writeErrorsCount: Int = 0
     private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
@@ -389,6 +396,7 @@ enum SleepWakePolicy {
             recordingStartTime = Date()
             statusText = "Recording..."
             lastReportedWriteErrors = 0
+            writeErrorsCount = 0
             startTimer()
             beginPreventingSleep()
             Self.log.info("Recording started")
@@ -582,6 +590,7 @@ enum SleepWakePolicy {
             peakLevels = []
             errorMessage = nil
             statusText = "Ready"
+            writeErrorsCount = 0
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -653,6 +662,7 @@ enum SleepWakePolicy {
         _ = bridge.stopRecording()
         peakLevels = []
         lastReportedWriteErrors = 0
+        writeErrorsCount = 0
         startRecordingInternal()
     }
 
@@ -876,6 +886,7 @@ enum SleepWakePolicy {
                 _ = bridge.stopRecording()
                 peakLevels = []
                 lastReportedWriteErrors = 0
+            writeErrorsCount = 0
 
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
@@ -908,6 +919,10 @@ enum SleepWakePolicy {
             // Write errors — cumulative counter from Rust engine
             let writeErrors = Int(status.write_errors)
             let newDrops = writeErrors - lastReportedWriteErrors
+            // DOLL-223: publish for UI even when below the threshold the
+            // existing logic warns at. Otherwise sub-500-sample drops
+            // happen invisibly.
+            writeErrorsCount = writeErrors
 
             if writeErrors > 48_000 {
                 // Auto-stop if excessive (>48000 samples dropped across all channels)
