@@ -1,4 +1,5 @@
 import AVFoundation
+import Carbon
 import SwiftUI
 
 struct OnboardingView: View {
@@ -15,6 +16,17 @@ struct OnboardingView: View {
     @State private var outputDir: String = ""
     @State private var chosenURL: URL?
     @State private var dirChangedByUser = false
+    // DOLL-209: bindings for the keyboard-shortcut step.
+    // Mirror the trio the existing ShortcutRecorderButton in SettingsView
+    // takes (label / isRecording / error). `didOfferDefaultShortcut`
+    // is a one-shot flag scoped to the OnboardingView lifecycle so the
+    // suggested ⌘⇧R only gets auto-registered once per onboarding run
+    // — if the user clears it and navigates Back→Continue, we won't
+    // silently re-register the default they just rejected.
+    @State private var shortcutLabel: String = "None"
+    @State private var isRecordingShortcut: Bool = false
+    @State private var shortcutError: String?
+    @State private var didOfferDefaultShortcut = false
 
     private let defaultDir: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Music")
@@ -29,7 +41,7 @@ struct OnboardingView: View {
             // actionable; future steps are flagged hidden so VO doesn't
             // try to navigate to inert dots.
             HStack(spacing: 8) {
-                ForEach(0..<5) { i in
+                ForEach(0..<6) { i in
                     Button {
                         if i < step { animateStep { step = i } }
                     } label: {
@@ -39,7 +51,7 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(.plain)
                     .contentShape(Circle())
-                    .accessibilityLabel("Onboarding step \(i + 1) of 5")
+                    .accessibilityLabel("Onboarding step \(i + 1) of 6")
                     .accessibilityHint(i < step ? "Go back to this step" : "")
                     .accessibilityAddTraits(i == step ? [.isSelected] : [])
                     .accessibilityHidden(i > step)
@@ -60,6 +72,8 @@ struct OnboardingView: View {
                     recordingModeStep
                 case 3:
                     directoryStep
+                case 4:
+                    keyboardShortcutStep
                 default:
                     menuBarDiscoveryStep
                 }
@@ -105,6 +119,11 @@ struct OnboardingView: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(chosenURL == nil)
+                case 4:
+                    Button("Continue") {
+                        animateStep { step += 1 }
+                    }
+                    .keyboardShortcut(.defaultAction)
                 default:
                     Button("Start Using BlackBox") {
                         completeOnboarding()
@@ -342,6 +361,100 @@ struct OnboardingView: View {
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .padding(.top, 4)
+    }
+
+    // DOLL-209: optional global-hotkey configuration step. Suggests
+    // ⌘⇧R as a default the user can keep, change, or clear. Auto-register
+    // is one-shot per onboarding session via `didOfferDefaultShortcut`,
+    // so navigating Back→Continue won't silently re-bind a combo the
+    // user already cleared.
+    private var keyboardShortcutStep: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "keyboard.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+
+            Text("Keyboard Shortcut")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Toggle recording from any app with a key combination. Optional — you can skip this and set one later.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 360)
+
+            HStack {
+                Text("Toggle Recording:")
+                Spacer()
+                ShortcutRecorderButton(
+                    shortcutLabel: $shortcutLabel,
+                    isRecording: $isRecordingShortcut,
+                    error: $shortcutError
+                )
+            }
+            .frame(maxWidth: 360)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Global keyboard shortcut for toggling recording")
+            .accessibilityValue(shortcutLabel == "None" ? "No shortcut set" : shortcutLabel)
+            .accessibilityHint(isRecordingShortcut
+                ? "Press a key combination, or Escape to cancel"
+                : "Click to record a new shortcut")
+
+            if shortcutLabel != "None" {
+                Button("Clear shortcut") {
+                    GlobalHotkeyManager.shared.unregister()
+                    GlobalHotkeyManager.shared.save(nil)
+                    shortcutLabel = "None"
+                    shortcutError = nil
+                }
+                .font(.caption)
+                .accessibilityHint("Removes the current keyboard shortcut")
+            }
+
+            if let shortcutError {
+                Label {
+                    Text(shortcutError)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .accessibilityHidden(true)
+                }
+                .font(.caption)
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .frame(maxWidth: 360)
+            }
+
+            changeLaterCaption
+        }
+        .padding(.horizontal, 32)
+        .onAppear { offerDefaultShortcutIfNeeded() }
+    }
+
+    /// Try to register ⌘⇧R as a suggested default when the user first
+    /// reaches the hotkey step and no shortcut is already saved. If the
+    /// combo is taken by another app, surface a hint instead of a hard
+    /// error so the user picks their own.
+    private func offerDefaultShortcutIfNeeded() {
+        // Already saved (re-run onboarding, or user came back to this step)
+        if let saved = GlobalHotkeyManager.shared.loadSaved() {
+            shortcutLabel = saved.displayString
+            return
+        }
+        // Already attempted this session — respect the user's intent if
+        // they cleared it.
+        guard !didOfferDefaultShortcut else { return }
+        didOfferDefaultShortcut = true
+
+        let suggested = GlobalHotkeyManager.Shortcut(
+            keyCode: UInt32(kVK_ANSI_R),
+            carbonModifiers: UInt32(cmdKey | shiftKey)
+        )
+        if GlobalHotkeyManager.shared.register(suggested) {
+            GlobalHotkeyManager.shared.save(suggested)
+            shortcutLabel = suggested.displayString
+        } else {
+            shortcutError = "\u{2318}\u{21E7}R is already in use \u{2014} click the button to choose a different combination."
+        }
     }
 
     // DOLL-208: final onboarding step pointing the user at the menu bar.
