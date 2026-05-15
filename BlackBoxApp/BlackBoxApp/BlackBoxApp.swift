@@ -120,6 +120,9 @@ struct BlackBoxApp: App {
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
     @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
+    // DOLL-211: surface the output directory in the dropdown so users
+    // don't have to open Finder to see where recordings are going.
+    @AppStorage(SettingsKeys.lastOutputDirPath) private var lastOutputDirPath: String = ""
     @State private var didAutoOpenOnboarding = false
     // DOLL-208: one-shot nudge on the menu-bar icon after onboarding finishes.
     // Defaults to false on every launch, so it only fires on the false→true
@@ -286,6 +289,17 @@ struct BlackBoxApp: App {
         Button("Show in Finder") {
             recorder.openOutputDir()
         }
+        // DOLL-211: caption under the action shows the abbreviated
+        // destination path (~/Music/BlackBox Recordings). Center-truncates
+        // because the menu is narrow and arbitrary paths can be long.
+        if !lastOutputDirPath.isEmpty {
+            Text(abbreviateHomePath(lastOutputDirPath))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityLabel("Recordings save to \(abbreviateHomePath(lastOutputDirPath))")
+        }
 
         Divider()
 
@@ -365,6 +379,14 @@ struct BlackBoxApp: App {
     /// recording-state pulse so motion-sensitive users see a static red icon.
     private var prefersReducedMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// Replace the user's home directory with "~" so paths display tightly
+    /// in the menu. DOLL-211. Mirrors the abbreviation used in OnboardingView.
+    private func abbreviateHomePath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) { return "~" + path.dropFirst(home.count) }
+        return path
     }
 
     @ViewBuilder
