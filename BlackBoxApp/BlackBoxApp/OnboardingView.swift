@@ -266,6 +266,8 @@ struct OnboardingView: View {
                     .font(.caption)
                     .foregroundStyle(Color(nsColor: .systemGreen))
             }
+
+            changeLaterCaption
         }
         .padding(.horizontal, 32)
     }
@@ -325,8 +327,21 @@ struct OnboardingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 380, alignment: .leading)
+
+            changeLaterCaption
         }
         .padding(.horizontal, 32)
+    }
+
+    // DOLL-210: reassures the user that the choices they're making in
+    // onboarding aren't permanent. Shown only on the two decision steps
+    // (Recording Mode + Directory) where users feel committed; redundant
+    // on Welcome / Microphone / Menu Bar Discovery.
+    private var changeLaterCaption: some View {
+        Text("You can change all of this later in Settings.")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.top, 4)
     }
 
     // DOLL-208: final onboarding step pointing the user at the menu bar.
