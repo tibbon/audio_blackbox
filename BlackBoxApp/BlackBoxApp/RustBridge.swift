@@ -180,6 +180,14 @@ final class RustBridge {
         return array
     }
 
+    /// Return the system default input device name, or nil if unavailable.
+    /// DOLL-215: lets the UI show *which* device "System Default" resolves to.
+    static func defaultInputDeviceName() -> String? {
+        guard let ptr = blackbox_get_default_input_device_name() else { return nil }
+        defer { blackbox_free_string(ptr) }
+        return String(cString: ptr, encoding: .utf8)
+    }
+
     // MARK: - Private Helpers
 
     /// Read a C string from an FFI call, freeing it after conversion.

@@ -247,6 +247,19 @@ impl CpalAudioProcessor {
             .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))
     }
 
+    /// Return the name of the system default input device, or `None` if no
+    /// device is available or its name cannot be read. DOLL-215: surfaced
+    /// over FFI so the menu/Settings can show "System Default (MacBook
+    /// Pro Microphone)" instead of an opaque literal.
+    pub fn default_input_device_name() -> Option<String> {
+        let host = cpal::default_host();
+        let device = host.default_input_device()?;
+        device
+            .description()
+            .ok()
+            .map(|desc| desc.name().to_string())
+    }
+
     /// List all available input device names.
     pub fn list_input_devices() -> Result<Vec<String>, BlackboxError> {
         let host = cpal::default_host();

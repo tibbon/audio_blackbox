@@ -95,6 +95,13 @@ enum SleepWakePolicy {
     /// in that case.
     var availableDevices: [String] = []
 
+    /// The actual device the system default resolves to (e.g. "MacBook
+    /// Pro Microphone"), refreshed alongside `availableDevices`. nil if
+    /// CoreAudio has no default input device. DOLL-215: lets the menu and
+    /// Settings show "System Default (resolved name)" instead of a
+    /// literal that tells the user nothing.
+    var systemDefaultDeviceName: String?
+
     /// Per-channel peak amplitude in linear scale, 0.0...1.0. Updated at
     /// ~30 Hz while a recording or monitoring session is active, and
     /// only when the meter window is open (the timer is paused otherwise
@@ -624,6 +631,7 @@ enum SleepWakePolicy {
 
     func refreshDevices() {
         availableDevices = RustBridge.listInputDevices()
+        systemDefaultDeviceName = RustBridge.defaultInputDeviceName()
     }
 
     func selectDevice(_ name: String) {
