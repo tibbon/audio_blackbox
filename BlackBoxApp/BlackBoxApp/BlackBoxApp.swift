@@ -210,7 +210,13 @@ struct BlackBoxApp: App {
             .monospacedDigit()
 
         if recorder.isRecording {
-            let device = selectedDevice.isEmpty ? "System Default" : selectedDevice
+            // DOLL-215: when the user hasn't picked a specific device,
+            // show the resolved system default name (e.g. "MacBook Pro
+            // Microphone") instead of the literal "System Default" so the
+            // user knows what's actually recording.
+            let device = selectedDevice.isEmpty
+                ? (recorder.systemDefaultDeviceName ?? "System Default")
+                : selectedDevice
             let chCount = countChannels(channelSpec)
             Text("\(device) \u{00B7} \(chCount) ch")
                 .font(.caption)
@@ -246,7 +252,11 @@ struct BlackBoxApp: App {
 
         if !recorder.availableDevices.isEmpty {
             Menu("Input Device") {
-                Toggle("System Default", isOn: Binding(
+                // DOLL-215: surface the resolved device name so users know
+                // what "System Default" maps to right now.
+                let defaultLabel: String = recorder.systemDefaultDeviceName
+                    .map { "System Default (\($0))" } ?? "System Default"
+                Toggle(defaultLabel, isOn: Binding(
                     get: { selectedDevice.isEmpty },
                     set: { newValue in
                         if newValue { recorder.selectDevice("") }

@@ -100,6 +100,13 @@ int32_t blackbox_get_status_flags(const BlackboxHandle *handle, StatusFlags *out
 char *blackbox_list_input_devices(void);
 
 /*
+ * Return the name of the system default input device (DOLL-215).
+ * Caller must free the returned string with blackbox_free_string().
+ * Returns NULL if no default device is available.
+ */
+char *blackbox_get_default_input_device_name(void);
+
+/*
  * Get the input channel count for a device by name.
  * Pass NULL or "" for the system default device.
  * Returns the channel count (>= 1), or one of:

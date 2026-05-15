@@ -524,6 +524,23 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
     to_c_string(&json)
 }
 
+/// Return the name of the system default input device (DOLL-215).
+///
+/// Lets the UI show *which* device "System Default" resolves to (e.g.
+/// "System Default (MacBook Pro Microphone)") so the user knows what's
+/// actually recording instead of an opaque literal.
+///
+/// The caller must free the returned string with `blackbox_free_string`.
+/// Returns null if no default device is available or its name can't be
+/// read.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_get_default_input_device_name() -> *mut c_char {
+    match CpalAudioProcessor::default_input_device_name() {
+        Some(name) => to_c_string(&name),
+        None => std::ptr::null_mut(),
+    }
+}
+
 /// Get the input channel count for a device by name.
 ///
 /// Pass an empty string or null for the system default device.

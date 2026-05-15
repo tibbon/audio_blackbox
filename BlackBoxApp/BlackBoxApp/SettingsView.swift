@@ -89,7 +89,11 @@ struct RecordingSettingsTab: View {
         Form {
             Section("Input Device") {
                 Picker("Input Device", selection: $selectedDevice) {
-                    Text("System Default").tag("")
+                    // DOLL-215: append the resolved default device name so
+                    // the user can see what "System Default" maps to.
+                    let defaultLabel: String = recorder.systemDefaultDeviceName
+                        .map { "System Default (\($0))" } ?? "System Default"
+                    Text(defaultLabel).tag("")
                     ForEach(recorder.availableDevices, id: \.self) { device in
                         Text(device).tag(device)
                     }
