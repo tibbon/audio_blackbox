@@ -3,6 +3,14 @@ import SwiftUI
 struct MeterView: View {
     var recorder: RecordingState
 
+    // DOLL-219: header reads device + sample rate + bit depth so the
+    // user can confirm what the meter is actually showing without
+    // hunting through Settings. Selected device + bit depth come from
+    // @AppStorage so the header refreshes when the user changes them
+    // even while the meter window is open.
+    @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
+    @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
+
     /// Height of one meter row: barHeight (14pt) + vertical padding (6pt)
     private static let rowHeight: CGFloat = 20
     /// Vertical space reserved for window chrome, title bar, and padding
@@ -19,8 +27,51 @@ struct MeterView: View {
         return (cols, rowsPer)
     }
 
+    /// Display name for the input device. Resolves "" to the system
+    /// default's actual device name when known (DOLL-215 → 219).
+    private var deviceDisplayName: String {
+        if selectedDevice.isEmpty {
+            return recorder.systemDefaultDeviceName ?? "System Default"
+        }
+        return selectedDevice
+    }
+
+    /// Sample-rate string for the header — "48 kHz" when active, "—" when idle.
+    private var sampleRateDisplay: String {
+        let rate = recorder.sampleRate
+        guard rate > 0 else { return "\u{2014}" }
+        if rate % 1000 == 0 {
+            return "\(rate / 1000) kHz"
+        }
+        let kHz = Double(rate) / 1000.0
+        return String(format: "%.1f kHz", kHz)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // DOLL-219: persistent header so the user always sees which
+            // device the meter is reading from, at what rate, and at what
+            // bit depth. Centre-truncates the device because USB / aggregate
+            // device names can be very long.
+            HStack(spacing: 6) {
+                Text(deviceDisplayName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\u{00B7}")
+                    .foregroundStyle(.tertiary)
+                Text(sampleRateDisplay)
+                    .monospacedDigit()
+                Text("\u{00B7}")
+                    .foregroundStyle(.tertiary)
+                Text("\(bitDepth)-bit")
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Recording \(deviceDisplayName) at \(sampleRateDisplay), \(bitDepth) bits per sample")
+
             // Snapshot peak levels so the ForEach closure captures stable values.
             // Without this, peakLevels can be cleared (monitoring stopped) between
             // ForEach range creation and closure execution, causing an index-out-of-bounds crash.
@@ -64,7 +115,9 @@ struct MeterView: View {
             }
         }
         .padding(12)
-        .frame(minWidth: 300, minHeight: 100)
+        // minHeight bumped from 100 to 130 to accommodate the DOLL-219
+        // header row above the meter bars / empty-state placeholder.
+        .frame(minWidth: 300, minHeight: 130)
         .background(MeterWindowConfigurator())
         .onAppear { recorder.isMeterWindowOpen = true }
         .onDisappear { recorder.isMeterWindowOpen = false }
