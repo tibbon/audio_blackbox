@@ -619,6 +619,13 @@ struct OutputSettingsTab: View {
 
                 if continuousMode {
                     Picker("Rotate every:", selection: $cadenceSelection) {
+                        // DOLL-222: short presets at the top so the user
+                        // can verify that rotation is actually happening
+                        // (5 min is too long to wait for a smoke test).
+                        // The duration itself signals "for testing" — no
+                        // real user would pick 30 s for production audio.
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
                         Text("5 minutes").tag(300)
                         Text("15 minutes").tag(900)
                         Text("30 minutes").tag(1800)
