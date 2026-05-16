@@ -271,10 +271,40 @@ struct RecordingSettingsTab: View {
         }
     }
 
+    // DOLL-221: row height scales with Dynamic Type so the grid stays
+    // legible at larger text sizes (the old fixed 24pt cramped rows
+    // overlapped at .accessibilityExtraLarge+).
+    @ScaledMetric(relativeTo: .body) private var channelRowHeight: CGFloat = 22
+
+    /// Number of grid columns to use for the current device. Stays at 1
+    /// for small devices (looks like a list), and scales up for high-
+    /// channel-count interfaces (32 / 64 ch aggregate devices) so all
+    /// channels are reachable without scrolling forever (DOLL-221).
+    private var channelGridColumns: Int {
+        switch deviceChannelCount {
+        case ...8: return 1
+        case 9...24: return 2
+        case 25...48: return 3
+        default: return 4
+        }
+    }
+
+    /// Vertical budget for the channel grid. Caps at ~280pt for 32+
+    /// channel devices so the Settings window doesn't grow unreasonably,
+    /// but lets small devices show every channel without scrolling.
+    private var channelGridHeight: CGFloat {
+        let rowCount = Int(ceil(Double(deviceChannelCount) / Double(channelGridColumns)))
+        let exact = CGFloat(rowCount) * channelRowHeight + 8
+        let cap: CGFloat = deviceChannelCount >= 32 ? 280 : 200
+        return min(exact, cap)
+    }
+
     @ViewBuilder
     private var channelCheckboxes: some View {
-        let columns = deviceChannelCount <= 8 ? 1 : 2
-        let gridItems = Array(repeating: GridItem(.flexible(), alignment: .leading), count: columns)
+        let gridItems = Array(
+            repeating: GridItem(.flexible(), alignment: .leading),
+            count: channelGridColumns
+        )
 
         ScrollView {
             LazyVGrid(columns: gridItems, alignment: .leading, spacing: 4) {
@@ -291,8 +321,9 @@ struct RecordingSettingsTab: View {
                             syncChannelSpecFromCheckboxes()
                         }
                     )) {
-                        Text("Channel \(ch)")
+                        Text("Ch \(ch)")
                             .font(.body)
+                            .monospacedDigit()
                     }
                     .toggleStyle(.checkbox)
                     .accessibilityLabel("Channel \(ch)")
@@ -300,7 +331,24 @@ struct RecordingSettingsTab: View {
                 }
             }
         }
-        .frame(maxHeight: deviceChannelCount > 8 ? 160 : CGFloat(deviceChannelCount * 24 + 8))
+        .frame(maxHeight: channelGridHeight)
+
+        // DOLL-221: range/list text field so users on 32+ channel
+        // aggregate devices don't have to click checkboxes one at a time.
+        // Parser already understood "1-8, 16, 24-32" — we just exposed
+        // it. The text reflects the *current* spec for transparency.
+        HStack(spacing: 8) {
+            Text("Range:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("e.g. 1-8, 16, 24-32", text: $channelSpec)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+                .monospacedDigit()
+                .onSubmit { commitChannelSpecText() }
+                .accessibilityLabel("Channel range")
+                .accessibilityHint("Enter channels as a comma-separated list with optional dash ranges, like 1-8, 16, 24-32")
+        }
 
         HStack {
             Button("All") {
@@ -318,6 +366,18 @@ struct RecordingSettingsTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// Commit a free-form channel-spec edit: re-parse, clamp to what the
+    /// device supports, and push the canonicalised string back to
+    /// @AppStorage so the grid + persisted spec stay in sync.
+    private func commitChannelSpecText() {
+        // Re-derive the canonical Set from whatever the user typed; this
+        // also drops out-of-range and malformed entries silently.
+        syncCheckboxesFromChannelSpec()
+        selectedChannels = selectedChannels.filter { $0 >= 1 && $0 <= deviceChannelCount }
+        if selectedChannels.isEmpty { selectedChannels = [1] }
+        syncChannelSpecFromCheckboxes()
     }
 
     /// Parse the channel spec string into the checkbox state.
