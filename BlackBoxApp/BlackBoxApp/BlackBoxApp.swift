@@ -235,6 +235,18 @@ struct BlackBoxApp: App {
                     .foregroundStyle(Color(nsColor: .systemOrange))
                     .accessibilityLabel("Warning: \(recorder.writeErrorsCount) samples dropped during this recording")
             }
+
+            // DOLL-225: warn when recording on battery below 20 %, the
+            // macOS-equivalent "low battery" threshold. A notification
+            // also fires once on threshold crossing in case the user
+            // doesn't have the menu open.
+            if recorder.isLowBatteryWarning {
+                Label("Battery low — plug in to avoid an unexpected stop",
+                      systemImage: "battery.25percent")
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .accessibilityLabel("Warning: battery low, plug in to avoid an unexpected stop")
+            }
         }
 
         if let error = recorder.errorMessage {
