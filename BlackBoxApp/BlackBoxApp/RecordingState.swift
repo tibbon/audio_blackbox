@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import IOKit.ps
 import Observation
 import os.log
 import UserNotifications
@@ -161,6 +162,22 @@ enum SleepWakePolicy {
     /// the audio thread at some point. Reset to 0 on stop and restart so
     /// the value reflects the *current* recording, not lifetime totals.
     var writeErrorsCount: Int = 0
+
+    /// True when a recording is running on battery power that's dropped
+    /// below the macOS-equivalent "low battery" threshold of 20%
+    /// (DOLL-225). Reset when the user plugs in or stops the recording.
+    var isLowBatteryWarning: Bool = false
+
+    /// Polling counter for battery checks — `updateDuration` ticks every
+    /// 1 s; we check the power source every 30 ticks so the IOKit
+    /// query overhead is negligible and the warning latency stays
+    /// reasonable (max ~30 s after threshold crossing).
+    private var batteryCheckTick: Int = 0
+
+    /// One-shot guard so the user only gets a single low-battery
+    /// notification per recording — the menu caption stays visible
+    /// for ongoing reinforcement, but we don't spam the system tray.
+    private var batteryNotificationFired = false
     private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
@@ -397,6 +414,9 @@ enum SleepWakePolicy {
             statusText = "Recording..."
             lastReportedWriteErrors = 0
             writeErrorsCount = 0
+            isLowBatteryWarning = false
+            batteryNotificationFired = false
+            batteryCheckTick = 0
             startTimer()
             beginPreventingSleep()
             Self.log.info("Recording started")
@@ -591,6 +611,9 @@ enum SleepWakePolicy {
             errorMessage = nil
             statusText = "Ready"
             writeErrorsCount = 0
+            isLowBatteryWarning = false
+            batteryNotificationFired = false
+            batteryCheckTick = 0
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -663,6 +686,10 @@ enum SleepWakePolicy {
         peakLevels = []
         lastReportedWriteErrors = 0
         writeErrorsCount = 0
+        // Battery state survives restart since the underlying hardware
+        // state is unchanged. Reset notification so a future cross of
+        // the threshold can fire fresh.
+        batteryCheckTick = 0
         startRecordingInternal()
     }
 
@@ -728,6 +755,79 @@ enum SleepWakePolicy {
         if !config.isEmpty {
             bridge.setConfig(config)
         }
+    }
+
+    // MARK: - Battery Monitoring (DOLL-225)
+
+    /// Threshold below which we warn that the current recording is at
+    /// risk of being cut off by a system shutdown. 20 % matches macOS's
+    /// own "battery low" alert level.
+    private static let lowBatteryThreshold = 20
+
+    /// Poll IOKit for the current internal battery state and flip
+    /// `isLowBatteryWarning` if we're discharging below the threshold.
+    /// On Macs with no internal battery (Mac mini, Studio, Pro) there's
+    /// nothing to warn about — we just leave the flag false.
+    private func checkBatteryState() {
+        guard let state = currentBatteryState() else {
+            // No internal battery, or IOKit query failed — clear any
+            // stale warning rather than leaving it pinned on.
+            if isLowBatteryWarning {
+                isLowBatteryWarning = false
+            }
+            batteryNotificationFired = false
+            return
+        }
+
+        let shouldWarn = !state.onACPower && state.percent <= Self.lowBatteryThreshold
+        if shouldWarn {
+            isLowBatteryWarning = true
+            if !batteryNotificationFired {
+                batteryNotificationFired = true
+                notifyUser(
+                    title: "Battery Low",
+                    message: "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop.",
+                    identifier: "battery-low"
+                )
+                Self.log.warning("Battery low while recording: \(state.percent)% on battery")
+            }
+        } else {
+            // Plugged back in or charge recovered — clear the warning so
+            // the user knows they're safe again. Allow a fresh notification
+            // if the cycle repeats.
+            if isLowBatteryWarning {
+                isLowBatteryWarning = false
+                batteryNotificationFired = false
+            }
+        }
+    }
+
+    /// Read the current internal-battery percent and AC-power flag, or
+    /// `nil` on desktops / when IOKit returns nothing usable.
+    private func currentBatteryState() -> (percent: Int, onACPower: Bool)? {
+        guard let infoRef = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
+            return nil
+        }
+        guard let sourcesRef = IOPSCopyPowerSourcesList(infoRef)?.takeRetainedValue() else {
+            return nil
+        }
+        let sources = sourcesRef as [CFTypeRef]
+        for source in sources {
+            guard let desc = IOPSGetPowerSourceDescription(infoRef, source)?
+                .takeUnretainedValue() as? [String: Any] else {
+                continue
+            }
+            // Skip non-internal sources (e.g. UPS) — we only care about
+            // the laptop's own battery for "you're going to lose power."
+            guard (desc[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType else {
+                continue
+            }
+            let percent = desc[kIOPSCurrentCapacityKey] as? Int ?? 0
+            let powerState = desc[kIOPSPowerSourceStateKey] as? String
+            let onAC = powerState == kIOPSACPowerValue
+            return (percent, onAC)
+        }
+        return nil
     }
 
     // MARK: - Duration Timer
@@ -846,6 +946,15 @@ enum SleepWakePolicy {
             : String(format: "Recording %d:%02d", minutes, seconds)
         statusText = elapsedText
 
+        // DOLL-225: check battery every 30 ticks (~30 s) — IOKit calls
+        // are cheap but not free, and a long recording shouldn't pay them
+        // every second when the state changes at most every few minutes.
+        batteryCheckTick += 1
+        if batteryCheckTick >= 30 {
+            batteryCheckTick = 0
+            checkBatteryState()
+        }
+
         // Check status from Rust engine (lightweight C struct, no JSON)
         if let status = bridge.getStatusFlags() {
             // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
@@ -887,6 +996,9 @@ enum SleepWakePolicy {
                 peakLevels = []
                 lastReportedWriteErrors = 0
             writeErrorsCount = 0
+            isLowBatteryWarning = false
+            batteryNotificationFired = false
+            batteryCheckTick = 0
 
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
