@@ -168,6 +168,15 @@ enum SleepWakePolicy {
     /// (DOLL-225). Reset when the user plugs in or stops the recording.
     var isLowBatteryWarning: Bool = false
 
+    /// Non-nil when the configuration at recording-start time will
+    /// produce a per-file WAV bigger than the 4 GiB header cap, set by
+    /// `evaluatePreflightFileSizeWarning` (DOLL-220). The recording
+    /// proceeds — RIFF size is clamped via the existing DOLL-204 cap —
+    /// but the user is informed before they accumulate hours of audio
+    /// that downstream tools may refuse to read. Cleared on stop and
+    /// when a fresh recording starts with safe settings.
+    var preflightSizeWarning: String?
+
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
@@ -402,6 +411,12 @@ enum SleepWakePolicy {
         // Notification authorization was requested at init() time (DOLL-134),
         // so we don't need a lazy request here.
 
+        // DOLL-220: warn before we kick off the engine if the math says
+        // the per-file size will blow past the 4 GiB WAV-header cap. The
+        // engine still proceeds — the file just gets clamped — but the
+        // user gets notification and menu signal so they can adjust.
+        evaluatePreflightFileSizeWarning()
+
         // Stop monitoring first — recording will take over the audio stream
         if isMonitoring {
             stopMonitoring()
@@ -417,6 +432,11 @@ enum SleepWakePolicy {
             isLowBatteryWarning = false
             batteryNotificationFired = false
             batteryCheckTick = 0
+            // preflightSizeWarning is intentionally NOT cleared here —
+            // evaluatePreflightFileSizeWarning() runs just before
+            // bridge.startRecording() and already populates it (or nils
+            // it) for the current session. Clearing it here would wipe
+            // the warning the moment the engine acknowledged the start.
             startTimer()
             beginPreventingSleep()
             Self.log.info("Recording started")
@@ -614,6 +634,7 @@ enum SleepWakePolicy {
             isLowBatteryWarning = false
             batteryNotificationFired = false
             batteryCheckTick = 0
+            preflightSizeWarning = nil
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -755,6 +776,70 @@ enum SleepWakePolicy {
         if !config.isEmpty {
             bridge.setConfig(config)
         }
+    }
+
+    // MARK: - Pre-flight 4 GiB warning (DOLL-220)
+
+    /// WAV header `data` chunk is `u32`, so a single file maxes out at
+    /// 4 GiB - 1. DOLL-204 catches this on finalize and logs / clamps;
+    /// DOLL-220 catches it before we burn through hours of recording.
+    private static let wavMaxFileBytes: Int64 = Int64(UInt32.max)
+
+    /// Inspect the current configuration and set `preflightSizeWarning`
+    /// (plus a notification + log line) when the projected per-file
+    /// bytes-per-rotation exceeds the 4 GiB WAV cap. Only meaningful for
+    /// continuous mode — single mode has no rotation interval to bound
+    /// the file with, so we leave it alone there.
+    private func evaluatePreflightFileSizeWarning() {
+        preflightSizeWarning = nil
+
+        let defaults = UserDefaults.standard
+        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
+        guard continuousMode else { return }
+
+        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
+        guard cadence > 0 else { return }
+
+        let channelSpec = defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"
+        let channels = countChannels(channelSpec)
+        guard channels > 0 else { return }
+
+        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
+        let bitDepth = bitDepthValue > 0 ? bitDepthValue : 24
+        let bytesPerSample = bitDepth / 8
+        let outputMode = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
+        // In split mode each file holds one channel; in single mode all
+        // channels share a file. The cap applies per-file, so we project
+        // for the most populated file we'll create.
+        let channelsPerFile = outputMode == "split" ? 1 : channels
+
+        // No reliable sample-rate signal until cpal connects, so fall
+        // back to 48 kHz when we haven't seen a session yet. This biases
+        // the warning toward false negatives — we'd rather under-warn
+        // than spook users about hypothetical hi-res setups they don't
+        // actually have.
+        let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
+
+        let bytesPerFile = Int64(channelsPerFile)
+            * Int64(bytesPerSample)
+            * Int64(estSampleRate)
+            * Int64(cadence)
+
+        guard bytesPerFile > Self.wavMaxFileBytes else { return }
+
+        let gigabytes = Double(bytesPerFile) / 1_073_741_824.0
+        let rateNote = sampleRate > 0 ? "" : " (estimated at 48 kHz)"
+        let msg = String(
+            format: "Each rotation will produce roughly %.1f GB%@. WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth.",
+            gigabytes, rateNote
+        )
+        preflightSizeWarning = msg
+        Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
+        notifyUser(
+            title: "Large file warning",
+            message: msg,
+            identifier: "preflight-4gb-warning"
+        )
     }
 
     // MARK: - Battery Monitoring (DOLL-225)
@@ -999,6 +1084,9 @@ enum SleepWakePolicy {
             isLowBatteryWarning = false
             batteryNotificationFired = false
             batteryCheckTick = 0
+            // preflightSizeWarning intentionally preserved: the config
+            // hasn't changed on stream-error recovery, so the warning
+            // is still valid for the restarted file.
 
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)

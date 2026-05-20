@@ -251,6 +251,16 @@ struct BlackBoxApp: App {
                     .foregroundStyle(Color(nsColor: .systemOrange))
                     .accessibilityLabel("Warning: battery low, plug in to avoid an unexpected stop")
             }
+
+            // DOLL-220: pre-emptive 4 GiB cap warning. Set at recording
+            // start; a notification also fires for menu-closed visibility.
+            if let preflight = recorder.preflightSizeWarning {
+                Label(preflight, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .lineLimit(3)
+                    .accessibilityLabel("Warning: \(preflight)")
+            }
         }
 
         if let error = recorder.errorMessage {
