@@ -183,6 +183,14 @@ enum SleepWakePolicy {
     /// in `updateDuration`; the menu re-renders alongside `statusText`.
     var rotationCountdownText: String?
 
+    /// Estimated size of the current rotation's WAV file (DOLL-217),
+    /// computed from elapsed × bytes-per-second using the in-flight
+    /// sample rate, configured bit depth, and active channel count.
+    /// Off by a few percent from disk reality (silence-gate gaps,
+    /// dropped samples not modeled) but accurate to within the
+    /// resolution the menu caption can display. Nil when not recording.
+    var currentFileSizeText: String?
+
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
@@ -642,6 +650,7 @@ enum SleepWakePolicy {
             batteryCheckTick = 0
             preflightSizeWarning = nil
             rotationCountdownText = nil
+            currentFileSizeText = nil
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -812,6 +821,60 @@ enum SleepWakePolicy {
             ? String(format: "%d:%02d:%02d", h, m, s)
             : String(format: "%d:%02d", m, s)
         return "Rotating in \(formatted)"
+    }
+
+    // MARK: - Current file size estimate (DOLL-217)
+
+    /// Estimate the current WAV file's size from elapsed-in-cycle ×
+    /// bytes-per-second. Uses last-seen sample rate (falls back to
+    /// 48 kHz when the engine hasn't reported one yet) and the persisted
+    /// bit depth + channel spec + output mode.
+    /// Returns nil for misconfigured states so the menu hides the line.
+    private func computeCurrentFileSize(elapsed: Int) -> String? {
+        let defaults = UserDefaults.standard
+        let channelSpec = defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"
+        let channels = countChannels(channelSpec)
+        guard channels > 0 else { return nil }
+
+        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
+        let bitDepth = bitDepthValue > 0 ? bitDepthValue : 24
+        let bytesPerSample = bitDepth / 8
+        let outputMode = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
+        let channelsPerFile = outputMode == "split" ? 1 : channels
+
+        let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
+        let bytesPerSecond = estSampleRate * bytesPerSample * channelsPerFile
+
+        // Continuous mode rotates every cadence seconds, so "current
+        // file" is the bytes accumulated since the most recent boundary.
+        // Single mode has no rotation — the file grows from start.
+        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
+        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
+        let elapsedInFile: Int
+        if continuousMode, cadence > 0 {
+            elapsedInFile = elapsed % cadence
+        } else {
+            elapsedInFile = elapsed
+        }
+
+        let bytes = Int64(bytesPerSecond) * Int64(elapsedInFile)
+        return Self.formatFileSize(bytes)
+    }
+
+    /// Human-readable bytes — MB / GB to match the SettingsView estimate.
+    /// Drops the prefix "~" hint into the caller so this stays a plain
+    /// formatter usable from anywhere.
+    private static func formatFileSize(_ bytes: Int64) -> String {
+        if bytes >= 1_073_741_824 {
+            return String(format: "~%.1f GB", Double(bytes) / 1_073_741_824)
+        }
+        if bytes >= 1_048_576 {
+            return String(format: "~%.0f MB", Double(bytes) / 1_048_576)
+        }
+        if bytes >= 1024 {
+            return String(format: "~%.0f KB", Double(bytes) / 1024)
+        }
+        return "\(bytes) bytes"
     }
 
     // MARK: - Pre-flight 4 GiB warning (DOLL-220)
@@ -1070,6 +1133,9 @@ enum SleepWakePolicy {
         // DOLL-214: rotation countdown for continuous mode. Nil when
         // single-mode or cadence not set so the menu can hide the line.
         rotationCountdownText = computeRotationCountdown(elapsed: elapsed)
+
+        // DOLL-217: estimated current-file size from elapsed × bytes/sec.
+        currentFileSizeText = computeCurrentFileSize(elapsed: elapsed)
 
         // DOLL-225: check battery every 30 ticks (~30 s) — IOKit calls
         // are cheap but not free, and a long recording shouldn't pay them

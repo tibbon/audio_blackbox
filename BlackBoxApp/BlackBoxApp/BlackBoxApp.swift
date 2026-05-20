@@ -229,15 +229,21 @@ struct BlackBoxApp: App {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            // DOLL-214: continuous-mode rotation countdown so the user
-            // can predict the next file boundary without checking
-            // Settings or doing math against the cadence value.
-            if let countdown = recorder.rotationCountdownText {
-                Text(countdown)
+            // DOLL-214 / DOLL-217: rotation countdown + estimated file
+            // size on a single caption line so the user can sanity-check
+            // both timing and disk usage without opening the meter or
+            // Activity Monitor. Both are nil when not applicable.
+            let countdown = recorder.rotationCountdownText
+            let sizeText = recorder.currentFileSizeText
+            if countdown != nil || sizeText != nil {
+                let combined = [countdown, sizeText]
+                    .compactMap { $0 }
+                    .joined(separator: " \u{00B7} ")
+                Text(combined)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                    .accessibilityLabel(countdown)
+                    .accessibilityLabel(combined)
             }
 
             // DOLL-223: surface the running drop count when non-zero so
