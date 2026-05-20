@@ -191,6 +191,12 @@ enum SleepWakePolicy {
     /// resolution the menu caption can display. Nil when not recording.
     var currentFileSizeText: String?
 
+    /// Formatted duration of the just-stopped recording, shown as a
+    /// transient summary block in the menu for ~30 s after Stop (DOLL-213)
+    /// so the user gets a moment of "yes, that happened" feedback before
+    /// the menu reverts to its idle state. Nil when no summary is active.
+    var lastRecordingDurationText: String?
+
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
@@ -446,6 +452,10 @@ enum SleepWakePolicy {
             isLowBatteryWarning = false
             batteryNotificationFired = false
             batteryCheckTick = 0
+            // DOLL-213: clear any stale post-Stop summary when a new
+            // recording begins; the just-started session is the new
+            // "current," and the old summary is no longer relevant.
+            lastRecordingDurationText = nil
             // preflightSizeWarning is intentionally NOT cleared here —
             // evaluatePreflightFileSizeWarning() runs just before
             // bridge.startRecording() and already populates it (or nils
@@ -644,6 +654,21 @@ enum SleepWakePolicy {
             peakLevels = []
             errorMessage = nil
             statusText = "Ready"
+            // DOLL-213: surface a transient "last recording" summary for
+            // 30 s so the user gets confirmation of what just finished.
+            // Captured here (before the durations resets to 0) and
+            // displayed as a menu block with a Show in Finder button.
+            if sessionDuration > 0 {
+                lastRecordingDurationText = Self.formatRecordedDuration(sessionDuration)
+                let snapshot = lastRecordingDurationText
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(30))
+                    guard let self,
+                          self.lastRecordingDurationText == snapshot,
+                          !self.isRecording else { return }
+                    self.lastRecordingDurationText = nil
+                }
+            }
             writeErrorsCount = 0
             isLowBatteryWarning = false
             batteryNotificationFired = false
@@ -821,6 +846,27 @@ enum SleepWakePolicy {
             ? String(format: "%d:%02d:%02d", h, m, s)
             : String(format: "%d:%02d", m, s)
         return "Rotating in \(formatted)"
+    }
+
+    // MARK: - Last-recording summary (DOLL-213)
+
+    /// Format a TimeInterval as "M:SS" or "H:MM:SS" to match the live
+    /// "Recording 12:34" status format the user just saw counting up.
+    private static func formatRecordedDuration(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%d:%02d", m, s)
+    }
+
+    /// Dismiss the post-Stop summary block early — called when the user
+    /// clicks the Show in Finder action in the summary (they've now
+    /// taken action on it, no need to keep showing it).
+    func dismissLastRecordingSummary() {
+        lastRecordingDurationText = nil
     }
 
     // MARK: - Current file size estimate (DOLL-217)
