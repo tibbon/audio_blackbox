@@ -123,6 +123,10 @@ struct BlackBoxApp: App {
     // DOLL-211: surface the output directory in the dropdown so users
     // don't have to open Finder to see where recordings are going.
     @AppStorage(SettingsKeys.lastOutputDirPath) private var lastOutputDirPath: String = ""
+    // DOLL-212: the bit depth feeds the pre-flight summary below the
+    // Start Recording button so the user can verify the format before
+    // committing.
+    @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
     @State private var didAutoOpenOnboarding = false
     // DOLL-208: one-shot nudge on the menu-bar icon after onboarding finishes.
     // Defaults to false on every launch, so it only fires on the false→true
@@ -267,6 +271,35 @@ struct BlackBoxApp: App {
                 Text("\(action)  \(shortcut.displayString)")
             } else {
                 Text(action)
+            }
+        }
+
+        // DOLL-212: pre-flight summary so the user can verify what's
+        // about to be recorded before pressing Start. Hidden mid-record
+        // because the active-recording caption above already covers it
+        // (and changing settings while recording isn't a flow we want
+        // to encourage here).
+        if !recorder.isRecording {
+            let device = selectedDevice.isEmpty
+                ? (recorder.systemDefaultDeviceName ?? "System Default")
+                : selectedDevice
+            let chCount = countChannels(channelSpec)
+            let chLabel = chCount == 1 ? "1 channel" : "\(chCount) channels"
+
+            Text("Device: \(device)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("Format: \(bitDepth)-bit \u{00B7} \(chLabel)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !lastOutputDirPath.isEmpty {
+                Text("Location: \(abbreviateHomePath(lastOutputDirPath))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
 
