@@ -280,6 +280,21 @@ struct BlackBoxApp: App {
             }
         }
 
+        // DOLL-213: transient "last recording" summary for ~30s after
+        // Stop. Shown only while idle (a new recording would have
+        // already cleared the snapshot). Show in Finder dismisses the
+        // banner because the user has now acted on it.
+        if !recorder.isRecording, let duration = recorder.lastRecordingDurationText {
+            Text("Last recording: \(duration)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Button("Show in Finder") {
+                recorder.openOutputDir()
+                recorder.dismissLastRecordingSummary()
+            }
+        }
+
         if let error = recorder.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color(nsColor: .systemRed))
