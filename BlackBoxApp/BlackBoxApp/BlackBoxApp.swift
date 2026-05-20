@@ -229,6 +229,17 @@ struct BlackBoxApp: App {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            // DOLL-214: continuous-mode rotation countdown so the user
+            // can predict the next file boundary without checking
+            // Settings or doing math against the cadence value.
+            if let countdown = recorder.rotationCountdownText {
+                Text(countdown)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .accessibilityLabel(countdown)
+            }
+
             // DOLL-223: surface the running drop count when non-zero so
             // sub-warning drops (1\u{2013}500 samples) aren't invisible.
             // Bigger counts already trigger an errorMessage and auto-stop
