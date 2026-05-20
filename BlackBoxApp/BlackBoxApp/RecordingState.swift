@@ -177,6 +177,12 @@ enum SleepWakePolicy {
     /// when a fresh recording starts with safe settings.
     var preflightSizeWarning: String?
 
+    /// Human-readable countdown to the next continuous-mode rotation
+    /// (DOLL-214). Nil when not recording, when continuous mode is off,
+    /// or when no cadence is configured. Refreshed every duration tick
+    /// in `updateDuration`; the menu re-renders alongside `statusText`.
+    var rotationCountdownText: String?
+
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
@@ -635,6 +641,7 @@ enum SleepWakePolicy {
             batteryNotificationFired = false
             batteryCheckTick = 0
             preflightSizeWarning = nil
+            rotationCountdownText = nil
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -776,6 +783,35 @@ enum SleepWakePolicy {
         if !config.isEmpty {
             bridge.setConfig(config)
         }
+    }
+
+    // MARK: - Rotation countdown (DOLL-214)
+
+    /// Compute the time-to-next-rotation string for continuous mode, or
+    /// nil when continuous mode is off / no cadence is configured.
+    /// Matches the elapsed-time formatting in `updateDuration` so the
+    /// two lines line up visually in the menu.
+    private func computeRotationCountdown(elapsed: Int) -> String? {
+        let defaults = UserDefaults.standard
+        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
+        guard continuousMode else { return nil }
+        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
+        guard cadence > 0 else { return nil }
+
+        // elapsed % cadence gives seconds into the current cycle; the
+        // remainder until the next rotation tick is cadence minus that.
+        // When the math lands on the rotation boundary itself (elapsed
+        // is a multiple of cadence), show the full cadence rather than 0.
+        let into = elapsed % cadence
+        let remaining = into == 0 ? cadence : cadence - into
+
+        let h = remaining / 3600
+        let m = (remaining % 3600) / 60
+        let s = remaining % 60
+        let formatted = h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%d:%02d", m, s)
+        return "Rotating in \(formatted)"
     }
 
     // MARK: - Pre-flight 4 GiB warning (DOLL-220)
@@ -1030,6 +1066,10 @@ enum SleepWakePolicy {
             ? String(format: "Recording %d:%02d:%02d", hours, minutes, seconds)
             : String(format: "Recording %d:%02d", minutes, seconds)
         statusText = elapsedText
+
+        // DOLL-214: rotation countdown for continuous mode. Nil when
+        // single-mode or cadence not set so the menu can hide the line.
+        rotationCountdownText = computeRotationCountdown(elapsed: elapsed)
 
         // DOLL-225: check battery every 30 ticks (~30 s) — IOKit calls
         // are cheap but not free, and a long recording shouldn't pay them
