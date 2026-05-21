@@ -88,9 +88,34 @@ struct MeterView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            .padding(.bottom, 8)
+            .padding(.bottom, 4)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Recording \(deviceDisplayName) at \(sampleRateDisplay), \(bitDepth) bits per sample")
+
+            // DOLL-214 / DOLL-217 v3: live elapsed time + rotation
+            // countdown relocated from the menu (where each tick
+            // re-laid out the dropdown and reset hover selection) into
+            // the meter window header. Window-class views can reflow
+            // freely without disrupting menu-style selection. Both
+            // use Text(_, style: .timer) so SwiftUI ticks the text
+            // internally without per-frame @Observable writes.
+            if let start = recorder.recordingStartTime {
+                HStack(spacing: 6) {
+                    (Text("Elapsed ") + Text(start, style: .timer))
+                        .monospacedDigit()
+                    if let next = recorder.nextRotationDate {
+                        Text("\u{00B7}")
+                            .foregroundStyle(.tertiary)
+                        (Text("Rotates in ") + Text(next, style: .timer))
+                            .monospacedDigit()
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Live recording timer in meter header")
+            }
 
             // Snapshot peak levels so the ForEach closure captures stable values.
             // Without this, peakLevels can be cleared (monitoring stopped) between
@@ -141,9 +166,10 @@ struct MeterView: View {
             }
         }
         .padding(12)
-        // minHeight bumped from 100 to 130 to accommodate the DOLL-219
-        // header row above the meter bars / empty-state placeholder.
-        .frame(minWidth: 300, minHeight: 130)
+        // minHeight bumped progressively as header rows were added:
+        // 100 → 130 (DOLL-219, device · rate · bit-depth)
+        // → 155 (DOLL-214/217 v3, elapsed + rotation countdown row).
+        .frame(minWidth: 300, minHeight: 155)
         .navigationTitle(windowTitle)
         .background(MeterWindowConfigurator())
         .onAppear { recorder.isMeterWindowOpen = true }

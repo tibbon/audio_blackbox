@@ -212,28 +212,17 @@ struct BlackBoxApp: App {
 
     @ViewBuilder
     private var normalMenu: some View {
-        // Menu-flicker fix: when the engine is actively writing audio,
-        // render the elapsed time via Text(_, style: .timer). The Text
-        // self-updates without writing to @Observable state, so the
-        // menu doesn't re-render every second and the user's hover /
-        // keyboard highlight isn't reset while reading the dropdown.
-        // Falls back to the static statusText for non-recording states
-        // ("Ready", "Error", "Armed (waiting for signal)").
-        if recorder.isRecording,
-           recorder.statusText == "Recording",
-           let start = recorder.recordingStartTime {
-            // Text-concatenation rather than HStack so the layout is
-            // native NSMenuItem text — HStack inside MenuBarExtra
-            // content works today but is technically unsupported and
-            // could regress on a future macOS (cyberclaw audit nit).
-            (Text("Recording ") + Text(start, style: .timer))
-                .font(.headline)
-                .monospacedDigit()
-        } else {
-            Text(recorder.statusText)
-                .font(.headline)
-                .monospacedDigit()
-        }
+        // Menu-flicker fix v2: the live elapsed-time `Text(_, style: .timer)`
+        // still caused menu reflow because the digit count changes at the
+        // minute / hour boundaries — even `.monospacedDigit()` can't hide
+        // "9:59" growing to "10:00" (4 → 5 glyphs). Each width change
+        // re-laid out the dropdown and reset the user's hover selection.
+        // The menu now shows a stable status string only; the live timer
+        // moved to the meter window header where the window class
+        // doesn't have the highlight-reset problem.
+        Text(recorder.statusText)
+            .font(.headline)
+            .monospacedDigit()
 
         if recorder.isRecording {
             // DOLL-215: when the user hasn't picked a specific device,
@@ -248,17 +237,10 @@ struct BlackBoxApp: App {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            // DOLL-214: rotation countdown rendered via Text(_, style:
-            // .timer) on the computed nextRotationDate. The Text ticks
-            // internally without writing back to @Observable state, so
-            // the menu doesn't re-render every second. File size moved
-            // to the meter window header to avoid the same flicker.
-            if let next = recorder.nextRotationDate {
-                (Text("Rotating in ") + Text(next, style: .timer))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            // DOLL-214: rotation countdown also moved to the meter window
+            // header — same digit-width-flicker issue as the elapsed
+            // time. The menu no longer hosts any per-second-ticking
+            // text; live recording metrics live in the meter window.
 
             // DOLL-223: surface the running drop count when non-zero so
             // sub-warning drops (1\u{2013}500 samples) aren't invisible.
