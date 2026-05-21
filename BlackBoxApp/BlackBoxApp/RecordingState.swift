@@ -146,7 +146,7 @@ enum SleepWakePolicy {
     /// the encapsulation of the surrounding mutation paths) so menu views
     /// can pass it to `Text(_, style: .timer)` which auto-ticks without
     /// triggering `@Observable` re-renders — fixing the highlight-reset
-    /// bug where the per-tick `statusText` rewrite was reseting hover
+    /// bug where the per-tick `statusText` rewrite was resetting hover
     /// state on every open menu.
     var recordingStartTime: Date?
     private var timerTask: Task<Void, Never>?

@@ -222,12 +222,13 @@ struct BlackBoxApp: App {
         if recorder.isRecording,
            recorder.statusText == "Recording",
            let start = recorder.recordingStartTime {
-            HStack(spacing: 4) {
-                Text("Recording")
-                Text(start, style: .timer)
-                    .monospacedDigit()
-            }
-            .font(.headline)
+            // Text-concatenation rather than HStack so the layout is
+            // native NSMenuItem text — HStack inside MenuBarExtra
+            // content works today but is technically unsupported and
+            // could regress on a future macOS (cyberclaw audit nit).
+            (Text("Recording ") + Text(start, style: .timer))
+                .font(.headline)
+                .monospacedDigit()
         } else {
             Text(recorder.statusText)
                 .font(.headline)
@@ -253,13 +254,10 @@ struct BlackBoxApp: App {
             // the menu doesn't re-render every second. File size moved
             // to the meter window header to avoid the same flicker.
             if let next = recorder.nextRotationDate {
-                HStack(spacing: 4) {
-                    Text("Rotating in")
-                    Text(next, style: .timer)
-                        .monospacedDigit()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                (Text("Rotating in ") + Text(next, style: .timer))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
 
             // DOLL-223: surface the running drop count when non-zero so
