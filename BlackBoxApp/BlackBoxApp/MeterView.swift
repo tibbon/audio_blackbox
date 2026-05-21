@@ -75,6 +75,16 @@ struct MeterView: View {
                     .foregroundStyle(.tertiary)
                 Text("\(bitDepth)-bit")
                     .monospacedDigit()
+                // DOLL-217 v2: estimated current-file size relocated here
+                // from the menu, where its per-second updates were
+                // causing menu re-renders that reset hover/highlight.
+                // A window-class view doesn't have that problem.
+                if let size = recorder.currentFileSizeText {
+                    Text("\u{00B7}")
+                        .foregroundStyle(.tertiary)
+                    Text(size)
+                        .monospacedDigit()
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
