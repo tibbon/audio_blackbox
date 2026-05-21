@@ -247,11 +247,26 @@ impl CpalAudioProcessor {
             .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))
     }
 
-    /// Return the name of the system default input device, or `None` if no
-    /// device is available or its name cannot be read. DOLL-215: surfaced
-    /// over FFI so the menu/Settings can show "System Default (MacBook
-    /// Pro Microphone)" instead of an opaque literal.
-    pub fn default_input_device_name() -> Option<String> {
+    /// Return the name of the system default input device.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(name)` — CoreAudio reports a default input device and its
+    ///   name can be read.
+    /// - `None` — either no internal input device is available (rare on a
+    ///   laptop, common on a headless Mac mini) or the device's
+    ///   `description()` query fails (DOLL-234).
+    ///
+    /// `pub(crate)` because the only consumer is the C FFI wrapper in
+    /// `ffi.rs`; tightening visibility avoids committing to a stable
+    /// Rust-level API that no Rust caller actually needs (DOLL-232).
+    /// Gated on `feature = "ffi"` to match the caller — without the
+    /// gate, `--no-default-features` clippy correctly flags it unused.
+    /// Surfaced over FFI for DOLL-215 so the menu / Settings can show
+    /// "System Default (MacBook Pro Microphone)" instead of an opaque
+    /// literal.
+    #[cfg(feature = "ffi")]
+    pub(crate) fn default_input_device_name() -> Option<String> {
         let host = cpal::default_host();
         let device = host.default_input_device()?;
         device

@@ -530,9 +530,18 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
 /// "System Default (MacBook Pro Microphone)") so the user knows what's
 /// actually recording instead of an opaque literal.
 ///
-/// The caller must free the returned string with `blackbox_free_string`.
-/// Returns null if no default device is available or its name can't be
-/// read.
+/// # Contract (DOLL-234)
+///
+/// - **Caller frees**: the returned pointer must be released with
+///   `blackbox_free_string`. Failing to do so leaks a `CString`.
+/// - **Null is in-band**: returns `NULL` when CoreAudio has no default
+///   input device (headless Mac, all inputs unplugged) or the device's
+///   name lookup fails. Callers must null-check before reading.
+/// - **No panic across FFI**: the implementation uses `?` / `.ok()` on
+///   every fallible step, so a `None` from cpal becomes a `NULL` return
+///   rather than an unwinding panic. Consistent with the rest of this
+///   module — panic-across-FFI is undefined behavior we deliberately
+///   avoid (see `panic = "abort"` profile invariant per AGENTS.md).
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_default_input_device_name() -> *mut c_char {
     match CpalAudioProcessor::default_input_device_name() {

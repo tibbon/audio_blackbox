@@ -197,6 +197,21 @@ enum SleepWakePolicy {
     /// the menu reverts to its idle state. Nil when no summary is active.
     var lastRecordingDurationText: String?
 
+    /// Snapshot of the config values the per-tick UI computations need —
+    /// captured at recording-start so updateDuration doesn't re-read
+    /// UserDefaults 5-7 times per second for values that can only
+    /// change via Settings (which already triggers restartIfRecording
+    /// in the common case, refreshing this snapshot for the next tick).
+    /// DOLL-233.
+    private struct RecordingConfigSnapshot {
+        var continuousMode: Bool
+        var recordingCadence: Int
+        var channelCount: Int
+        var bitDepth: Int
+        var outputMode: String
+    }
+    private var configSnapshot: RecordingConfigSnapshot?
+
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
@@ -431,6 +446,12 @@ enum SleepWakePolicy {
         // Notification authorization was requested at init() time (DOLL-134),
         // so we don't need a lazy request here.
 
+        // DOLL-233: snapshot the config once at start so the per-tick
+        // computations downstream (rotation countdown, file-size estimate,
+        // preflight warning) read from in-memory fields instead of
+        // hitting UserDefaults 5-7 times per second.
+        configSnapshot = captureConfigSnapshot()
+
         // DOLL-220: warn before we kick off the engine if the math says
         // the per-file size will blow past the 4 GiB WAV-header cap. The
         // engine still proceeds — the file just gets clamped — but the
@@ -661,7 +682,13 @@ enum SleepWakePolicy {
             if sessionDuration > 0 {
                 lastRecordingDurationText = Self.formatRecordedDuration(sessionDuration)
                 let snapshot = lastRecordingDurationText
-                Task { [weak self] in
+                // DOLL-230: explicit @MainActor on the Task closure even
+                // though RecordingState is class-level @MainActor — under
+                // strict-concurrency the inherited isolation rules are
+                // subtle and this makes the mutation-after-await safe by
+                // construction regardless of how the surrounding class
+                // is later refactored.
+                Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .seconds(30))
                     guard let self,
                           self.lastRecordingDurationText == snapshot,
@@ -676,6 +703,7 @@ enum SleepWakePolicy {
             preflightSizeWarning = nil
             rotationCountdownText = nil
             currentFileSizeText = nil
+            configSnapshot = nil
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -825,12 +853,12 @@ enum SleepWakePolicy {
     /// nil when continuous mode is off / no cadence is configured.
     /// Matches the elapsed-time formatting in `updateDuration` so the
     /// two lines line up visually in the menu.
+    /// DOLL-233: reads from the cached snapshot, not UserDefaults.
     private func computeRotationCountdown(elapsed: Int) -> String? {
-        let defaults = UserDefaults.standard
-        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
-        guard continuousMode else { return nil }
-        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
-        guard cadence > 0 else { return nil }
+        guard let snapshot = configSnapshot,
+              snapshot.continuousMode,
+              snapshot.recordingCadence > 0 else { return nil }
+        let cadence = snapshot.recordingCadence
 
         // elapsed % cadence gives seconds into the current cycle; the
         // remainder until the next rotation tick is cadence minus that.
@@ -846,6 +874,25 @@ enum SleepWakePolicy {
             ? String(format: "%d:%02d:%02d", h, m, s)
             : String(format: "%d:%02d", m, s)
         return "Rotating in \(formatted)"
+    }
+
+    // MARK: - Config snapshot (DOLL-233)
+
+    /// Read the live UserDefaults values once and freeze them for the
+    /// duration of the recording. The per-tick callbacks
+    /// (`computeRotationCountdown`, `computeCurrentFileSize`,
+    /// `evaluatePreflightFileSizeWarning`) read this snapshot rather
+    /// than hitting UserDefaults 5-7 times every second.
+    private func captureConfigSnapshot() -> RecordingConfigSnapshot {
+        let defaults = UserDefaults.standard
+        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
+        return RecordingConfigSnapshot(
+            continuousMode: defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false,
+            recordingCadence: defaults.integer(forKey: SettingsKeys.recordingCadence),
+            channelCount: countChannels(defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"),
+            bitDepth: bitDepthValue > 0 ? bitDepthValue : 24,
+            outputMode: defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
+        )
     }
 
     // MARK: - Last-recording summary (DOLL-213)
@@ -873,20 +920,15 @@ enum SleepWakePolicy {
 
     /// Estimate the current WAV file's size from elapsed-in-cycle ×
     /// bytes-per-second. Uses last-seen sample rate (falls back to
-    /// 48 kHz when the engine hasn't reported one yet) and the persisted
-    /// bit depth + channel spec + output mode.
+    /// 48 kHz when the engine hasn't reported one yet) and the snapshot
+    /// of bit depth + channel count + output mode captured at start.
     /// Returns nil for misconfigured states so the menu hides the line.
+    /// DOLL-233: reads from the cached snapshot, not UserDefaults.
     private func computeCurrentFileSize(elapsed: Int) -> String? {
-        let defaults = UserDefaults.standard
-        let channelSpec = defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"
-        let channels = countChannels(channelSpec)
-        guard channels > 0 else { return nil }
+        guard let snapshot = configSnapshot, snapshot.channelCount > 0 else { return nil }
 
-        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
-        let bitDepth = bitDepthValue > 0 ? bitDepthValue : 24
-        let bytesPerSample = bitDepth / 8
-        let outputMode = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
-        let channelsPerFile = outputMode == "split" ? 1 : channels
+        let bytesPerSample = snapshot.bitDepth / 8
+        let channelsPerFile = snapshot.outputMode == "split" ? 1 : snapshot.channelCount
 
         let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
         let bytesPerSecond = estSampleRate * bytesPerSample * channelsPerFile
@@ -894,11 +936,9 @@ enum SleepWakePolicy {
         // Continuous mode rotates every cadence seconds, so "current
         // file" is the bytes accumulated since the most recent boundary.
         // Single mode has no rotation — the file grows from start.
-        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
-        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
         let elapsedInFile: Int
-        if continuousMode, cadence > 0 {
-            elapsedInFile = elapsed % cadence
+        if snapshot.continuousMode, snapshot.recordingCadence > 0 {
+            elapsedInFile = elapsed % snapshot.recordingCadence
         } else {
             elapsedInFile = elapsed
         }
@@ -935,28 +975,22 @@ enum SleepWakePolicy {
     /// bytes-per-rotation exceeds the 4 GiB WAV cap. Only meaningful for
     /// continuous mode — single mode has no rotation interval to bound
     /// the file with, so we leave it alone there.
+    /// DOLL-233: reads from the cached snapshot, populated immediately
+    /// before this method runs in startRecordingInternal.
     private func evaluatePreflightFileSizeWarning() {
         preflightSizeWarning = nil
 
-        let defaults = UserDefaults.standard
-        let continuousMode = defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false
-        guard continuousMode else { return }
-
-        let cadence = defaults.integer(forKey: SettingsKeys.recordingCadence)
+        guard let snapshot = configSnapshot, snapshot.continuousMode else { return }
+        let cadence = snapshot.recordingCadence
         guard cadence > 0 else { return }
-
-        let channelSpec = defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"
-        let channels = countChannels(channelSpec)
+        let channels = snapshot.channelCount
         guard channels > 0 else { return }
 
-        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
-        let bitDepth = bitDepthValue > 0 ? bitDepthValue : 24
-        let bytesPerSample = bitDepth / 8
-        let outputMode = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
+        let bytesPerSample = snapshot.bitDepth / 8
         // In split mode each file holds one channel; in single mode all
         // channels share a file. The cap applies per-file, so we project
         // for the most populated file we'll create.
-        let channelsPerFile = outputMode == "split" ? 1 : channels
+        let channelsPerFile = snapshot.outputMode == "split" ? 1 : channels
 
         // No reliable sample-rate signal until cpal connects, so fall
         // back to 48 kHz when we haven't seen a session yet. This biases
@@ -1232,13 +1266,13 @@ enum SleepWakePolicy {
                 _ = bridge.stopRecording()
                 peakLevels = []
                 lastReportedWriteErrors = 0
-            writeErrorsCount = 0
-            isLowBatteryWarning = false
-            batteryNotificationFired = false
-            batteryCheckTick = 0
-            // preflightSizeWarning intentionally preserved: the config
-            // hasn't changed on stream-error recovery, so the warning
-            // is still valid for the restarted file.
+                writeErrorsCount = 0
+                isLowBatteryWarning = false
+                batteryNotificationFired = false
+                batteryCheckTick = 0
+                // preflightSizeWarning intentionally preserved: the config
+                // hasn't changed on stream-error recovery, so the warning
+                // is still valid for the restarted file.
 
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
