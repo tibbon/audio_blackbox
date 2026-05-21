@@ -212,9 +212,27 @@ struct BlackBoxApp: App {
 
     @ViewBuilder
     private var normalMenu: some View {
-        Text(recorder.statusText)
+        // Menu-flicker fix: when the engine is actively writing audio,
+        // render the elapsed time via Text(_, style: .timer). The Text
+        // self-updates without writing to @Observable state, so the
+        // menu doesn't re-render every second and the user's hover /
+        // keyboard highlight isn't reset while reading the dropdown.
+        // Falls back to the static statusText for non-recording states
+        // ("Ready", "Error", "Armed (waiting for signal)").
+        if recorder.isRecording,
+           recorder.statusText == "Recording",
+           let start = recorder.recordingStartTime {
+            HStack(spacing: 4) {
+                Text("Recording")
+                Text(start, style: .timer)
+                    .monospacedDigit()
+            }
             .font(.headline)
-            .monospacedDigit()
+        } else {
+            Text(recorder.statusText)
+                .font(.headline)
+                .monospacedDigit()
+        }
 
         if recorder.isRecording {
             // DOLL-215: when the user hasn't picked a specific device,
@@ -229,21 +247,19 @@ struct BlackBoxApp: App {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            // DOLL-214 / DOLL-217: rotation countdown + estimated file
-            // size on a single caption line so the user can sanity-check
-            // both timing and disk usage without opening the meter or
-            // Activity Monitor. Both are nil when not applicable.
-            let countdown = recorder.rotationCountdownText
-            let sizeText = recorder.currentFileSizeText
-            if countdown != nil || sizeText != nil {
-                let combined = [countdown, sizeText]
-                    .compactMap { $0 }
-                    .joined(separator: " \u{00B7} ")
-                Text(combined)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .accessibilityLabel(combined)
+            // DOLL-214: rotation countdown rendered via Text(_, style:
+            // .timer) on the computed nextRotationDate. The Text ticks
+            // internally without writing back to @Observable state, so
+            // the menu doesn't re-render every second. File size moved
+            // to the meter window header to avoid the same flicker.
+            if let next = recorder.nextRotationDate {
+                HStack(spacing: 4) {
+                    Text("Rotating in")
+                    Text(next, style: .timer)
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             // DOLL-223: surface the running drop count when non-zero so

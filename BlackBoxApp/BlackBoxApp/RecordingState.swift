@@ -142,7 +142,13 @@ enum SleepWakePolicy {
     }
 
     let bridge: RustBridge
-    private var recordingStartTime: Date?
+    /// When the active session started. Exposed publicly (read-only via
+    /// the encapsulation of the surrounding mutation paths) so menu views
+    /// can pass it to `Text(_, style: .timer)` which auto-ticks without
+    /// triggering `@Observable` re-renders — fixing the highlight-reset
+    /// bug where the per-tick `statusText` rewrite was reseting hover
+    /// state on every open menu.
+    var recordingStartTime: Date?
     private var timerTask: Task<Void, Never>?
     private var meterTimerTask: Task<Void, Never>?
 
@@ -177,18 +183,29 @@ enum SleepWakePolicy {
     /// when a fresh recording starts with safe settings.
     var preflightSizeWarning: String?
 
-    /// Human-readable countdown to the next continuous-mode rotation
-    /// (DOLL-214). Nil when not recording, when continuous mode is off,
-    /// or when no cadence is configured. Refreshed every duration tick
-    /// in `updateDuration`; the menu re-renders alongside `statusText`.
-    var rotationCountdownText: String?
+    /// Wall-clock date the *current* file's rotation cycle ends —
+    /// `recordingStartTime + ceil(elapsed / cadence) × cadence` — for the
+    /// menu's `Text(_, style: .timer)` countdown (DOLL-214 v2). Computed
+    /// on demand because the formula is deterministic from the public
+    /// start time + cadence snapshot; avoiding per-tick @Observable
+    /// writes fixes the menu-highlight-resets-every-second bug.
+    var nextRotationDate: Date? {
+        guard isRecording,
+              let start = recordingStartTime,
+              let snapshot = configSnapshot,
+              snapshot.continuousMode,
+              snapshot.recordingCadence > 0 else { return nil }
+        let cadence = TimeInterval(snapshot.recordingCadence)
+        let elapsed = Date().timeIntervalSince(start)
+        let cyclesCompleted = floor(elapsed / cadence)
+        return start.addingTimeInterval((cyclesCompleted + 1) * cadence)
+    }
 
-    /// Estimated size of the current rotation's WAV file (DOLL-217),
-    /// computed from elapsed × bytes-per-second using the in-flight
-    /// sample rate, configured bit depth, and active channel count.
-    /// Off by a few percent from disk reality (silence-gate gaps,
-    /// dropped samples not modeled) but accurate to within the
-    /// resolution the menu caption can display. Nil when not recording.
+    /// Estimated current-file size for the meter window header (DOLL-217
+    /// v2 — relocated from the menu to fix the menu-flicker bug).
+    /// Updated alongside `statusText` every duration tick; only consumed
+    /// by `MeterView` which is a regular window and doesn't suffer the
+    /// menu's hover-reset issue.
     var currentFileSizeText: String?
 
     /// Formatted duration of the just-stopped recording, shown as a
@@ -222,6 +239,12 @@ enum SleepWakePolicy {
     /// notification per recording — the menu caption stays visible
     /// for ongoing reinforcement, but we don't spam the system tray.
     private var batteryNotificationFired = false
+
+    /// Tracks the previous tick's gate-idle state so the menu-flicker
+    /// fix can write `statusText` only on the gate_idle↔active
+    /// transition rather than every tick (the elapsed-time string is
+    /// now rendered via Text(_, style: .timer)).
+    private var wasGateIdle = false
     private var peakBuffer = [Float](repeating: 0, count: 255)
     private var meterPollCount: Int = 0
     private var meterPollTotalNs: UInt64 = 0
@@ -467,7 +490,13 @@ enum SleepWakePolicy {
         if result.isSuccess {
             isRecording = true
             recordingStartTime = Date()
-            statusText = "Recording..."
+            // "Recording" (no trailing ellipsis or M:SS) is now a stable
+            // string — the live elapsed time is rendered separately via
+            // Text(_, style: .timer) so this value only changes on a
+            // gate-idle transition. Keeps the menu from re-rendering
+            // every second and resetting hover state.
+            statusText = "Recording"
+            wasGateIdle = false
             lastReportedWriteErrors = 0
             writeErrorsCount = 0
             isLowBatteryWarning = false
@@ -701,9 +730,9 @@ enum SleepWakePolicy {
             batteryNotificationFired = false
             batteryCheckTick = 0
             preflightSizeWarning = nil
-            rotationCountdownText = nil
             currentFileSizeText = nil
             configSnapshot = nil
+            wasGateIdle = false
             // DOLL-182: clear the resume-on-wake flag here. Without this,
             // a manual stop within the 1.5s deferred-resume window after
             // sleep/wake or session resign/activate would let the deferred
@@ -848,33 +877,10 @@ enum SleepWakePolicy {
     }
 
     // MARK: - Rotation countdown (DOLL-214)
-
-    /// Compute the time-to-next-rotation string for continuous mode, or
-    /// nil when continuous mode is off / no cadence is configured.
-    /// Matches the elapsed-time formatting in `updateDuration` so the
-    /// two lines line up visually in the menu.
-    /// DOLL-233: reads from the cached snapshot, not UserDefaults.
-    private func computeRotationCountdown(elapsed: Int) -> String? {
-        guard let snapshot = configSnapshot,
-              snapshot.continuousMode,
-              snapshot.recordingCadence > 0 else { return nil }
-        let cadence = snapshot.recordingCadence
-
-        // elapsed % cadence gives seconds into the current cycle; the
-        // remainder until the next rotation tick is cadence minus that.
-        // When the math lands on the rotation boundary itself (elapsed
-        // is a multiple of cadence), show the full cadence rather than 0.
-        let into = elapsed % cadence
-        let remaining = into == 0 ? cadence : cadence - into
-
-        let h = remaining / 3600
-        let m = (remaining % 3600) / 60
-        let s = remaining % 60
-        let formatted = h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
-        return "Rotating in \(formatted)"
-    }
+    // Note: the per-tick string formatter was replaced by the
+    // `nextRotationDate` computed property + `Text(_, style: .timer)` in
+    // the menu — see the menu-flicker fix. Keeping the section heading
+    // so future grep / DOLL-214 archaeology lands on the right spot.
 
     // MARK: - Config snapshot (DOLL-233)
 
@@ -1200,19 +1206,15 @@ enum SleepWakePolicy {
     private func updateDuration() {
         guard let start = recordingStartTime else { return }
 
-        // Update elapsed time display
+        // Menu-flicker fix: previously this method assigned a fresh
+        // "Recording M:SS" to `statusText` every second, which is an
+        // `@Observable` write that forced the dropdown to re-render and
+        // reset the user's hover/keyboard highlight. The elapsed time
+        // is now rendered by `Text(recordingStartTime, style: .timer)`
+        // in the menu, which auto-ticks internally without writing
+        // back to our observable state. Same approach via
+        // `nextRotationDate` for the rotation countdown.
         let elapsed = Int(Date().timeIntervalSince(start))
-        let hours = elapsed / 3600
-        let minutes = (elapsed % 3600) / 60
-        let seconds = elapsed % 60
-        let elapsedText = hours > 0
-            ? String(format: "Recording %d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "Recording %d:%02d", minutes, seconds)
-        statusText = elapsedText
-
-        // DOLL-214: rotation countdown for continuous mode. Nil when
-        // single-mode or cadence not set so the menu can hide the line.
-        rotationCountdownText = computeRotationCountdown(elapsed: elapsed)
 
         // DOLL-217: estimated current-file size from elapsed × bytes/sec.
         currentFileSizeText = computeCurrentFileSize(elapsed: elapsed)
@@ -1240,11 +1242,13 @@ enum SleepWakePolicy {
                 return
             }
             // DOLL-216: surface the silence-gate idle state as "Armed
-            // (waiting for signal)". The previous "Waiting for audio…"
-            // read as a passive failure mode; "Armed" reframes it as
-            // ready-and-listening, which matches what the app is doing.
-            if status.gate_idle {
-                statusText = "Armed (waiting for signal)"
+            // (waiting for signal)". Updated only on transitions (not
+            // every tick) so the menu doesn't re-render needlessly —
+            // the live elapsed time is now rendered by
+            // Text(date, style: .timer) in the menu directly.
+            if status.gate_idle != wasGateIdle {
+                wasGateIdle = status.gate_idle
+                statusText = status.gate_idle ? "Armed (waiting for signal)" : "Recording"
             }
 
             // Sample rate changed on the audio device — restart to pick up new rate
