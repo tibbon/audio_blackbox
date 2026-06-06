@@ -172,6 +172,8 @@ pub struct WriterThreadState {
     active_count: usize,
     /// The frame size `active_indices` was built for; `usize::MAX` = not built.
     active_cache_frame_size: usize,
+    /// xorshift32 state for TPDF dither on 16-bit output (DOLL-373). Nonzero.
+    dither_rng: u32,
 
     // --- Warm fields: accessed frequently but not per-sample ---
     pub writer: Option<RawWavWriter>,
@@ -248,6 +250,38 @@ pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     (sample.clamp(-1.0, 1.0) * scale).round() as i32
 }
 
+/// xorshift32 PRNG step → uniform f32 in [0, 1). Cheap and alloc/lock-free, so
+/// it's safe to call per-sample on the writer thread. `state` must be nonzero.
+#[inline]
+fn xorshift32_unit(state: &mut u32) -> f32 {
+    let mut x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    // Top 24 bits → [0, 1); ample resolution for a 1-LSB dither.
+    (x >> 8) as f32 / (1u32 << 24) as f32
+}
+
+/// Convert an f32 sample in [-1, 1] to an integer PCM sample scaled by `scale`.
+///
+/// DOLL-373: when `dither` is set (16-bit output), add TPDF dither — the sum of
+/// two independent uniform [-0.5, +0.5] LSB values — before rounding, to
+/// decorrelate quantization error on low-level tails/reverb/fades, then clamp
+/// so the added noise can't push the result past the integer range. 24/32-bit
+/// output has enough headroom that dither is unnecessary, so it stays
+/// bit-identical to the plain conversion.
+#[inline]
+fn convert_sample(s: f32, scale: f32, dither: bool, rng: &mut u32) -> i32 {
+    let v = s.clamp(-1.0, 1.0) * scale;
+    if dither {
+        let d = (xorshift32_unit(rng) - 0.5) + (xorshift32_unit(rng) - 0.5);
+        (v + d).round().clamp(-(scale + 1.0), scale) as i32
+    } else {
+        v.round() as i32
+    }
+}
+
 impl WriterThreadState {
     /// Create a new `WriterThreadState` with initial WAV writers set up.
     #[allow(clippy::too_many_arguments)]
@@ -318,6 +352,7 @@ impl WriterThreadState {
             active_indices: [0_u8; MAX_CHANNELS],
             active_count: 0,
             active_cache_frame_size: usize::MAX,
+            dither_rng: 0x9E37_79B9, // nonzero xorshift32 seed (DOLL-373)
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors,
@@ -399,6 +434,7 @@ impl WriterThreadState {
             active_indices: [0_u8; MAX_CHANNELS],
             active_count: 0,
             active_cache_frame_size: usize::MAX,
+            dither_rng: 0x9E37_79B9, // nonzero xorshift32 seed (DOLL-373)
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors: Arc::new(AtomicU64::new(0)),
@@ -651,6 +687,12 @@ impl WriterThreadState {
 
         // Cache scale factor on the stack for the inner loop
         let scale = self.sample_scale;
+        // DOLL-373: dither 16-bit output. Copy the RNG state into a local so
+        // the per-sample draws don't borrow `self` inside the write loops
+        // (which hold &mut self.writer / multichannel_writers); written back
+        // after the loops.
+        let dither = self.bits_per_sample == 16;
+        let mut rng = self.dither_rng;
 
         let ch_count = self.channel_count as usize;
         let ch_slice = &self.channels[..ch_count];
@@ -713,7 +755,7 @@ impl WriterThreadState {
                                 self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                             }
                             if let Some(w) = &mut self.multichannel_writers[idx]
-                                && w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
+                                && w.write_sample(convert_sample(s, scale, dither, &mut rng))
                                     .is_err()
                             {
                                 self.write_errors.fetch_add(1, Ordering::Relaxed);
@@ -732,7 +774,7 @@ impl WriterThreadState {
                                 if s.is_finite() {
                                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                                 }
-                                if w.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
+                                if w.write_sample(convert_sample(s, scale, dither, &mut rng))
                                     .is_err()
                                 {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
@@ -786,6 +828,9 @@ impl WriterThreadState {
                 }
             }
         }
+
+        // DOLL-373: persist the dither RNG advance for the next batch.
+        self.dither_rng = rng;
     }
 
     /// Process a pending gate open: create WAV files and transition to Recording.

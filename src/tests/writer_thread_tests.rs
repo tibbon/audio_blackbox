@@ -233,3 +233,65 @@ fn flush_writers_respects_frame_threshold() {
         );
     });
 }
+
+/// DOLL-373: 16-bit output gets TPDF dither, so a constant-0 input is perturbed
+/// off zero (within ~1 LSB) instead of writing a dead-silent quantized stream;
+/// 24-bit output is left undithered (exact). Deterministic given the fixed
+/// xorshift seed, so this is not flaky.
+#[test]
+fn dither_perturbs_16bit_output_but_not_24bit() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        // 16-bit: constant 0.0 → dithered samples in {-1, 0, +1}, not all zero.
+        let td16 = tempdir().unwrap();
+        let dir16 = td16.path().to_str().unwrap();
+        let mut s16 = WriterThreadState::new(
+            dir16,
+            48_000,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .unwrap();
+        s16.total_device_channels = 1;
+        let final16 = s16.pending_files[0].1.clone();
+        s16.write_samples(&vec![0.0_f32; 400]);
+        s16.finalize_all().unwrap();
+        let samples16: Vec<i32> = hound::WavReader::open(&final16)
+            .unwrap()
+            .into_samples::<i32>()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(samples16.len(), 400);
+        assert!(
+            samples16.iter().any(|&x| x != 0),
+            "16-bit dither must perturb a constant-0 input off zero"
+        );
+        assert!(
+            samples16.iter().all(|&x| x.abs() <= 1),
+            "TPDF dither on silence must stay within ~1 LSB"
+        );
+
+        // 24-bit: constant 0.0 → exact zeros (undithered).
+        let td24 = tempdir().unwrap();
+        let mut s24 = single_state(td24.path().to_str().unwrap());
+        let final24 = s24.pending_files[0].1.clone();
+        s24.write_samples(&vec![0.0_f32; 400]);
+        s24.finalize_all().unwrap();
+        let samples24: Vec<i32> = hound::WavReader::open(&final24)
+            .unwrap()
+            .into_samples::<i32>()
+            .map(Result::unwrap)
+            .collect();
+        assert!(
+            samples24.iter().all(|&x| x == 0),
+            "24-bit output must be undithered (exact zeros)"
+        );
+    });
+}
