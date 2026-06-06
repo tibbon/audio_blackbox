@@ -642,11 +642,13 @@ enum SleepWakePolicy {
 
     private func showMicrophonePermissionAlert() {
         let alert = NSAlert()
-        alert.messageText = "Microphone Access Required"
-        alert.informativeText = "BlackBox needs microphone access to record audio. You can allow access in System Settings > Privacy & Security > Microphone."
+        // DOLL-438: AppKit takes plain String (not LocalizedStringKey), so these
+        // are wrapped in String(localized:) to enter the String Catalog.
+        alert.messageText = String(localized: "Microphone Access Required")
+        alert.informativeText = String(localized: "BlackBox needs microphone access to record audio. You can allow access in System Settings > Privacy & Security > Microphone.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "Open System Settings"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
 
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
@@ -1541,11 +1543,13 @@ enum SleepWakePolicy {
         Task { [weak self] in
             guard let self else { return }
             let alert = NSAlert()
-            alert.messageText = "Output Directory Unavailable"
-            alert.informativeText = "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
+            alert.messageText = String(localized: "Output Directory Unavailable")
+            alert.informativeText = String(
+                localized: "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
+            )
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Choose Directory\u{2026}")
-            alert.addButton(withTitle: "Use Default")
+            alert.addButton(withTitle: String(localized: "Choose Directory\u{2026}"))
+            alert.addButton(withTitle: String(localized: "Use Default"))
             NSApp.activate(ignoringOtherApps: true)
             if alert.runModal() == .alertFirstButtonReturn {
                 let panel = NSOpenPanel()

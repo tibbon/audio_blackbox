@@ -550,11 +550,12 @@ struct BlackBoxApp: App {
     private func quitApp() {
         if recorder.isRecording {
             let alert = NSAlert()
-            alert.messageText = "Recording in Progress"
-            alert.informativeText = "BlackBox is currently recording. Do you want to stop recording and quit?"
+            // DOLL-438: AppKit strings wrapped in String(localized:) for the catalog.
+            alert.messageText = String(localized: "Recording in Progress")
+            alert.informativeText = String(localized: "BlackBox is currently recording. Do you want to stop recording and quit?")
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Cancel")
-            alert.addButton(withTitle: "Stop & Quit")
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.addButton(withTitle: String(localized: "Stop & Quit"))
             // Stop & Quit discards the in-progress recording — mark it
             // destructive (DOLL-254). Cancel stays first, so it remains the
             // default (Return) button.

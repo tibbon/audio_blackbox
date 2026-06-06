@@ -13,6 +13,7 @@
 		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
+		86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
 		BE185DA077E00152905E3845 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E06870571E2C3D34F75C6 /* CoreTests.swift */; };
@@ -40,6 +41,7 @@
 		7A3E06870571E2C3D34F75C6 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
@@ -87,6 +89,7 @@
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
+				A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */,
 				FCAA96D336F9106E336A98A7 /* MeterView.swift */,
 				C515ABD54DB00D283F73A524 /* OnboardingView.swift */,
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
@@ -177,6 +180,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */,
+				86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */,
 				94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
