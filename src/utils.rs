@@ -224,7 +224,7 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
         if normalized.abs() >= threshold_f64 {
             return Ok(false);
         }
-        sum_of_squares += normalized * normalized;
+        sum_of_squares = normalized.mul_add(normalized, sum_of_squares);
         count += 1;
     }
 
