@@ -247,7 +247,13 @@ struct BlackBoxApp: App {
             // Bigger counts already trigger an errorMessage and auto-stop
             // via the existing engine-side thresholds.
             if recorder.writeErrorsCount > 0 {
-                Text("\(recorder.writeErrorsCount) samples dropped")
+                // DOLL-371: the default MenuBarExtra `.menu` style flattens
+                // content to NSMenuItems and strips foreground colors, so the
+                // orange tint alone wouldn't read as a warning. Use a Label
+                // with a warning glyph (which DOES render in `.menu`) so the
+                // severity survives without relying on color. The other warning
+                // rows below already pair a glyph with their text.
+                Label("\(recorder.writeErrorsCount) samples dropped", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(Color(nsColor: .systemOrange))
                     .accessibilityLabel("Warning: \(recorder.writeErrorsCount) samples dropped during this recording")
