@@ -248,8 +248,6 @@
 					"-framework",
 					AudioToolbox,
 					"-framework",
-					Security,
-					"-framework",
 					Carbon,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
@@ -344,8 +342,6 @@
 					CoreAudio,
 					"-framework",
 					AudioToolbox,
-					"-framework",
-					Security,
 					"-framework",
 					Carbon,
 				);

@@ -31,8 +31,6 @@ targets:
           - "-framework"
           - "AudioToolbox"
           - "-framework"
-          - "Security"
-          - "-framework"
           - "Carbon"
         IMPORT_PATHS: "$(SRCROOT)/bridge"
         ENABLE_HARDENED_RUNTIME: YES
