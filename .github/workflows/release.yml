@@ -71,6 +71,19 @@ jobs:
     - name: Run tests
       run: cargo test --no-default-features -- --test-threads=1
 
+    # DOLL-357: the release gate re-runs main's checks on the tag SHA
+    # (DOLL-260) but previously omitted the audit + lockfile-freshness checks
+    # that main enforces — so a directly-pushed tag could ship a fresh-RUSTSEC
+    # dependency or a stale Cargo.lock with the release path green. Mirror both.
+    - name: Check Cargo.lock is up-to-date
+      run: cargo update --locked --dry-run
+
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@e96017355c8b613bff850d75294a872bbc98a6ef  # cargo-audit
+
+    - name: Run audit
+      run: cargo audit --deny warnings
+
   # ── GitHub Release binaries ───────────────────────────────────────
   # macOS-only — DOLL-153 dropped the Linux CLI artifact since the
   # shipped product is Mac App Store. Re-add a Linux matrix entry if/
