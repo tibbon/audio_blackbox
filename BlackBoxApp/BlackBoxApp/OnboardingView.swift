@@ -269,6 +269,10 @@ struct OnboardingView: View {
                     .padding(8)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .clipShape(.rect(cornerRadius: 6))
+                    // DOLL-385: announce the full path (truncationMode elides
+                    // the middle visually); match the Settings twin's label.
+                    .accessibilityLabel("Output directory: \(outputDir)")
+                    .accessibilityValue(chosenURL == nil ? "No folder selected" : "")
 
                 Button("Choose\u{2026}") {
                     chooseDirectory()

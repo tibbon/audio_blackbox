@@ -47,6 +47,14 @@ struct MeterView: View {
         return String(format: "%.1f kHz", kHz)
     }
 
+    /// VoiceOver-friendly sample rate. The visible `sampleRateDisplay` shows a
+    /// U+2014 em-dash when idle, which VoiceOver reads aloud as "em dash"
+    /// ("…at em dash, 24 bits per sample"). Speak "unknown sample rate" instead.
+    /// (DOLL-385)
+    private var sampleRateSpoken: String {
+        recorder.sampleRate > 0 ? sampleRateDisplay : "unknown sample rate"
+    }
+
     /// Window title with a state suffix so a glance at the title bar (or
     /// the Window menu) tells the user whether bars they're looking at
     /// represent a live recording, a passive monitor, or stale state.
@@ -107,7 +115,7 @@ struct MeterView: View {
             .foregroundStyle(.secondary)
             .padding(.bottom, 4)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(stateVerb) \(deviceDisplayName) at \(sampleRateDisplay), \(bitDepth) bits per sample")
+            .accessibilityLabel("\(stateVerb) \(deviceDisplayName) at \(sampleRateSpoken), \(bitDepth) bits per sample")
 
             // DOLL-214 / DOLL-217 v3: live elapsed time + rotation
             // countdown relocated from the menu (where each tick

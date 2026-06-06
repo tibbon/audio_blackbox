@@ -307,6 +307,11 @@ struct BlackBoxApp: App {
             let action = recorder.isRecording ? "Stop Recording" : "Start Recording"
             if let shortcut = GlobalHotkeyManager.shared.currentShortcut {
                 Text("\(action)  \(shortcut.displayString)")
+                    // DOLL-385: without this VoiceOver speaks the raw glyphs
+                    // ("Start Recording command shift R"). Keep the label clean
+                    // and expose the shortcut as a hint instead.
+                    .accessibilityLabel(action)
+                    .accessibilityHint("Keyboard shortcut \(shortcut.displayString)")
             } else {
                 Text(action)
             }

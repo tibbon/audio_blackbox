@@ -371,13 +371,18 @@ struct RecordingSettingsTab: View {
             Button("All") {
                 selectedChannels = Set(1...deviceChannelCount)
                 syncChannelSpecFromCheckboxes()
+                announceChannelSelection()
             }
             .font(.caption)
             Button("Reset") {
                 selectedChannels = [1]
                 syncChannelSpecFromCheckboxes()
+                announceChannelSelection()
             }
             .font(.caption)
+            // DOLL-385: the count below is a separate, non-focused element, so
+            // VoiceOver gives no feedback when it changes — describe the action.
+            .accessibilityHint("Selects only channel 1")
             Spacer()
             Text("\(selectedChannels.count) of \(deviceChannelCount) selected")
                 .font(.caption)
@@ -419,6 +424,14 @@ struct RecordingSettingsTab: View {
     }
 
     /// Write the checkbox state back to the channel spec string.
+    /// DOLL-385: announce the new selection count to VoiceOver after a bulk
+    /// All/Reset action (the count label itself is not a focused element).
+    private func announceChannelSelection() {
+        AccessibilityNotification.Announcement(
+            "\(selectedChannels.count) of \(deviceChannelCount) channels selected"
+        ).post()
+    }
+
     private func syncChannelSpecFromCheckboxes() {
         let sorted = selectedChannels.sorted()
         let newSpec = sorted.map { String($0) }.joined(separator: ",")
