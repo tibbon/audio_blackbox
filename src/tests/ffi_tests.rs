@@ -248,6 +248,7 @@ fn test_get_status_flags_idle_handle() {
         disk_space_low: true,
         stream_error: true,
         sample_rate_changed: true,
+        write_failed: true,
     };
     let rc = blackbox_get_status_flags(handle, &raw mut flags);
     assert_eq!(rc, BLACKBOX_OK);
@@ -273,6 +274,7 @@ fn test_get_status_flags_null_handle() {
         disk_space_low: false,
         stream_error: false,
         sample_rate_changed: false,
+        write_failed: false,
     };
     let rc = blackbox_get_status_flags(std::ptr::null(), &raw mut flags);
     assert_eq!(rc, BLACKBOX_ERR_INVALID_HANDLE);
@@ -359,6 +361,7 @@ fn test_status_flags_concurrent_reads() {
                 disk_space_low: false,
                 stream_error: false,
                 sample_rate_changed: false,
+                write_failed: false,
             };
             for _ in 0..10_000 {
                 let rc = blackbox_get_status_flags(h, &raw mut flags);

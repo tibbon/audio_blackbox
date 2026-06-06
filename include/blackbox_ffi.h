@@ -49,6 +49,7 @@ typedef struct {
     bool disk_space_low;
     bool stream_error;
     bool sample_rate_changed;
+    bool write_failed; /* DOLL-437: write_sample kept failing (disk full / unwritable) */
 } StatusFlags;
 
 /*

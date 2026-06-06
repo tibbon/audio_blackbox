@@ -70,6 +70,10 @@ pub struct StatusFlags {
     pub disk_space_low: bool,
     pub stream_error: bool,
     pub sample_rate_changed: bool,
+    /// Set when recording self-stopped because `write_sample` kept failing
+    /// (disk full or output dir unwritable) — distinct from `disk_space_low`,
+    /// which is the pre-emptive low-space check (DOLL-437).
+    pub write_failed: bool,
 }
 
 // Compile-time check that Rust and C agree on StatusFlags layout.
@@ -89,6 +93,7 @@ const _: () = assert!(std::mem::offset_of!(StatusFlags, gate_idle) == 13);
 const _: () = assert!(std::mem::offset_of!(StatusFlags, disk_space_low) == 14);
 const _: () = assert!(std::mem::offset_of!(StatusFlags, stream_error) == 15);
 const _: () = assert!(std::mem::offset_of!(StatusFlags, sample_rate_changed) == 16);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, write_failed) == 17);
 
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
@@ -527,6 +532,7 @@ pub extern "C" fn blackbox_get_status_flags(
         disk_space_low: status.disk_space_low.load(Ordering::Relaxed),
         stream_error: status.stream_error.load(Ordering::Relaxed),
         sample_rate_changed: status.sample_rate_changed.load(Ordering::Relaxed),
+        write_failed: status.write_failed.load(Ordering::Relaxed),
     };
 
     // SAFETY: `out` was null-checked above. `StatusFlags` is `#[repr(C)]`

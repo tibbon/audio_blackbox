@@ -44,6 +44,7 @@ pub(crate) struct ProcessorStatus {
     pub(crate) sample_rate: Arc<AtomicU32>,
     pub(crate) write_errors: Arc<AtomicU64>,
     pub(crate) disk_space_low: Arc<AtomicBool>,
+    pub(crate) write_failed: Arc<AtomicBool>,
     pub(crate) stream_error: Arc<AtomicBool>,
     pub(crate) sample_rate_changed: Arc<AtomicBool>,
     pub(crate) gate_idle: Arc<AtomicBool>,
@@ -79,6 +80,10 @@ pub struct CpalAudioProcessor {
     write_errors: Arc<AtomicU64>,
     /// Set by the writer thread when disk space drops below threshold.
     disk_space_low: Arc<AtomicBool>,
+    /// Set by the writer thread when `write_sample` keeps failing (disk full or
+    /// the output directory became unwritable), distinct from a low-space
+    /// pre-check — drives a precise "unable to write to disk" UI message (DOLL-437).
+    write_failed: Arc<AtomicBool>,
     /// Set by the cpal error callback when the audio stream encounters an error.
     stream_error: Arc<AtomicBool>,
     /// CoreAudio listener for sample rate changes (dropped before sample_rate_changed).
@@ -158,6 +163,7 @@ impl CpalAudioProcessor {
             debug: false,
             write_errors: Arc::new(AtomicU64::new(0)),
             disk_space_low: Arc::new(AtomicBool::new(false)),
+            write_failed: Arc::new(AtomicBool::new(false)),
             stream_error: Arc::new(AtomicBool::new(false)),
             #[cfg(target_os = "macos")]
             rate_listener: None,
@@ -222,6 +228,7 @@ impl CpalAudioProcessor {
             sample_rate: Arc::clone(&self.sample_rate_atomic),
             write_errors: Arc::clone(&self.write_errors),
             disk_space_low: Arc::clone(&self.disk_space_low),
+            write_failed: Arc::clone(&self.write_failed),
             stream_error: Arc::clone(&self.stream_error),
             sample_rate_changed: Arc::clone(&self.sample_rate_changed),
             gate_idle: Arc::clone(&self.gate_idle),
@@ -356,6 +363,7 @@ impl CpalAudioProcessor {
         // Reset counters from any prior recording session
         self.write_errors.store(0, Ordering::Relaxed);
         self.disk_space_low.store(false, Ordering::Relaxed);
+        self.write_failed.store(false, Ordering::Relaxed);
         self.stream_error.store(false, Ordering::Relaxed);
         self.sample_rate_changed.store(false, Ordering::Relaxed);
 
@@ -446,6 +454,9 @@ impl CpalAudioProcessor {
         )?;
         self.gate_idle = Arc::clone(&state.gate_idle);
         state.total_device_channels = total_channels as u16;
+        // DOLL-437: wire the shared write-failure flag into the writer state so
+        // a persistent-write-failure stop is visible to the FFI status poll.
+        state.write_failed = Arc::clone(&self.write_failed);
 
         // Create ring buffer
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
@@ -1017,6 +1028,7 @@ impl CpalAudioProcessor {
             debug: false,
             write_errors,
             disk_space_low,
+            write_failed: Arc::new(AtomicBool::new(false)),
             stream_error: Arc::new(AtomicBool::new(false)),
             #[cfg(target_os = "macos")]
             rate_listener: None,

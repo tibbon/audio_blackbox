@@ -1373,6 +1373,18 @@ enum SleepWakePolicy {
                 }
                 return
             }
+            // DOLL-437: persistent write failure (disk full mid-write, or the
+            // output directory became unwritable). Checked before disk_space_low
+            // so the cause is reported accurately rather than as a pre-emptive
+            // low-space warning or as CPU "heavy load" from the shared counter.
+            if status.write_failed {
+                stop()
+                let msg = "Recording stopped: unable to write to disk. Free up space or check the output folder's permissions, then try again."
+                setTransientError(msg)
+                Self.log.error("Write failure — stopping recording")
+                notifyUser(title: "Recording Stopped", message: msg)
+                return
+            }
             // Disk space low — stop recording gracefully
             if status.disk_space_low {
                 stop()
