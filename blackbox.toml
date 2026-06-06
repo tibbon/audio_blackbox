@@ -19,8 +19,8 @@ duration = 5
 # Default: single
 output_mode = "single"
 
-# Silence threshold (0-100, 0 disables silence detection)
-# Default: 0
+# Silence threshold: normalized amplitude 0.0–1.0 (0.01 = 1% of full scale).
+# 0 disables silence detection; if unset, the built-in default (0.01) applies.
 silence_threshold = 0
 
 # Continuous recording mode (true/false)
