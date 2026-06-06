@@ -536,6 +536,10 @@ struct BlackBoxApp: App {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Stop & Quit")
+            // Stop & Quit discards the in-progress recording — mark it
+            // destructive (DOLL-254). Cancel stays first, so it remains the
+            // default (Return) button.
+            alert.buttons.last?.hasDestructiveAction = true
 
             NSApp.activate()
             if alert.runModal() == .alertFirstButtonReturn {
