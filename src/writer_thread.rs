@@ -817,6 +817,15 @@ impl WriterThreadState {
 
     /// Rotate files: finalize current writers, rename, check silence, create new writers.
     pub fn rotate_files(&mut self) {
+        // DOLL-350: once a disk-low self-stop has fired, the writer thread keeps
+        // looping to receive Shutdown. In continuous mode the RT callback still
+        // sets rotation_needed, so without this guard each rotation would call
+        // create_wav_writer again — recreating empty `.recording.wav` temp files
+        // that write_samples (which early-returns on disk_stopped) never fills,
+        // renames, or cleans up. They'd pile up on the already-full disk.
+        if self.disk_stopped {
+            return;
+        }
         // No-op when gate is idle (no files to rotate)
         if self.gate_enabled && self.gate_state == GateState::Idle {
             return;
