@@ -49,24 +49,23 @@ jobs:
         components: clippy
 
     - name: Cache Rust dependencies
-      # Single shared key per OS across all stable-toolchain lanes
-      # (clippy / test / bench / swift-app / release). cargo's target/
-      # already segregates artifacts by feature combination internally,
-      # so jobs sharing the cache coexist without contamination. MSRV
-      # uses its own key (different toolchain version → incompatible
-      # target/ artifacts). Parallel writers to the same key race on
-      # cache reservation and produce noisy "cache already exists"
-      # warnings — that's expected and harmless: first writer wins,
-      # subsequent ones noop. (DOLL-166)
+      # Per-feature cache keys (DOLL-271). The stable-toolchain lanes compile
+      # divergent feature sets — clippy/test build no features, bench builds
+      # `--features benchmarking`, swift-app builds `--features ffi`. A single
+      # shared key (the prior DOLL-166 design) meant only the first job to
+      # finish saved its target/, and actions/cache won't overwrite an existing
+      # key, so feature artifacts built only by later jobs were dropped and
+      # rebuilt every run. Distinct keys per feature bucket let each persist
+      # its own target/. MSRV keeps its own key (different toolchain).
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nofeat-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-nofeat-
 
     - name: Run clippy (all targets)
       run: cargo clippy --all-targets --no-default-features -- -D warnings
@@ -127,9 +126,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nofeat-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-nofeat-
 
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1
@@ -176,9 +175,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-bench-
 
     - name: Build bench binary (release)
       run: cargo build --release --bin bench-writer --features benchmarking
@@ -222,9 +221,23 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-ffi-
+
+    # DOLL-271: cache Xcode DerivedData — the cold-cache xcodebuild is the
+    # dominant cost of this job. Keyed on the Swift sources + the generated
+    # project so a source change busts it; restore-keys allows a warm partial
+    # restore for incremental rebuilds. (NOT applied to the CodeQL Swift job:
+    # CodeQL traces every swiftc invocation, and a fully-cached build would
+    # skip compilation and starve the extractor.)
+    - name: Cache Xcode DerivedData
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: ~/Library/Developer/Xcode/DerivedData
+        key: ${{ runner.os }}-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
+        restore-keys: |
+          ${{ runner.os }}-deriveddata-
 
     # DOLL-190: hand-maintained include/blackbox_ffi.h drift check.
     # Runs *before* the Rust build so a header mismatch fails fast
