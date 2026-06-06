@@ -211,6 +211,10 @@ private struct MeterBar: View {
     let channel: Int
     let peak: Float
 
+    // DOLL-263: continuously animated level bars are exactly the motion
+    // Reduce Motion targets; snap instead of tween when it's enabled.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @ScaledMetric(relativeTo: .caption) private var channelLabelWidth: CGFloat = 36
     @ScaledMetric(relativeTo: .caption) private var dBLabelWidth: CGFloat = 50
     @ScaledMetric(relativeTo: .caption) private var barHeight: CGFloat = 14
@@ -311,7 +315,7 @@ private struct MeterBar: View {
                     Self.meterGradient
                         .frame(width: max(0, geo.size.width * barFraction), height: barHeight)
                         .clipShape(.rect(cornerRadius: 3))
-                        .animation(.linear(duration: 0.05), value: barFraction)
+                        .animation(reduceMotion ? nil : .linear(duration: 0.05), value: barFraction)
 
                     // Peak hold indicator
                     if peakHold > -60 {
