@@ -231,9 +231,12 @@ impl CpalAudioProcessor {
         device_name: Option<&str>,
     ) -> Result<cpal::Device, BlackboxError> {
         if let Some(name) = device_name {
-            let devices = host.input_devices().map_err(|e| {
-                BlackboxError::AudioDevice(format!("Failed to enumerate input devices: {}", e))
-            })?;
+            let devices = host
+                .input_devices()
+                .map_err(|e| BlackboxError::AudioDeviceSource {
+                    context: "Failed to enumerate input devices".to_string(),
+                    source: Box::new(e),
+                })?;
             for device in devices {
                 if let Ok(desc) = device.description()
                     && desc.name() == name
@@ -278,9 +281,12 @@ impl CpalAudioProcessor {
     /// List all available input device names.
     pub fn list_input_devices() -> Result<Vec<String>, BlackboxError> {
         let host = cpal::default_host();
-        let devices = host.input_devices().map_err(|e| {
-            BlackboxError::AudioDevice(format!("Failed to enumerate input devices: {}", e))
-        })?;
+        let devices = host
+            .input_devices()
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: "Failed to enumerate input devices".to_string(),
+                source: Box::new(e),
+            })?;
         let mut names = Vec::new();
         for device in devices {
             if let Ok(desc) = device.description() {
@@ -300,9 +306,12 @@ impl CpalAudioProcessor {
             host.default_input_device()
                 .ok_or_else(|| BlackboxError::AudioDevice("No default input device".to_string()))?
         } else {
-            let devices = host.input_devices().map_err(|e| {
-                BlackboxError::AudioDevice(format!("Failed to enumerate devices: {e}"))
-            })?;
+            let devices = host
+                .input_devices()
+                .map_err(|e| BlackboxError::AudioDeviceSource {
+                    context: "Failed to enumerate devices".to_string(),
+                    source: Box::new(e),
+                })?;
             let mut found = None;
             for d in devices {
                 if let Ok(desc) = d.description()
@@ -320,8 +329,9 @@ impl CpalAudioProcessor {
         device
             .default_input_config()
             .map(|cfg| cfg.channels())
-            .map_err(|e| {
-                BlackboxError::AudioDevice(format!("Failed to get config for '{device_name}': {e}"))
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: format!("Failed to get config for '{device_name}'"),
+                source: Box::new(e),
             })
     }
 
@@ -359,9 +369,13 @@ impl CpalAudioProcessor {
         // Use the device's current default config (sample rate, channels, format).
         // This avoids changing kAudioDevicePropertyNominalSampleRate on macOS,
         // which would conflict with DAWs and other pro audio apps sharing the device.
-        let config = device.default_input_config().map_err(|e| {
-            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
-        })?;
+        let config =
+            device
+                .default_input_config()
+                .map_err(|e| BlackboxError::AudioDeviceSource {
+                    context: "Failed to get default input stream config".to_string(),
+                    source: Box::new(e),
+                })?;
 
         debug!("Default input stream config: {:?}", config);
 
@@ -459,8 +473,9 @@ impl CpalAudioProcessor {
                 }
                 writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
             })
-            .map_err(|e| {
-                BlackboxError::AudioDevice(format!("Failed to spawn writer thread: {}", e))
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: "Failed to spawn writer thread".to_string(),
+                source: Box::new(e),
             })?;
 
         // Store handle (producer goes to the callback, not into the handle)
@@ -513,8 +528,9 @@ impl CpalAudioProcessor {
                         err_fn,
                         None,
                     )
-                    .map_err(|e| {
-                        BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
+                    .map_err(|e| BlackboxError::AudioDeviceSource {
+                        context: "Failed to build input stream".to_string(),
+                        source: Box::new(e),
                     })?
             }
             _ => {
@@ -528,7 +544,10 @@ impl CpalAudioProcessor {
         // Start recording
         stream
             .play()
-            .map_err(|e| BlackboxError::AudioDevice(format!("Failed to play stream: {}", e)))?;
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: "Failed to play stream".to_string(),
+                source: Box::new(e),
+            })?;
 
         self.stream = Some(Box::new(stream));
 
@@ -715,9 +734,13 @@ impl AudioProcessor for CpalAudioProcessor {
         let host = cpal::default_host();
         let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
 
-        let stream_config = device.default_input_config().map_err(|e| {
-            BlackboxError::AudioDevice(format!("Failed to get default input stream config: {}", e))
-        })?;
+        let stream_config =
+            device
+                .default_input_config()
+                .map_err(|e| BlackboxError::AudioDeviceSource {
+                    context: "Failed to get default input stream config".to_string(),
+                    source: Box::new(e),
+                })?;
 
         let total_channels = stream_config.channels() as usize;
         let sample_rate = stream_config.sample_rate();
@@ -780,8 +803,9 @@ impl AudioProcessor for CpalAudioProcessor {
                 }
                 writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
             })
-            .map_err(|e| {
-                BlackboxError::AudioDevice(format!("Failed to spawn monitor thread: {}", e))
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: "Failed to spawn monitor thread".to_string(),
+                source: Box::new(e),
             })?;
 
         self.writer_thread = Some(WriterThreadHandle {
@@ -808,8 +832,9 @@ impl AudioProcessor for CpalAudioProcessor {
                     err_fn,
                     None,
                 )
-                .map_err(|e| {
-                    BlackboxError::AudioDevice(format!("Failed to build input stream: {}", e))
+                .map_err(|e| BlackboxError::AudioDeviceSource {
+                    context: "Failed to build input stream".to_string(),
+                    source: Box::new(e),
                 })?,
             _ => {
                 return Err(BlackboxError::AudioDevice(format!(
@@ -821,7 +846,10 @@ impl AudioProcessor for CpalAudioProcessor {
 
         stream
             .play()
-            .map_err(|e| BlackboxError::AudioDevice(format!("Failed to play stream: {}", e)))?;
+            .map_err(|e| BlackboxError::AudioDeviceSource {
+                context: "Failed to play stream".to_string(),
+                source: Box::new(e),
+            })?;
 
         self.stream = Some(Box::new(stream));
         self.monitoring = true;
