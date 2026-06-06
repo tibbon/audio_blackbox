@@ -72,12 +72,16 @@ enum SleepWakePolicy {
     /// `start()` and clears on `stop()` or any FFI-reported failure.
     /// Drives the menu bar icon, the Start/Stop button, and the menu's
     /// "currently recording" caption.
-    var isRecording = false
+    var isRecording = false {
+        didSet { syncMeterTimer() } // DOLL-374: gate the meter poll on activity
+    }
 
     /// `true` while the level meter is actively pulling peak levels from
     /// the audio engine without persisting to disk. Mutually exclusive
     /// with `isRecording` in practice — starting recording stops monitoring.
-    var isMonitoring = false
+    var isMonitoring = false {
+        didSet { syncMeterTimer() } // DOLL-374: gate the meter poll on activity
+    }
 
     /// Short status string for the menu's headline row ("Ready",
     /// "Recording...", "Error", elapsed time during a session). Always
@@ -154,9 +158,14 @@ enum SleepWakePolicy {
         didSet { syncMeterTimer() }
     }
 
-    /// Run the 30 Hz meter poll only while the window is open AND visible.
+    /// Run the 30 Hz meter poll only while the window is open AND visible AND
+    /// there's actually a signal source (recording or monitoring). DOLL-374:
+    /// without the activity check, opening the meter while monitoring fails to
+    /// start (no device / denied) left the timer waking the CPU 30x/s forever
+    /// even though updatePeakLevels early-returns every tick. The isRecording /
+    /// isMonitoring didSet hooks re-run this when a source comes up or goes away.
     private func syncMeterTimer() {
-        if isMeterWindowOpen, !isMeterWindowOccluded {
+        if isMeterWindowOpen, !isMeterWindowOccluded, isRecording || isMonitoring {
             startMeterTimer()
         } else {
             stopMeterTimer()
