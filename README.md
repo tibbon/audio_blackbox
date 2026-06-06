@@ -38,8 +38,8 @@ Prerequisites: Rust stable toolchain (edition 2024). macOS users also need Xcode
 
 ```bash
 cargo run                            # Run with defaults
-cargo test                           # Run all tests (119 lib tests, 14 ignored benchmarks)
-cargo test --features ffi            # 145 lib tests (adds the FFI suite)
+cargo test                           # Run all tests (benchmarks are #[ignore]'d)
+cargo test --features ffi            # Also run the FFI suite
 cargo clippy --all-targets --no-default-features -- -D warnings  # Lint (matches CI)
 cargo fmt --all -- --check           # Format check
 make verify                          # Kitchen-sink local check (fmt + clippy + tests + ASC metadata lint + Swift tests)
@@ -164,9 +164,9 @@ CI runs on every push to `main` and on pull requests:
 | **Format** | `cargo fmt --all -- --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
 | **MSRV (1.95)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
-| **Test (macOS)** | 119 lib tests (14 benchmarks ignored) |
+| **Test (macOS)** | `cargo test` — full lib + integration suite (benchmarks `#[ignore]`'d) |
 | **Security audit** | `cargo audit --deny warnings` against RUSTSEC advisory database |
-| **Benchmark smoke test** | Builds release binary, asserts ≥10× real-time throughput in all modes |
+| **Benchmark smoke test** | Builds release binary, asserts each write mode stays above its real-time throughput floor |
 | **Swift app** | Builds Rust static library with FFI and SwiftUI app via xcodebuild |
 | **CodeQL**¹ | Static analysis on Rust + Swift + GitHub Actions YAML |
 
