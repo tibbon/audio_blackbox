@@ -583,11 +583,12 @@ struct OnboardingView: View {
     }
 
     private func requestMicAccess() {
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-            Task { @MainActor in
-                micGranted = granted
-                micDenied = !granted
-            }
+        // DOLL-267: use the modern async API (matching RecordingState) instead
+        // of the legacy closure form + nested @MainActor Task hop.
+        Task { @MainActor in
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            micGranted = granted
+            micDenied = !granted
         }
     }
 
