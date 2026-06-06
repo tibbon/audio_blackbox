@@ -40,10 +40,10 @@ struct SettingsView: View {
     }
 
     private func promptForReviewIfReady() {
-        let sessions = UserDefaults.standard.integer(forKey: "successfulRecordingSessions")
+        let sessions = UserDefaults.standard.integer(forKey: SettingsKeys.successfulRecordingSessions)
         guard sessions >= 3 else { return }
-        guard !UserDefaults.standard.bool(forKey: "hasPromptedForReview") else { return }
-        UserDefaults.standard.set(true, forKey: "hasPromptedForReview")
+        guard !UserDefaults.standard.bool(forKey: SettingsKeys.hasPromptedForReview) else { return }
+        UserDefaults.standard.set(true, forKey: SettingsKeys.hasPromptedForReview)
         Task {
             try? await Task.sleep(for: .seconds(1))
             requestReview()
@@ -916,7 +916,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(SettingsKeys.sleepBehavior) private var sleepBehavior: String = "resume"
     @AppStorage(SettingsKeys.preventSleep) private var preventSleep: Bool = true
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
-    @AppStorage("debugLogging") private var debugLogging = false
+    @AppStorage(SettingsKeys.debugLogging) private var debugLogging = false
     @State private var shortcutLabel: String = "None"
     @State private var isRecordingShortcut = false
     @State private var shortcutError: String?
@@ -1084,7 +1084,7 @@ struct GeneralSettingsTab: View {
             SettingsKeys.minDiskSpaceMB, SettingsKeys.bitDepth,
             SettingsKeys.silenceGateEnabled, SettingsKeys.silenceGateTimeout,
             SettingsKeys.sleepBehavior, SettingsKeys.preventSleep,
-            "debugLogging",
+            SettingsKeys.debugLogging,
         ]
         for key in keysToReset {
             defaults.removeObject(forKey: key)

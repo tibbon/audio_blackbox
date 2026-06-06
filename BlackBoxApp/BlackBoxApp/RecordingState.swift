@@ -112,7 +112,7 @@ enum SleepWakePolicy {
     /// Active capture sample rate in Hz, or `0` when no session is running.
     /// Persisted to UserDefaults at session start so the meter window can
     /// label its grid before the next session brings the engine up.
-    var sampleRate: Int = UserDefaults.standard.integer(forKey: "lastSampleRate")
+    var sampleRate: Int = UserDefaults.standard.integer(forKey: SettingsKeys.lastSampleRate)
 
     /// `true` once `UNUserNotificationCenter` reports authorization granted,
     /// `false` when the user denied or hasn't yet responded. Updated by the
@@ -258,12 +258,12 @@ enum SleepWakePolicy {
     /// completes (we never read it later so dropping the reference is fine).
     private var bookmarkRestoreTask: Task<Void, Never>?
 
-    private static let bookmarkKey = "outputDirBookmark"
+    private static let bookmarkKey = SettingsKeys.outputDirBookmark
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
 
     /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
     /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
-    private var debugLogging: Bool = UserDefaults.standard.bool(forKey: "debugLogging")
+    private var debugLogging: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
 
     /// True when running inside an XCTest host — skips hardware-dependent init.
     private static let isTesting = NSClassFromString("XCTestCase") != nil
@@ -744,7 +744,7 @@ enum SleepWakePolicy {
 
             // Track successful sessions >5 min for App Store review prompt
             if sessionDuration > 300 {
-                let key = "successfulRecordingSessions"
+                let key = SettingsKeys.successfulRecordingSessions
                 UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
             }
 
@@ -869,7 +869,7 @@ enum SleepWakePolicy {
             config["silence_gate_timeout_secs"] = gateTimeout
         }
 
-        debugLogging = defaults.bool(forKey: "debugLogging")
+        debugLogging = defaults.bool(forKey: SettingsKeys.debugLogging)
 
         if !config.isEmpty {
             bridge.setConfig(config)
@@ -1335,7 +1335,7 @@ enum SleepWakePolicy {
             let rate = Int(status.sample_rate)
             if rate > 0, rate != sampleRate {
                 sampleRate = rate
-                UserDefaults.standard.set(rate, forKey: "lastSampleRate")
+                UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
             }
         }
     }

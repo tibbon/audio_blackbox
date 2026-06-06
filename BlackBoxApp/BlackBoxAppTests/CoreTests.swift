@@ -323,5 +323,10 @@ final class SettingsKeysTests: XCTestCase {
         XCTAssertEqual(SettingsKeys.silenceGateTimeout, "silenceGateTimeout")
         XCTAssertEqual(SettingsKeys.sleepBehavior, "sleepBehavior")
         XCTAssertEqual(SettingsKeys.preventSleep, "preventSleep")
+        XCTAssertEqual(SettingsKeys.lastSampleRate, "lastSampleRate")
+        XCTAssertEqual(SettingsKeys.debugLogging, "debugLogging")
+        XCTAssertEqual(SettingsKeys.successfulRecordingSessions, "successfulRecordingSessions")
+        XCTAssertEqual(SettingsKeys.hasPromptedForReview, "hasPromptedForReview")
+        XCTAssertEqual(SettingsKeys.outputDirBookmark, "outputDirBookmark")
     }
 }
