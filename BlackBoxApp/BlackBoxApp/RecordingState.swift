@@ -1013,20 +1013,11 @@ enum SleepWakePolicy {
         return Self.formatFileSize(bytes)
     }
 
-    /// Human-readable bytes — MB / GB to match the SettingsView estimate.
-    /// Drops the prefix "~" hint into the caller so this stays a plain
-    /// formatter usable from anywhere.
+    /// Human-readable bytes with an "~" estimate hint. DOLL-377: use the
+    /// locale-aware binary byte-count format style instead of a hardcoded
+    /// "%.1f GB" with a "." separator, so a de_DE/fr_FR user sees "1,5 GB".
     private static func formatFileSize(_ bytes: Int64) -> String {
-        if bytes >= 1_073_741_824 {
-            return String(format: "~%.1f GB", Double(bytes) / 1_073_741_824)
-        }
-        if bytes >= 1_048_576 {
-            return String(format: "~%.0f MB", Double(bytes) / 1_048_576)
-        }
-        if bytes >= 1024 {
-            return String(format: "~%.0f KB", Double(bytes) / 1024)
-        }
-        return "\(bytes) bytes"
+        "~" + bytes.formatted(.byteCount(style: .binary))
     }
 
     // MARK: - Pre-flight 4 GiB warning (DOLL-220)
