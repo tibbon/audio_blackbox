@@ -7,6 +7,12 @@ struct OnboardingView: View {
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @Environment(\.dismiss) private var dismiss
 
+    // DOLL-253: the onboarding window is pinned to content size and not
+    // user-resizable, so a hard 460pt width truncated/awkwardly-wrapped the
+    // step captions at large Dynamic Type sizes. @ScaledMetric grows the
+    // pinned width with the user's text size so the content keeps room.
+    @ScaledMetric(relativeTo: .body) private var contentWidth: CGFloat = 460
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
     @State private var micGranted = false
@@ -138,7 +144,7 @@ struct OnboardingView: View {
         // SwiftUI persists the window frame in user defaults, so .defaultSize
         // on the Window only applies the first time. The view-level minHeight
         // is what windowResizability(.contentSize) honours every open.
-        .frame(minWidth: 460, maxWidth: 460, minHeight: 540)
+        .frame(minWidth: contentWidth, maxWidth: contentWidth, minHeight: 540)
         .background(OnboardingWindowConfigurator())
         .onAppear {
             // On re-run, preserve the user's existing output directory.

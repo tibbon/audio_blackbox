@@ -7,6 +7,14 @@ struct SettingsView: View {
     var recorder: RecordingState
     @Environment(\.requestReview) private var requestReview
 
+    // DOLL-253: the window is pinned to content size (.windowResizability
+    // (.contentSize) in BlackBoxApp), and the user can't widen it. A hard
+    // 480pt width truncated/awkwardly-wrapped the captions and picker labels
+    // at large Dynamic Type sizes. @ScaledMetric grows the pinned width with
+    // the user's text size (≈480 at default, wider at accessibility sizes)
+    // so content keeps its proportions instead of cramming into 480pt.
+    @ScaledMetric(relativeTo: .body) private var contentWidth: CGFloat = 480
+
     var body: some View {
         TabView {
             RecordingSettingsTab(recorder: recorder)
@@ -24,7 +32,7 @@ struct SettingsView: View {
                     Label("General", systemImage: "slider.horizontal.3")
                 }
         }
-        .frame(minWidth: 480, maxWidth: 480, minHeight: 450)
+        .frame(minWidth: contentWidth, maxWidth: contentWidth, minHeight: 450)
         .background(SettingsWindowConfigurator())
         .onAppear {
             promptForReviewIfReady()
