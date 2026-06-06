@@ -1048,8 +1048,21 @@ pub fn writer_thread_main(
     command_rx: std::sync::mpsc::Receiver<WriterCommand>,
     mut state: WriterThreadState,
 ) {
-    // Adaptive sleep: short when data is flowing, longer when idle.
-    // Caps at 5ms to bound worst-case latency while reducing idle wakeups ~5×.
+    // Why poll-sleep instead of blocking on a condvar/channel (DOLL-270):
+    // the only producer into the ring buffer is the cpal audio callback, which
+    // runs on a real-time thread. Signalling a condvar / waking a parked thread
+    // from there means taking a lock and potentially making a syscall in the RT
+    // path — exactly the non-real-time work that causes audio dropouts (cf.
+    // DOLL-250). So the producer stays lock/syscall-free and just pushes into
+    // the lock-free rtrb queue; this thread polls it. The cost is bounded:
+    //
+    // - Adaptive sleep below backs off 1ms → 5ms as the queue stays empty, so
+    //   worst-case drain latency is ~5ms and idle wakeups drop ~5×.
+    // - The shutdown path is a non-blocking `try_recv` each iteration, so a
+    //   Shutdown command is observed within one sleep interval.
+    //
+    // A blocking design would shave the few-ms latency but at the cost of
+    // RT-safety, which is the wrong trade for an audio capture path.
     let mut consecutive_empty: u8 = 0;
 
     loop {
