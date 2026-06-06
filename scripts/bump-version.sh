@@ -11,6 +11,9 @@
 #   - Makefile (APP_VERSION)
 #   - BlackBoxApp/BlackBoxApp/Info.plist (CFBundleShortVersionString + CFBundleVersion)
 #   - BlackBoxApp/project.yml (CFBundleShortVersionString + CFBundleVersion)
+#   - BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj (regenerated from
+#     project.yml via xcodegen, so the committed project stays in sync — CI
+#     enforces this match, DOLL-160). Requires `xcodegen` on PATH.
 #
 # Portability: uses `sed -i.bak` everywhere (both BSD and GNU sed accept
 # this form) and cleans up the .bak files at the end (DOLL-193). The
@@ -86,3 +89,15 @@ else
     echo ""
     echo "Version $CURRENT_VERSION (build $NEW_BUILD)"
 fi
+
+# Regenerate the committed Xcode project so project.pbxproj tracks the
+# project.yml edits above (DOLL-160 CI fails the build otherwise). Done last
+# so it picks up every change. xcodegen is required — fail loudly if missing
+# rather than leaving a half-bumped tree.
+if ! command -v xcodegen >/dev/null 2>&1; then
+    echo "Error: xcodegen not found on PATH — install it (brew install xcodegen) and" >&2
+    echo "       re-run 'make xcodegen' so project.pbxproj matches the bumped project.yml." >&2
+    exit 1
+fi
+( cd "$REPO_ROOT/BlackBoxApp" && xcodegen generate )
+echo "  Regenerated project.pbxproj"
