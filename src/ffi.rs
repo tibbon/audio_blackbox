@@ -76,6 +76,20 @@ pub struct StatusFlags {
 // If this fails, update the C header (blackbox_ffi.h) to match.
 const _: () = assert!(std::mem::size_of::<StatusFlags>() == 24);
 
+// DOLL-354: the size assert alone can't catch a size-preserving field
+// reorder/retype (e.g. swapping two trailing bools, or moving sample_rate
+// ahead of write_errors) — that would keep size == 24 yet make Rust and the
+// C header (blackbox_ffi.h) interpret the bytes differently, so Swift would
+// read transposed/garbage status. Pin every field offset so any such change
+// is a compile error that forces the header to be updated in lockstep.
+const _: () = assert!(std::mem::offset_of!(StatusFlags, write_errors) == 0);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, sample_rate) == 8);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, is_recording) == 12);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, gate_idle) == 13);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, disk_space_low) == 14);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, stream_error) == 15);
+const _: () = assert!(std::mem::offset_of!(StatusFlags, sample_rate_changed) == 16);
+
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
 // ---------------------------------------------------------------------------
