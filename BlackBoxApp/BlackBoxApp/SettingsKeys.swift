@@ -37,4 +37,8 @@ enum SettingsKeys {
     static let successfulRecordingSessions = "successfulRecordingSessions"
     static let hasPromptedForReview = "hasPromptedForReview"
     static let outputDirBookmark = "outputDirBookmark"
+
+    // DOLL-378: the global-hotkey shortcut persisted under a bare literal in
+    // GlobalHotkeyManager, escaping this registry and its rename guard.
+    static let globalShortcut = "globalShortcut"
 }

@@ -126,7 +126,9 @@ final class GlobalHotkeyManager {
 
     // MARK: - Persistence
 
-    private static let defaultsKey = "globalShortcut"
+    // DOLL-378: source the key from the central registry (value unchanged, so
+    // no stored-value migration needed) so a rename can't silently orphan it.
+    private static let defaultsKey = SettingsKeys.globalShortcut
 
     func save(_ shortcut: Shortcut?) {
         if let shortcut, let data = try? JSONEncoder().encode(shortcut) {
