@@ -382,6 +382,13 @@ struct BlackBoxApp: App {
             Text("No Input Devices")
                 .accessibilityLabel("No input devices available")
 
+            // DOLL-387: the menu is the primary surface where the user notices
+            // no devices; offer inline recovery after they plug hardware in,
+            // rather than making them open Settings just to re-scan.
+            Button("Refresh Devices") {
+                recorder.refreshDevices()
+            }
+
             Divider()
         }
 
