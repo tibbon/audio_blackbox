@@ -7,7 +7,8 @@ use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
 use crate::test_utils::default_test_env;
 use crate::test_utils::{generate_silent_interleaved_f32, generate_uniform_interleaved_f32};
 use crate::writer_thread::{
-    WriterCommand, WriterThreadState, check_and_delete_silent_files, writer_thread_main,
+    WriterCommand, WriterThreadState, check_and_delete_silent_files, read_available,
+    writer_thread_main,
 };
 
 /// Collect all `.wav` files (not `.recording.wav`) in a directory.
@@ -809,5 +810,72 @@ fn test_disk_stopped_skips_writes() {
             "write_samples after disk_stopped must not change on-disk byte total"
         );
         assert_eq!(write_errors.load(Ordering::Relaxed), 0);
+    });
+}
+
+// ===========================================================================
+// read_available: ring-buffer wraparound (second non-empty slice)
+// ===========================================================================
+
+/// DOLL-355: `read_available` handles `read_chunk` returning TWO slices when the
+/// readable region wraps the buffer end, calling `write_samples` on the second
+/// slice. Every other test pushes one small batch into a fresh ring, so the read
+/// region is always contiguous and that branch never ran. Here we deliberately
+/// advance the read cursor near the end, then write past it so the next read
+/// wraps — and assert (via WAV contents) that every sample across the wrap was
+/// written, in order.
+#[test]
+fn read_available_handles_ring_wraparound() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = WriterThreadState::new(
+            dir,
+            48000,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            24,
+            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
+
+        // Fill 6 and drain them so the read cursor sits near the buffer end.
+        let first: Vec<f32> = (1..=6).map(|i| i as f32 / 100.0).collect();
+        let chunk = producer.write_chunk_uninit(first.len()).unwrap();
+        chunk.fill_from_iter(first.iter().copied());
+        assert_eq!(read_available(&mut consumer, &mut state), 6);
+
+        // Push 5 more: writes the last 2 slots then wraps to the front, so the
+        // readable region spans the buffer boundary → read_chunk yields two
+        // non-empty slices.
+        let second: Vec<f32> = (7..=11).map(|i| i as f32 / 100.0).collect();
+        let chunk = producer.write_chunk_uninit(second.len()).unwrap();
+        chunk.fill_from_iter(second.iter().copied());
+        assert_eq!(read_available(&mut consumer, &mut state), 5);
+
+        state.finalize_all().unwrap();
+
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(files.len(), 1, "expected exactly one WAV file");
+        let (_spec, samples) = read_wav(&files[0]);
+        assert_eq!(
+            samples.len(),
+            11,
+            "both slices across the wrap must be written (the second slice is the untested branch)"
+        );
+        // Strictly increasing proves in-order writes across the wrap boundary.
+        for w in samples.windows(2) {
+            assert!(w[1] > w[0], "samples out of order across wrap: {samples:?}");
+        }
     });
 }

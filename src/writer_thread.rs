@@ -1012,7 +1012,10 @@ impl WriterThreadState {
 // ---------------------------------------------------------------------------
 
 /// Read and process a chunk from the consumer. Returns the number of samples read.
-fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) -> usize {
+///
+/// Exposed (crate-internal; this module is private) so tests can drive a
+/// controlled ring-buffer wraparound (DOLL-355).
+pub fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) -> usize {
     let available = consumer.slots();
     if available == 0 {
         return 0;
