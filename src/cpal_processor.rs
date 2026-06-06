@@ -521,7 +521,13 @@ impl CpalAudioProcessor {
                             if continuous_mode {
                                 rotation_sample_counter += data.len() as u64;
                                 if rotation_sample_counter >= rotation_threshold {
-                                    rotation_needed_cb.store(true, Ordering::Release);
+                                    // Status flag only — the flag carries no
+                                    // companion payload (samples travel through
+                                    // rtrb with its own synchronization), so
+                                    // Relaxed suffices and is marginally cheaper
+                                    // on the RT thread (DOLL-391). Matches the
+                                    // other RT status flags in this file.
+                                    rotation_needed_cb.store(true, Ordering::Relaxed);
                                     rotation_sample_counter = 0;
                                 }
                             }
