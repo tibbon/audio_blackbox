@@ -212,9 +212,10 @@ pub struct WriterThreadState {
     /// Cumulative count of samples consumed via `read_available`. Tests
     /// poll this to know when the writer thread has drained a known
     /// number of samples — replaces the prior `thread::sleep(50ms)`
-    /// rendezvous with deterministic state (DOLL-127). Production code
-    /// never reads it.
-    #[allow(dead_code)]
+    /// rendezvous with deterministic state (DOLL-127). Only the tests read
+    /// it, so it's gated to test builds — the production drain path carries
+    /// no extra atomic (DOLL-269).
+    #[cfg(test)]
     pub(crate) samples_consumed_total: Arc<AtomicU64>,
 }
 
@@ -338,6 +339,7 @@ impl WriterThreadState {
             } else {
                 None
             },
+            #[cfg(test)]
             samples_consumed_total: Arc::new(AtomicU64::new(0)),
         };
 
@@ -408,6 +410,7 @@ impl WriterThreadState {
             disk_space_low: Arc::new(AtomicBool::new(false)),
             timestamp_fn: Arc::new(timestamp_now),
             silence_worker: None, // monitor mode never writes files, so no silence checks
+            #[cfg(test)]
             samples_consumed_total: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -994,7 +997,8 @@ fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadSt
         chunk.commit_all();
         // Bump cumulative-sample counter so tests can rendezvous on
         // "writer has consumed N samples" instead of `thread::sleep`
-        // (DOLL-127). Production code never reads this counter.
+        // (DOLL-127). Test-only — gated out of production builds (DOLL-269).
+        #[cfg(test)]
         state
             .samples_consumed_total
             .fetch_add(n as u64, Ordering::Relaxed);
