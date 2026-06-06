@@ -29,4 +29,12 @@ enum SettingsKeys {
     static let silenceGateTimeout = "silenceGateTimeout"
     static let sleepBehavior = "sleepBehavior"
     static let preventSleep = "preventSleep"
+
+    // DOLL-266: keys that previously lived as bare string literals at their
+    // call sites, centralized here so a rename can't orphan stored values.
+    static let lastSampleRate = "lastSampleRate"
+    static let debugLogging = "debugLogging"
+    static let successfulRecordingSessions = "successfulRecordingSessions"
+    static let hasPromptedForReview = "hasPromptedForReview"
+    static let outputDirBookmark = "outputDirBookmark"
 }
