@@ -221,6 +221,11 @@ pub struct WriterThreadState {
     pub min_disk_space_mb: u64,
     /// Shared flag: set when disk space drops below threshold.
     pub disk_space_low: Arc<AtomicBool>,
+    /// Shared flag: set when `write_sample` keeps failing (DOLL-437). Defaults
+    /// to a private throwaway; the FFI-exposed clone is injected post-construction
+    /// by `CpalAudioProcessor`. Distinct from `disk_space_low` so the UI can
+    /// show a precise "unable to write to disk" message.
+    pub write_failed: Arc<AtomicBool>,
     /// Pluggable timestamp source for filename stamps. Production passes
     /// `Arc::new(timestamp_now)`; tests pass a `MockClock` so rotations
     /// produce distinct filenames without sleeping past a wall-clock second.
@@ -387,6 +392,7 @@ impl WriterThreadState {
             silence_threshold,
             min_disk_space_mb,
             disk_space_low,
+            write_failed: Arc::new(AtomicBool::new(false)),
             timestamp_fn: Arc::new(timestamp_now),
             // SilenceCheckWorker::new returns Option (DOLL-122) — spawn
             // failures degrade to "no silence checks this session"
@@ -470,6 +476,7 @@ impl WriterThreadState {
             silence_threshold: 0.0,
             min_disk_space_mb: 0,
             disk_space_low: Arc::new(AtomicBool::new(false)),
+            write_failed: Arc::new(AtomicBool::new(false)),
             timestamp_fn: Arc::new(timestamp_now),
             silence_worker: None, // monitor mode never writes files, so no silence checks
             #[cfg(test)]
@@ -806,9 +813,10 @@ impl WriterThreadState {
         // shared overflow counter and recording spun on forever, persisting no
         // audio and misreporting the cause as CPU "heavy load". Track
         // consecutive failures and, once they add up to ~1s of audio, stop like
-        // the disk-low path (finalize what landed, latch disk_stopped, raise
-        // disk_space_low so the UI surfaces a stop). A batch that writes cleanly
-        // clears the streak.
+        // the disk-low path (finalize what landed, latch disk_stopped), and
+        // raise the distinct `write_failed` flag (DOLL-437) so the UI shows
+        // "unable to write to disk" rather than the low-space message. A batch
+        // that writes cleanly clears the streak.
         if write_failures > 0 {
             self.consecutive_write_failures = self
                 .consecutive_write_failures
@@ -820,8 +828,8 @@ impl WriterThreadState {
                      (disk full or output directory unwritable)",
                     self.consecutive_write_failures
                 );
-                // status flag only; reader loads Relaxed.
-                self.disk_space_low.store(true, Ordering::Relaxed);
+                // status flag only; reader loads Relaxed. (DOLL-437)
+                self.write_failed.store(true, Ordering::Relaxed);
                 self.disk_stopped = true;
                 if let Err(e) = self.finalize_all() {
                     error!("Error finalizing after persistent write failures: {}", e);
