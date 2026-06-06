@@ -408,3 +408,55 @@ fn test_inf_sample_clamps_peak_meter_to_one() {
         assert_eq!(peak, 0.0, "Inf samples must not contribute to peak");
     });
 }
+
+// ===========================================================================
+// Gate-open recording writes the actual post-open signal (content, not just
+// file existence)
+// ===========================================================================
+
+/// DOLL-355: the gate tests asserted file existence/state transitions but never
+/// opened the WAV to verify content — so a regression that left an empty-but-
+/// present file, or leaked pre-gate silence into the file, would still pass.
+/// Here we open the gate with a signal burst, write a known uniform batch after
+/// the open, finalize, and assert the file contains exactly that batch.
+#[test]
+fn test_gate_recording_writes_post_open_signal() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = make_gate_state(dir, true, 5, 0.01);
+
+        // Burst above threshold opens the gate (this audio is consumed for
+        // detection while idle, before any writer exists, so it is NOT written).
+        let trigger: Vec<f32> = (0..48_000).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        state.write_samples(&trigger);
+        state.process_gate_open();
+        assert_eq!(state.gate_state, GateState::Recording);
+
+        // The post-open batch is what must actually land on disk.
+        let n = 2_000;
+        let post = vec![0.5_f32; n];
+        state.write_samples(&post);
+        state.finalize_all().unwrap();
+
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(files.len(), 1, "expected exactly one finalized WAV");
+
+        let reader = hound::WavReader::open(&files[0]).expect("finalized gate WAV must be valid");
+        let samples: Vec<i32> = reader.into_samples::<i32>().map(Result::unwrap).collect();
+        assert_eq!(
+            samples.len(),
+            n,
+            "file must contain exactly the post-open batch (no empty file, no leaked pre-gate audio)"
+        );
+        assert!(
+            samples.iter().all(|&s| s != 0),
+            "post-open signal samples must be non-zero on disk"
+        );
+        assert!(
+            samples.windows(2).all(|w| w[0] == w[1]),
+            "uniform 0.5 input must decode to a constant sample value"
+        );
+    });
+}
