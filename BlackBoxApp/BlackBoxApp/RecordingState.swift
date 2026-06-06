@@ -1461,12 +1461,21 @@ enum SleepWakePolicy {
                 bridge.setConfig(["output_dir": url.path])
                 UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
                 Self.log.info("Restored output directory: \(url.path)\(isStale ? " (stale, refreshing)" : "")")
+                // DOLL-379: only refresh a stale bookmark when access actually
+                // succeeded — otherwise we'd persist a .withSecurityScope
+                // bookmark for a URL whose scope was never acquired.
+                if isStale {
+                    saveOutputDirBookmark(for: url)
+                }
             } else {
+                // DOLL-379: access failed. Drop the unusable bookmark so it
+                // doesn't re-trigger this prompt every launch, and return so we
+                // can't fall through to the stale re-save above (which would
+                // re-persist a bookmark for an unscoped URL and point the engine
+                // at an unwritable path).
                 Self.log.warning("Failed to access security-scoped resource: \(url.path)")
+                UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
                 promptToReselectOutputDir(failedPath: url.path)
-            }
-            if isStale {
-                saveOutputDirBookmark(for: url)
             }
         } catch {
             Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
