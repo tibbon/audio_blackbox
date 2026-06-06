@@ -1133,8 +1133,9 @@ pub fn writer_thread_main(
         // 2. Check disk space periodically
         state.check_disk_space();
 
-        // 3. Check rotation flag (set by RT callback via AtomicBool)
-        if rotation_needed.swap(false, Ordering::Acquire) {
+        // 3. Check rotation flag (set by RT callback via AtomicBool).
+        // Relaxed: status flag only, no companion data to acquire (DOLL-391).
+        if rotation_needed.swap(false, Ordering::Relaxed) {
             state.rotate_files();
         }
 
