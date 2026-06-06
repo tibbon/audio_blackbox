@@ -128,16 +128,38 @@ enum SleepWakePolicy {
     var isMeterWindowOpen: Bool = false {
         didSet {
             if isMeterWindowOpen {
-                startMeterTimer()
                 if !isRecording {
                     startMonitoring()
                 }
             } else {
-                stopMeterTimer()
+                // A closed window starts visible again when reopened.
+                isMeterWindowOccluded = false
                 if isMonitoring {
                     stopMonitoring()
                 }
             }
+            syncMeterTimer()
+        }
+    }
+
+    /// Whether the meter window is currently occluded — covered by another
+    /// window, minimized, or on an inactive Space. DOLL-348: SwiftUI's
+    /// `onDisappear` does NOT fire for occlusion, so without this the 30 Hz
+    /// poll keeps waking the CPU to cross the FFI boundary and redraw a window
+    /// the user can't see, suppressing App Nap on battery. Driven by the
+    /// window's `didChangeOcclusionStateNotification`. The monitoring stream is
+    /// deliberately left tied to window-open (not occlusion) so quickly
+    /// covering/uncovering the window doesn't thrash the cpal stream.
+    var isMeterWindowOccluded: Bool = false {
+        didSet { syncMeterTimer() }
+    }
+
+    /// Run the 30 Hz meter poll only while the window is open AND visible.
+    private func syncMeterTimer() {
+        if isMeterWindowOpen, !isMeterWindowOccluded {
+            startMeterTimer()
+        } else {
+            stopMeterTimer()
         }
     }
 

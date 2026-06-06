@@ -188,7 +188,9 @@ struct MeterView: View {
         // → 155 (DOLL-214/217 v3, elapsed + rotation countdown row).
         .frame(minWidth: 300, minHeight: 155)
         .navigationTitle(windowTitle)
-        .background(MeterWindowConfigurator())
+        .background(MeterWindowConfigurator { occluded in
+            recorder.isMeterWindowOccluded = occluded
+        })
         .onAppear { recorder.isMeterWindowOpen = true }
         .onDisappear { recorder.isMeterWindowOpen = false }
         // DOLL-252: clip indicators are otherwise purely visual. Post one
@@ -368,18 +370,64 @@ private struct MeterBar: View {
 /// Disables minimize and zoom buttons on the Level Meter window per Apple HIG.
 /// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct MeterWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { WindowConfiguratorView() }
+    /// Called with `true` when the window becomes occluded (not visible) and
+    /// `false` when it becomes visible again (DOLL-348).
+    var onOcclusionChange: @MainActor (Bool) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        WindowConfiguratorView(onOcclusionChange: onOcclusionChange)
+    }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 private final class WindowConfiguratorView: NSView {
     private var configured = false
+    private let onOcclusionChange: @MainActor (Bool) -> Void
+    private var occlusionObserver: NSObjectProtocol?
+
+    init(onOcclusionChange: @escaping @MainActor (Bool) -> Void) {
+        self.onOcclusionChange = onOcclusionChange
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard !configured, let window else { return }
-        configured = true
-        window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
-        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        guard let window else { return }
+
+        if !configured {
+            configured = true
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+        }
+
+        // DOLL-348: pause the meter's 30 Hz poll whenever the window isn't
+        // visible. `didChangeOcclusionStateNotification` fires for covering,
+        // minimizing, and Space switches — none of which trigger SwiftUI's
+        // onDisappear.
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
+        let publish = onOcclusionChange
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: window,
+            queue: .main
+        ) { [weak window] _ in
+            guard let window else { return }
+            let occluded = !window.occlusionState.contains(.visible)
+            MainActor.assumeIsolated { publish(occluded) }
+        }
+        // Publish the current state immediately (the window may already be
+        // visible when the view is installed).
+        onOcclusionChange(!window.occlusionState.contains(.visible))
+    }
+
+    deinit {
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
     }
 }
