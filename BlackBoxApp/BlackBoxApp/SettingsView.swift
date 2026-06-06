@@ -282,7 +282,10 @@ struct RecordingSettingsTab: View {
     // DOLL-221: row height scales with Dynamic Type so the grid stays
     // legible at larger text sizes (the old fixed 24pt cramped rows
     // overlapped at .accessibilityExtraLarge+).
-    @ScaledMetric(relativeTo: .body) private var channelRowHeight: CGFloat = 22
+    // DOLL-264: base bumped 22 → 28 to meet the comfortable pointer
+    // hit-target guidance (≥28pt), easier for Switch Control / motor-
+    // impaired users.
+    @ScaledMetric(relativeTo: .body) private var channelRowHeight: CGFloat = 28
 
     /// Number of grid columns to use for the current device. Stays at 1
     /// for small devices (looks like a list), and scales up for high-
@@ -314,8 +317,10 @@ struct RecordingSettingsTab: View {
             count: channelGridColumns
         )
 
+        // LazyVGrid lays out row-major (left→right, top→bottom), so VoiceOver
+        // and keyboard focus order already match the visual reading order.
         ScrollView {
-            LazyVGrid(columns: gridItems, alignment: .leading, spacing: 4) {
+            LazyVGrid(columns: gridItems, alignment: .leading, spacing: 8) {
                 ForEach(1...deviceChannelCount, id: \.self) { ch in
                     Toggle(isOn: Binding(
                         get: { selectedChannels.contains(ch) },
@@ -334,6 +339,10 @@ struct RecordingSettingsTab: View {
                             .monospacedDigit()
                     }
                     .toggleStyle(.checkbox)
+                    // DOLL-264: give each toggle a ≥28pt row and make the whole
+                    // row hit-test to the control, not just the box + label.
+                    .frame(minHeight: channelRowHeight, alignment: .leading)
+                    .contentShape(Rectangle())
                     .accessibilityLabel("Channel \(ch)")
                     .accessibilityHint("Include this channel in recordings")
                 }
