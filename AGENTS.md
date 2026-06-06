@@ -37,7 +37,7 @@ Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compat
 | `debug` | `BLACKBOX_DEBUG` | `DEBUG` | `true`/`false`. |
 | `duration` | `BLACKBOX_DURATION` | `RECORD_DURATION` | Seconds; `0` = unlimited. |
 | `output_mode` | `BLACKBOX_OUTPUT_MODE` | `OUTPUT_MODE` | `"single"` or `"split"`. |
-| `silence_threshold` | `BLACKBOX_SILENCE_THRESHOLD` | `SILENCE_THRESHOLD` | Percent (0–100); `0` or negative disables. |
+| `silence_threshold` | `BLACKBOX_SILENCE_THRESHOLD` | `SILENCE_THRESHOLD` | Normalized amplitude 0.0–1.0 (`0.01` ≈ 1% full-scale); `0` disables; negative/NaN fall back to the default. |
 | `continuous_mode` | `BLACKBOX_CONTINUOUS_MODE` | `CONTINUOUS_MODE` | `true`/`false`. |
 | `recording_cadence` | `BLACKBOX_RECORDING_CADENCE` | `RECORDING_CADENCE` | Seconds between rotations. |
 | `output_dir` | `BLACKBOX_OUTPUT_DIR` | `OUTPUT_DIR` | Path; rejects `..` traversal. |

@@ -51,10 +51,12 @@ pub struct AppConfig {
     /// config boundary; downstream code uses the enum. `None` falls
     /// back to `DEFAULT_OUTPUT_MODE` ("single").
     pub output_mode: Option<String>,
-    /// Silence-detection threshold in **percent** of full-scale
-    /// amplitude (0.0 to 100.0). `0` or negative disables detection.
-    /// NaN / ±Inf are rejected by `get_silence_threshold` and treated
-    /// as disabled. `None` falls back to `DEFAULT_SILENCE_THRESHOLD`.
+    /// Silence-detection threshold as a **normalized amplitude fraction**
+    /// in [0.0, 1.0] (e.g. `0.01` = 1% of full scale). `0.0` disables
+    /// detection. Negative, NaN, and ±Inf values are rejected by
+    /// `get_silence_threshold`, which falls back to
+    /// `DEFAULT_SILENCE_THRESHOLD` (they do **not** disable detection).
+    /// `None` also falls back to `DEFAULT_SILENCE_THRESHOLD`.
     pub silence_threshold: Option<f32>,
     /// Enable continuous recording — file rotates at
     /// `recording_cadence` intervals. `None` falls back to
@@ -427,7 +429,8 @@ duration = {}
 # Default: {}
 output_mode = "{}"
 
-# Silence threshold (0-100, 0 disables silence detection)
+# Silence threshold: normalized amplitude 0.0-1.0 (0.01 = 1% of full scale).
+# 0 disables silence detection.
 # Default: {}
 silence_threshold = {}
 
