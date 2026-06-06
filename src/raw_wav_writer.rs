@@ -187,4 +187,67 @@ mod tests {
         assert_eq!(byte_rate, 384_000_u32 * 255 * 4);
         assert_eq!(block_align, 255 * 4);
     }
+
+    /// Reads the RIFF chunk size (offset 4) and data-chunk size (offset 40).
+    fn read_size_fields(path: &str) -> (u32, u32) {
+        let bytes = std::fs::read(path).unwrap();
+        let riff_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let data_size = u32::from_le_bytes(bytes[40..44].try_into().unwrap());
+        (riff_size, data_size)
+    }
+
+    // DOLL-356: the prior tests only read byte_rate/block_align after create() —
+    // update_header (data_size at offset 40, RIFF size at offset 4) was never
+    // exercised. Write samples, finalize, and assert both size fields.
+    #[test]
+    fn test_header_sizes_after_writes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sized.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        let n = 100u32;
+        for i in 0..n {
+            w.write_sample(i32::from(i as i16)).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let (riff_size, data_size) = read_size_fields(&path);
+        let byte_width = 2; // 16-bit
+        assert_eq!(data_size, n * byte_width, "data chunk size");
+        assert_eq!(riff_size, n * byte_width + 36, "RIFF size = data + 36");
+    }
+
+    // DOLL-356/DOLL-204: update_header must SATURATE the u32 header fields when
+    // data exceeds 4 GiB rather than wrapping. Poke the byte counter past
+    // u32::MAX (no need to actually write 4 GiB) and assert both fields cap.
+    #[test]
+    fn test_header_caps_at_4gib_instead_of_wrapping() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("huge.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 24,
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        // Same module → can set the private counter directly.
+        w.data_bytes_written = u64::from(u32::MAX) + 100;
+        w.finalize().unwrap();
+
+        let (riff_size, data_size) = read_size_fields(&path);
+        assert_eq!(
+            data_size,
+            u32::MAX,
+            "data size must cap at u32::MAX, not wrap"
+        );
+        assert_eq!(
+            riff_size,
+            u32::MAX,
+            "RIFF size must saturate at u32::MAX, not wrap to a tiny value"
+        );
+    }
 }
