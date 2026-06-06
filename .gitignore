@@ -9,5 +9,11 @@ CLAUDE.md
 *.app/
 profile.json.gz
 .env
+# Apple code-signing artifacts — keep private keys / profiles out of git
+# (DOLL-388). *.p12 bundles the private key; the rest are signing material.
 *.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.cer
 .cache/
