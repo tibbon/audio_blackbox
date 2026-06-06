@@ -135,12 +135,13 @@ fn test_standard_mode_data_accuracy() {
         let (_, samples) = read_wav(&files[0]);
 
         // 0.5 * 32767.0 = 16383.5 → rounded to 16384
+        // 16-bit output is TPDF-dithered (DOLL-373), so each sample is within
+        // ±1 LSB of the undithered value.
         let expected = (0.5_f32 * 32767.0).round() as i32;
         for (i, &s) in samples.iter().enumerate() {
-            assert_eq!(
-                s, expected,
-                "Sample {} mismatch: got {}, want {}",
-                i, s, expected
+            assert!(
+                (s - expected).abs() <= 1,
+                "Sample {i} mismatch: got {s}, want {expected} ±1 (TPDF dither)"
             );
         }
     });
@@ -291,10 +292,18 @@ fn test_multichannel_mode_interleaving() {
         let expected_ch1 = (0.50_f32 * 32767.0).round() as i32;
         let expected_ch2 = (0.75_f32 * 32767.0).round() as i32;
 
+        // ±1 LSB tolerance: 16-bit output is TPDF-dithered (DOLL-373). Still
+        // tight enough to catch any wrong-channel/wrong-value interleaving bug.
         for f in 0..frames {
-            assert_eq!(samples[f * 3], expected_ch0, "Frame {} ch0", f);
-            assert_eq!(samples[f * 3 + 1], expected_ch1, "Frame {} ch1", f);
-            assert_eq!(samples[f * 3 + 2], expected_ch2, "Frame {} ch2", f);
+            assert!((samples[f * 3] - expected_ch0).abs() <= 1, "Frame {f} ch0");
+            assert!(
+                (samples[f * 3 + 1] - expected_ch1).abs() <= 1,
+                "Frame {f} ch1"
+            );
+            assert!(
+                (samples[f * 3 + 2] - expected_ch2).abs() <= 1,
+                "Frame {f} ch2"
+            );
         }
     });
 }
@@ -663,9 +672,10 @@ fn test_16bit_backward_compat() {
         assert_eq!(spec.bits_per_sample, 16);
         assert_eq!(samples.len(), 100);
 
+        // 16-bit output is TPDF-dithered (DOLL-373) → within ±1 LSB.
         let expected = (0.5_f32 * 32767.0).round() as i32;
         for &s in &samples {
-            assert_eq!(s, expected);
+            assert!((s - expected).abs() <= 1);
         }
     });
 }

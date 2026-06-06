@@ -454,9 +454,12 @@ fn test_gate_recording_writes_post_open_signal() {
             samples.iter().all(|&s| s != 0),
             "post-open signal samples must be non-zero on disk"
         );
+        // 0.5 → ~16384 at 16-bit, within ±1 LSB (TPDF dither, DOLL-373). The
+        // tight band confirms the post-open signal landed (not leaked silence).
+        let expected = (0.5_f32 * 32767.0).round() as i32;
         assert!(
-            samples.windows(2).all(|w| w[0] == w[1]),
-            "uniform 0.5 input must decode to a constant sample value"
+            samples.iter().all(|&s| (s - expected).abs() <= 1),
+            "uniform 0.5 input must decode near a constant value (±1 LSB)"
         );
     });
 }
