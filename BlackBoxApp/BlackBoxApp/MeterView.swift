@@ -57,6 +57,23 @@ struct MeterView: View {
         return "Level Meter"
     }
 
+    /// VoiceOver verb for the header. The header label previously hard-coded
+    /// "Recording" even while only monitoring or idle (DOLL-252), telling VO
+    /// users they were recording when they weren't.
+    private var stateVerb: String {
+        if recorder.isRecording { return "Recording" }
+        if recorder.isMonitoring { return "Monitoring" }
+        return "Input"
+    }
+
+    /// -3 dBFS as a linear peak amplitude (10^(-3/20)). Channels above this
+    /// are clipping; used to fire a single VoiceOver clip announcement.
+    private static let clipPeakThreshold: Float = 0.7079458
+
+    /// Tracks the aggregate clipping edge so the announcement fires once when
+    /// the signal starts clipping, not on every frame it stays clipped.
+    @State private var wasClipping = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // DOLL-219: persistent header so the user always sees which
@@ -90,7 +107,7 @@ struct MeterView: View {
             .foregroundStyle(.secondary)
             .padding(.bottom, 4)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Recording \(deviceDisplayName) at \(sampleRateDisplay), \(bitDepth) bits per sample")
+            .accessibilityLabel("\(stateVerb) \(deviceDisplayName) at \(sampleRateDisplay), \(bitDepth) bits per sample")
 
             // DOLL-214 / DOLL-217 v3: live elapsed time + rotation
             // countdown relocated from the menu (where each tick
@@ -174,6 +191,17 @@ struct MeterView: View {
         .background(MeterWindowConfigurator())
         .onAppear { recorder.isMeterWindowOpen = true }
         .onDisappear { recorder.isMeterWindowOpen = false }
+        // DOLL-252: clip indicators are otherwise purely visual. Post one
+        // VoiceOver announcement on the rising edge of "any channel clipping"
+        // so VO users hear that their input is too hot without re-focusing
+        // each bar. Rising-edge gating keeps it from repeating every frame.
+        .onChange(of: recorder.peakLevels) { _, levels in
+            let clipping = levels.contains { $0 > Self.clipPeakThreshold }
+            if clipping && !wasClipping {
+                AccessibilityNotification.Announcement("Audio clipping, reduce input gain").post()
+            }
+            wasClipping = clipping
+        }
     }
 }
 
@@ -308,6 +336,9 @@ private struct MeterBar: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Channel \(channel)")
         .accessibilityValue(meterAccessibilityValue)
+        // DOLL-252: tell VoiceOver this value updates live so it re-reads the
+        // focused bar as the level changes, instead of the user re-focusing.
+        .accessibilityAddTraits(.updatesFrequently)
         .onChange(of: peak) {
             updatePeakHold()
         }
