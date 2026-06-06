@@ -328,5 +328,6 @@ final class SettingsKeysTests: XCTestCase {
         XCTAssertEqual(SettingsKeys.successfulRecordingSessions, "successfulRecordingSessions")
         XCTAssertEqual(SettingsKeys.hasPromptedForReview, "hasPromptedForReview")
         XCTAssertEqual(SettingsKeys.outputDirBookmark, "outputDirBookmark")
+        XCTAssertEqual(SettingsKeys.globalShortcut, "globalShortcut")
     }
 }
