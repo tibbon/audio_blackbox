@@ -225,7 +225,11 @@ struct OnboardingView: View {
                     .font(.caption)
                 }
             } else {
-                Button("Continue") {
+                // DOLL-255: was "Continue", which collided with the bottom-nav
+                // "Continue" — VoiceOver read "Continue button" twice on this
+                // step. This label also describes what the button actually does
+                // (triggers the macOS mic-permission prompt).
+                Button("Allow Microphone Access") {
                     requestMicAccess()
                 }
                 .controlSize(.large)
@@ -539,6 +543,25 @@ struct OnboardingView: View {
             body()
         } else {
             withAnimation { body() }
+        }
+        // DOLL-255: the step content swaps via .transition(.opacity), which
+        // is silent to VoiceOver — a VO user otherwise has to explore to
+        // discover the screen changed. Announce the new step's heading. This
+        // is the single chokepoint for every step change (nav buttons, Back,
+        // and the progress dots all route through here).
+        AccessibilityNotification.Announcement(stepTitle(for: step)).post()
+    }
+
+    /// Heading of each onboarding step, matching the visible title, used for
+    /// the VoiceOver step-change announcement (DOLL-255).
+    private func stepTitle(for step: Int) -> String {
+        switch step {
+        case 0: return "Welcome to BlackBox"
+        case 1: return "Microphone Access"
+        case 2: return "Continuous Recording"
+        case 3: return "Choose Output Directory"
+        case 4: return "Keyboard Shortcut"
+        default: return "You're all set"
         }
     }
 
