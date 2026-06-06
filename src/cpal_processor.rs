@@ -827,10 +827,11 @@ impl AudioProcessor for CpalAudioProcessor {
                 .build_input_stream(
                     &stream_config.into(),
                     move |data: &[f32], _: &_| {
-                        let (_, remainder) = producer.push_partial_slice(data);
-                        if !remainder.is_empty() {
-                            write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
-                        }
+                        // DOLL-353: use the single audited RT-safe push helper
+                        // (same as the recording callback) so the monitoring
+                        // producer can't drift from the overflow-counting
+                        // contract covered by push_samples_counts_rejected_suffix.
+                        push_samples_with_overflow_count(&mut producer, data, &write_errors);
                     },
                     err_fn,
                     None,
