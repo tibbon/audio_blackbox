@@ -49,8 +49,10 @@ fn tmp_wav_path(final_path: &str) -> String {
 /// unrecoverable when it does happen.
 ///
 /// If `final_path` exists, this returns `final_path-1.wav`, `-2.wav`,
-/// etc. up to `-1000` (after which it gives up and returns the
-/// original — preferring the original overwrite to an infinite loop).
+/// etc. up to `-999`. If even those are all taken (extraordinarily
+/// unlikely), it appends a nanosecond suffix rather than returning the
+/// colliding original — never silently overwrite an existing recording
+/// (DOLL-268).
 fn disambiguate_path(final_path: &str) -> String {
     if !Path::new(final_path).exists() {
         return final_path.to_string();
@@ -68,11 +70,21 @@ fn disambiguate_path(final_path: &str) -> String {
             return candidate;
         }
     }
+    // Exhausted -1..-999 (extraordinarily unlikely). Never fall back to the
+    // colliding original — finalize_all / rotate_files would then
+    // `fs::rename(tmp, original)` straight over the existing file, losing it
+    // (DOLL-268). Append a nanosecond suffix for a near-certainly-unique
+    // name instead.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let candidate = format!("{stem}-{nanos}{ext}");
     log::warn!(
-        "Path disambiguation exhausted (>1000 collisions) for {}; returning original",
-        final_path
+        "Path disambiguation exhausted (>1000 collisions) for {}; using {}",
+        final_path,
+        candidate
     );
-    final_path.to_string()
+    candidate
 }
 
 /// Create a WAV writer using our direct-write `RawWavWriter`.
@@ -1160,6 +1172,49 @@ pub fn bench_real_pipeline(
     let elapsed = start.elapsed();
 
     (elapsed, write_errors.load(Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod disambiguate_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn returns_same_path_when_no_collision() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        assert_eq!(disambiguate_path(&p), p);
+    }
+
+    #[test]
+    fn appends_suffix_when_path_exists() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        fs::write(&p, b"x").unwrap();
+
+        let got = disambiguate_path(&p);
+        assert_ne!(got, p, "must not return the colliding path");
+        assert!(
+            got.ends_with("-1.wav"),
+            "first collision should be -1.wav, got {got}"
+        );
+        assert!(!Path::new(&got).exists(), "disambiguated path must be free");
+    }
+
+    #[test]
+    fn skips_already_taken_suffixes() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        fs::write(&base, b"x").unwrap();
+        fs::write(dir.path().join("rec-1.wav"), b"x").unwrap();
+
+        let got = disambiguate_path(&base);
+        assert!(
+            got.ends_with("-2.wav"),
+            "should skip taken -1.wav, got {got}"
+        );
+    }
 }
 
 #[cfg(test)]
