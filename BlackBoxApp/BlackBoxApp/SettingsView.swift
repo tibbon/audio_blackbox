@@ -591,6 +591,11 @@ private func confirmSettingsChange(
     alert.alertStyle = .informational
     alert.addButton(withTitle: "Restart")
     alert.addButton(withTitle: "Cancel")
+    // DOLL-359: this dialog guards a disruptive action (finalize + split the
+    // in-progress recording), so Cancel — not Restart — must be the default
+    // that Return triggers. Matches confirmResetAllSettings / quitApp.
+    alert.buttons.first?.keyEquivalent = "" // Restart: no longer the default
+    alert.buttons.last?.keyEquivalent = "\r" // Cancel: default (Return)
     NSApp.activate()
     if alert.runModal() == .alertFirstButtonReturn {
         onRestart()
