@@ -44,7 +44,7 @@ Tickets are listed by ID; add new entries as you reference them in code or docs.
 - **DOLL-138** — All third-party GitHub Action references pinned to commit SHAs.
 - **DOLL-153** — CI is macOS-only; Ubuntu lanes dropped (Mac App Store is the shipped product).
 - **DOLL-154** — Fastlane derives next build number from `latest_testflight_build_number` instead of just the committed pbxproj — kills CFBundleVersion-collision drift.
-- **DOLL-160** — Pbxproj/project.yml drift CI check (parked pending design call on fastlane's release-time pbxproj mutations).
+- **DOLL-160** — Pbxproj/project.yml drift CI check: live in the `swift-app` lane (pinned `xcodegen` regenerate + `git diff --exit-code`). Edit `project.yml` → run `make xcodegen` → commit the regenerated `.xcodeproj`. (Version drift was the original blocker; resolved separately by DOLL-259, so the full-structure check now ships.)
 - **DOLL-166** — Cargo cache keys consolidated across CI lanes (one shared `cargo-` key for all stable-toolchain jobs; MSRV stays separate).
 - **DOLL-180** — Cyberclaw-review aggregate fixes (a11y regression on shortcut Clear button + 12 minors).
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-20
+
+Polish-pass-6 (build 14): accessibility, UX, real-time-safety, and
+CI/release-pipeline hardening on top of 1.2.0. No breaking changes.
+
 ## [1.2.0] — 2026-05-08
 
 Polish-pass-5: 21 tickets focused on accessibility, supply-chain
