@@ -933,31 +933,53 @@ impl WriterThreadState {
     }
 
     /// Finalize all writers — called on shutdown after draining the ring buffer.
+    ///
+    /// DOLL-345: attempt to finalize+rename *every* writer and pending pair
+    /// before returning, mirroring `rotate_files`'s log-and-continue. The
+    /// previous `?`-on-first-error version meant that in `OutputMode::Split`
+    /// (the app default) a failure on channel 0 left channels 1..n unfinalized
+    /// with their audio stranded under `.recording.wav` temp names. We still
+    /// surface a failure (the first error) so callers know something went
+    /// wrong, but only after giving every file its best chance to land.
     pub fn finalize_all(&mut self) -> Result<(), BlackboxError> {
+        let mut first_err: Option<BlackboxError> = None;
+
         // Finalize the main WAV file
-        if let Some(writer) = self.writer.take() {
-            writer
-                .finalize()
-                .map_err(|e| BlackboxError::Wav(format!("Error finalizing WAV file: {}", e)))?;
+        if let Some(writer) = self.writer.take()
+            && let Err(e) = writer.finalize()
+        {
+            let err = BlackboxError::Wav(format!("Error finalizing WAV file: {}", e));
+            error!("{}", err);
+            first_err.get_or_insert(err);
         }
 
-        // Finalize any multichannel writers
+        // Finalize any multichannel writers — attempt all even if one fails
         for writer_opt in &mut self.multichannel_writers {
-            if let Some(writer) = writer_opt.take() {
-                writer.finalize().map_err(|e| {
-                    BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e))
-                })?;
+            if let Some(writer) = writer_opt.take()
+                && let Err(e) = writer.finalize()
+            {
+                let err = BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e));
+                error!("{}", err);
+                first_err.get_or_insert(err);
             }
         }
 
-        // Rename all pending .recording.wav files to their final .wav paths
+        // Rename all pending .recording.wav files to their final .wav paths —
+        // attempt every one; a single rename failure must not strand the rest.
         let pending = std::mem::take(&mut self.pending_files);
         let mut final_files = Vec::new();
         for (tmp_path, final_path) in &pending {
             if Path::new(tmp_path).exists() {
-                fs::rename(tmp_path, final_path)?;
-                info!("Finalized recording to {}", final_path);
-                final_files.push(final_path.clone());
+                match fs::rename(tmp_path, final_path) {
+                    Ok(()) => {
+                        info!("Finalized recording to {}", final_path);
+                        final_files.push(final_path.clone());
+                    }
+                    Err(e) => {
+                        error!("Error renaming {} to {}: {}", tmp_path, final_path, e);
+                        first_err.get_or_insert_with(|| BlackboxError::from(e));
+                    }
+                }
             }
         }
 
@@ -972,7 +994,7 @@ impl WriterThreadState {
             worker.submit(final_files);
         }
 
-        Ok(())
+        first_err.map_or(Ok(()), Err)
     }
 }
 

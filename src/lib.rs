@@ -185,6 +185,7 @@ mod tests {
     mod shutdown_tests;
     mod silence_gate_tests;
     mod silence_tests;
+    mod writer_thread_tests;
 
     // Check if we're running in CI
     fn is_ci() -> bool {
