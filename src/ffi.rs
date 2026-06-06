@@ -351,6 +351,23 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
         Err(e) => return handle.lock_poisoned(format!("Config lock poisoned: {e}")),
     };
 
+    // Hold the recorder lock for the WHOLE start so the operation is
+    // exclusive (DOLL-249): a re-entrant or concurrent caller (wake / hotkey
+    // paths, or any future non-Swift caller) cannot build a second cpal
+    // stream on the same device during the probe/build window. is_recording()
+    // and friends read the lifted atomics via `status`, not this lock, so the
+    // UI poll is not stalled while we build.
+    let mut guard = match handle.recorder.lock() {
+        Ok(g) => g,
+        Err(e) => return handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
+    };
+
+    // Tear down any existing recorder/monitor BEFORE probing the device, so we
+    // never hold two live input streams at once. Dropping the old recorder
+    // runs CpalAudioProcessor::drop, which finalizes a recording or stops
+    // monitoring (whichever is active) and joins the writer thread.
+    drop(guard.take());
+
     let processor = match CpalAudioProcessor::with_config(&config) {
         Ok(p) => p,
         Err(e) => {
@@ -385,22 +402,17 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
     }
 
     // Install recorder + refresh the volatile atomics (gate_idle replaced
-    // by writer-thread state, peak_levels allocated based on channel count)
-    // under recorder.lock(). Status readers see a state consistent with
-    // the installed recorder for the entire flow.
-    match handle.recorder.lock() {
-        Ok(mut guard) => {
-            if let Ok(mut pl) = handle.peak_levels.lock() {
-                *pl = recorder.get_processor().peak_levels_arc();
-            }
-            if let Ok(mut s) = handle.status.lock() {
-                *s = recorder.get_processor().status_arcs();
-            }
-            *guard = Some(recorder);
-            BLACKBOX_OK
-        }
-        Err(e) => handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
+    // by writer-thread state, peak_levels allocated based on channel count),
+    // still under the held recorder lock. Status readers see a state
+    // consistent with the installed recorder for the entire flow.
+    if let Ok(mut pl) = handle.peak_levels.lock() {
+        *pl = recorder.get_processor().peak_levels_arc();
     }
+    if let Ok(mut s) = handle.status.lock() {
+        *s = recorder.get_processor().status_arcs();
+    }
+    *guard = Some(recorder);
+    BLACKBOX_OK
 }
 
 /// Stop recording.
@@ -713,6 +725,16 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
         Ok(g) => g,
         Err(e) => return handle.lock_poisoned(format!("Recorder lock poisoned: {e}")),
     };
+
+    // Don't start monitoring on top of an active recording (DOLL-249):
+    // it would open a second stream on the device and orphan the in-flight
+    // `.recording.wav`. The recording already drives the peak meter, so
+    // monitoring is unnecessary while recording — treat as a no-op success.
+    if let Some(recorder) = guard.as_ref()
+        && recorder.get_processor().is_recording()
+    {
+        return BLACKBOX_OK;
+    }
 
     if guard.is_none() {
         let processor = match CpalAudioProcessor::with_config(&config) {
