@@ -327,15 +327,25 @@ private struct MeterBar: View {
                         .clipShape(.rect(cornerRadius: 3))
                         .animation(reduceMotion ? nil : .linear(duration: 0.05), value: barFraction)
 
-                    // Peak hold indicator
-                    if peakHold > -60 {
-                        Rectangle()
-                            .fill(peakHold > -3 ? Color(nsColor: .systemRed) : Color.primary.opacity(0.6))
-                            .frame(width: 2, height: barHeight)
-                            .position(
-                                x: min(geo.size.width * peakHoldFraction, geo.size.width - 1),
-                                y: barHeight / 2
-                            )
+                    // Peak hold indicator. DOLL-392: the decay is driven by a
+                    // TimelineView clock, not by `peak` changes — otherwise a
+                    // perfectly static peak (e.g. a steady tone) never fires
+                    // onChange(of: peak) and the marker freezes past its 2 s
+                    // hold. The timeline is paused whenever the held peak isn't
+                    // above the live signal, so it idles at silence/steady state.
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: peakHold <= dBFS)) { context in
+                        Group {
+                            if peakHold > -60 {
+                                Rectangle()
+                                    .fill(peakHold > -3 ? Color(nsColor: .systemRed) : Color.primary.opacity(0.6))
+                                    .frame(width: 2, height: barHeight)
+                                    .position(
+                                        x: min(geo.size.width * peakHoldFraction, geo.size.width - 1),
+                                        y: barHeight / 2
+                                    )
+                            }
+                        }
+                        .onChange(of: context.date) { decayPeakHold() }
                     }
                 }
             }
@@ -358,20 +368,24 @@ private struct MeterBar: View {
         }
     }
 
-    /// Update peak hold: set new high, or decay after hold duration
+    /// Raise the peak-hold marker to a new high and restart the hold timer.
+    /// Decay is handled separately by `decayPeakHold` on a clock (DOLL-392),
+    /// so it advances even when `peak` stops changing.
     private func updatePeakHold() {
-        let now = ContinuousClock.now
         if dBFS > peakHold {
             peakHold = dBFS
-            peakHoldInstant = now
-        } else if now - peakHoldInstant > Self.holdDuration {
-            // Decay: drop toward current level
-            let decayed = peakHold - 1.5  // ~1.5 dB per frame at 30fps ≈ 45 dB/s
-            peakHold = max(decayed, dBFS)
-            if peakHold <= -60 {
-                peakHold = -60
-            }
+            peakHoldInstant = ContinuousClock.now
         }
+    }
+
+    /// Drop the peak-hold marker toward the current level once the hold window
+    /// has elapsed. Driven by the marker's TimelineView so a static peak still
+    /// decays (DOLL-392). `dBFS` is the floor (≥ -60), so the marker settles at
+    /// the live signal level and the TimelineView then pauses.
+    private func decayPeakHold() {
+        guard ContinuousClock.now - peakHoldInstant > Self.holdDuration else { return }
+        let decayed = peakHold - 1.5 // ~1.5 dB per frame at 30 fps ≈ 45 dB/s
+        peakHold = max(decayed, dBFS)
     }
 }
 
