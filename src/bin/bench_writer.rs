@@ -5,9 +5,13 @@
 //! Numbers from those modes are useful as relative measurements (e.g.,
 //! comparing channel counts or sample rates) but should NOT be quoted as
 //! production write throughput — `RawWavWriter` is what ships and has
-//! different buffering / header behaviour. The `pipeline` mode goes
-//! through the real writer thread (producer → rtrb → writer thread → WAV
-//! via `RawWavWriter`), so it IS representative.
+//! different buffering / header behaviour. The `pipeline` mode IS
+//! representative: as of DOLL-251 it delegates to
+//! `blackbox::bench_real_pipeline`, driving the shipped writer thread
+//! (`WriterThreadState`, `writer_thread_main`, `RawWavWriter`) through an
+//! rtrb ring buffer and the adaptive-sleep drain loop — the exact production
+//! write path. The CI throughput floor asserts on `pipeline`, so it guards
+//! shipped code.
 //!
 //! Usage:
 //!   cargo build --release --bin bench-writer --features benchmarking
@@ -33,10 +37,8 @@
 #![allow(clippy::tuple_array_conversions)]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-
-use blackbox::RING_BUFFER_SECONDS;
 
 /// Inline copy of `writer_thread::f32_to_wav_sample` so this benchmark
 /// binary doesn't widen the lib's public API (DOLL-129). The lib helper
@@ -189,7 +191,7 @@ fn run_direct(
             num_channels,
             total_frames,
             elapsed,
-            &write_errors,
+            write_errors.load(Ordering::Relaxed),
             sample_rate,
         );
 
@@ -240,7 +242,7 @@ fn run_direct(
             num_channels,
             total_frames,
             elapsed,
-            &write_errors,
+            write_errors.load(Ordering::Relaxed),
             sample_rate,
         );
 
@@ -248,7 +250,13 @@ fn run_direct(
     }
 }
 
-/// Full pipeline benchmark — producer pushes into rtrb, writer thread reads and writes WAV.
+/// Full pipeline benchmark — drives the REAL production writer (DOLL-251).
+///
+/// Delegates to `blackbox::bench_real_pipeline`, which routes samples through
+/// the shipped `WriterThreadState` + `writer_thread_main` + `RawWavWriter`
+/// and the adaptive-sleep drain loop. This is the mode the CI throughput
+/// floor asserts on, so a regression in the real write path is now caught
+/// (it previously used a hand-rolled hound loop — see DOLL-192).
 fn run_pipeline(
     dir: &str,
     sample_rate: u32,
@@ -256,119 +264,27 @@ fn run_pipeline(
     total_frames: usize,
     chunk_data: &[f32],
 ) {
-    let chunk_frames = chunk_data.len() / num_channels;
-    let write_errors = Arc::new(AtomicU64::new(0));
-
-    let channel_indices: Vec<usize> = (0..num_channels).collect();
-    let ring_size = sample_rate as usize * num_channels * RING_BUFFER_SECONDS;
-
-    let (mut producer, mut consumer) = rtrb::RingBuffer::new(ring_size);
-
-    let spec = hound::WavSpec {
-        channels: num_channels as u16,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let path = format!("{}/bench-pipeline.recording.wav", dir);
-    let writer = hound::WavWriter::create(&path, spec).unwrap();
-
-    let write_errors_writer = Arc::clone(&write_errors);
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_writer = Arc::clone(&shutdown);
-
-    let writer_handle = std::thread::Builder::new()
-        .name("bench-writer".to_string())
-        .spawn(move || {
-            let mut writer = writer;
-            let read_chunk_size = 4096_usize;
-
-            loop {
-                let available = consumer.slots();
-                if available > 0 {
-                    let to_read = available.min(read_chunk_size);
-                    if let Ok(chunk) = consumer.read_chunk(to_read) {
-                        let (first, second) = chunk.as_slices();
-
-                        for slice in [first, second] {
-                            for frame in slice.chunks(num_channels) {
-                                for &channel in &channel_indices {
-                                    if channel < frame.len() {
-                                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                                        let sample = f32_to_wav_sample(frame[channel], 24);
-                                        if writer.write_sample(sample).is_err() {
-                                            write_errors_writer.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        chunk.commit_all();
-                    }
-                } else if shutdown_writer.load(Ordering::Acquire) {
-                    break;
-                } else {
-                    std::thread::sleep(std::time::Duration::from_micros(100));
-                }
-            }
-
-            let _ = writer.finalize();
-        })
-        .unwrap();
-
     eprintln!(
-        "Running pipeline: producer → ring buffer ({:.1}MB) → writer thread...",
-        (ring_size * 4) as f64 / (1024.0 * 1024.0)
+        "Running real pipeline: producer → ring buffer → production writer thread (RawWavWriter)..."
     );
 
-    let start = Instant::now();
-    let mut frames_written = 0;
-    let mut drops: u64 = 0;
+    let (elapsed, errors) =
+        blackbox::bench_real_pipeline(dir, sample_rate, num_channels, total_frames, chunk_data);
 
-    while frames_written < total_frames {
-        let frames_this_chunk = chunk_frames.min(total_frames - frames_written);
-        let samples_this_chunk = frames_this_chunk * num_channels;
-        let data = &chunk_data[..samples_this_chunk];
-
-        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
-            chunk.fill_from_iter(data.iter().copied());
-        } else {
-            drops += data.len() as u64;
-            std::thread::yield_now();
-            continue;
-        }
-
-        frames_written += frames_this_chunk;
-    }
-
-    shutdown.store(true, Ordering::Release);
-    writer_handle.join().unwrap();
-
-    let elapsed = start.elapsed();
-    report_results(
-        num_channels,
-        total_frames,
-        elapsed,
-        &write_errors,
-        sample_rate,
-    );
-    if drops > 0 {
-        eprintln!("  Ring buffer back-pressure retries: {drops} samples");
-    }
+    report_results(num_channels, total_frames, elapsed, errors, sample_rate);
 }
 
 fn report_results(
     channels: usize,
     frames: usize,
     elapsed: std::time::Duration,
-    write_errors: &Arc<AtomicU64>,
+    errors: u64,
     sample_rate: u32,
 ) {
     let total_samples = frames * channels;
     let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
     let realtime_rate = f64::from(sample_rate) * channels as f64;
     let realtime_multiple = samples_per_sec / realtime_rate;
-    let errors = write_errors.load(Ordering::Relaxed);
 
     eprintln!();
     eprintln!("  Elapsed:     {:.1} ms", elapsed.as_secs_f64() * 1000.0);
