@@ -4,6 +4,10 @@ options:
     macOS: "15.0"
   bundleIdPrefix: com.dollhousemediatech
   xcodeVersion: "16.0"
+  # DOLL-438: declare the base development language so CFBundleDevelopmentRegion
+  # ($(DEVELOPMENT_LANGUAGE) in Info.plist) resolves and knownRegions is seeded
+  # — the i18n foundation for the String Catalog and adding languages later.
+  developmentLanguage: en
 
 settings:
   SWIFT_VERSION: "5.10"
