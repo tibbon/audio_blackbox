@@ -1037,10 +1037,16 @@ struct GeneralSettingsTab: View {
         alert.informativeText = "This will restore all settings to their defaults. Your recordings will not be affected."
             + (recording ? " The current recording will be stopped." : "")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Cancel")
+        // Affirmative-first to match every other dialog in the app (confirmSettingsChange,
+        // quitApp). Reset is destructive; keep Cancel as the default (Return) button so an
+        // accidental keypress never wipes settings.
         alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.buttons.first?.keyEquivalent = ""
+        alert.buttons.last?.keyEquivalent = "\r"
         NSApp.activate()
-        if alert.runModal() != .alertFirstButtonReturn {
+        if alert.runModal() == .alertFirstButtonReturn {
             resetAllSettings()
         }
     }
