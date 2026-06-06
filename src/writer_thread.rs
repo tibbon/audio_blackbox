@@ -1074,3 +1074,90 @@ pub fn writer_thread_main(
         }
     }
 }
+
+/// Benchmark helper: drive the REAL production write pipeline end-to-end.
+///
+/// Unlike the `single`/`split` bench modes (which use `hound::WavWriter` for
+/// relative comparison only), this routes samples through the exact shipped
+/// path — an `rtrb` ring buffer feeding a spawned [`writer_thread_main`],
+/// which uses [`WriterThreadState`] + [`RawWavWriter`], the adaptive-sleep
+/// drain loop, and `WRITER_THREAD_READ_CHUNK` sizing — set up identically to
+/// `CpalAudioProcessor::process_audio_impl`. This is what the CI throughput
+/// floor asserts on, so a regression in any of those guards shipped code
+/// (DOLL-251; supersedes the divergent hand-rolled loop noted in DOLL-192).
+///
+/// Pushes `chunk_data` (one interleaved cpal-callback-sized chunk) repeatedly
+/// until `total_frames` have been produced, retrying the whole chunk on ring
+/// back-pressure (same semantics as the RT producer, minus the sample drop),
+/// then sends `Shutdown` and waits for the writer to drain + finalize.
+///
+/// Uses the default recording configuration: 24-bit, single-file output,
+/// silence detection and the silence gate off. Returns the wall-clock elapsed
+/// from first push to writer-thread join, plus the total write-error count.
+#[cfg(feature = "benchmarking")]
+pub fn bench_real_pipeline(
+    output_dir: &str,
+    sample_rate: u32,
+    channels: usize,
+    total_frames: usize,
+    chunk_data: &[f32],
+) -> (Duration, u64) {
+    let channel_indices: Vec<usize> = (0..channels).collect();
+    let write_errors = Arc::new(AtomicU64::new(0));
+    let disk_space_low = Arc::new(AtomicBool::new(false));
+    let peak_levels: Arc<Vec<CacheAlignedPeak>> =
+        Arc::new((0..channels).map(|_| CacheAlignedPeak::new(0)).collect());
+
+    let mut state = WriterThreadState::new(
+        output_dir,
+        sample_rate,
+        &channel_indices,
+        OutputMode::Single,
+        0.0, // silence_threshold off
+        Arc::clone(&write_errors),
+        0, // min_disk_space_mb off
+        disk_space_low,
+        24, // bits_per_sample
+        peak_levels,
+        false, // gate_enabled
+        0,     // gate_timeout_secs
+    )
+    .expect("failed to build writer state");
+    state.total_device_channels = channels as u16;
+
+    // Ring buffer sized exactly as production (see process_audio_impl).
+    let ring_size = sample_rate as usize * channels * crate::RING_BUFFER_SECONDS;
+    let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
+    let rotation_needed = Arc::new(AtomicBool::new(false));
+    let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+
+    let writer_handle = std::thread::Builder::new()
+        .name("bench-real-writer".to_string())
+        .spawn(move || writer_thread_main(consumer, rotation_needed, command_rx, state))
+        .expect("failed to spawn writer thread");
+
+    let chunk_frames = chunk_data.len() / channels;
+    let start = std::time::Instant::now();
+    let mut frames_written = 0;
+    while frames_written < total_frames {
+        let frames_this_chunk = chunk_frames.min(total_frames - frames_written);
+        let data = &chunk_data[..frames_this_chunk * channels];
+        // Retry the whole chunk on back-pressure, like the RT producer (which
+        // would instead drop). The ring is multi-second, so this is rare.
+        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
+            chunk.fill_from_iter(data.iter().copied());
+            frames_written += frames_this_chunk;
+        } else {
+            std::thread::yield_now();
+        }
+    }
+
+    // Drain + finalize through the real shutdown path, then join.
+    let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+    let _ = command_tx.send(WriterCommand::Shutdown(reply_tx));
+    let _ = reply_rx.recv();
+    let _ = writer_handle.join();
+    let elapsed = start.elapsed();
+
+    (elapsed, write_errors.load(Ordering::Relaxed))
+}

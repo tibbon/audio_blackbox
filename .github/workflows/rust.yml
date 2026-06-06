@@ -183,16 +183,23 @@ jobs:
     - name: Build bench binary (release)
       run: cargo build --release --bin bench-writer --features benchmarking
 
-    # 10x is well below the documented worst case (19x) so noisy GH runners
-    # don't flap, but enough to catch a ~50% regression.
+    # single/split (hound direct-write): 10x is well below the documented
+    # worst case (19x) so noisy GH runners don't flap, but enough to catch a
+    # ~50% regression.
     - name: Smoke test — single mode (64ch, 2s)
       run: scripts/bench-assert.sh 10 -- target/release/bench-writer --channels 64 --seconds 2 --mode single
 
     - name: Smoke test — split mode (16ch, 2s)
       run: scripts/bench-assert.sh 10 -- target/release/bench-writer --channels 16 --seconds 2 --mode split
 
+    # pipeline drives the REAL production writer (DOLL-251): WriterThreadState
+    # + writer_thread_main + RawWavWriter through the rtrb ring and the
+    # adaptive-sleep drain loop. It is inherently ~3x slower than the hound
+    # direct-write modes (thread handoff + 1-5ms drain sleeps), so the floor is
+    # set proportionally lower (~4x) to keep the same headroom the 10x modes
+    # have — still enough to catch a major regression in shipped code.
     - name: Smoke test — pipeline mode (64ch, 2s)
-      run: scripts/bench-assert.sh 10 -- target/release/bench-writer --channels 64 --seconds 2 --mode pipeline
+      run: scripts/bench-assert.sh 4 -- target/release/bench-writer --channels 64 --seconds 2 --mode pipeline
 
   # ── Swift app build (macOS) ────────────────────────────────────────
   # Builds the Rust static library with FFI exports and the SwiftUI

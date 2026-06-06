@@ -66,6 +66,11 @@ path = "src/bin/main.rs"
 [[bin]]
 name = "bench-writer"
 path = "src/bin/bench_writer.rs"
+# Drives the real production writer via blackbox::bench_real_pipeline, which
+# is gated behind the `benchmarking` feature (DOLL-251). Marking it required
+# lets `--all-targets` builds without the feature skip the bin instead of
+# failing to resolve the symbol.
+required-features = ["benchmarking"]
 
 [features]
 default = []
