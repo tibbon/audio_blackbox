@@ -10,6 +10,11 @@ on:
     paths:
       - "BlackBoxApp/fastlane/metadata/**"
       - "scripts/lint-app-store-metadata.py"
+      # DOLL-390: submission-affecting Fastlane config (deliver/precheck
+      # options, age-rating JSON) must also re-trigger the lint, or those
+      # changes merge unchecked.
+      - "BlackBoxApp/fastlane/Fastfile"
+      - "BlackBoxApp/fastlane/*.json"
 
 permissions: {}
 
