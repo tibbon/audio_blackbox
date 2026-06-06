@@ -286,3 +286,113 @@ fn device_name(device_id: AudioObjectID) -> Option<String> {
     let cf = unsafe { CFString::wrap_under_create_rule(name_ref) };
     Some(cf.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    //! These tests exercise the highest-risk code in the crate: the raw
+    //! `unsafe extern "C"` callback and the deliberately-leaking `Drop`.
+    //! `cargo +nightly miri` can't run them — the `Drop` path and the real
+    //! lifecycle test call into the CoreAudio framework, which miri's FFI
+    //! sandbox does not support. They are written to be ASan-clean and to
+    //! verify the exact `Arc::into_raw` / `from_raw` ownership the production
+    //! code relies on.
+    use super::*;
+
+    /// The CoreAudio thread invokes `on_rate_changed` with the `client_data`
+    /// pointer produced by `Arc::into_raw` at registration. Exercise that
+    /// exact path: the callback must deref it as an `AtomicBool` and store
+    /// `true`.
+    #[test]
+    fn on_rate_changed_flips_flag() {
+        let flag = Arc::new(AtomicBool::new(false));
+        // Mirror `new()`: hand a strong ref to the callback as `*mut c_void`.
+        let raw = Arc::into_raw(Arc::clone(&flag)) as *mut c_void;
+
+        // SAFETY: `raw` points to the live `AtomicBool` inside `flag` — the
+        // same contract the callback is given at registration.
+        let status = unsafe { on_rate_changed(0, 1, std::ptr::null(), raw) };
+
+        assert_eq!(status, 0);
+        assert!(flag.load(Ordering::Relaxed), "callback must set the flag");
+
+        // Reclaim the leaked ref so the test itself doesn't leak.
+        // SAFETY: `raw` came from `Arc::into_raw` above and is still live.
+        unsafe { drop(Arc::from_raw(raw as *const AtomicBool)) };
+    }
+
+    /// A null `client_data` must be a no-op, never a null deref.
+    #[test]
+    fn on_rate_changed_null_client_data_is_noop() {
+        // SAFETY: null `client_data` is explicitly handled by the callback.
+        let status = unsafe { on_rate_changed(0, 1, std::ptr::null(), std::ptr::null_mut()) };
+        assert_eq!(status, 0);
+    }
+
+    /// `Drop` must NOT reclaim the client `Arc` — it leaks the strong
+    /// reference by design so a straggler CoreAudio callback can't deref a
+    /// freed `AtomicBool`. Verify the refcount survives `Drop` (no decrement,
+    /// hence no eventual double-free of the shared `AtomicBool`).
+    #[test]
+    fn drop_leaks_client_arc_by_design() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let raw = Arc::into_raw(Arc::clone(&flag)) as *mut c_void;
+        // `flag` + the `into_raw`'d ref = 2.
+        assert_eq!(Arc::strong_count(&flag), 2);
+
+        // Build the guard directly (same-module access to private fields) with
+        // a bogus device id so the test needs no audio hardware. `Drop` calls
+        // the real `AudioObjectRemovePropertyListener`, which returns an error
+        // status for an unregistered listener/id (logged, harmless), then
+        // leaks the Arc.
+        let listener = SampleRateListener {
+            device_id: 0,
+            client_data: raw,
+        };
+
+        // The callback still works while the listener is alive.
+        // SAFETY: `raw` is live.
+        unsafe {
+            on_rate_changed(
+                listener.device_id,
+                1,
+                std::ptr::null(),
+                listener.client_data,
+            )
+        };
+        assert!(flag.load(Ordering::Relaxed));
+
+        drop(listener);
+
+        // Leaked by design: refcount unchanged, the `AtomicBool` is still alive.
+        assert_eq!(
+            Arc::strong_count(&flag),
+            2,
+            "Drop must not reclaim the client Arc"
+        );
+
+        // Test-only cleanup: reclaim the intentionally-leaked ref so the test
+        // process doesn't actually leak (production leaks for process life).
+        // SAFETY: `raw` is still valid; we drop exactly the leaked strong ref.
+        unsafe { drop(Arc::from_raw(raw as *const AtomicBool)) };
+        assert_eq!(Arc::strong_count(&flag), 1);
+    }
+
+    /// When a real default input device exists (dev machines), the full
+    /// register → drop lifecycle must succeed without crashing or
+    /// double-freeing. Skipped on headless CI runners with no input device.
+    #[test]
+    fn real_listener_lifecycle_when_device_present() {
+        if default_input_device().is_none() {
+            return; // no audio hardware (e.g. headless CI) — nothing to exercise
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        let listener = SampleRateListener::new(None, Arc::clone(&flag));
+        assert!(
+            listener.is_some(),
+            "registration should succeed when a default input device exists"
+        );
+        // Real `AudioObjectRemovePropertyListener` on a registered listener;
+        // must not crash or double-free.
+        drop(listener);
+    }
+}
