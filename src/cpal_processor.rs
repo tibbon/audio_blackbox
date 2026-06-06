@@ -493,9 +493,11 @@ impl CpalAudioProcessor {
                     .build_input_stream(
                         &config.into(),
                         move |data: &[f32], _: &_| {
-                            if debug {
-                                debug!("Processing {} samples", data.len());
-                            }
+                            // No logging on the RT capture thread (DOLL-250):
+                            // the `log` facade takes a lock and may do I/O, which
+                            // is a real-time-safety violation that causes audio
+                            // dropouts. Sample-count signals belong on the writer
+                            // thread (see `write_errors` atomic).
 
                             // Check rotation via sample counter (zero syscalls)
                             if continuous_mode {
