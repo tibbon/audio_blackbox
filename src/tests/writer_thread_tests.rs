@@ -123,6 +123,37 @@ fn finalize_all_renames_every_channel() {
     });
 }
 
+/// DOLL-350: after a disk-low self-stop (finalize_all has already cleared the
+/// writers + pending pairs), a continuous-mode rotation must NOT recreate empty
+/// `.recording.wav` temp files. Without the `disk_stopped` guard, rotate_files
+/// calls create_wav_writer again and leaks zero-length temps on the full disk.
+#[test]
+fn rotate_files_is_a_noop_when_disk_stopped() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = single_state(dir);
+
+        // Simulate the post-disk-stop state: finalize_all has taken the writer
+        // and drained pending_files, and disk_stopped is latched.
+        state.writer = None;
+        state.pending_files.clear();
+        state.disk_stopped = true;
+
+        state.rotate_files();
+
+        assert!(
+            state.writer.is_none(),
+            "rotate_files must not recreate a writer after a disk stop"
+        );
+        assert!(
+            state.pending_files.is_empty(),
+            "rotate_files must not leak new pending temp files after a disk stop"
+        );
+    });
+}
+
 /// DOLL-347: the crash-recovery flush path (`flush_writers` → `RawWavWriter::flush`)
 /// backs the SIGKILL-safety guarantee — after a flush the in-progress
 /// `.recording.wav` must be a valid, playable WAV with the correct data size,
