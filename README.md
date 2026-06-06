@@ -15,7 +15,7 @@
 ```bash
 git clone https://github.com/tibbon/audio_blackbox.git
 cd audio_blackbox
-make app           # SwiftUI app — opens in Xcode build
+make app           # build the SwiftUI app bundle via xcodebuild (make run-app to launch it)
 # or
 cargo build --release   # CLI binary at target/release/blackbox
 ```

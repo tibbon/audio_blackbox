@@ -43,7 +43,7 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 
 - Drain the ring buffer, convert f32 to the configured bit depth, write WAV via `RawWavWriter` (a hand-rolled writer; we don't drag `hound` into the hot path).
 - Maintain per-channel peak levels in cache-aligned `AtomicI32` slots — read by the FFI 30 Hz meter poll.
-- Rotate files on `rotation_needed.swap(false, Ordering::Acquire)` (Release-paired with the RT thread's store at `cpal_processor.rs:476`).
+- Rotate files when the RT thread sets the `rotation_needed` flag (a Relaxed status flag — DOLL-391; the samples it implies are already synchronized through the rtrb ring, so no Acquire/Release pairing is needed). See `CpalAudioProcessor::process_audio_impl` (the store) and `writer_thread_main` (the `swap`).
 - Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. In practice unreachable under normal rotation cadence (rotation is ≥ 60 s; silence checks complete in milliseconds for normal-size files, so 8-deep buffering is ample).
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
 
@@ -76,8 +76,8 @@ Do not add `catch_unwind` wrappers in `src/ffi.rs`. Do not flip release builds b
 
 The codebase has two flavors of atomic flag:
 
-- **Synchronizing flags** — Acquire/Release pairs that publish or observe a *payload* held in another atomic. Example: `recording_active.store(true, Ordering::Release)` at `cpal_processor.rs:519` synchronizes-with the FFI status poll's Acquire load, so a reader that sees `recording_active = true` is also guaranteed to see the matching `sample_rate` written before the Release (DOLL-101).
-- **Status-only flags** — single-bit signals with no synchronizes-with relationship. `gate_idle`, `disk_space_low`, `stream_error`, `sample_rate_changed`, the ctrlc-handler shutdown flag in `bin/main.rs`. All Relaxed pairs. The only correctness requirement is "the value is eventually visible," which Relaxed satisfies.
+- **Synchronizing flags** — Acquire/Release pairs that publish or observe a *payload* held in another atomic. Example: the `recording_active.store(true, Ordering::Release)` in `CpalAudioProcessor::start_recording` synchronizes-with the FFI status poll's Acquire load, so a reader that sees `recording_active = true` is also guaranteed to see the matching `sample_rate` written before the Release (DOLL-101).
+- **Status-only flags** — single-bit signals with no synchronizes-with relationship. `gate_idle`, `disk_space_low`, `stream_error`, `sample_rate_changed`, `rotation_needed` (DOLL-391), the ctrlc-handler shutdown flag in `bin/main.rs`. All Relaxed pairs. The only correctness requirement is "the value is eventually visible," which Relaxed satisfies.
 
 If you're adding a new atomic flag: ask whether a reader observing this flag's set state needs to also observe other state set by the same writer. If yes → Acquire/Release. If no → Relaxed.
 
