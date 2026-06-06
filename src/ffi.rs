@@ -46,10 +46,12 @@ pub const BLACKBOX_ERR_AUDIO_DEVICE: i32 = -2;
 pub const BLACKBOX_ERR_CONFIG: i32 = -3;
 pub const BLACKBOX_ERR_IO: i32 = -4;
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
-/// Reserved (DOLL-128). The catch_unwind path that produced this code
-/// was removed in DOLL-90; no FFI function currently returns -6. Kept
-/// in the surface so a future error doesn't silently reuse the slot
-/// the Swift bridge already maps to `BlackBoxError.internal`.
+/// Reserved (DOLL-128).
+///
+/// The catch_unwind path that produced this code was removed in DOLL-90; no
+/// FFI function currently returns -6. Kept in the surface so a future error
+/// doesn't silently reuse the slot the Swift bridge already maps to
+/// `BlackBoxError.internal`.
 #[allow(dead_code)]
 pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
 pub const BLACKBOX_ERR_DISK_SPACE_LOW: i32 = -7;
@@ -227,7 +229,7 @@ struct HandleRef<'a> {
     _invariant: std::marker::PhantomData<*const ()>,
 }
 
-impl<'a> std::ops::Deref for HandleRef<'a> {
+impl std::ops::Deref for HandleRef<'_> {
     type Target = BlackboxHandle;
     fn deref(&self) -> &BlackboxHandle {
         self.handle
@@ -556,10 +558,8 @@ pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
 ///   avoid (see `panic = "abort"` profile invariant per AGENTS.md).
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_default_input_device_name() -> *mut c_char {
-    match CpalAudioProcessor::default_input_device_name() {
-        Some(name) => to_c_string(&name),
-        None => std::ptr::null_mut(),
-    }
+    CpalAudioProcessor::default_input_device_name()
+        .map_or(std::ptr::null_mut(), |name| to_c_string(&name))
 }
 
 /// Get the input channel count for a device by name.
@@ -698,7 +698,9 @@ pub extern "C" fn blackbox_get_peak_levels(
     for (dst, src) in buf[..count].iter_mut().zip(peaks.iter()) {
         *dst = f32::from_bits(src.value.load(std::sync::atomic::Ordering::Relaxed));
     }
-    count as i32
+    // count <= buf.len() (a C-supplied i32 capacity), so this never saturates
+    // in practice; try_from keeps it sound without an unchecked wrapping cast.
+    i32::try_from(count).unwrap_or(i32::MAX)
 }
 
 /// Start audio monitoring (peak levels without recording to disk).

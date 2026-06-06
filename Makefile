@@ -63,6 +63,11 @@ verify: check-app-store check-ffi-header
 	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) test -- --test-threads=1
 	$(CARGO_BIN) build
+	: "DOLL-346: lint + test the FFI surface the app links. Cargo features are"
+	: "not additive for tests, so this is a separate pass from the lines above;"
+	: "mirrors CI's ffi lane so make verify and CI don't diverge."
+	$(CARGO_BIN) clippy --all-targets --features ffi -- -D warnings
+	$(CARGO_BIN) test --features ffi -- --test-threads=1
 	@if command -v xcodebuild >/dev/null 2>&1; then \
 		echo "Running Swift tests..."; \
 		: "DOLL-188: match CI's swift-app lane (cargo build --release --features ffi)."; \

@@ -32,6 +32,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 /// a no-op for downstream consumers.
 #[cfg(feature = "ffi")]
 #[derive(Clone, Default)]
+// pub(crate) is intentional: this bundle is deliberately NOT public API
+// (DOLL-120), so the redundant-in-a-private-module hint doesn't apply.
+#[allow(clippy::redundant_pub_crate)]
 pub(crate) struct ProcessorStatus {
     /// True between the end of `process_audio_impl` and the start of `finalize`.
     pub(crate) recording_active: Arc<AtomicBool>,
