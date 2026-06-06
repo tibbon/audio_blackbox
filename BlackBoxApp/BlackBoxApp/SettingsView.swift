@@ -428,7 +428,7 @@ struct RecordingSettingsTab: View {
     /// All/Reset action (the count label itself is not a focused element).
     private func announceChannelSelection() {
         AccessibilityNotification.Announcement(
-            "\(selectedChannels.count) of \(deviceChannelCount) channels selected"
+            String(localized: "\(selectedChannels.count) of \(deviceChannelCount) channels selected")
         ).post()
     }
 
@@ -599,11 +599,11 @@ private func confirmSettingsChange(
     onCancel: (() -> Void)? = nil
 ) {
     let alert = NSAlert()
-    alert.messageText = "Restart Recording?"
-    alert.informativeText = "Changing \(reason) will finalize the current file and start a new one."
+    alert.messageText = String(localized: "Restart Recording?")
+    alert.informativeText = String(localized: "Changing \(reason) will finalize the current file and start a new one.")
     alert.alertStyle = .informational
-    alert.addButton(withTitle: "Restart")
-    alert.addButton(withTitle: "Cancel")
+    alert.addButton(withTitle: String(localized: "Restart"))
+    alert.addButton(withTitle: String(localized: "Cancel"))
     // DOLL-359: this dialog guards a disruptive action (finalize + split the
     // in-progress recording), so Cancel — not Restart — must be the default
     // that Return triggers. Matches confirmResetAllSettings / quitApp.
@@ -1065,16 +1065,16 @@ struct GeneralSettingsTab: View {
 
     private func confirmResetAllSettings() {
         let alert = NSAlert()
-        alert.messageText = "Reset All Settings?"
+        alert.messageText = String(localized: "Reset All Settings?")
         let recording = recorder.isRecording
-        alert.informativeText = "This will restore all settings to their defaults. Your recordings will not be affected."
-            + (recording ? " The current recording will be stopped." : "")
+        alert.informativeText = String(localized: "This will restore all settings to their defaults. Your recordings will not be affected.")
+            + (recording ? String(localized: " The current recording will be stopped.") : "")
         alert.alertStyle = .warning
         // Affirmative-first to match every other dialog in the app (confirmSettingsChange,
         // quitApp). Reset is destructive; keep Cancel as the default (Return) button so an
         // accidental keypress never wipes settings.
-        alert.addButton(withTitle: "Reset")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "Reset"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         alert.buttons.first?.hasDestructiveAction = true
         alert.buttons.first?.keyEquivalent = ""
         alert.buttons.last?.keyEquivalent = "\r"

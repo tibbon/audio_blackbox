@@ -524,27 +524,29 @@ struct BlackBoxApp: App {
         }
     }
 
+    // DOLL-439: AppKit tooltip / accessibility label are plain String — wrapped
+    // in String(localized:). "BlackBox" alone is the (untranslated) product name.
     private var menuBarTooltip: String {
         if !hasCompletedOnboarding {
-            return "BlackBox — Setup required"
+            return String(localized: "BlackBox — Setup required")
         }
         if recorder.isRecording {
-            return "BlackBox — \(recorder.statusText)"
+            return String(localized: "BlackBox — \(recorder.statusText)")
         }
         return "BlackBox"
     }
 
     private var menuBarAccessibilityLabel: String {
         if !hasCompletedOnboarding {
-            return "BlackBox: Setup required"
+            return String(localized: "BlackBox: Setup required")
         }
         if let error = recorder.errorMessage {
-            return "BlackBox: Error \u{2014} \(error)"
+            return String(localized: "BlackBox: Error \u{2014} \(error)")
         }
         if recorder.isRecording {
-            return "BlackBox: \(recorder.statusText)"
+            return String(localized: "BlackBox: \(recorder.statusText)")
         }
-        return "BlackBox: Ready"
+        return String(localized: "BlackBox: Ready")
     }
 
     private func quitApp() {

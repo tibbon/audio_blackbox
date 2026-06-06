@@ -209,7 +209,7 @@ struct MeterView: View {
         .onChange(of: recorder.peakLevels) { _, levels in
             let clipping = levels.contains { $0 > Self.clipPeakThreshold }
             if clipping && !wasClipping {
-                AccessibilityNotification.Announcement("Audio clipping, reduce input gain").post()
+                AccessibilityNotification.Announcement(String(localized: "Audio clipping, reduce input gain")).post()
             }
             wasClipping = clipping
         }

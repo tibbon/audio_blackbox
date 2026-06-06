@@ -86,7 +86,7 @@ enum SleepWakePolicy {
     /// Short status string for the menu's headline row ("Ready",
     /// "Recording...", "Error", elapsed time during a session). Always
     /// non-empty; defaults to "Ready" pre-launch.
-    var statusText = "Ready"
+    var statusText = String(localized: "Ready")
 
     /// Latest user-visible error, or `nil` when the app is healthy.
     /// Set by `setTransientError(_:)` (which auto-clears after a delay)
@@ -516,8 +516,8 @@ enum SleepWakePolicy {
             if await self.checkMicrophonePermission() {
                 self.startRecordingInternal()
             } else {
-                self.errorMessage = "Microphone access denied. Open System Settings to allow access."
-                self.statusText = "Error"
+                self.errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
+                self.statusText = String(localized: "Error")
             }
         }
     }
@@ -552,7 +552,7 @@ enum SleepWakePolicy {
             // Text(_, style: .timer) so this value only changes on a
             // gate-idle transition. Keeps the menu from re-rendering
             // every second and resetting hover state.
-            statusText = "Recording"
+            statusText = String(localized: "Recording")
             wasGateIdle = false
             lastReportedWriteErrors = 0
             writeErrorsCount = 0
@@ -732,12 +732,12 @@ enum SleepWakePolicy {
     /// Use for errors that don't require ongoing user action (device disconnect, disk full, etc.).
     private func setTransientError(_ message: String) {
         errorMessage = message
-        statusText = "Error"
+        statusText = String(localized: "Error")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
             guard let self, self.errorMessage == message else { return }
             self.errorMessage = nil
-            if !self.isRecording { self.statusText = "Ready" }
+            if !self.isRecording { self.statusText = String(localized: "Ready") }
         }
     }
 
@@ -747,7 +747,7 @@ enum SleepWakePolicy {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: String(localized: "OK"))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -762,7 +762,7 @@ enum SleepWakePolicy {
             recordingStartTime = nil
             peakLevels = []
             errorMessage = nil
-            statusText = "Ready"
+            statusText = String(localized: "Ready")
             // DOLL-351: a clean stop clears any flapping-restart bookkeeping.
             streamRestartCount = 0
             lastStreamRestart = nil
@@ -1066,15 +1066,15 @@ enum SleepWakePolicy {
         guard bytesPerFile > Self.wavMaxFileBytes else { return }
 
         let gigabytes = Double(bytesPerFile) / 1_073_741_824.0
-        let rateNote = sampleRate > 0 ? "" : " (estimated at 48 kHz)"
-        let msg = String(
-            format: "Each rotation will produce roughly %.1f GB%@. WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth.",
-            gigabytes, rateNote
-        )
+        // DOLL-439/#40: localizable + locale-aware decimal (the GB value is
+        // pre-formatted so the String Catalog key carries a %@, not a "."-only %.1f).
+        let rateNote = sampleRate > 0 ? "" : String(localized: " (estimated at 48 kHz)")
+        let gbText = gigabytes.formatted(.number.precision(.fractionLength(1)))
+        let msg = String(localized: "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth.")
         preflightSizeWarning = msg
         Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
         notifyUser(
-            title: "Large file warning",
+            title: String(localized: "Large file warning"),
             message: msg,
             identifier: "preflight-4gb-warning"
         )
@@ -1108,8 +1108,8 @@ enum SleepWakePolicy {
             if !batteryNotificationFired {
                 batteryNotificationFired = true
                 notifyUser(
-                    title: "Battery Low",
-                    message: "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop.",
+                    title: String(localized: "Battery Low"),
+                    message: String(localized: "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop."),
                     identifier: "battery-low"
                 )
                 Self.log.warning("Battery low while recording: \(state.percent)% on battery")
@@ -1288,10 +1288,10 @@ enum SleepWakePolicy {
                 stopTimer()
                 isRecording = false
                 recordingStartTime = nil
-                let msg = bridge.lastError ?? "Recording stopped unexpectedly"
+                let msg = bridge.lastError ?? String(localized: "Recording stopped unexpectedly")
                 setTransientError(msg)
                 Self.log.error("Recording stopped unexpectedly: \(msg)")
-                notifyUser(title: "Recording Stopped", message: msg)
+                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 return
             }
             // DOLL-216: surface the silence-gate idle state as "Armed
@@ -1301,7 +1301,9 @@ enum SleepWakePolicy {
             // Text(date, style: .timer) in the menu directly.
             if status.gate_idle != wasGateIdle {
                 wasGateIdle = status.gate_idle
-                statusText = status.gate_idle ? "Armed (waiting for signal)" : "Recording"
+                statusText = status.gate_idle
+                    ? String(localized: "Armed (waiting for signal)")
+                    : String(localized: "Recording")
             }
 
             // Sample rate changed on the audio device — restart to pick up new rate
@@ -1309,8 +1311,8 @@ enum SleepWakePolicy {
             if status.sample_rate_changed {
                 Self.log.warning("Sample rate changed on device — finalizing and restarting")
                 restartIfRecording(reason: "sample rate changed")
-                notifyUser(title: "Sample Rate Changed",
-                          message: "Your audio device's sample rate changed. Recording was restarted automatically.",
+                notifyUser(title: String(localized: "Sample Rate Changed"),
+                          message: String(localized: "Your audio device's sample rate changed. Recording was restarted automatically."),
                           identifier: "sample-rate-changed")
                 return
             }
@@ -1349,29 +1351,29 @@ enum SleepWakePolicy {
                     recordingStartTime = nil
                     streamRestartCount = 0
                     lastStreamRestart = nil
-                    let msg = "Your audio device keeps failing. Recording stopped \u{2014} check the device and try again."
+                    let msg = String(localized: "Your audio device keeps failing. Recording stopped \u{2014} check the device and try again.")
                     setTransientError(msg)
                     Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
-                    notifyUser(title: "Recording Stopped", message: msg)
+                    notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                     return
                 }
 
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
                     recordingStartTime = Date()
-                    statusText = "Recording"
+                    statusText = String(localized: "Recording")
                     startTimer()
                     Self.log.info("Recording restarted on available device")
-                    notifyUser(title: "Device Changed",
-                              message: "Your audio device changed. Recording continued on the next available device.",
+                    notifyUser(title: String(localized: "Device Changed"),
+                              message: String(localized: "Your audio device changed. Recording continued on the next available device."),
                               identifier: "device-changed")
                 } else {
                     // No device available — stop for real
                     isRecording = false
                     recordingStartTime = nil
-                    let msg = "Your audio device was disconnected and no alternative is available. Check your connections and try again."
+                    let msg = String(localized: "Your audio device was disconnected and no alternative is available. Check your connections and try again.")
                     setTransientError(msg)
-                    notifyUser(title: "Recording Stopped", message: msg)
+                    notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 }
                 return
             }
@@ -1381,19 +1383,19 @@ enum SleepWakePolicy {
             // low-space warning or as CPU "heavy load" from the shared counter.
             if status.write_failed {
                 stop()
-                let msg = "Recording stopped: unable to write to disk. Free up space or check the output folder's permissions, then try again."
+                let msg = String(localized: "Recording stopped: unable to write to disk. Free up space or check the output folder's permissions, then try again.")
                 setTransientError(msg)
                 Self.log.error("Write failure — stopping recording")
-                notifyUser(title: "Recording Stopped", message: msg)
+                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 return
             }
             // Disk space low — stop recording gracefully
             if status.disk_space_low {
                 stop()
-                let msg = "Your disk is almost full. Free up space and try again."
+                let msg = String(localized: "Your disk is almost full. Free up space and try again.")
                 setTransientError(msg)
                 Self.log.error("Disk space low, stopping recording")
-                notifyUser(title: "Recording Stopped", message: msg)
+                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 return
             }
             // Write errors — cumulative counter from Rust engine
@@ -1407,17 +1409,17 @@ enum SleepWakePolicy {
             if writeErrors > 48_000 {
                 // Auto-stop if excessive (>48000 samples dropped across all channels)
                 stop()
-                let msg = "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications."
+                let msg = String(localized: "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications.")
                 setTransientError(msg)
                 Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
-                notifyUser(title: "Recording Stopped", message: msg)
+                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 return
             } else if newDrops > 0 {
                 // Only log/display when NEW drops occur (counter is cumulative)
                 lastReportedWriteErrors = writeErrors
                 Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
                 if writeErrors > 500 {
-                    errorMessage = "Audio quality degraded \u{2014} some data was lost"
+                    errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
                 }
             }
 
