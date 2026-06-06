@@ -95,7 +95,9 @@ impl RawWavWriter {
     pub fn flush(&mut self) -> io::Result<()> {
         // Flush the BufWriter first so all data reaches the file.
         self.writer.flush()?;
-        self.update_header()?;
+        // No pad byte mid-recording: more samples will follow, and a pad here
+        // would corrupt the data stream. The pad is written only at finalize.
+        self.update_header(false)?;
         self.writer.flush()?;
         Ok(())
     }
@@ -104,13 +106,24 @@ impl RawWavWriter {
     /// Consumes self, closing the file.
     pub fn finalize(mut self) -> io::Result<()> {
         self.writer.flush()?;
-        self.update_header()?;
+        // DOLL-372: RIFF requires each chunk's data be padded to an even byte
+        // count. A 24-bit-mono recording with an odd sample count ends the data
+        // chunk on an odd boundary; append a single 0x00 pad byte so strict
+        // parsers accept the file. The data-chunk size field stays unpadded
+        // (the pad isn't data); the parent RIFF size includes it.
+        let pad = self.data_bytes_written % 2 == 1;
+        if pad {
+            self.writer.write_all(&[0_u8])?;
+        }
+        self.update_header(pad)?;
         self.writer.flush()?;
         Ok(())
     }
 
-    /// Seek back and write the correct RIFF and data chunk sizes.
-    fn update_header(&mut self) -> io::Result<()> {
+    /// Seek back and write the correct RIFF and data chunk sizes. `pad` is true
+    /// when a word-alignment pad byte has been appended after the data chunk
+    /// (finalize only) — it's counted in the RIFF size but not the data size.
+    fn update_header(&mut self, pad: bool) -> io::Result<()> {
         // DOLL-204: WAV's chunk-size field is `u32`, so the on-disk header
         // can't represent more than 4 GiB of audio data. Files larger
         // than that keep growing on disk but the data-chunk-size cap
@@ -130,7 +143,9 @@ impl RawWavWriter {
         // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
         // in release and panic in debug. The header value can't represent more
         // than u32::MAX anyway, so saturating is the most-honest answer.
-        let file_size = data_size.saturating_add(36); // 44-byte header minus 8-byte RIFF preamble
+        // 36 = 44-byte header minus the 8-byte RIFF preamble; +1 more when a
+        // word-alignment pad byte trails the data chunk (DOLL-372).
+        let file_size = data_size.saturating_add(if pad { 37 } else { 36 });
 
         let pos = self.writer.stream_position()?;
         self.writer.seek(SeekFrom::Start(4))?;
@@ -249,5 +264,59 @@ mod tests {
             u32::MAX,
             "RIFF size must saturate at u32::MAX, not wrap to a tiny value"
         );
+    }
+
+    // DOLL-372: an odd-length data chunk (24-bit mono, odd sample count) must
+    // get a RIFF word-alignment pad byte so the file ends on an even boundary.
+    // The data-chunk size stays unpadded; the parent RIFF size counts the pad.
+    #[test]
+    fn test_odd_length_data_chunk_gets_word_align_pad() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("odd.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 24, // 3-byte samples → 5 samples = 15 data bytes (odd)
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        for i in 0..5 {
+            w.write_sample(i * 1000).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            bytes.len() % 2,
+            0,
+            "file must end on an even (word) boundary"
+        );
+        assert_eq!(bytes.len(), 44 + 15 + 1, "44 header + 15 data + 1 pad");
+
+        let (riff_size, data_size) = read_size_fields(&path);
+        assert_eq!(data_size, 15, "data-chunk size is unpadded");
+        assert_eq!(riff_size, 15 + 37, "RIFF size counts the pad byte");
+    }
+
+    // An even-length data chunk must NOT get a pad byte.
+    #[test]
+    fn test_even_length_data_chunk_has_no_pad() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("even.wav").to_str().unwrap().to_string();
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16, // 2-byte samples → always even
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        for i in 0..5 {
+            w.write_sample(i32::from(i as i16)).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(bytes.len(), 44 + 10, "no pad: 44 header + 10 data");
+        let (riff_size, data_size) = read_size_fields(&path);
+        assert_eq!(data_size, 10);
+        assert_eq!(riff_size, 10 + 36, "RIFF size has no pad byte");
     }
 }
