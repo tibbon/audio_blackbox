@@ -68,6 +68,9 @@ verify: check-app-store check-ffi-header
 	: "mirrors CI's ffi lane so make verify and CI don't diverge."
 	$(CARGO_BIN) clippy --all-targets --features ffi -- -D warnings
 	$(CARGO_BIN) test --features ffi -- --test-threads=1
+	: "DOLL-369: third-party license attribution is generated from cargo"
+	: "metadata; fail if committed ACKNOWLEDGMENTS.md drifted from the shipped deps."
+	python3 scripts/gen-acknowledgments.py --check
 	@if command -v xcodebuild >/dev/null 2>&1; then \
 		echo "Running Swift tests..."; \
 		: "DOLL-188: match CI's swift-app lane (cargo build --release --features ffi)."; \
