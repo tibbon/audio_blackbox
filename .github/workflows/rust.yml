@@ -173,6 +173,12 @@ jobs:
     - name: Run tests (FFI)
       run: cargo test --features ffi -- --test-threads=1
 
+    # DOLL-369: ACKNOWLEDGMENTS.md is generated from cargo metadata over the
+    # shipped (--features ffi) dependency set. Fail if it drifted — i.e. a dep
+    # was added/removed/relicensed without regenerating the attribution.
+    - name: Check third-party license attribution
+      run: python3 scripts/gen-acknowledgments.py --check
+
   # ── Security audit ─────────────────────────────────────────────────
   # Check dependencies for known vulnerabilities (RUSTSEC advisories).
   audit:
