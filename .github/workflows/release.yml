@@ -26,12 +26,18 @@ permissions: {}
 
 jobs:
   # ── Test gate ─────────────────────────────────────────────────────
-  # Re-run the Rust test suite on the tag's exact SHA before any release
-  # artifact is published. Without this, a tag pushed from a branch that
-  # didn't go through PR review (or whose tests went red after merge)
-  # would still upload to TestFlight and create a GitHub Release. Both
-  # the github-release and testflight jobs `needs:` this so a red test
-  # blocks both. (DOLL-136)
+  # Re-run the Rust quality checks on the tag's exact SHA before any
+  # release artifact is published. Without this, a tag pushed from a
+  # branch that didn't go through PR review (or whose checks went red
+  # after merge) would still upload to TestFlight and create a GitHub
+  # Release. Both the github-release and testflight jobs `needs:` this
+  # so a red check blocks both. (DOLL-136)
+  #
+  # Mirrors rust.yml's fmt + clippy + test gates so the release path
+  # can't ship fmt/clippy regressions that a non-PR'd tag would skip
+  # (DOLL-260). The Swift app is compiled by the testflight job itself
+  # (fastlane builds before upload), so it isn't rebuilt here to keep
+  # the gate cheap.
   tests:
     name: Test gate
     runs-on: macos-latest
@@ -42,6 +48,8 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      with:
+        components: clippy, rustfmt
 
     - name: Cache Rust dependencies
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
@@ -53,6 +61,12 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy (all targets)
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
 
     - name: Run tests
       run: cargo test --no-default-features -- --test-threads=1
@@ -72,8 +86,10 @@ jobs:
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
+    # Pin the MSRV (1.95) for the shipped artifact rather than floating
+    # stable, so the published binary is reproducible (DOLL-260).
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582  # 1.95
 
     - name: Cache Rust dependencies
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
@@ -127,8 +143,10 @@ jobs:
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
+    # Pin the MSRV (1.95) for the shipped artifact rather than floating
+    # stable, so the TestFlight build is reproducible (DOLL-260).
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582  # 1.95
 
     - name: Cache Rust dependencies
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
