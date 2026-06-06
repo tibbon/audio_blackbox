@@ -162,6 +162,16 @@ pub struct WriterThreadState {
     /// Per-frame peak accumulator — fixed inline array, no heap pointer chase.
     /// Only the first `channel_count` entries are used.
     peak_scratch: [f32; MAX_CHANNELS],
+    /// Cached active-channel filter (DOLL-375): the indices into
+    /// `channels[..channel_count]` whose device channel is in range for the
+    /// current frame size. The active set is a pure function of the (immutable)
+    /// channel list and `total_device_channels`, so it's recomputed only when
+    /// the frame size changes — not zero-initialised and rebuilt on every
+    /// `write_samples` call. Only the first `active_count` entries are valid.
+    active_indices: [u8; MAX_CHANNELS],
+    active_count: usize,
+    /// The frame size `active_indices` was built for; `usize::MAX` = not built.
+    active_cache_frame_size: usize,
 
     // --- Warm fields: accessed frequently but not per-sample ---
     pub writer: Option<RawWavWriter>,
@@ -305,6 +315,9 @@ impl WriterThreadState {
             flush_frame_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
+            active_indices: [0_u8; MAX_CHANNELS],
+            active_count: 0,
+            active_cache_frame_size: usize::MAX,
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors,
@@ -383,6 +396,9 @@ impl WriterThreadState {
             flush_frame_counter: 0,
             channels: ch_arr,
             peak_scratch: [0.0_f32; MAX_CHANNELS],
+            active_indices: [0_u8; MAX_CHANNELS],
+            active_count: 0,
+            active_cache_frame_size: usize::MAX,
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors: Arc::new(AtomicU64::new(0)),
@@ -650,19 +666,24 @@ impl WriterThreadState {
         // (DOLL-126). Out-of-range channels (e.g. a config that requested
         // ch5 on a 2-channel device) are skipped for the batch — same
         // graceful-skip behavior the prior `frame.get()` Option-match
-        // produced, but the test for that runs once per batch instead of
-        // per-sample.
+        // produced.
         //
-        // Inline stack array (no heap alloc): MAX_CHANNELS = 255 = u8::MAX.
-        let mut active_indices: [u8; MAX_CHANNELS] = [0; MAX_CHANNELS];
-        let mut active_count = 0_usize;
-        for (idx, &channel) in ch_slice.iter().enumerate() {
-            if (channel as usize) < frame_size {
-                active_indices[active_count] = idx as u8;
-                active_count += 1;
+        // DOLL-375: the active set is a pure function of the (immutable)
+        // channel list and `frame_size`, so cache it and rebuild only when
+        // `frame_size` changes — instead of zero-initialising a 255-byte array
+        // and re-scanning every channel on every `write_samples` call.
+        if self.active_cache_frame_size != frame_size {
+            let mut count = 0_usize;
+            for (idx, &channel) in ch_slice.iter().enumerate() {
+                if (channel as usize) < frame_size {
+                    self.active_indices[count] = idx as u8;
+                    count += 1;
+                }
             }
+            self.active_count = count;
+            self.active_cache_frame_size = frame_size;
         }
-        let active_idx_slice = &active_indices[..active_count];
+        let active_idx_slice = &self.active_indices[..self.active_count];
 
         if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
             // Monitor mode or gate idle: only track peaks, no disk writes
