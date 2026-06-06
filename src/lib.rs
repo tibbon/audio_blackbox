@@ -76,12 +76,12 @@ pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
 #[cfg(feature = "benchmarking")]
 pub use benchmarking::PerformanceTracker;
-#[cfg(feature = "benchmarking")]
-pub use writer_thread::bench_real_pipeline;
 pub use config::AppConfig;
 pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
+#[cfg(feature = "benchmarking")]
+pub use writer_thread::bench_real_pipeline;
 
 // ----------------------------------------------------------------------------
 // Crate-internal re-exports
