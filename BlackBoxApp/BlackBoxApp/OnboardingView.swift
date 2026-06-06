@@ -570,13 +570,15 @@ struct OnboardingView: View {
     /// Heading of each onboarding step, matching the visible title, used for
     /// the VoiceOver step-change announcement (DOLL-255).
     private func stepTitle(for step: Int) -> String {
+        // DOLL-439: localized so the VoiceOver announcement matches the
+        // (localizable) visible step titles.
         switch step {
-        case 0: return "Welcome to BlackBox"
-        case 1: return "Microphone Access"
-        case 2: return "Continuous Recording"
-        case 3: return "Choose Output Directory"
-        case 4: return "Keyboard Shortcut"
-        default: return "You're all set"
+        case 0: return String(localized: "Welcome to BlackBox")
+        case 1: return String(localized: "Microphone Access")
+        case 2: return String(localized: "Continuous Recording")
+        case 3: return String(localized: "Choose Output Directory")
+        case 4: return String(localized: "Keyboard Shortcut")
+        default: return String(localized: "You're all set")
         }
     }
 
@@ -646,8 +648,8 @@ struct OnboardingView: View {
         // Warn if mic permission hasn't been granted yet
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         if micStatus == .denied || micStatus == .restricted {
-            recorder.errorMessage = "Microphone access denied. Open System Settings to allow access."
-            recorder.statusText = "Error"
+            recorder.errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
+            recorder.statusText = String(localized: "Error")
         }
 
         hasCompletedOnboarding = true
