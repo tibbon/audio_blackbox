@@ -34,9 +34,9 @@ struct OnboardingView: View {
     @State private var shortcutError: String?
     @State private var didOfferDefaultShortcut = false
 
-    private let defaultDir: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Music")
-        .appendingPathComponent("BlackBox Recordings")
+    // DOLL-344: the default lives inside the app's sandbox container so it's
+    // writable out of the box. Single source of truth on RecordingState.
+    private let defaultDir: URL = RecordingState.defaultOutputDir
 
     var body: some View {
         VStack(spacing: 0) {
@@ -284,7 +284,7 @@ struct OnboardingView: View {
                 dirChangedByUser = true
             }
             .font(.caption)
-            .accessibilityHint("Saves recordings to ~/Music/BlackBox Recordings")
+            .accessibilityHint("Saves recordings to the app's default folder")
 
             if chosenURL == nil {
                 Text("Select a folder to continue. BlackBox will create it if it doesn't exist.")
@@ -614,15 +614,9 @@ struct OnboardingView: View {
 
     /// Skip onboarding with default settings (experienced users).
     private func skipOnboarding() {
-        let url = defaultDir
-        // DOLL-114: defer the synchronous createDirectory off the main
-        // actor. Bookmark save still runs on the main actor (it touches
-        // UserDefaults / @Observable state) but the directory creation
-        // — disk I/O — does not need to.
-        Task.detached {
-            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        }
-        recorder.saveOutputDirBookmark(for: url)
+        // DOLL-344: the default is the in-container directory — no
+        // security-scoped bookmark, and useDefaultOutputDir creates it.
+        recorder.useDefaultOutputDir()
 
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: SettingsKeys.continuousMode)
@@ -652,11 +646,13 @@ struct OnboardingView: View {
         // Only update the bookmark if the user explicitly picked a new directory.
         // Re-running onboarding without changing the dir preserves the existing bookmark.
         if dirChangedByUser {
-            // DOLL-114: defer the disk I/O off the main actor.
-            Task.detached {
-                try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            // DOLL-344: the in-container default needs no security-scoped
+            // bookmark; only a user-picked folder (outside the container) does.
+            if url.standardizedFileURL == RecordingState.defaultOutputDir.standardizedFileURL {
+                recorder.useDefaultOutputDir()
+            } else {
+                recorder.saveOutputDirBookmark(for: url)
             }
-            recorder.saveOutputDirBookmark(for: url)
         }
 
         // Save recording mode choice

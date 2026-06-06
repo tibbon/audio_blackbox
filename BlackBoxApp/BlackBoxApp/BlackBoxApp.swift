@@ -384,8 +384,9 @@ struct BlackBoxApp: App {
             recorder.openOutputDir()
         }
         // DOLL-211: caption under the action shows the abbreviated
-        // destination path (~/Music/BlackBox Recordings). Center-truncates
-        // because the menu is narrow and arbitrary paths can be long.
+        // destination path (the in-container default folder, or a user-chosen
+        // one). Center-truncates because the menu is narrow and arbitrary
+        // paths can be long.
         if !lastOutputDirPath.isEmpty {
             Text(abbreviateHomePath(lastOutputDirPath))
                 .font(.caption)
