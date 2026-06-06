@@ -1,3 +1,11 @@
+// DOLL-346: this suite is now linted under the same pedantic/nursery config
+// as the rest of the crate. Two test-idiomatic patterns are allowed here:
+//   - similar_names: the `*_ptr` / `*_str` pairs (raw pointer vs decoded
+//     String) are deliberately parallel and clearer than contrived renames.
+//   - float_cmp: assertions compare against exact sentinel values the FFI
+//     writes/leaves (e.g. an untouched 99.0 fill), where exactness is the point.
+#![allow(clippy::similar_names, clippy::float_cmp)]
+
 use std::ffi::{CStr, CString};
 
 use crate::ffi::*;

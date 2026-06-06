@@ -133,6 +133,46 @@ jobs:
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1
 
+  # ── FFI lint + tests ───────────────────────────────────────────────
+  # src/ffi.rs is the C-ABI surface the App Store binary actually links,
+  # gated behind `--features ffi`. Every other lane runs --no-default-features,
+  # so without this job ffi.rs was never under `-D warnings` and the 26 tests
+  # in src/tests/ffi_tests.rs never ran in CI (DOLL-346). Cargo features are
+  # not additive for the test binary, so this is a distinct pass from the
+  # no-features `test` lane above.
+  ffi:
+    name: FFI (lint + test)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      with:
+        components: clippy
+
+    # Distinct key from swift-app's cargo-ffi (which caches the *release* ffi
+    # build): this lane builds dev-profile clippy + test artifacts, and two
+    # jobs sharing one key race to save it (only the first wins — DOLL-271).
+    - name: Cache Rust dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-ffitest-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-ffitest-
+
+    - name: Run clippy (FFI, all targets)
+      run: cargo clippy --all-targets --features ffi -- -D warnings
+
+    - name: Run tests (FFI)
+      run: cargo test --features ffi -- --test-threads=1
+
   # ── Security audit ─────────────────────────────────────────────────
   # Check dependencies for known vulnerabilities (RUSTSEC advisories).
   audit:
