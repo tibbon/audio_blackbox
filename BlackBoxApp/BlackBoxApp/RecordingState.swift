@@ -193,6 +193,15 @@ enum SleepWakePolicy {
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
 
+    // DOLL-351: cap rapid stream-error auto-restarts so a flapping device
+    // (enumerates then immediately faults) can't spin an endless
+    // stop/start/finalize loop. Restarts within the window below count toward
+    // the cap; a restart after a stable run resets the counter.
+    private var streamRestartCount = 0
+    private var lastStreamRestart: Date?
+    private static let maxConsecutiveStreamRestarts = 3
+    private static let streamRestartWindow: TimeInterval = 10
+
     /// Total samples dropped since the active recording started. Mirrors
     /// `status.write_errors` from the engine, surfaced for UI display
     /// (DOLL-223). 0 means clean; non-zero means the writer fell behind
@@ -752,6 +761,9 @@ enum SleepWakePolicy {
             peakLevels = []
             errorMessage = nil
             statusText = "Ready"
+            // DOLL-351: a clean stop clears any flapping-restart bookkeeping.
+            streamRestartCount = 0
+            lastStreamRestart = nil
             // DOLL-213: surface a transient "last recording" summary for
             // 30 s so the user gets confirmation of what just finished.
             // Captured here (before the durations resets to 0) and
@@ -1326,10 +1338,35 @@ enum SleepWakePolicy {
                 // hasn't changed on stream-error recovery, so the warning
                 // is still valid for the restarted file.
 
+                // DOLL-351: flapping-device guard. Count restarts that happen
+                // close together; a restart after a stable run resets the
+                // counter. Once the cap is hit, stop for real instead of
+                // looping. The 1 Hz status poll naturally spaces attempts ~1s
+                // apart, which is the effective backoff.
+                let now = Date()
+                if let last = lastStreamRestart, now.timeIntervalSince(last) < Self.streamRestartWindow {
+                    streamRestartCount += 1
+                } else {
+                    streamRestartCount = 1
+                }
+                lastStreamRestart = now
+
+                if streamRestartCount > Self.maxConsecutiveStreamRestarts {
+                    isRecording = false
+                    recordingStartTime = nil
+                    streamRestartCount = 0
+                    lastStreamRestart = nil
+                    let msg = "Your audio device keeps failing. Recording stopped \u{2014} check the device and try again."
+                    setTransientError(msg)
+                    Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
+                    notifyUser(title: "Recording Stopped", message: msg)
+                    return
+                }
+
                 if bridge.startRecording().isSuccess {
                     // Restarted successfully (e.g., System Default fell back to built-in mic)
                     recordingStartTime = Date()
-                    statusText = "Recording..."
+                    statusText = "Recording"
                     startTimer()
                     Self.log.info("Recording restarted on available device")
                     notifyUser(title: "Device Changed",
