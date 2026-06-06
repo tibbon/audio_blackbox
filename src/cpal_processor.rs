@@ -691,6 +691,16 @@ impl AudioProcessor for CpalAudioProcessor {
     }
 
     fn start_monitoring(&mut self, config: &AppConfig) -> Result<(), BlackboxError> {
+        // Recording and monitoring are mutually exclusive — each opens an
+        // exclusive input stream on the device. If a recording is active,
+        // do nothing rather than overwrite the writer-thread handle and
+        // orphan the in-flight `.recording.wav` (DOLL-249). The recording
+        // path already publishes per-channel peak levels, so the meter keeps
+        // working without a separate monitor stream.
+        if self.is_recording() {
+            return Ok(());
+        }
+
         // If already monitoring, nothing to do
         if self.monitoring {
             return Ok(());
