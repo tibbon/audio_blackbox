@@ -849,11 +849,9 @@ struct OutputSettingsTab: View {
     }
 
     private func formatBytes(_ bytes: Int) -> String {
-        if bytes >= 1_073_741_824 {
-            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
-        } else {
-            return String(format: "%.0f MB", Double(bytes) / 1_048_576)
-        }
+        // DOLL-377: locale-aware binary byte formatting (honors the user's
+        // decimal separator / unit labels) instead of a hardcoded "%.1f GB".
+        Int64(bytes).formatted(.byteCount(style: .binary))
     }
 
     private var cadenceDescription: String {

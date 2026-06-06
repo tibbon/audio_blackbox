@@ -43,8 +43,9 @@ struct MeterView: View {
         if rate % 1000 == 0 {
             return "\(rate / 1000) kHz"
         }
+        // DOLL-377: locale-aware decimal separator instead of a hardcoded "."
         let kHz = Double(rate) / 1000.0
-        return String(format: "%.1f kHz", kHz)
+        return "\(kHz.formatted(.number.precision(.fractionLength(1)))) kHz"
     }
 
     /// VoiceOver-friendly sample rate. The visible `sampleRateDisplay` shows a
