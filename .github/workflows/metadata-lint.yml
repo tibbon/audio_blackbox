@@ -1,0 +1,26 @@
+name: Metadata Lint
+
+# Run the App Store Connect metadata linter (scripts/lint-app-store-metadata.py)
+# whenever the metadata or the linter itself changes, so schema drift /
+# over-length copy is caught on the PR instead of mid-deploy on the Fastlane
+# runner (DOLL-271). The script is stdlib-only, so a plain ubuntu runner with
+# its preinstalled python3 is enough — no setup-python or pip step needed.
+on:
+  pull_request:
+    paths:
+      - "BlackBoxApp/fastlane/metadata/**"
+      - "scripts/lint-app-store-metadata.py"
+
+permissions: {}
+
+jobs:
+  metadata-lint:
+    name: App Store metadata lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Lint App Store metadata
+      run: python3 scripts/lint-app-store-metadata.py
