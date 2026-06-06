@@ -1161,3 +1161,119 @@ pub fn bench_real_pipeline(
 
     (elapsed, write_errors.load(Ordering::Relaxed))
 }
+
+#[cfg(test)]
+mod disk_space_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// End-to-end test for the "automatically stops recording when free space
+    /// drops below the threshold" feature (README) — DOLL-262. Prior tests
+    /// only covered the FFI flag plumbing and the throttle counter; nothing
+    /// drove `min_disk_space_mb` to actually flip `disk_space_low` and stop
+    /// the writer.
+    ///
+    /// We construct with a tiny threshold (so `new()`'s fail-early disk check
+    /// passes on a normal temp filesystem), then raise `min_disk_space_mb` to
+    /// `u64::MAX` before the runtime check — guaranteeing the real `statvfs`
+    /// reading of the temp dir is below threshold, so `check_disk_space` must
+    /// trip. No mocking of the syscall needed.
+    #[test]
+    fn disk_low_flips_flag_and_stops_writer() {
+        let dir = tempdir().unwrap();
+        let out = dir.path().to_str().unwrap();
+
+        let disk_low = Arc::new(AtomicBool::new(false));
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(vec![CacheAlignedPeak::new(0)]);
+
+        let mut state = WriterThreadState::new(
+            out,
+            48_000,
+            &[0],
+            OutputMode::Single,
+            0.0, // silence detection off (no background worker)
+            Arc::clone(&write_errors),
+            1, // tiny threshold so new()'s fail-early check passes
+            Arc::clone(&disk_low),
+            16,
+            peak_levels,
+            false, // gate disabled → writer is set up immediately
+            0,
+        )
+        .expect("WriterThreadState::new");
+        state.total_device_channels = 1;
+
+        // Gate disabled + Single mode + 1 channel → a standard writer exists.
+        assert!(state.writer.is_some(), "writer should be set up on new()");
+        assert!(!disk_low.load(Ordering::Relaxed));
+
+        // Now make the runtime check trip: any real free space is below u64::MAX.
+        state.min_disk_space_mb = u64::MAX;
+        // Fast-forward the throttle counter so the next call performs the real
+        // statvfs check instead of the every-10,000th-iteration short-circuit.
+        state.disk_check_counter = 9_999;
+        let keep_going = state.check_disk_space();
+
+        assert!(
+            !keep_going,
+            "check_disk_space must return false when free space is below threshold"
+        );
+        assert!(
+            disk_low.load(Ordering::Relaxed),
+            "disk_space_low flag must flip so the FFI/UI sees the stop"
+        );
+        assert!(state.disk_stopped, "state must mark itself disk-stopped");
+        assert!(
+            state.writer.is_none() && state.multichannel_writers.is_empty(),
+            "writers must be finalized after a disk-low stop — no further files produced"
+        );
+
+        // Idempotent: once stopped, subsequent checks stay stopped and the
+        // throttle counter is irrelevant (early-return on disk_stopped).
+        assert!(!state.check_disk_space());
+        assert!(disk_low.load(Ordering::Relaxed));
+    }
+
+    /// Control: with `min_disk_space_mb == 0` (the disk check disabled),
+    /// `check_disk_space` always reports OK and never flips the flag, even
+    /// once the throttle counter would otherwise trigger a real check.
+    #[test]
+    fn disk_check_disabled_never_stops() {
+        let dir = tempdir().unwrap();
+        let out = dir.path().to_str().unwrap();
+
+        let disk_low = Arc::new(AtomicBool::new(false));
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(vec![CacheAlignedPeak::new(0)]);
+
+        let mut state = WriterThreadState::new(
+            out,
+            48_000,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::clone(&write_errors),
+            0, // disk check disabled
+            Arc::clone(&disk_low),
+            16,
+            peak_levels,
+            false,
+            0,
+        )
+        .expect("WriterThreadState::new");
+        state.total_device_channels = 1;
+
+        state.disk_check_counter = 9_999;
+        assert!(
+            state.check_disk_space(),
+            "disabled check should always continue"
+        );
+        assert!(
+            !disk_low.load(Ordering::Relaxed),
+            "flag must not flip when disabled"
+        );
+        assert!(!state.disk_stopped);
+        assert!(state.writer.is_some(), "writer should remain active");
+    }
+}
