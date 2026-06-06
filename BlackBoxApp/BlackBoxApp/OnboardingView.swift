@@ -241,11 +241,22 @@ struct OnboardingView: View {
     private var directoryStep: some View {
         VStack(spacing: 16) {
             if micDenied {
-                Label("Microphone access denied \u{2014} recording won't work until you allow access in System Settings.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color(nsColor: .systemOrange))
+                // DOLL-387: this reminder previously had no recovery affordance
+                // and competed with the folder task. Pair it with the same
+                // "Open System Settings" action the mic step offers.
+                VStack(spacing: 8) {
+                    Label("Microphone access denied \u{2014} recording won't work until you allow access in System Settings.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .font(.caption)
+                        .frame(maxWidth: 360)
+                    Button("Open System Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
                     .font(.caption)
-                    .frame(maxWidth: 360)
+                }
             }
 
             Image(systemName: "folder.circle.fill")
