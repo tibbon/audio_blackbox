@@ -74,6 +74,28 @@ verify: check-app-store check-ffi-header
 		echo "Swift tests passed."; \
 	fi
 
+# Coverage (DOLL-272): non-gating line-coverage summary to surface untested
+# code. Informational only — deliberately NOT part of `verify`. Rust via
+# cargo-llvm-cov, Swift via xccov on the test result bundle.
+.PHONY: coverage
+coverage:
+	@if command -v cargo-llvm-cov >/dev/null 2>&1; then \
+		echo "== Rust coverage (cargo llvm-cov) =="; \
+		$(CARGO_BIN) llvm-cov --no-default-features --summary-only; \
+	else \
+		echo "cargo-llvm-cov not installed; skipping Rust coverage."; \
+		echo "  Install with: cargo install cargo-llvm-cov --locked"; \
+	fi
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		echo "== Swift coverage (xccov) =="; \
+		rm -rf target/coverage.xcresult; \
+		$(CARGO_BIN) build --release --features ffi && \
+		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
+			-destination 'platform=macOS' -enableCodeCoverage YES \
+			-resultBundlePath target/coverage.xcresult CODE_SIGN_IDENTITY="-" -quiet && \
+		xcrun xccov view --report --only-targets target/coverage.xcresult; \
+	fi
+
 # --- SwiftUI Menu Bar App ---
 
 XCODE_PROJECT = BlackBoxApp/BlackBoxApp.xcodeproj
@@ -285,6 +307,7 @@ help:
 	@echo "  test            - Run tests"
 	@echo "  lint            - Run linting checks (matches CI)"
 	@echo "  verify          - Run fmt + clippy + test + build"
+	@echo "  coverage        - Line-coverage summary (Rust llvm-cov + Swift xccov)"
 	@echo "  run             - Run the CLI directly"
 	@echo "  clean           - Clean build files"
 	@echo ""

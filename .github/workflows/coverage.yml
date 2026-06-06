@@ -1,0 +1,80 @@
+name: Coverage
+
+# Non-gating code-coverage signal (DOLL-272). Runs on push to main (post-merge)
+# and on manual dispatch only — NOT on every PR — so it surfaces untested code
+# without burning CI minutes on each pull request. Nothing here gates a merge.
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rust-coverage:
+    name: Rust coverage (llvm-cov)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      with:
+        components: llvm-tools-preview
+
+    - name: Cache Rust dependencies + cargo-llvm-cov
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin
+          target
+        key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-coverage-
+
+    - name: Install cargo-llvm-cov
+      # Installed via cargo (cached above) rather than a third-party action so
+      # there's no unpinned/guessed action SHA on the supply-chain surface.
+      run: command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked
+
+    - name: Rust line-coverage summary
+      run: cargo llvm-cov --no-default-features --summary-only
+
+  swift-coverage:
+    name: Swift coverage (xccov)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-ffi-
+
+    - name: Build Rust static library (FFI)
+      run: cargo build --release --features ffi
+
+    - name: Run Swift tests with coverage
+      run: |
+        rm -rf coverage.xcresult
+        xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp \
+          -destination 'platform=macOS' -enableCodeCoverage YES \
+          -resultBundlePath coverage.xcresult CODE_SIGN_IDENTITY="-"
+
+    - name: Swift coverage summary
+      run: xcrun xccov view --report --only-targets coverage.xcresult
