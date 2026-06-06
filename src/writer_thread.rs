@@ -174,6 +174,14 @@ pub struct WriterThreadState {
     active_cache_frame_size: usize,
     /// xorshift32 state for TPDF dither on 16-bit output (DOLL-373). Nonzero.
     dither_rng: u32,
+    /// Running count of consecutive `write_sample` failures (DOLL-349). Reset on
+    /// any successful batch. When it reaches ~1s of audio, recording self-stops
+    /// (disk full / unwritable) instead of silently dropping every sample
+    /// forever. This is a thread-local streak counter for the stop decision
+    /// only; individual failures also still bump the shared `write_errors`
+    /// counter (so the stop bounds, rather than fully removes, the window where
+    /// disk-full is misattributed to load — see follow-up DOLL note).
+    consecutive_write_failures: u64,
 
     // --- Warm fields: accessed frequently but not per-sample ---
     pub writer: Option<RawWavWriter>,
@@ -353,6 +361,7 @@ impl WriterThreadState {
             active_count: 0,
             active_cache_frame_size: usize::MAX,
             dither_rng: 0x9E37_79B9, // nonzero xorshift32 seed (DOLL-373)
+            consecutive_write_failures: 0,
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors,
@@ -435,6 +444,7 @@ impl WriterThreadState {
             active_count: 0,
             active_cache_frame_size: usize::MAX,
             dither_rng: 0x9E37_79B9, // nonzero xorshift32 seed (DOLL-373)
+            consecutive_write_failures: 0,
             writer: None,
             multichannel_writers: Vec::new(),
             write_errors: Arc::new(AtomicU64::new(0)),
@@ -693,6 +703,9 @@ impl WriterThreadState {
         // after the loops.
         let dither = self.bits_per_sample == 16;
         let mut rng = self.dither_rng;
+        // DOLL-349: count write_sample failures this batch (disk full / I/O
+        // error), distinct from ring-buffer overflow. Drives the self-stop below.
+        let mut write_failures = 0_u64;
 
         let ch_count = self.channel_count as usize;
         let ch_slice = &self.channels[..ch_count];
@@ -759,6 +772,7 @@ impl WriterThreadState {
                                     .is_err()
                             {
                                 self.write_errors.fetch_add(1, Ordering::Relaxed);
+                                write_failures += 1;
                             }
                         }
                     }
@@ -778,12 +792,43 @@ impl WriterThreadState {
                                     .is_err()
                                 {
                                     self.write_errors.fetch_add(1, Ordering::Relaxed);
+                                    write_failures += 1;
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+
+        // DOLL-349: react to persistent write_sample failures (disk full or
+        // otherwise unwritable). Previously every failed write just bumped the
+        // shared overflow counter and recording spun on forever, persisting no
+        // audio and misreporting the cause as CPU "heavy load". Track
+        // consecutive failures and, once they add up to ~1s of audio, stop like
+        // the disk-low path (finalize what landed, latch disk_stopped, raise
+        // disk_space_low so the UI surfaces a stop). A batch that writes cleanly
+        // clears the streak.
+        if write_failures > 0 {
+            self.consecutive_write_failures = self
+                .consecutive_write_failures
+                .saturating_add(write_failures);
+            if !self.disk_stopped && self.consecutive_write_failures >= u64::from(self.sample_rate)
+            {
+                warn!(
+                    "Persistent write failures ({} samples) — stopping recording \
+                     (disk full or output directory unwritable)",
+                    self.consecutive_write_failures
+                );
+                // status flag only; reader loads Relaxed.
+                self.disk_space_low.store(true, Ordering::Relaxed);
+                self.disk_stopped = true;
+                if let Err(e) = self.finalize_all() {
+                    error!("Error finalizing after persistent write failures: {}", e);
+                }
+            }
+        } else if full_frames > 0 {
+            self.consecutive_write_failures = 0;
         }
 
         // Publish peaks to shared atomics (only active channels, not full array).
