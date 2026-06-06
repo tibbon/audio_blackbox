@@ -261,6 +261,23 @@ enum SleepWakePolicy {
     private static let bookmarkKey = SettingsKeys.outputDirBookmark
     private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
 
+    /// The out-of-the-box default recordings directory, inside the app's
+    /// sandbox container (`~/Library/Containers/<bundle-id>/Data/Documents/
+    /// BlackBox Recordings`). DOLL-344: the previous default of
+    /// `~/Music/BlackBox Recordings` is NOT writable under the App Store
+    /// sandbox without the `assets.music` entitlement, and a non-user-selected
+    /// URL cannot carry a `.withSecurityScope` bookmark — so recording was
+    /// broken out of the box. The container is always writable with no
+    /// entitlement and no security scope, so this is the safe default.
+    static var defaultOutputDir: URL {
+        let docs = (try? FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false
+        )) ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents", isDirectory: true)
+        return docs.appendingPathComponent("BlackBox Recordings", isDirectory: true)
+    }
+
     /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
     /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
     private var debugLogging: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
@@ -1342,8 +1359,31 @@ enum SleepWakePolicy {
 
     // MARK: - Security-Scoped Bookmarks
 
-    /// Save a security-scoped bookmark for the chosen output directory.
-    /// Creates the directory if it doesn't exist.
+    /// Point recording at the in-container default directory
+    /// (`Self.defaultOutputDir`). The container is always writable, so —
+    /// unlike a user-selected folder — it needs no security-scoped bookmark;
+    /// any previously stored bookmark is cleared so a stale one can't shadow
+    /// the default on the next launch. (DOLL-344)
+    func useDefaultOutputDir() {
+        let url = Self.defaultOutputDir
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        } catch {
+            // Non-fatal: the Rust writer also creates missing directories. Log
+            // and still point config at the path.
+            Self.log.error("Failed to create default output directory: \(error.localizedDescription)")
+        }
+        releaseOutputDirAccess()
+        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+        UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
+        bridge.setConfig(["output_dir": url.path])
+        Self.log.info("Using default in-container output directory: \(url.path)")
+    }
+
+    /// Save a security-scoped bookmark for a **user-selected** output directory
+    /// (one chosen via `NSOpenPanel`). Creates the directory if it doesn't
+    /// exist. Do NOT call this for the in-container default — use
+    /// `useDefaultOutputDir()`, which needs no bookmark (DOLL-344).
     func saveOutputDirBookmark(for url: URL) {
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -1376,7 +1416,14 @@ enum SleepWakePolicy {
     /// or IPC) run off the main actor's launch path.
     private func restoreOutputDirBookmark() async {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
-            Self.log.info("No saved output directory bookmark")
+            // No bookmark means either a first run or the user is on the
+            // in-container default (which never stores one). Ensure that
+            // default exists and points the engine at it, rather than leaving
+            // Rust on its relative "recordings" fallback (unwritable under the
+            // sandbox). Also recovers users migrating from the old, broken
+            // ~/Music default whose bookmark save silently failed. (DOLL-344)
+            Self.log.info("No saved output directory bookmark; using in-container default")
+            useDefaultOutputDir()
             return
         }
         do {
@@ -1431,11 +1478,9 @@ enum SleepWakePolicy {
                     self.saveOutputDirBookmark(for: url)
                 }
             } else {
-                // Use default: ~/Music/BlackBox Recordings
-                let musicDir = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent("Music")
-                    .appendingPathComponent("BlackBox Recordings")
-                self.saveOutputDirBookmark(for: musicDir)
+                // Use the in-container default (no security scope needed). The
+                // old ~/Music default is unwritable under the sandbox. (DOLL-344)
+                self.useDefaultOutputDir()
             }
         }
     }
