@@ -62,6 +62,27 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
+    # DOLL-462: version alignment was previously enforced only via
+    # `make release` — a plain `git tag && git push` bypassed the gate
+    # entirely, and the Fastfile then overwrites the marketing version
+    # from the tag (masking the committed mismatch). Pure shell +
+    # PlistBuddy; runs in seconds on the already-provisioned runner.
+    - name: Check version alignment across manifests
+      run: ./scripts/check-versions.sh
+
+    # DOLL-462: a tagged release must have a CHANGELOG.md heading for the
+    # version being released (Keep-a-Changelog style: "## [X.Y.Z] — date"),
+    # so release notes can't silently lag the release.
+    - name: Check CHANGELOG has an entry for this version
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION="${GITHUB_REF#refs/tags/v}"
+        if ! grep -qE "^## \[${VERSION//./\\.}\]" CHANGELOG.md; then
+          echo "::error::CHANGELOG.md has no '## [${VERSION}]' heading — add release notes before tagging."
+          exit 1
+        fi
+        echo "CHANGELOG.md has an entry for ${VERSION}"
+
     - name: Check formatting
       run: cargo fmt --all -- --check
 
