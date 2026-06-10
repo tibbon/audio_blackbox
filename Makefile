@@ -78,8 +78,15 @@ verify: check-app-store check-ffi-header
 		: "feature ever reappears. CI runs with default features ON."; \
 		$(CARGO_BIN) build --release --features ffi && \
 		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
-			-destination 'platform=macOS' CODE_SIGN_IDENTITY="-" -quiet; \
+			-destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" -quiet; \
 		echo "Swift tests passed."; \
+		: "DOLL-449: sync the String Catalog from the .stringsdata the build"; \
+		: "just emitted and fail on drift — mirrors CI's swift-app lane."; \
+		python3 scripts/sync-string-catalog.py && \
+		git diff --exit-code BlackBoxApp/BlackBoxApp/Localizable.xcstrings || { \
+			echo "Localizable.xcstrings was out of sync; it has been updated — commit it."; \
+			exit 1; \
+		}; \
 	fi
 
 # Coverage (DOLL-272): non-gating line-coverage summary to surface untested
