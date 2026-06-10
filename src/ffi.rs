@@ -296,17 +296,35 @@ fn validate_handle<'a>(handle: *const BlackboxHandle) -> Option<HandleRef<'a>> {
 /// Create a new `BlackboxHandle` from a JSON configuration string.
 ///
 /// If `config_json` is null or empty, default configuration is used.
-/// Returns null on failure (should not happen with defaults).
+///
+/// A malformed document (invalid UTF-8, invalid JSON, or a type mismatch in
+/// any field) does NOT fail creation: the handle is created with default
+/// configuration and the parse error is recorded so the caller can detect
+/// the discarded settings via `blackbox_get_last_error` (DOLL-456).
+/// Previously the error was swallowed entirely (`unwrap_or_default`),
+/// silently dropping every caller setting with no way to tell.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHandle {
+    let mut create_error: Option<String> = None;
     let config = if config_json.is_null() {
         AppConfig::default()
     } else {
-        let json_str = unsafe { cstr_to_str(config_json) }.unwrap_or("");
-        if json_str.is_empty() {
-            AppConfig::default()
-        } else {
-            serde_json::from_str::<AppConfig>(json_str).unwrap_or_default()
+        match unsafe { cstr_to_str(config_json) } {
+            None => {
+                create_error =
+                    Some("Config string is not valid UTF-8; using default configuration".into());
+                AppConfig::default()
+            }
+            Some("") => AppConfig::default(),
+            Some(json_str) => match serde_json::from_str::<AppConfig>(json_str) {
+                Ok(config) => config,
+                Err(e) => {
+                    create_error = Some(format!(
+                        "Invalid config JSON ({e}); using default configuration"
+                    ));
+                    AppConfig::default()
+                }
+            },
         }
     };
 
@@ -314,7 +332,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
         magic: AtomicU64::new(HANDLE_MAGIC),
         config: Mutex::new(config),
         recorder: Mutex::new(None),
-        last_error: Mutex::new(None),
+        last_error: Mutex::new(create_error),
         peak_levels: Mutex::new(Arc::new(Vec::new())),
         status: Mutex::new(ProcessorStatus::idle()),
     });

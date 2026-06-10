@@ -55,7 +55,12 @@ typedef struct {
 /*
  * Create a new handle from a JSON configuration string.
  * Pass NULL or "" for default configuration.
- * Returns NULL on failure (should not happen with defaults).
+ *
+ * A malformed document (invalid UTF-8, invalid JSON, or a type mismatch in
+ * any field) does NOT fail creation: the handle is created with default
+ * configuration and the parse error is recorded — check
+ * blackbox_get_last_error on the new handle to detect discarded settings
+ * (DOLL-456). Never returns NULL.
  */
 BlackboxHandle *blackbox_create(const char *config_json);
 
