@@ -2,11 +2,12 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
 use crate::constants::{CacheAlignedPeak, OutputMode};
+use crate::raw_wav_writer::{RawWavWriter, WavSpec};
 use crate::test_utils::test_env_no_silence;
 use crate::writer_thread::WriterThreadState;
 
@@ -231,6 +232,121 @@ fn flush_writers_respects_frame_threshold() {
             2_000 * byte_width,
             "crossing the threshold again should rewrite the header"
         );
+    });
+}
+
+/// DOLL-349/437 (filed as DOLL-452): once `write_sample` failures accumulate to
+/// ~1s of audio (`sample_rate` samples), the writer self-stops — latches the
+/// shared `write_failed` flag, sets `disk_stopped`, and finalizes so audio that
+/// landed before the failure is renamed to its final name. Below the threshold
+/// nothing latches, and after the stop `write_samples` is a no-op (no further
+/// error accumulation on a dead disk).
+#[test]
+fn persistent_write_failures_latch_flag_and_self_stop() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = single_state(dir);
+        let final_path = state.pending_files[0].1.clone();
+        let write_failed = Arc::clone(&state.write_failed);
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&format!(
+            "{dir}/failing.wav"
+        )));
+
+        // Just below the 48_000-sample (~1s) threshold: no stop yet.
+        state.write_samples(&vec![0.1_f32; 47_000]);
+        assert!(
+            !write_failed.load(Ordering::Relaxed),
+            "below ~1s of consecutive failures the flag must not latch"
+        );
+        assert!(!state.disk_stopped);
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            47_000,
+            "each failed sample must still bump the shared write_errors counter"
+        );
+
+        // Crossing the threshold stops the writer.
+        state.write_samples(&vec![0.1_f32; 2_000]);
+        assert!(
+            write_failed.load(Ordering::Relaxed),
+            "crossing ~1s of consecutive failures must latch write_failed"
+        );
+        assert!(state.disk_stopped, "self-stop must latch disk_stopped");
+        assert!(
+            state.writer.is_none(),
+            "self-stop must finalize (take) the writer"
+        );
+        assert!(
+            Path::new(&final_path).exists(),
+            "audio written before the failure must be renamed to its final name"
+        );
+
+        // After the stop, write_samples is a no-op.
+        let errors_before = state.write_errors.load(Ordering::Relaxed);
+        state.write_samples(&vec![0.1_f32; 5_000]);
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            errors_before,
+            "post-stop writes must not keep bumping write_errors"
+        );
+    });
+}
+
+/// DOLL-349 (filed as DOLL-452): the failure streak is CONSECUTIVE — a clean
+/// batch resets it. Two sub-threshold failure bursts separated by a healthy
+/// batch must not add up to a stop even though their sum exceeds the
+/// threshold; a burst crossing the threshold within one streak must.
+#[test]
+fn clean_batch_resets_write_failure_streak() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = single_state(dir);
+        let write_failed = Arc::clone(&state.write_failed);
+
+        // First sub-threshold burst: 34k of the 48k threshold.
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&format!(
+            "{dir}/failing-a.wav"
+        )));
+        state.write_samples(&vec![0.1_f32; 34_000]);
+        assert!(!write_failed.load(Ordering::Relaxed));
+
+        // One clean batch on a healthy writer resets the streak.
+        state.writer = Some(
+            RawWavWriter::create(
+                &format!("{dir}/healthy.wav"),
+                WavSpec {
+                    channels: 1,
+                    sample_rate: 48_000,
+                    bits_per_sample: 24,
+                },
+            )
+            .unwrap(),
+        );
+        state.write_samples(&vec![0.1_f32; 1_000]);
+
+        // Second sub-threshold burst: 34k + 34k > 48k cumulative, but the
+        // streak was reset, so nothing may latch.
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&format!(
+            "{dir}/failing-b.wav"
+        )));
+        state.write_samples(&vec![0.1_f32; 34_000]);
+        assert!(
+            !write_failed.load(Ordering::Relaxed),
+            "a clean batch must reset the consecutive-failure streak"
+        );
+        assert!(!state.disk_stopped);
+
+        // Crossing the threshold within a single streak still latches.
+        state.write_samples(&vec![0.1_f32; 15_000]);
+        assert!(
+            write_failed.load(Ordering::Relaxed),
+            "a full ~1s streak after the reset must still stop"
+        );
+        assert!(state.disk_stopped);
     });
 }
 

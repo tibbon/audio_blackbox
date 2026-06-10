@@ -77,6 +77,24 @@ impl RawWavWriter {
         })
     }
 
+    /// Test-only: build a writer whose every `write_sample` fails.
+    ///
+    /// Creates a real file at `path`, reopens it READ-ONLY, and wraps the
+    /// read-only fd in a 1-byte `BufWriter` — each multi-byte sample write
+    /// bypasses the buffer and hits the fd directly, failing with EBADF.
+    /// Lets tests drive the persistent-write-failure self-stop path
+    /// (DOLL-349/437) deterministically, without filling a disk.
+    #[cfg(test)]
+    pub(crate) fn new_failing_for_tests(path: &str) -> Self {
+        File::create(path).expect("create placeholder file");
+        let read_only = File::open(path).expect("reopen read-only");
+        Self {
+            writer: BufWriter::with_capacity(1, read_only),
+            data_bytes_written: 0,
+            byte_width: 3,
+        }
+    }
+
     /// Write a single i32 sample as little-endian bytes.
     ///
     /// For 24-bit: writes the low 3 bytes.  For 16-bit: low 2 bytes.
