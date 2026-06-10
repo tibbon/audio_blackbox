@@ -16,9 +16,18 @@ Merge semantics (mirrors Xcode):
   - keys extracted from source but absent from the catalog are ADDED
     (empty entry = source-language fallback, ready for translation);
   - existing entries keep their localizations untouched;
-  - catalog entries no longer extracted are DROPPED if they carry no
-    localizations, or marked "extractionState": "stale" if they do
-    (a translator's work is never silently deleted).
+  - with --prune, catalog entries no longer extracted are DROPPED if they
+    carry no localizations, or marked "extractionState": "stale" if they
+    do (a translator's work is never silently deleted).
+
+--prune is NOT the default because incremental builds emit .stringsdata
+only for recompiled files: a partial extraction looks like "these strings
+were removed" and pruning would silently drop live keys (this bit us on
+DOLL-460 — CI's restored DerivedData cache makes partial extractions the
+norm). Only pass --prune after a guaranteed-full extraction, e.g.:
+    touch BlackBoxApp/BlackBoxApp/*.swift   # force re-emission
+    xcodebuild test ... SWIFT_EMIT_LOC_STRINGS=YES ...
+    python3 scripts/sync-string-catalog.py --prune
 
 Output is byte-deterministic (sorted keys, fixed formatting), so CI can run
 the sync and `git diff --exit-code` the catalog to catch drift.
@@ -73,7 +82,7 @@ def extracted_keys(root: Path) -> dict[str, str]:
     return keys
 
 
-def sync(catalog_path: Path, keys: dict[str, str]) -> tuple[int, int, int]:
+def sync(catalog_path: Path, keys: dict[str, str], prune: bool) -> tuple[int, int, int]:
     catalog = json.loads(catalog_path.read_text())
     strings = catalog.setdefault("strings", {})
 
@@ -90,15 +99,16 @@ def sync(catalog_path: Path, keys: dict[str, str]) -> tuple[int, int, int]:
             if strings[key].get("extractionState") == "stale":
                 del strings[key]["extractionState"]
 
-    for key in list(strings):
-        if key in keys:
-            continue
-        if strings[key].get("localizations"):
-            strings[key]["extractionState"] = "stale"
-            stale += 1
-        else:
-            del strings[key]
-            dropped += 1
+    if prune:
+        for key in list(strings):
+            if key in keys:
+                continue
+            if strings[key].get("localizations"):
+                strings[key]["extractionState"] = "stale"
+                stale += 1
+            else:
+                del strings[key]
+                dropped += 1
 
     catalog["strings"] = dict(sorted(strings.items()))
     # Match Xcode's xcstrings JSON style: 2-space indent, " : " separators,
@@ -114,10 +124,13 @@ def main() -> None:
     ap.add_argument("--stringsdata-root", type=Path, default=DEFAULT_ROOT,
                     help="directory searched recursively for *.stringsdata")
     ap.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
+    ap.add_argument("--prune", action="store_true",
+                    help="drop/stale catalog keys absent from the extraction "
+                         "(requires a FULL extraction — see module docstring)")
     args = ap.parse_args()
 
     keys = extracted_keys(args.stringsdata_root)
-    added, stale, dropped = sync(args.catalog, keys)
+    added, stale, dropped = sync(args.catalog, keys, args.prune)
     print(f"{args.catalog}: {len(keys)} extracted keys — "
           f"{added} added, {stale} marked stale, {dropped} dropped")
 

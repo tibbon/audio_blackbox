@@ -383,8 +383,8 @@ enum SleepWakePolicy {
                 guard let self else { return }
                 self.start()
                 if self.isRecording {
-                    self.postNotification(title: "Recording Started",
-                                          body: "BlackBox started recording automatically.",
+                    self.postNotification(title: String(localized: "Recording Started"),
+                                          body: String(localized: "BlackBox started recording automatically."),
                                           identifier: "auto-record-started")
                 }
             }
@@ -422,12 +422,12 @@ enum SleepWakePolicy {
             return
         case .pauseForResume:
             wasSleepInterrupted = true
-            postNotification(title: "Recording Paused",
-                             body: "Your Mac is going to sleep. Recording will resume on wake.",
+            postNotification(title: String(localized: "Recording Paused"),
+                             body: String(localized: "Your Mac is going to sleep. Recording will resume on wake."),
                              identifier: "sleep-paused")
         case .stop:
-            postNotification(title: "Recording Stopped",
-                             body: "Your Mac is going to sleep.",
+            postNotification(title: String(localized: "Recording Stopped"),
+                             body: String(localized: "Your Mac is going to sleep."),
                              identifier: "recording-stopped")
         }
         stop()
@@ -443,12 +443,12 @@ enum SleepWakePolicy {
             guard let self, !self.isRecording else { return }
             self.start()
             if self.isRecording {
-                self.postNotification(title: "Recording Resumed",
-                                      body: "Recording resumed after wake.",
+                self.postNotification(title: String(localized: "Recording Resumed"),
+                                      body: String(localized: "Recording resumed after wake."),
                                       identifier: "wake-resumed")
             } else {
-                self.postNotification(title: "Resume Failed",
-                                      body: "Could not restart recording after wake. Check your audio device.",
+                self.postNotification(title: String(localized: "Resume Failed"),
+                                      body: String(localized: "Could not restart recording after wake. Check your audio device."),
                                       identifier: "wake-failed")
             }
         }
@@ -460,8 +460,8 @@ enum SleepWakePolicy {
         wasSleepInterrupted = true
         stop()
         Self.log.info("Fast User Switch: stopped recording for resume on return")
-        postNotification(title: "Recording Paused",
-                         body: "User session switched. Recording will resume when you return.",
+        postNotification(title: String(localized: "Recording Paused"),
+                         body: String(localized: "User session switched. Recording will resume when you return."),
                          identifier: "session-paused")
     }
 
@@ -474,12 +474,12 @@ enum SleepWakePolicy {
             guard let self, !self.isRecording else { return }
             self.start()
             if self.isRecording {
-                self.postNotification(title: "Recording Resumed",
-                                      body: "Recording resumed after session switch.",
+                self.postNotification(title: String(localized: "Recording Resumed"),
+                                      body: String(localized: "Recording resumed after session switch."),
                                       identifier: "session-resumed")
             } else {
-                self.postNotification(title: "Resume Failed",
-                                      body: "Could not restart recording after session switch.",
+                self.postNotification(title: String(localized: "Resume Failed"),
+                                      body: String(localized: "Could not restart recording after session switch."),
                                       identifier: "session-failed")
             }
         }
@@ -502,7 +502,7 @@ enum SleepWakePolicy {
             // this; the transient timer clears it after a while so the
             // user isn't permanently nagged.
             setTransientError(
-                "Shortcut \(shortcut.displayString) couldn't be registered — another app may be using it. Pick a new shortcut in Settings."
+                String(localized: "Shortcut \(shortcut.displayString) couldn't be registered — another app may be using it. Pick a new shortcut in Settings.")
             )
         }
     }
@@ -604,7 +604,7 @@ enum SleepWakePolicy {
             beginPreventingSleep()
             Self.log.info("Recording started")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Recording started"])
+                                 userInfo: [.announcement: String(localized: "Recording started")])
         } else {
             isRecording = false
             recordingStartTime = nil
@@ -612,13 +612,14 @@ enum SleepWakePolicy {
             let err: String
             switch result {
             case .audioDevice:
-                err = "No audio input device found. Check System Settings \u{203A} Sound."
+                err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
             case .config:
-                err = "Configuration error: \(detail ?? "invalid settings")"
+                let reason = detail ?? String(localized: "invalid settings")
+                err = String(localized: "Configuration error: \(reason)")
             case .io:
-                err = "Recording failed: disk error"
+                err = String(localized: "Recording failed: disk error")
             default:
-                err = detail ?? "Failed to start recording"
+                err = detail ?? String(localized: "Failed to start recording")
             }
             setTransientError(err)
             Self.log.error("Failed to start recording (code \(result.rawValue)): \(err)")
@@ -728,7 +729,7 @@ enum SleepWakePolicy {
         // Register "Restart Recording" action on recording-stopped notifications
         let restartAction = UNNotificationAction(
             identifier: "restart-recording",
-            title: "Restart Recording")
+            title: String(localized: "Restart Recording"))
         let category = UNNotificationCategory(
             identifier: "recording-stopped",
             actions: [restartAction],
@@ -853,7 +854,7 @@ enum SleepWakePolicy {
             wasSleepInterrupted = false
             Self.log.info("Recording stopped")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Recording stopped"])
+                                 userInfo: [.announcement: String(localized: "Recording stopped")])
 
             // Track successful sessions >5 min for App Store review prompt
             if sessionDuration > 300 {
@@ -866,7 +867,7 @@ enum SleepWakePolicy {
                 startMonitoring()
             }
         } else {
-            let err = bridge.lastError ?? "Failed to stop recording"
+            let err = bridge.lastError ?? String(localized: "Failed to stop recording")
             setTransientError(err)
             Self.log.error("Failed to stop recording (code \(result.rawValue)): \(err)")
         }
@@ -1529,7 +1530,7 @@ enum SleepWakePolicy {
             bridge.setConfig(["output_dir": url.path])
             Self.log.info("Saved output directory bookmark: \(url.path)")
         } catch {
-            let err = "Failed to save directory bookmark: \(error.localizedDescription)"
+            let err = String(localized: "Failed to save directory bookmark: \(error.localizedDescription)")
             errorMessage = err
             Self.log.error("\(err)")
         }
@@ -1584,7 +1585,7 @@ enum SleepWakePolicy {
         } catch {
             Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-            let failedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) ?? "the configured directory"
+            let failedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) ?? String(localized: "the configured directory")
             promptToReselectOutputDir(failedPath: failedPath)
         }
     }
@@ -1609,8 +1610,8 @@ enum SleepWakePolicy {
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.canCreateDirectories = true
-                panel.prompt = "Select"
-                panel.message = "Select output directory for recordings"
+                panel.prompt = String(localized: "Select")
+                panel.message = String(localized: "Select output directory for recordings")
                 if panel.runModal() == .OK, let url = panel.url {
                     self.saveOutputDirBookmark(for: url)
                 }

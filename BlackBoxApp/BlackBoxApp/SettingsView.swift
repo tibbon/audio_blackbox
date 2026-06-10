@@ -100,7 +100,7 @@ struct RecordingSettingsTab: View {
                     // DOLL-215: append the resolved default device name so
                     // the user can see what "System Default" maps to.
                     let defaultLabel: String = recorder.systemDefaultDeviceName
-                        .map { "System Default (\($0))" } ?? "System Default"
+                        .map { String(localized: "System Default (\($0))") } ?? String(localized: "System Default")
                     Text(defaultLabel).tag("")
                     ForEach(recorder.availableDevices, id: \.self) { device in
                         Text(device).tag(device)
@@ -149,7 +149,7 @@ struct RecordingSettingsTab: View {
                         applyConfig()
                         return
                     }
-                    confirmSettingsChange(reason: "bit depth") {
+                    confirmSettingsChange(reason: String(localized: "bit depth")) {
                         applyConfig()
                         recorder.restartIfRecording(reason: "bit depth changed")
                     } onCancel: {
@@ -444,7 +444,7 @@ struct RecordingSettingsTab: View {
             recorder.restartMonitoring()
             return
         }
-        confirmSettingsChange(reason: "channels") {
+        confirmSettingsChange(reason: String(localized: "channels")) {
             applyConfig()
             recorder.restartIfRecording(reason: "channels changed")
         } onCancel: {
@@ -483,19 +483,19 @@ struct RecordingSettingsTab: View {
 
     private var thresholdPresetLabel: String {
         if silenceThreshold < 0.005 {
-            return "Studio Quiet"
+            return String(localized: "Studio Quiet")
         } else if silenceThreshold < 0.02 {
-            return "Home Office"
+            return String(localized: "Home Office")
         } else if silenceThreshold < 0.05 {
-            return "Moderate"
+            return String(localized: "Moderate")
         } else {
-            return "Noisy Environment"
+            return String(localized: "Noisy Environment")
         }
     }
 
     private var thresholdDescription: String {
         let value = String(format: "%.3f", silenceThreshold)
-        return "\(thresholdPresetLabel), \(value)"
+        return String(localized: "\(thresholdPresetLabel), \(value)")
     }
 
     private func applyConfig() {
@@ -678,7 +678,7 @@ struct OutputSettingsTab: View {
                         applyConfig()
                         return
                     }
-                    confirmSettingsChange(reason: "output mode") {
+                    confirmSettingsChange(reason: String(localized: "output mode")) {
                         applyConfig()
                         recorder.restartIfRecording(reason: "output mode changed")
                     } onCancel: {
@@ -844,8 +844,13 @@ struct OutputSettingsTab: View {
         let channelsPerFile = outputMode == "split" ? 1 : channels
         let bytesPerFile = channelsPerFile * bytesPerSample * sampleRate * recordingCadence
         let totalBytes = bytesPerFile * fileCount
-        let rateNote = recorder.sampleRate > 0 ? "" : " (assuming 48 kHz)"
-        return formatBytes(bytesPerFile) + (fileCount > 1 ? " per file (\(formatBytes(totalBytes)) total across \(fileCount) files)" : "") + rateNote
+        // DOLL-460: single localized format strings instead of fragment
+        // concatenation, so translators see the whole sentence structure.
+        let perFile = formatBytes(bytesPerFile)
+        let rateNote = recorder.sampleRate > 0 ? "" : String(localized: " (assuming 48 kHz)")
+        guard fileCount > 1 else { return perFile + rateNote }
+        let total = formatBytes(totalBytes)
+        return String(localized: "\(perFile) per file (\(total) total across \(fileCount) files)\(rateNote)")
     }
 
     private func formatBytes(_ bytes: Int) -> String {
@@ -859,15 +864,19 @@ struct OutputSettingsTab: View {
         let minutes = (recordingCadence % 3600) / 60
         let seconds = recordingCadence % 60
         if hours > 0 && minutes == 0 && seconds == 0 {
-            return hours == 1 ? "1 hour" : "\(hours) hours"
+            return hours == 1
+                ? String(localized: "1 hour")
+                : String(localized: "\(hours) hours")
         } else if hours > 0 {
-            return "\(hours)h \(minutes)m"
+            return String(localized: "\(hours)h \(minutes)m")
         } else if minutes > 0 && seconds == 0 {
-            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+            return minutes == 1
+                ? String(localized: "1 minute")
+                : String(localized: "\(minutes) minutes")
         } else if minutes > 0 {
-            return "\(minutes)m \(seconds)s"
+            return String(localized: "\(minutes)m \(seconds)s")
         } else {
-            return "\(seconds)s"
+            return String(localized: "\(seconds)s")
         }
     }
 
@@ -911,8 +920,8 @@ struct OutputSettingsTab: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Select"
-        panel.message = "Select output directory for recordings"
+        panel.prompt = String(localized: "Select")
+        panel.message = String(localized: "Select output directory for recordings")
 
         if panel.runModal() == .OK, let url = panel.url {
             outputDir = url.path
@@ -933,7 +942,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(SettingsKeys.preventSleep) private var preventSleep: Bool = true
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @AppStorage(SettingsKeys.debugLogging) private var debugLogging = false
-    @State private var shortcutLabel: String = "None"
+    @State private var shortcutLabel: String = String(localized: "None")
     @State private var isRecordingShortcut = false
     @State private var shortcutError: String?
 
@@ -988,12 +997,12 @@ struct GeneralSettingsTab: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Global keyboard shortcut for toggling recording")
-                    .accessibilityValue(shortcutLabel == "None" ? "No shortcut set" : shortcutLabel)
+                    .accessibilityValue(shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel)
                     .accessibilityHint(isRecordingShortcut
-                        ? "Press a key combination, or Escape to cancel"
-                        : "Click to record a new shortcut")
+                        ? String(localized: "Press a key combination, or Escape to cancel")
+                        : String(localized: "Click to record a new shortcut"))
 
-                    if shortcutLabel != "None" {
+                    if shortcutLabel != String(localized: "None") {
                         Button("Clear") {
                             clearShortcut()
                         }
@@ -1060,7 +1069,7 @@ struct GeneralSettingsTab: View {
     private func clearShortcut() {
         GlobalHotkeyManager.shared.unregister()
         GlobalHotkeyManager.shared.save(nil)
-        shortcutLabel = "None"
+        shortcutLabel = String(localized: "None")
     }
 
     private func confirmResetAllSettings() {
@@ -1162,7 +1171,7 @@ struct ShortcutRecorderButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
-        nsView.title = isRecording ? "Press shortcut\u{2026}" : shortcutLabel
+        nsView.title = isRecording ? String(localized: "Press shortcut\u{2026}") : shortcutLabel
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1230,7 +1239,7 @@ struct ShortcutRecorderButton: NSViewRepresentable {
 
             // Reject reserved system shortcuts
             if Self.reservedShortcuts.contains(shortcut.displayString) {
-                parent.error = "\(shortcut.displayString) is reserved by macOS"
+                parent.error = String(localized: "\(shortcut.displayString) is reserved by macOS")
                 stopRecording()
                 return
             }
@@ -1244,7 +1253,7 @@ struct ShortcutRecorderButton: NSViewRepresentable {
                 manager.save(shortcut)
                 parent.shortcutLabel = shortcut.displayString
             } else {
-                parent.error = "\(shortcut.displayString) couldn't be registered — try a different combination"
+                parent.error = String(localized: "\(shortcut.displayString) couldn't be registered — try a different combination")
             }
             stopRecording()
         }

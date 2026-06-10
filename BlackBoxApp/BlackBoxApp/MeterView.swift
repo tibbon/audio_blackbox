@@ -31,7 +31,7 @@ struct MeterView: View {
     /// default's actual device name when known (DOLL-215 → 219).
     private var deviceDisplayName: String {
         if selectedDevice.isEmpty {
-            return recorder.systemDefaultDeviceName ?? "System Default"
+            return recorder.systemDefaultDeviceName ?? String(localized: "System Default")
         }
         return selectedDevice
     }
@@ -41,11 +41,11 @@ struct MeterView: View {
         let rate = recorder.sampleRate
         guard rate > 0 else { return "\u{2014}" }
         if rate % 1000 == 0 {
-            return "\(rate / 1000) kHz"
+            return String(localized: "\(rate / 1000) kHz")
         }
         // DOLL-377: locale-aware decimal separator instead of a hardcoded "."
         let kHz = Double(rate) / 1000.0
-        return "\(kHz.formatted(.number.precision(.fractionLength(1)))) kHz"
+        return String(localized: "\(kHz.formatted(.number.precision(.fractionLength(1)))) kHz")
     }
 
     /// VoiceOver-friendly sample rate. The visible `sampleRateDisplay` shows a
@@ -53,7 +53,7 @@ struct MeterView: View {
     /// ("…at em dash, 24 bits per sample"). Speak "unknown sample rate" instead.
     /// (DOLL-385)
     private var sampleRateSpoken: String {
-        recorder.sampleRate > 0 ? sampleRateDisplay : "unknown sample rate"
+        recorder.sampleRate > 0 ? sampleRateDisplay : String(localized: "unknown sample rate")
     }
 
     /// Window title with a state suffix so a glance at the title bar (or
@@ -61,18 +61,18 @@ struct MeterView: View {
     /// represent a live recording, a passive monitor, or stale state.
     /// DOLL-218.
     private var windowTitle: String {
-        if recorder.isRecording { return "Level Meter (Recording)" }
-        if recorder.isMonitoring { return "Level Meter (Monitoring)" }
-        return "Level Meter"
+        if recorder.isRecording { return String(localized: "Level Meter (Recording)") }
+        if recorder.isMonitoring { return String(localized: "Level Meter (Monitoring)") }
+        return String(localized: "Level Meter")
     }
 
     /// VoiceOver verb for the header. The header label previously hard-coded
     /// "Recording" even while only monitoring or idle (DOLL-252), telling VO
     /// users they were recording when they weren't.
     private var stateVerb: String {
-        if recorder.isRecording { return "Recording" }
-        if recorder.isMonitoring { return "Monitoring" }
-        return "Input"
+        if recorder.isRecording { return String(localized: "Recording") }
+        if recorder.isMonitoring { return String(localized: "Monitoring") }
+        return String(localized: "Input")
     }
 
     /// -3 dBFS as a linear peak amplitude (10^(-3/20)). Channels above this
@@ -258,12 +258,12 @@ private struct MeterBar: View {
     /// non-clipping non-silent signal. The buckets line up with the
     /// existing visual gradient stops (-12, -24, -48).
     private var meterAccessibilityValue: String {
-        if dBFS > -3 { return "Clipping: signal is too loud and may distort" }
-        if dBFS > -12 { return "Hot: signal is high, reduce input gain" }
-        if dBFS <= -60 { return "Silent" }
-        if dBFS <= -48 { return "Very low, below -48 decibels" }
-        if dBFS <= -24 { return "Low, between -48 and -24 decibels" }
-        return "Moderate, between -24 and -12 decibels"
+        if dBFS > -3 { return String(localized: "Clipping: signal is too loud and may distort") }
+        if dBFS > -12 { return String(localized: "Hot: signal is high, reduce input gain") }
+        if dBFS <= -60 { return String(localized: "Silent") }
+        if dBFS <= -48 { return String(localized: "Very low, below -48 decibels") }
+        if dBFS <= -24 { return String(localized: "Low, between -48 and -24 decibels") }
+        return String(localized: "Moderate, between -24 and -12 decibels")
     }
 
     private var dBLabel: String {
