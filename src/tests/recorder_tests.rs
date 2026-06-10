@@ -29,6 +29,8 @@ fn test_recorder_with_config() {
             .expect("recorder should have produced a readable WAV");
         assert_eq!(reader.spec().sample_rate, 44100);
         assert!(reader.len() > 0, "WAV should contain samples");
+        // Carried over from the removed lib.rs duplicate (DOLL-455).
+        assert_eq!(recorder.get_processor().output_mode, OutputMode::default());
     });
 }
 
