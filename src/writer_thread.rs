@@ -206,6 +206,15 @@ pub struct WriterThreadState {
     gate_timeout_frames: u64,
     /// Shared flag: true when gate is idle (no files open). Read by FFI for status.
     pub gate_idle: Arc<AtomicBool>,
+    /// Pre-roll retention for the silence gate (DOLL-465): the most recent
+    /// frame-aligned batch seen while the gate was Idle. The batch that trips
+    /// the gate open is processed in the peaks-only branch before any writer
+    /// exists, so without this the signal onset — up to one
+    /// `WRITER_THREAD_READ_CHUNK` (~170 ms at 48 kHz stereo) — was silently
+    /// discarded. `process_gate_open` replays it into the freshly opened
+    /// writers before live samples resume. Lives on the writer thread only,
+    /// so the RT callback is unaffected.
+    gate_preroll: Vec<f32>,
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
@@ -378,6 +387,7 @@ impl WriterThreadState {
             gate_silence_frames: 0,
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
             gate_idle,
+            gate_preroll: Vec::new(),
             output_dir: output_dir.to_string(),
             #[cfg(unix)]
             output_dir_cstr: CString::new(output_dir).ok(),
@@ -462,6 +472,7 @@ impl WriterThreadState {
             gate_silence_frames: 0,
             gate_timeout_frames: 0,
             gate_idle: Arc::new(AtomicBool::new(false)),
+            gate_preroll: Vec::new(),
             output_dir: String::new(),
             #[cfg(unix)]
             output_dir_cstr: None, // Monitor mode doesn't check disk space
@@ -680,6 +691,11 @@ impl WriterThreadState {
             return;
         }
 
+        // DOLL-465: detach the pre-roll buffer so the gate-idle branch can
+        // fill it while `frame_data` immutably borrows `self.combined_buf`
+        // below; reattached at the end of the function.
+        let mut gate_preroll = std::mem::take(&mut self.gate_preroll);
+
         // Prepend any leftover samples from the previous call using a pre-allocated buffer
         let work_data: &[f32] = if self.frame_remainder.is_empty() {
             data
@@ -761,6 +777,15 @@ impl WriterThreadState {
                         self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                     }
                 }
+            }
+            // DOLL-465: retain this batch while the gate is idle — if it's
+            // the one that trips the gate, `process_gate_open` replays it so
+            // the signal onset isn't lost. Last batch wins; clear+extend
+            // reuses the allocation. Bounded by the caller's batch size
+            // (`WRITER_THREAD_READ_CHUNK` in production).
+            if self.gate_enabled && !self.monitor_only && self.gate_state == GateState::Idle {
+                gate_preroll.clear();
+                gate_preroll.extend_from_slice(frame_data);
             }
         } else {
             match self.output_mode {
@@ -884,6 +909,9 @@ impl WriterThreadState {
 
         // DOLL-373: persist the dither RNG advance for the next batch.
         self.dither_rng = rng;
+
+        // DOLL-465: reattach the pre-roll buffer detached at the top.
+        self.gate_preroll = gate_preroll;
     }
 
     /// Process a pending gate open: create WAV files and transition to Recording.
@@ -900,6 +928,18 @@ impl WriterThreadState {
             self.gate_state = GateState::Recording;
             // Status flag only; no synchronizes-with relationship.
             self.gate_idle.store(false, Ordering::Relaxed);
+            // DOLL-465: replay the retained idle batch — the signal onset
+            // that tripped the gate — into the just-opened writers before
+            // live samples resume. take() empties the field first so the
+            // re-entrant write_samples (gate is now Recording) can't
+            // re-save or double-write it.
+            let mut preroll = std::mem::take(&mut self.gate_preroll);
+            if !preroll.is_empty() {
+                self.write_samples(&preroll);
+                // Hand the allocation back for the next idle period.
+                preroll.clear();
+                self.gate_preroll = preroll;
+            }
         }
     }
 
@@ -921,6 +961,10 @@ impl WriterThreadState {
         // Status flag only; no synchronizes-with relationship.
         self.gate_idle.store(true, Ordering::Relaxed);
         self.gate_silence_frames = 0;
+        // DOLL-465: drop stale pre-roll from the closed session (the next
+        // idle batch overwrites it anyway; this keeps the buffer empty
+        // rather than holding already-written audio).
+        self.gate_preroll.clear();
     }
 
     /// Open WAV writers when the silence gate transitions from Idle to Recording.
