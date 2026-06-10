@@ -121,17 +121,11 @@ SWIFT_APP_BUNDLE = $(RELEASE_DIR)/$(APP_NAME).app
 rust-lib:
 	$(CARGO_BIN) build --release --features ffi
 
-# Build universal (fat) Rust static library for aarch64 + x86_64
-.PHONY: rust-lib-universal
-rust-lib-universal:
-	$(CARGO_BIN) build --release --features ffi --target=aarch64-apple-darwin
-	$(CARGO_BIN) build --release --features ffi --target=x86_64-apple-darwin
-	@mkdir -p $(TARGET_DIR)/universal
-	lipo -create \
-		$(TARGET_DIR)/aarch64-apple-darwin/release/libblackbox.a \
-		$(TARGET_DIR)/x86_64-apple-darwin/release/libblackbox.a \
-		-output $(TARGET_DIR)/universal/libblackbox.a
-	@echo "Universal library created at $(TARGET_DIR)/universal/libblackbox.a"
+# DOLL-463: the rust-lib-universal (arm64 + x86_64 lipo) target was removed.
+# The app is deliberately Apple-Silicon-only — ARCHS is pinned to arm64 in
+# project.yml, the Fastfile, and the xcodebuild flags below — and nothing
+# ever consumed the universal lib (LIBRARY_SEARCH_PATHS only lists
+# target/release and target/debug). See ARCHITECTURE.md "Platform support".
 
 # Build the SwiftUI app (depends on rust-lib)
 .PHONY: swift-app
@@ -321,7 +315,6 @@ help:
 	@echo ""
 	@echo "SwiftUI App:"
 	@echo "  rust-lib        - Build Rust static library with FFI"
-	@echo "  rust-lib-universal - Build universal (arm64 + x86_64) static library"
 	@echo "  swift-app       - Build SwiftUI menu bar app"
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
