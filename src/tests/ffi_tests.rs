@@ -61,6 +61,12 @@ fn test_create_with_valid_json() {
         config_str
     );
 
+    // A clean parse must not leave a creation error behind (DOLL-456).
+    assert!(
+        blackbox_get_last_error(handle).is_null(),
+        "valid JSON must not set last_error"
+    );
+
     blackbox_destroy(handle);
 }
 
@@ -85,6 +91,47 @@ fn test_create_with_invalid_json() {
         format!("{defaults:?}"),
         "invalid JSON must fall back to AppConfig::default()"
     );
+
+    // DOLL-456: the swallowed parse must now be detectable — last_error
+    // carries the serde message instead of leaving the caller blind.
+    let err_ptr = blackbox_get_last_error(handle);
+    let err = unsafe { read_and_free(err_ptr) }.expect("last_error must be set");
+    assert!(
+        err.contains("Invalid config JSON"),
+        "last_error should describe the discarded config: {err}"
+    );
+
+    blackbox_destroy(handle);
+}
+
+/// DOLL-456: a syntactically valid document with ONE type-mismatched field
+/// makes serde reject the whole document. The handle must still be created
+/// (defaults), but last_error must record that every caller setting was
+/// discarded — previously this was completely silent.
+#[test]
+fn test_create_type_mismatch_sets_last_error_and_keeps_defaults() {
+    let json = CString::new(r#"{"debug": true, "duration": "sixty"}"#).unwrap();
+    let handle = blackbox_create(json.as_ptr());
+    assert!(!handle.is_null(), "creation must still succeed");
+
+    let config_ptr = blackbox_get_config_json(handle);
+    let config_str = unsafe { read_and_free(config_ptr) }.expect("config readable");
+    let parsed: crate::AppConfig =
+        serde_json::from_str(&config_str).expect("config parseable as AppConfig");
+    let defaults = crate::AppConfig::default();
+    assert_eq!(
+        format!("{parsed:?}"),
+        format!("{defaults:?}"),
+        "a type mismatch rejects the whole document → defaults (even the valid debug field)"
+    );
+
+    let err_ptr = blackbox_get_last_error(handle);
+    let err = unsafe { read_and_free(err_ptr) }.expect("last_error must be set");
+    assert!(
+        err.contains("Invalid config JSON"),
+        "last_error should describe the discarded config: {err}"
+    );
+
     blackbox_destroy(handle);
 }
 
