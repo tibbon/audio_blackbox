@@ -87,3 +87,48 @@ fn test_io_variant_preserves_source() {
         .expect("Io::source should downcast to io::Error");
     assert_eq!(downcast.kind(), io::ErrorKind::PermissionDenied);
 }
+
+/// DOLL-457: `full_chain()` must append every `source()` level after the
+/// top-level Display — `Display` on the `*Source` variants prints only the
+/// context, and `blackbox_get_last_error` (built from `full_chain`) is the
+/// Swift UI's only diagnostic. Without the chain, the actual cpal/hound
+/// cause never reaches the user.
+#[test]
+fn test_full_chain_includes_root_cause() {
+    use std::io;
+    let root = io::Error::new(io::ErrorKind::PermissionDenied, "device is busy");
+    let err = BlackboxError::AudioDeviceSource {
+        context: "Failed to build input stream".to_string(),
+        source: Box::new(root),
+    };
+
+    // Display alone drops the cause (this is the bug full_chain fixes)…
+    assert!(!format!("{err}").contains("device is busy"));
+    // …full_chain carries both levels.
+    let chain = err.full_chain();
+    assert!(
+        chain.contains("Failed to build input stream") && chain.contains("device is busy"),
+        "full_chain must include context AND root cause: {chain}"
+    );
+}
+
+/// `Io`'s Display already embeds the io::Error message; full_chain must not
+/// print it twice ("I/O error: denied: denied").
+#[test]
+fn test_full_chain_does_not_duplicate_io_message() {
+    use std::io;
+    let err: BlackboxError = io::Error::new(io::ErrorKind::PermissionDenied, "denied").into();
+    let chain = err.full_chain();
+    assert_eq!(
+        chain.matches("denied").count(),
+        1,
+        "io message must appear exactly once: {chain}"
+    );
+}
+
+/// Variants without a source: full_chain is just Display.
+#[test]
+fn test_full_chain_equals_display_when_no_source() {
+    let err = BlackboxError::Wav("bad header".into());
+    assert_eq!(err.full_chain(), err.to_string());
+}
