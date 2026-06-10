@@ -29,7 +29,7 @@ struct OnboardingView: View {
     // suggested ⌘⇧R only gets auto-registered once per onboarding run
     // — if the user clears it and navigates Back→Continue, we won't
     // silently re-register the default they just rejected.
-    @State private var shortcutLabel: String = "None"
+    @State private var shortcutLabel: String = String(localized: "None")
     @State private var isRecordingShortcut: Bool = false
     @State private var shortcutError: String?
     @State private var didOfferDefaultShortcut = false
@@ -58,7 +58,7 @@ struct OnboardingView: View {
                     .buttonStyle(.plain)
                     .contentShape(Circle())
                     .accessibilityLabel("Onboarding step \(i + 1) of 6")
-                    .accessibilityHint(i < step ? "Go back to this step" : "")
+                    .accessibilityHint(i < step ? String(localized: "Go back to this step") : "")
                     .accessibilityAddTraits(i == step ? [.isSelected] : [])
                     .accessibilityHidden(i > step)
                     .disabled(i >= step)
@@ -283,7 +283,7 @@ struct OnboardingView: View {
                     // DOLL-385: announce the full path (truncationMode elides
                     // the middle visually); match the Settings twin's label.
                     .accessibilityLabel("Output directory: \(outputDir)")
-                    .accessibilityValue(chosenURL == nil ? "No folder selected" : "")
+                    .accessibilityValue(chosenURL == nil ? String(localized: "No folder selected") : "")
 
                 Button("Choose\u{2026}") {
                     chooseDirectory()
@@ -332,16 +332,16 @@ struct OnboardingView: View {
 
             VStack(spacing: 12) {
                 recordingModeOption(
-                    title: "Continuous Recording (Recommended)",
-                    description: "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly.",
+                    title: String(localized: "Continuous Recording (Recommended)"),
+                    description: String(localized: "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly."),
                     isSelected: continuousMode
                 ) {
                     continuousMode = true
                 }
 
                 recordingModeOption(
-                    title: "Manual Saves Only",
-                    description: "Records into one file until you stop. Simpler, but unsaved audio is lost if the app quits.",
+                    title: String(localized: "Manual Saves Only"),
+                    description: String(localized: "Records into one file until you stop. Simpler, but unsaved audio is lost if the app quits."),
                     isSelected: !continuousMode
                 ) {
                     continuousMode = false
@@ -421,16 +421,16 @@ struct OnboardingView: View {
             .frame(maxWidth: 360)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Global keyboard shortcut for toggling recording")
-            .accessibilityValue(shortcutLabel == "None" ? "No shortcut set" : shortcutLabel)
+            .accessibilityValue(shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel)
             .accessibilityHint(isRecordingShortcut
-                ? "Press a key combination, or Escape to cancel"
-                : "Click to record a new shortcut")
+                ? String(localized: "Press a key combination, or Escape to cancel")
+                : String(localized: "Click to record a new shortcut"))
 
-            if shortcutLabel != "None" {
+            if shortcutLabel != String(localized: "None") {
                 Button("Clear shortcut") {
                     GlobalHotkeyManager.shared.unregister()
                     GlobalHotkeyManager.shared.save(nil)
-                    shortcutLabel = "None"
+                    shortcutLabel = String(localized: "None")
                     shortcutError = nil
                 }
                 .font(.caption)
@@ -478,7 +478,7 @@ struct OnboardingView: View {
             GlobalHotkeyManager.shared.save(suggested)
             shortcutLabel = suggested.displayString
         } else {
-            shortcutError = "\u{2318}\u{21E7}R is already in use \u{2014} click the button to choose a different combination."
+            shortcutError = String(localized: "\u{2318}\u{21E7}R is already in use \u{2014} click the button to choose a different combination.")
         }
     }
 
@@ -616,8 +616,8 @@ struct OnboardingView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Select"
-        panel.message = "Select output directory for recordings"
+        panel.prompt = String(localized: "Select")
+        panel.message = String(localized: "Select output directory for recordings")
         panel.directoryURL = URL(fileURLWithPath: outputDir)
 
         if panel.runModal() == .OK, let url = panel.url {
