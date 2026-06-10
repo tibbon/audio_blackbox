@@ -81,6 +81,10 @@ The codebase has two flavors of atomic flag:
 
 If you're adding a new atomic flag: ask whether a reader observing this flag's set state needs to also observe other state set by the same writer. If yes → Acquire/Release. If no → Relaxed.
 
+## Platform support
+
+The app is **Apple-Silicon-only by decision** (DOLL-463, 2026-06): `ARCHS` is pinned to `arm64` in `project.yml`, the Fastfile, and the Makefile's xcodebuild flags. The last Intel Macs are aging out of macOS support, and an x86_64 lane would roughly double the Rust build cost in CI (scarce Actions minutes) for a shrinking audience. If Intel support is ever wanted: build the Rust lib for both targets, `lipo` them, point `LIBRARY_SEARCH_PATHS` at the fat lib, and drop the three `ARCHS` pins. (A dead `rust-lib-universal` Makefile target that did the lipo step — but that nothing consumed — was removed as part of this decision.)
+
 ## Swift app shell
 
 The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackBoxApp/`). The Rust engine is consumed via the FFI surface in `src/ffi.rs`; everything below is Swift-side.
