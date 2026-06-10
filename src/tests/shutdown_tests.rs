@@ -1,166 +1,178 @@
-use crate::AppConfig;
-use crate::AudioProcessor;
-use crate::AudioRecorder;
-use crate::MockAudioProcessor;
+//! Production shutdown-path tests (DOLL-455).
+//!
+//! The previous version of this file drove `MockAudioProcessor` bookkeeping:
+//! the mock defined `is_recording()` as `audio_processed && !finalized` and the
+//! tests asserted those very fields after calling the mock methods that set
+//! them — circular, with zero production code under test (its error-path case
+//! also duplicated `test_recorder_finalize_error_propagation`). These tests
+//! instead spawn the real `writer_thread_main` and exercise the real shutdown
+//! sequence: the `Shutdown` command, drain, `finalize_all`, the reply channel
+//! Swift waits on, and thread join. (Drain-of-pending-samples itself is
+//! covered by `ring_buffer_tests::test_writer_thread_shutdown_drains`.)
 
-/// Happy-path smoke test: start → stop → finalize, file exists,
-/// state transitions cleanly through the AudioProcessor lifecycle.
-#[test]
-fn test_clean_shutdown() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = temp_dir.path().to_str().unwrap();
-    let file_name = format!("{}/test.wav", temp_path);
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
-    let processor = MockAudioProcessor::new(&file_name);
-    let mut recorder = AudioRecorder::new(processor);
+use tempfile::tempdir;
 
-    // Before start: not recording.
-    assert!(!recorder.get_processor().is_recording());
+use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
+use crate::test_utils::test_env_no_silence;
+use crate::writer_thread::{WriterCommand, WriterThreadState, writer_thread_main};
 
-    recorder.start_recording().unwrap();
-
-    // After start: the mock has processed audio (audio_processed=true,
-    // finalized=false), so is_recording() reports true.
-    assert!(
-        recorder.get_processor().is_recording(),
-        "Recorder should report is_recording=true after start_recording()"
-    );
-
-    recorder.processor_mut().stop_recording().unwrap();
-
-    // After stop_recording the mock clears audio_processed; is_recording=false.
-    assert!(
-        !recorder.get_processor().is_recording(),
-        "Recorder should report is_recording=false after stop_recording()"
-    );
-
-    recorder.processor_mut().finalize().unwrap();
-
-    // Finalize must mark finalized=true.
-    assert!(
-        recorder.get_processor().finalized,
-        "MockAudioProcessor.finalized must be true after finalize()"
-    );
-
-    // The WAV file the mock writes during process_audio should exist.
-    assert!(std::path::Path::new(&file_name).exists());
-    let metadata = std::fs::metadata(&file_name).unwrap();
-    assert!(
-        metadata.len() > 0,
-        "Mock WAV file should be non-empty (the mock writes 1000 samples)"
-    );
+/// Collect all finalized `.wav` files (not `.recording.wav` temps) in a directory.
+fn wav_files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().is_some_and(|ext| ext == "wav")
+                && !p.to_str().unwrap_or_default().contains(".recording.wav")
+        })
+        .collect()
 }
 
-/// Stop while is_recording=true: must transition cleanly without leaving
-/// the processor in a half-shut-down state.
-#[test]
-fn test_shutdown_during_recording() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = temp_dir.path().to_str().unwrap();
-    let file_name = format!("{}/recording.wav", temp_path);
-
-    let processor = MockAudioProcessor::new(&file_name);
-    let mut recorder = AudioRecorder::new(processor);
-
-    recorder.start_recording().unwrap();
-
-    // Precondition: recording is in progress.
-    assert!(recorder.get_processor().is_recording());
-    assert!(recorder.get_processor().audio_processed);
-    assert!(!recorder.get_processor().finalized);
-    assert!(
-        !recorder.get_processor().created_files.is_empty(),
-        "Mock should have populated created_files during start_recording"
-    );
-
-    // Stop while recording. Returns Ok and clears the recording flag.
-    let stop_result = recorder.processor_mut().stop_recording();
-    assert!(
-        stop_result.is_ok(),
-        "stop_recording during active recording must return Ok, got {:?}",
-        stop_result
-    );
-    assert!(!recorder.get_processor().is_recording());
-
-    // Finalize after a mid-recording stop: file exists and has data.
-    recorder.processor_mut().finalize().unwrap();
-    assert!(recorder.get_processor().finalized);
-    assert!(std::path::Path::new(&file_name).exists());
-    let metadata = std::fs::metadata(&file_name).unwrap();
-    assert!(metadata.len() > 0);
+/// Build a single-channel 44.1 kHz writer state writing into `dir`.
+fn writer_state(dir: &str, gate_enabled: bool) -> WriterThreadState {
+    let mut state = WriterThreadState::new(
+        dir,
+        44_100,
+        &[0],
+        OutputMode::Single,
+        0.0, // silence_threshold: 0 → no silence worker
+        Arc::new(AtomicU64::new(0)),
+        0, // min_disk_space_mb: disabled
+        Arc::new(AtomicBool::new(false)),
+        16,
+        Arc::new(vec![CacheAlignedPeak::new(0)]),
+        gate_enabled,
+        1,
+    )
+    .expect("construct writer state");
+    state.total_device_channels = 1;
+    state
 }
 
-/// Calling stop_recording and finalize multiple times must be idempotent —
-/// no panic, no error, state does not regress.
-#[test]
-fn test_multiple_shutdown_attempts() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = temp_dir.path().to_str().unwrap();
-    let file_name = format!("{}/idempotent.wav", temp_path);
-
-    let processor = MockAudioProcessor::new(&file_name);
-    let mut recorder = AudioRecorder::new(processor);
-
-    recorder.start_recording().unwrap();
-
-    // First stop: succeeds, clears the recording flag.
-    let first_stop = recorder.processor_mut().stop_recording();
-    assert!(first_stop.is_ok(), "first stop_recording: {:?}", first_stop);
-    assert!(!recorder.get_processor().is_recording());
-
-    // Second stop on an already-stopped recorder: also Ok, no panic.
-    let second_stop = recorder.processor_mut().stop_recording();
-    assert!(
-        second_stop.is_ok(),
-        "second stop_recording must be idempotent, got {:?}",
-        second_stop
-    );
-    assert!(!recorder.get_processor().is_recording());
-
-    // First finalize: succeeds, sets finalized.
-    let first_finalize = recorder.processor_mut().finalize();
-    assert!(
-        first_finalize.is_ok(),
-        "first finalize: {:?}",
-        first_finalize
-    );
-    assert!(recorder.get_processor().finalized);
-
-    // Second finalize: also Ok (mock does not error on double-finalize unless
-    // should_fail_finalize is set). State must not regress.
-    let second_finalize = recorder.processor_mut().finalize();
-    assert!(
-        second_finalize.is_ok(),
-        "second finalize must be idempotent on the mock, got {:?}",
-        second_finalize
-    );
-    assert!(recorder.get_processor().finalized);
-
-    assert!(std::path::Path::new(&file_name).exists());
+/// Spawn `writer_thread_main` exactly as `process_audio_impl` does, returning
+/// the producer, the command sender, and the join handle.
+fn spawn_writer(
+    state: WriterThreadState,
+) -> (
+    rtrb::Producer<f32>,
+    std::sync::mpsc::SyncSender<WriterCommand>,
+    std::thread::JoinHandle<()>,
+) {
+    let ring_size = 44_100 * RING_BUFFER_SECONDS;
+    let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
+    let rotation_needed = Arc::new(AtomicBool::new(false));
+    let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+    let handle = std::thread::spawn(move || {
+        writer_thread_main(consumer, rotation_needed, command_rx, state);
+    });
+    (producer, command_tx, handle)
 }
 
-/// finalize() returning Err must surface to the caller, not panic.
+/// Send `Shutdown` and return the writer thread's finalize result after
+/// joining it — the exact rendezvous the FFI stop path performs.
+fn shutdown(
+    command_tx: &std::sync::mpsc::SyncSender<WriterCommand>,
+    handle: std::thread::JoinHandle<()>,
+) -> Result<(), crate::error::BlackboxError> {
+    let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+    command_tx
+        .send(WriterCommand::Shutdown(reply_tx))
+        .expect("writer thread should still be alive to receive Shutdown");
+    let result = reply_rx.recv().expect("writer thread must send a reply");
+    handle
+        .join()
+        .expect("writer thread must exit after Shutdown");
+    result
+}
+
+/// Stop immediately after start (no audio ever pushed): the shutdown sequence
+/// must reply Ok, finalize a valid zero-sample WAV under its final name, and
+/// leave no `.recording.wav` temp behind.
 #[test]
-fn test_shutdown_with_error() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = temp_dir.path().to_str().unwrap();
-    let file_name = format!("{}/test.wav", temp_path);
+fn shutdown_with_no_samples_finalizes_valid_empty_wav() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
 
-    let mut processor = MockAudioProcessor::new(&file_name);
-    processor.should_fail_finalize = true;
-    let _config = AppConfig::default();
-    let mut recorder = AudioRecorder::new(processor);
+        let (_producer, command_tx, handle) = spawn_writer(writer_state(dir, false));
 
-    recorder.start_recording().unwrap();
-    recorder.processor_mut().stop_recording().unwrap();
+        shutdown(&command_tx, handle).expect("clean shutdown must reply Ok");
 
-    // Finalize should fail but not panic.
-    let result = recorder.processor_mut().finalize();
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("Simulated finalize failure"),
-        "Expected the simulated failure message, got: {}",
-        err_msg
-    );
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(files.len(), 1, "exactly one finalized file");
+        let reader = hound::WavReader::open(&files[0])
+            .expect("finalized file must be a valid WAV even with zero samples");
+        assert_eq!(reader.len(), 0, "no samples were pushed");
+
+        let temps: Vec<_> = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.path()
+                    .to_str()
+                    .unwrap_or_default()
+                    .contains(".recording.wav")
+            })
+            .collect();
+        assert!(temps.is_empty(), "no .recording.wav temp may remain");
+    });
+}
+
+/// With the silence gate enabled and only silence flowing, the gate stays
+/// idle (no writers ever open) and shutdown must reply Ok leaving NO files —
+/// not even an empty finalized WAV.
+#[test]
+fn shutdown_while_gate_idle_leaves_no_files() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let (mut producer, command_tx, handle) = spawn_writer(writer_state(dir, true));
+
+        // Pure silence: peaks never exceed the threshold, gate stays Idle.
+        let silence = vec![0.0_f32; 4_410];
+        if let Ok(chunk) = producer.write_chunk_uninit(silence.len()) {
+            chunk.fill_from_iter(silence.iter().copied());
+        }
+
+        shutdown(&command_tx, handle).expect("gate-idle shutdown must reply Ok");
+
+        assert!(
+            wav_files_in(temp_dir.path()).is_empty(),
+            "gate never opened, so no files may exist"
+        );
+    });
+}
+
+/// When finalize fails during shutdown (here: the final rename target's
+/// parent directory does not exist), the error must travel back through the
+/// Shutdown reply channel — this is what the FFI stop path surfaces to Swift.
+/// The thread must still exit and join.
+#[test]
+fn shutdown_reply_surfaces_finalize_error() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = writer_state(dir, false);
+        // Sabotage the rename destination (ENOENT) so finalize_all errors.
+        state.pending_files[0].1 = format!("{dir}/does_not_exist/out.wav");
+
+        let (mut producer, command_tx, handle) = spawn_writer(state);
+
+        let data = vec![0.25_f32; 1_000];
+        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
+            chunk.fill_from_iter(data.iter().copied());
+        }
+
+        let result = shutdown(&command_tx, handle);
+        assert!(
+            result.is_err(),
+            "finalize failure must surface through the Shutdown reply, got {result:?}"
+        );
+    });
 }

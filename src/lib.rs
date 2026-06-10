@@ -166,7 +166,6 @@ static COUNTING_ALLOCATOR: alloc_counter::CountingAllocator = alloc_counter::Cou
 mod tests {
     use super::*;
     use mock_processor::MockAudioProcessor;
-    use std::env;
     use std::path::Path;
     use tempfile::tempdir;
 
@@ -186,11 +185,6 @@ mod tests {
     mod silence_gate_tests;
     mod silence_tests;
     mod writer_thread_tests;
-
-    // Check if we're running in CI
-    fn is_ci() -> bool {
-        env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok()
-    }
 
     /// Re-export the consolidated helper (DOLL-118) for inline tests below.
     use crate::test_utils::default_test_env;
@@ -216,34 +210,10 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_recorder_basic_functionality() {
-        if is_ci() {
-            println!("Skipping audio test in CI environment");
-            return;
-        }
-
-        temp_env::with_vars(default_test_env(), || {
-            let temp_dir = tempdir().unwrap();
-            let temp_path = temp_dir.path().to_str().unwrap();
-            let file_name = format!("{}/test.wav", temp_path);
-
-            let processor = MockAudioProcessor::new(&file_name);
-            let mut recorder = AudioRecorder::new(processor);
-
-            recorder.start_recording().expect("start_recording");
-
-            // Real post-condition: a valid WAV exists on disk and the
-            // recorder is configured for the default output mode. The
-            // mock's `audio_processed` boolean is set unconditionally and
-            // would not catch a recorder that short-circuited.
-            let r = hound::WavReader::open(&file_name)
-                .expect("recorder should have produced a readable WAV");
-            assert_eq!(r.spec().sample_rate, 44100);
-            assert!(r.len() > 0, "WAV should contain samples");
-            assert_eq!(recorder.get_processor().output_mode, OutputMode::default());
-        });
-    }
+    // test_recorder_basic_functionality removed (DOLL-455) — it fully
+    // duplicated recorder_tests::test_recorder_with_config (modulo `new` vs
+    // `with_config(default)`) and carried the silent-pass `is_ci()` skip
+    // anti-pattern. The output-mode assertion it added lives there now.
 
     // test_channel_parsing removed — every case here is covered exhaustively
     // in src/tests/channel_tests.rs.
