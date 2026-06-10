@@ -167,8 +167,14 @@ impl BlackboxHandle {
     }
 
     /// Store an error message and return the typed error code for a `BlackboxError`.
-    fn set_error_from(&self, msg: String, err: &BlackboxError) -> i32 {
-        self.set_error(msg);
+    ///
+    /// The stored message is `prefix` followed by the error's full
+    /// `source()` chain (DOLL-457): `Display` on the `*Source` variants
+    /// prints only the context string, and `blackbox_get_last_error` is the
+    /// Swift UI's only diagnostic — without the chain it would omit the
+    /// actual cpal/hound/io cause.
+    fn set_error_from(&self, prefix: &str, err: &BlackboxError) -> i32 {
+        self.set_error(format!("{prefix}: {}", err.full_chain()));
         match err {
             BlackboxError::AudioDevice(_) | BlackboxError::AudioDeviceSource { .. } => {
                 BLACKBOX_ERR_AUDIO_DEVICE
@@ -410,7 +416,7 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
     let processor = match CpalAudioProcessor::with_config(&config) {
         Ok(p) => p,
         Err(e) => {
-            return handle.set_error_from(format!("Failed to create audio processor: {e}"), &e);
+            return handle.set_error_from("Failed to create audio processor", &e);
         }
     };
 
@@ -437,7 +443,7 @@ pub extern "C" fn blackbox_start_recording(handle: *mut BlackboxHandle) -> i32 {
         if let Ok(mut s) = handle.status.lock() {
             *s = ProcessorStatus::idle();
         }
-        return handle.set_error_from(format!("Failed to start recording: {e}"), &e);
+        return handle.set_error_from("Failed to start recording", &e);
     }
 
     // Install recorder + refresh the volatile atomics (gate_idle replaced
@@ -478,7 +484,7 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
             if let Some(mut recorder) = guard.take()
                 && let Err(e) = recorder.processor_mut().stop_recording()
             {
-                return handle.set_error_from(format!("Failed to stop recording: {e}"), &e);
+                return handle.set_error_from("Failed to stop recording", &e);
             }
             BLACKBOX_OK
         }
@@ -780,7 +786,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
         let processor = match CpalAudioProcessor::with_config(&config) {
             Ok(p) => p,
             Err(e) => {
-                return handle.set_error_from(format!("Failed to create audio processor: {e}"), &e);
+                return handle.set_error_from("Failed to create audio processor", &e);
             }
         };
         *guard = Some(AudioRecorder::with_config(processor, config));
@@ -798,7 +804,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
             if let Ok(mut s) = handle.status.lock() {
                 *s = ProcessorStatus::idle();
             }
-            return handle.set_error_from(format!("Failed to start monitoring: {e}"), &e);
+            return handle.set_error_from("Failed to start monitoring", &e);
         }
 
         // Refresh the volatile atomics (peak_levels is allocated inside
@@ -838,7 +844,7 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
             }
             if let Some(recorder) = guard.as_mut() {
                 if let Err(e) = recorder.processor_mut().stop_monitoring() {
-                    return handle.set_error_from(format!("Failed to stop monitoring: {e}"), &e);
+                    return handle.set_error_from("Failed to stop monitoring", &e);
                 }
                 // If not recording, drop the recorder to release resources
                 if !recorder.get_processor().is_recording() {

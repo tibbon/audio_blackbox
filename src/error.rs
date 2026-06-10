@@ -80,3 +80,30 @@ pub enum BlackboxError {
     #[error("Insufficient disk space: {available_mb} MB available, {required_mb} MB required")]
     InsufficientDiskSpace { available_mb: u64, required_mb: u64 },
 }
+
+impl BlackboxError {
+    /// Format this error followed by its full `source()` chain, `: `-separated.
+    ///
+    /// `Display` on the `*Source` variants prints only the context string —
+    /// the wrapped cpal/hound root cause is reachable only via
+    /// `std::error::Error::source()`. The FFI layer formats errors with this
+    /// helper so `blackbox_get_last_error` (the Swift UI's only user-facing
+    /// diagnostic) carries the actual cause, not just the context (DOLL-457).
+    pub fn full_chain(&self) -> String {
+        use std::error::Error;
+        let mut out = self.to_string();
+        let mut source = self.source();
+        while let Some(cause) = source {
+            let msg = cause.to_string();
+            // `Io`'s Display already embeds its source's message ("I/O
+            // error: {0}") — skip a level that's already present rather
+            // than printing "I/O error: X: X".
+            if !out.contains(&msg) {
+                out.push_str(": ");
+                out.push_str(&msg);
+            }
+            source = cause.source();
+        }
+        out
+    }
+}
