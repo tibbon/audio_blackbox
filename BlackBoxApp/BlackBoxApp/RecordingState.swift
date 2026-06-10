@@ -355,12 +355,19 @@ enum SleepWakePolicy {
         restoreSavedSettings()
         restoreGlobalHotkey()
 
-        // Request notification authorization eagerly at launch (DOLL-134).
-        // Previously this was deferred to first manual `startRecordingInternal`,
-        // so the very-first auto-record-on-launch notification fired before
-        // auth and was silently dropped. Auth status is sticky across
-        // launches; calling once here is a no-op on subsequent runs.
-        requestNotificationAuth()
+        // DOLL-464: request notification authorization at launch ONLY once
+        // onboarding has completed (i.e. any launch after the first). On a
+        // true first launch the eager request stacked a third permission
+        // prompt on top of the onboarding window and the mic prompt — the
+        // in-context pattern the HIG warns against. First-launch users get
+        // the request when their first recording starts instead (see
+        // startRecordingInternal), the first moment a notification could
+        // matter. DOLL-134 is preserved: auto-record requires completed
+        // onboarding, so its launch notification still finds auth already
+        // requested here, and auth status stays sticky across launches.
+        if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding) {
+            requestNotificationAuth()
+        }
 
         // Auto-record on launch if enabled (skip if onboarding not complete)
         if UserDefaults.standard.bool(forKey: SettingsKeys.hasCompletedOnboarding)
@@ -544,8 +551,12 @@ enum SleepWakePolicy {
         // the LIVE recording as idle (unstoppable from the UI).
         guard !isRecording else { return }
 
-        // Notification authorization was requested at init() time (DOLL-134),
-        // so we don't need a lazy request here.
+        // DOLL-464: for first-launch users (onboarding incomplete at init,
+        // so the eager request was skipped) this is the in-context moment
+        // to ask — a recording is starting, so stop/pause notifications now
+        // matter. No-op on every other launch (auth requested at init,
+        // DOLL-134) and after the first call.
+        requestNotificationAuthIfNeeded()
 
         // DOLL-233: snapshot the config once at start so the per-tick
         // computations downstream (rotation countdown, file-size estimate,
@@ -686,7 +697,21 @@ enum SleepWakePolicy {
 
     // MARK: - Notifications
 
+    /// Set once `requestNotificationAuth()` has run this launch, so the
+    /// deferred first-launch request (DOLL-464) fires at most once.
+    private var hasRequestedNotificationAuth = false
+
+    /// One-shot wrapper for the deferred first-recording request (DOLL-464).
+    /// No-op on launches where init() already requested (onboarding done)
+    /// or after the first call; the system dialog itself only ever shows
+    /// once per install regardless.
+    func requestNotificationAuthIfNeeded() {
+        guard !hasRequestedNotificationAuth else { return }
+        requestNotificationAuth()
+    }
+
     private func requestNotificationAuth() {
+        hasRequestedNotificationAuth = true
         let center = UNUserNotificationCenter.current()
         // DOLL-185: capture the granted bool. Without this, a denial
         // silently drops every later postNotification (sleep-paused,
