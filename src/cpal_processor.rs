@@ -1180,8 +1180,10 @@ mod rotation_tests {
     }
 
     /// recording_cadence = 0 → threshold 0 → EVERY callback signals a
-    /// rotation (the DOLL-458 rotation storm). Documents why config-level
-    /// validation is needed; update alongside DOLL-458 when it lands.
+    /// rotation (the DOLL-458 rotation storm). `get_recording_cadence` now
+    /// rejects 0 at the config boundary, so production can't reach this —
+    /// the test documents why that guard exists and what the raw arithmetic
+    /// does without it.
     #[test]
     fn zero_cadence_fires_every_batch() {
         let threshold = rotation_threshold_samples(48_000, 2, 0);
