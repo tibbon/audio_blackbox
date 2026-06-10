@@ -83,6 +83,16 @@ enum SleepWakePolicy {
         didSet { syncMeterTimer() } // DOLL-374: gate the meter poll on activity
     }
 
+    /// `true` from the moment `start()` passes its guard until the start
+    /// attempt resolves (success, failure, or permission denial).
+    /// `isRecording` stays false across the mic-permission await inside
+    /// `start()`'s Task — which can suspend for the entire user-facing
+    /// permission dialog — so this in-flight flag is what blocks a second
+    /// `start()` (hotkey + menu click, or a hotkey during the dialog) from
+    /// enqueueing a second engine start whose failure path would mark the
+    /// live recording as idle and make it unstoppable from the UI (DOLL-459).
+    private var isStartingRecording = false
+
     /// Short status string for the menu's headline row ("Ready",
     /// "Recording...", "Error", elapsed time during a session). Always
     /// non-empty; defaults to "Ready" pre-launch.
@@ -504,15 +514,19 @@ enum SleepWakePolicy {
         // Debounce: rapid double-start (e.g. hotkey held, accessibility
         // automation) would otherwise launch two requestAccess flows in
         // parallel. The Task hop below means isRecording stays false during
-        // the await, so this guard is the only thing protecting against
-        // re-entry from the same MainActor turn.
-        guard !isRecording else { return }
+        // the await — for as long as the user leaves the permission dialog
+        // open — so the isStartingRecording in-flight flag is what blocks
+        // re-entry across that window (DOLL-459); the isRecording guard
+        // alone only covered re-entry from the same MainActor turn.
+        guard !isRecording, !isStartingRecording else { return }
+        isStartingRecording = true
         errorMessage = nil
         Task { @MainActor in
             // The Task scope ends naturally when this function returns;
             // app termination cancels in-flight Tasks via Swift's
             // structured-concurrency cooperation, so no explicit
             // Task.cancel is required from applicationShouldTerminate.
+            defer { self.isStartingRecording = false }
             if await self.checkMicrophonePermission() {
                 self.startRecordingInternal()
             } else {
@@ -523,6 +537,13 @@ enum SleepWakePolicy {
     }
 
     private func startRecordingInternal() {
+        // DOLL-459: defense in depth — re-check after the permission await.
+        // The guard in start() ran before the suspension; if a session began
+        // through another path while the dialog was up, a second
+        // bridge.startRecording() would fail and its error branch would mark
+        // the LIVE recording as idle (unstoppable from the UI).
+        guard !isRecording else { return }
+
         // Notification authorization was requested at init() time (DOLL-134),
         // so we don't need a lazy request here.
 
@@ -598,6 +619,11 @@ enum SleepWakePolicy {
     func startMonitoring() {
         Task { @MainActor in
             guard await self.checkMicrophonePermission() else { return }
+            // DOLL-459: the permission await can suspend across user
+            // interaction; re-check the record/monitor mutual exclusion
+            // afterwards so a stale monitor task doesn't grab the audio
+            // stream out from under an active (or in-flight) recording.
+            guard !self.isRecording, !self.isStartingRecording, !self.isMonitoring else { return }
             let result = self.bridge.startMonitoring()
             if result.isSuccess {
                 self.isMonitoring = true
