@@ -71,6 +71,21 @@ jobs:
     - name: Run tests
       run: cargo test --no-default-features -- --test-threads=1
 
+    # DOLL-461: mirror rust.yml's ffi lane — `--features ffi` is the exact
+    # C-ABI surface the shipped app links, and cargo features are not
+    # additive for the test binary, so the no-features run above never
+    # compiles it. Without this a directly-pushed tag could release with
+    # the FFI tests/lints unrun on that SHA (the same gap DOLL-260/DOLL-357
+    # closed for fmt and audit). The test pass is scoped to ffi_tests:
+    # everything else in the binary is byte-identical to the no-features
+    # run above (`default = []`); clippy still type-checks the whole crate
+    # with the feature enabled.
+    - name: Run clippy (FFI, all targets)
+      run: cargo clippy --all-targets --features ffi -- -D warnings
+
+    - name: Run tests (FFI)
+      run: cargo test --features ffi ffi_tests -- --test-threads=1
+
     # DOLL-357: the release gate re-runs main's checks on the tag SHA
     # (DOLL-260) but previously omitted the audit + lockfile-freshness checks
     # that main enforces — so a directly-pushed tag could ship a fresh-RUSTSEC
