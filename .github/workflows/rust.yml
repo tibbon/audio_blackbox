@@ -171,7 +171,13 @@ jobs:
       run: cargo clippy --all-targets --features ffi -- -D warnings
 
     - name: Run tests (FFI)
-      run: cargo test --features ffi -- --test-threads=1
+      # DOLL-461: scoped to the ffi_tests module — `default = []`, so every
+      # non-FFI test in this binary is byte-identical to the no-features
+      # Test lane already running on another macOS runner; re-running the
+      # full suite here doubled the spend. Clippy above still type-checks
+      # the whole crate with the feature enabled, and the release gate now
+      # runs this same scoped pass.
+      run: cargo test --features ffi ffi_tests -- --test-threads=1
 
     # DOLL-369: ACKNOWLEDGMENTS.md is generated from cargo metadata over the
     # shipped (--features ffi) dependency set. Fail if it drifted — i.e. a dep
