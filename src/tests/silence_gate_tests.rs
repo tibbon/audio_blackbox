@@ -414,27 +414,28 @@ fn test_inf_sample_clamps_peak_meter_to_one() {
 // file existence)
 // ===========================================================================
 
-/// DOLL-355: the gate tests asserted file existence/state transitions but never
-/// opened the WAV to verify content — so a regression that left an empty-but-
-/// present file, or leaked pre-gate silence into the file, would still pass.
-/// Here we open the gate with a signal burst, write a known uniform batch after
-/// the open, finalize, and assert the file contains exactly that batch.
+/// DOLL-355 (updated by DOLL-465): the gate tests asserted file existence /
+/// state transitions but never opened the WAV to verify content. Originally
+/// this asserted the triggering batch was NOT written (the deferred-open
+/// design discarded it); DOLL-465 added a pre-roll that replays the
+/// triggering batch on gate open, so the file must now contain the trigger
+/// batch followed by the post-open batch — and nothing else.
 #[test]
-fn test_gate_recording_writes_post_open_signal() {
+fn test_gate_recording_writes_onset_and_post_open_signal() {
     temp_env::with_vars(test_env_no_silence(), || {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
 
         let mut state = make_gate_state(dir, true, 5, 0.01);
 
-        // Burst above threshold opens the gate (this audio is consumed for
-        // detection while idle, before any writer exists, so it is NOT written).
+        // Burst above threshold trips the gate; processed in the peaks-only
+        // branch while idle, retained as pre-roll, replayed on open.
         let trigger: Vec<f32> = (0..48_000).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
         state.write_samples(&trigger);
         state.process_gate_open();
         assert_eq!(state.gate_state, GateState::Recording);
 
-        // The post-open batch is what must actually land on disk.
+        // Live audio after the open.
         let n = 2_000;
         let post = vec![0.5_f32; n];
         state.write_samples(&post);
@@ -447,19 +448,65 @@ fn test_gate_recording_writes_post_open_signal() {
         let samples: Vec<i32> = reader.into_samples::<i32>().map(Result::unwrap).collect();
         assert_eq!(
             samples.len(),
-            n,
-            "file must contain exactly the post-open batch (no empty file, no leaked pre-gate audio)"
+            trigger.len() + n,
+            "file must contain the replayed onset batch plus the post-open batch"
         );
+        // The onset must be the trigger sine, not leaked zeros: spot-check an
+        // early sample. sin(0.1)*0.5 → ~1636 at 16-bit, ±1 LSB TPDF dither
+        // (DOLL-373).
+        let expected_onset = ((0.1_f32).sin() * 0.5 * 32767.0).round() as i32;
         assert!(
-            samples.iter().all(|&s| s != 0),
-            "post-open signal samples must be non-zero on disk"
+            (samples[1] - expected_onset).abs() <= 1,
+            "onset sample must match the trigger batch, got {} want ~{expected_onset}",
+            samples[1]
         );
-        // 0.5 → ~16384 at 16-bit, within ±1 LSB (TPDF dither, DOLL-373). The
-        // tight band confirms the post-open signal landed (not leaked silence).
-        let expected = (0.5_f32 * 32767.0).round() as i32;
+        // The tail is the uniform post-open batch: 0.5 → ~16384, ±1 LSB.
+        let expected_post = (0.5_f32 * 32767.0).round() as i32;
+        assert!(
+            samples[trigger.len()..]
+                .iter()
+                .all(|&s| (s - expected_post).abs() <= 1),
+            "post-open samples must follow the replayed onset"
+        );
+    });
+}
+
+/// DOLL-465: only the LAST idle batch is retained as pre-roll — earlier
+/// idle silence must not leak into the file, and the pre-roll must not be
+/// duplicated by the live writes that follow.
+#[test]
+fn test_gate_preroll_keeps_only_last_idle_batch() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = make_gate_state(dir, true, 5, 0.01);
+
+        // A long stretch of idle silence (must NOT land in the file)…
+        state.write_samples(&vec![0.0_f32; 30_000]);
+        assert_eq!(state.gate_state, GateState::Idle);
+
+        // …then the triggering batch (must land exactly once).
+        let trigger = vec![0.4_f32; 5_000];
+        state.write_samples(&trigger);
+        state.process_gate_open();
+        assert_eq!(state.gate_state, GateState::Recording);
+
+        state.finalize_all().unwrap();
+
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(files.len(), 1, "expected exactly one finalized WAV");
+        let reader = hound::WavReader::open(&files[0]).expect("valid WAV");
+        let samples: Vec<i32> = reader.into_samples::<i32>().map(Result::unwrap).collect();
+        assert_eq!(
+            samples.len(),
+            trigger.len(),
+            "file must contain exactly the triggering batch — no prior silence, no duplication"
+        );
+        let expected = (0.4_f32 * 32767.0).round() as i32;
         assert!(
             samples.iter().all(|&s| (s - expected).abs() <= 1),
-            "uniform 0.5 input must decode near a constant value (±1 LSB)"
+            "retained onset must be the trigger batch's content"
         );
     });
 }
