@@ -62,9 +62,11 @@ pub struct AppConfig {
     /// `recording_cadence` intervals. `None` falls back to
     /// `DEFAULT_CONTINUOUS_MODE` (false).
     pub continuous_mode: Option<bool>,
-    /// File-rotation cadence in seconds (continuous mode only). Must
-    /// be > 0; `0` is treated as "no rotation" by the writer thread.
-    /// `None` falls back to `DEFAULT_RECORDING_CADENCE` (300, i.e. 5 min).
+    /// File-rotation cadence in seconds (continuous mode only). Must be
+    /// at least 1: `0` is rejected by `get_recording_cadence` and falls
+    /// back to `DEFAULT_RECORDING_CADENCE` (300, i.e. 5 min) — a zero
+    /// cadence would rotate on every audio callback (DOLL-458). `None`
+    /// falls back the same way.
     pub recording_cadence: Option<u64>,
     /// Output directory for WAV files. Relative paths are resolved
     /// against the working directory. `None` falls back to
@@ -438,7 +440,8 @@ silence_threshold = {}
 # Default: {}
 continuous_mode = {}
 
-# Recording cadence in seconds (how often to rotate files in continuous mode)
+# Recording cadence in seconds (how often to rotate files in continuous mode).
+# Must be >= 1; 0 falls back to the default.
 # Default: {}
 recording_cadence = {}
 
@@ -562,7 +565,15 @@ silence_gate_timeout_secs = {}
     }
 
     pub fn get_recording_cadence(&self) -> u64 {
-        self.recording_cadence.unwrap_or(DEFAULT_RECORDING_CADENCE)
+        // Reject 0 — the rotation threshold is `sample_rate * channels *
+        // cadence`, so a zero cadence makes the RT callback's counter cross
+        // the threshold on EVERY callback: a rotation storm creating
+        // hundreds of near-empty WAVs per second (DOLL-458). Same
+        // getter-side validation style as get_bits_per_sample.
+        match self.recording_cadence.unwrap_or(DEFAULT_RECORDING_CADENCE) {
+            0 => DEFAULT_RECORDING_CADENCE,
+            v => v,
+        }
     }
 
     pub fn get_output_dir(&self) -> String {
@@ -890,6 +901,58 @@ mod tests {
             };
             assert_eq!(config.get_silence_threshold(), good);
         }
+    }
+
+    /// DOLL-458: cadence 0 would make the rotation threshold 0 — the RT
+    /// callback's counter crosses it on every callback, producing hundreds
+    /// of near-empty WAVs per second. The getter must fall back to the
+    /// default instead.
+    #[test]
+    fn test_recording_cadence_rejects_zero() {
+        let config = AppConfig {
+            recording_cadence: Some(0),
+            ..AppConfig::default()
+        };
+        assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
+
+        // Positive values pass through.
+        for good in [1, 60, 300, 86_400] {
+            let config = AppConfig {
+                recording_cadence: Some(good),
+                ..AppConfig::default()
+            };
+            assert_eq!(config.get_recording_cadence(), good);
+        }
+
+        // None falls back to default.
+        let config = AppConfig {
+            recording_cadence: None,
+            ..AppConfig::default()
+        };
+        assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
+    }
+
+    /// DOLL-458: the env-var path also lands a raw 0 in the field; the
+    /// getter is the single validation point, so it must reject it there too.
+    #[test]
+    fn test_recording_cadence_zero_from_env_rejected() {
+        temp_env::with_vars(
+            vec![
+                ("BLACKBOX_RECORDING_CADENCE", Some("0")),
+                ("RECORDING_CADENCE", None::<&str>),
+                ("BLACKBOX_CONFIG", None::<&str>),
+            ],
+            || {
+                let mut config = AppConfig::default();
+                config.apply_env_vars();
+                assert_eq!(config.recording_cadence, Some(0), "env value lands raw");
+                assert_eq!(
+                    config.get_recording_cadence(),
+                    DEFAULT_RECORDING_CADENCE,
+                    "getter must reject the zero cadence"
+                );
+            },
+        );
     }
 
     #[test]
