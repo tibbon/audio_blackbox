@@ -128,6 +128,36 @@ pub fn push_samples_with_overflow_count(
     }
 }
 
+/// Rotation threshold in interleaved samples for one cadence period:
+/// `sample_rate * total_channels * recording_cadence_secs`. The channel factor
+/// matters — the RT callback counts interleaved samples across ALL device
+/// channels, so a 4-channel device sees samples 4× as fast as mono and the
+/// threshold must scale with it to keep rotation on the same wall clock.
+/// Pure so the arithmetic is unit-testable without a device (DOLL-453).
+#[inline]
+fn rotation_threshold_samples(
+    sample_rate: u32,
+    total_channels: usize,
+    recording_cadence_secs: u64,
+) -> u64 {
+    u64::from(sample_rate) * total_channels as u64 * recording_cadence_secs
+}
+
+/// Advance the rotation counter by one callback batch of `batch_len`
+/// interleaved samples. Returns true when the counter crossed `threshold`
+/// (a rotation is due), resetting the counter to 0. Alloc/lock-free —
+/// called from the real-time cpal callback.
+#[inline]
+fn advance_rotation_counter(counter: &mut u64, batch_len: usize, threshold: u64) -> bool {
+    *counter += batch_len as u64;
+    if *counter >= threshold {
+        *counter = 0;
+        true
+    } else {
+        false
+    }
+}
+
 impl CpalAudioProcessor {
     /// Create a new CpalAudioProcessor instance, loading config from env/TOML.
     ///
@@ -512,7 +542,8 @@ impl CpalAudioProcessor {
         let err_fn = self.build_stream_err_callback();
 
         // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
-        let rotation_threshold = sample_rate as u64 * total_channels as u64 * recording_cadence;
+        let rotation_threshold =
+            rotation_threshold_samples(sample_rate, total_channels, recording_cadence);
         let mut rotation_sample_counter: u64 = 0;
 
         // Build the input stream
@@ -529,18 +560,20 @@ impl CpalAudioProcessor {
                             // thread (see `write_errors` atomic).
 
                             // Check rotation via sample counter (zero syscalls)
-                            if continuous_mode {
-                                rotation_sample_counter += data.len() as u64;
-                                if rotation_sample_counter >= rotation_threshold {
-                                    // Status flag only — the flag carries no
-                                    // companion payload (samples travel through
-                                    // rtrb with its own synchronization), so
-                                    // Relaxed suffices and is marginally cheaper
-                                    // on the RT thread (DOLL-391). Matches the
-                                    // other RT status flags in this file.
-                                    rotation_needed_cb.store(true, Ordering::Relaxed);
-                                    rotation_sample_counter = 0;
-                                }
+                            if continuous_mode
+                                && advance_rotation_counter(
+                                    &mut rotation_sample_counter,
+                                    data.len(),
+                                    rotation_threshold,
+                                )
+                            {
+                                // Status flag only — the flag carries no
+                                // companion payload (samples travel through
+                                // rtrb with its own synchronization), so
+                                // Relaxed suffices and is marginally cheaper
+                                // on the RT thread (DOLL-391). Matches the
+                                // other RT status flags in this file.
+                                rotation_needed_cb.store(true, Ordering::Relaxed);
                             }
 
                             push_samples_with_overflow_count(&mut producer, data, &write_errors);
@@ -1067,6 +1100,95 @@ impl CpalAudioProcessor {
         self.direct_state
             .as_ref()
             .map_or_else(Vec::new, |s| s.pending_files.clone())
+    }
+}
+
+#[cfg(test)]
+mod rotation_tests {
+    use super::{advance_rotation_counter, rotation_threshold_samples};
+
+    /// DOLL-453: the threshold must scale with the device's TOTAL channel
+    /// count, because the RT callback counts interleaved samples across all
+    /// channels. The historic risk: forgetting the channel factor makes a
+    /// 4-channel device rotate every `cadence * 4` seconds (30 min instead
+    /// of 7.5) — every prior rotation test set `rotation_needed` manually
+    /// and would never catch it.
+    #[test]
+    fn threshold_scales_with_channel_count_and_cadence() {
+        // mono, 48 kHz, 5-minute cadence
+        assert_eq!(rotation_threshold_samples(48_000, 1, 300), 14_400_000);
+        // 4-channel device sees interleaved samples 4× as fast
+        assert_eq!(rotation_threshold_samples(48_000, 4, 300), 57_600_000);
+        // cadence factor
+        assert_eq!(rotation_threshold_samples(44_100, 2, 60), 5_292_000);
+    }
+
+    /// Counter accumulates across batches, returns false below the threshold,
+    /// fires exactly when crossing it, and resets to zero afterwards.
+    #[test]
+    fn counter_accumulates_fires_and_resets() {
+        let threshold = 1_000_u64;
+        let mut counter = 0_u64;
+
+        assert!(!advance_rotation_counter(&mut counter, 400, threshold));
+        assert!(!advance_rotation_counter(&mut counter, 400, threshold));
+        assert_eq!(counter, 800);
+
+        assert!(
+            advance_rotation_counter(&mut counter, 400, threshold),
+            "crossing the threshold must signal a rotation"
+        );
+        assert_eq!(counter, 0, "counter must reset after firing");
+
+        // The next period needs a full threshold's worth again.
+        assert!(!advance_rotation_counter(&mut counter, 999, threshold));
+        assert!(advance_rotation_counter(&mut counter, 1, threshold));
+    }
+
+    /// Wall-clock equivalence: with the threshold derived from the channel
+    /// count, a mono and a 4-channel device must both rotate after the same
+    /// number of CALLBACKS (i.e., the same elapsed time), even though the
+    /// 4-channel batches carry 4× the samples. This is the end-to-end form
+    /// of the off-by-channel-count regression.
+    #[test]
+    fn rotation_fires_at_same_wall_clock_across_channel_counts() {
+        let sample_rate = 48_000_u32;
+        let cadence_secs = 10_u64;
+        let frames_per_callback = 480_usize; // 10 ms of frames per callback
+
+        let callbacks_to_fire = |channels: usize| -> u32 {
+            let threshold = rotation_threshold_samples(sample_rate, channels, cadence_secs);
+            let batch = frames_per_callback * channels; // interleaved samples
+            let mut counter = 0_u64;
+            let mut n = 0_u32;
+            loop {
+                n += 1;
+                if advance_rotation_counter(&mut counter, batch, threshold) {
+                    return n;
+                }
+            }
+        };
+
+        let mono = callbacks_to_fire(1);
+        let quad = callbacks_to_fire(4);
+        assert_eq!(
+            mono, quad,
+            "rotation must fire after the same elapsed time regardless of channel count"
+        );
+        // 10 s cadence / 10 ms callbacks = 1000 callbacks.
+        assert_eq!(mono, 1_000);
+    }
+
+    /// recording_cadence = 0 → threshold 0 → EVERY callback signals a
+    /// rotation (the DOLL-458 rotation storm). Documents why config-level
+    /// validation is needed; update alongside DOLL-458 when it lands.
+    #[test]
+    fn zero_cadence_fires_every_batch() {
+        let threshold = rotation_threshold_samples(48_000, 2, 0);
+        assert_eq!(threshold, 0);
+        let mut counter = 0_u64;
+        assert!(advance_rotation_counter(&mut counter, 512, threshold));
+        assert!(advance_rotation_counter(&mut counter, 512, threshold));
     }
 }
 
