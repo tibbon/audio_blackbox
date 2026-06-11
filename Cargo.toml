@@ -11,7 +11,7 @@ default-run = "blackbox"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cpal = "0.17"
+cpal = "0.18"
 env_logger = "0.11"
 hound = "3.5.1"
 chrono = "0.4"
