@@ -221,9 +221,7 @@ impl CpalAudioProcessor {
     /// stream. Extracted as a method so the SAME closure the production
     /// stream uses can be exercised by tests — reverting the body here
     /// breaks both production wiring AND the test (DOLL-106).
-    pub(crate) fn build_stream_err_callback(
-        &self,
-    ) -> impl FnMut(cpal::StreamError) + Send + 'static {
+    pub(crate) fn build_stream_err_callback(&self) -> impl FnMut(cpal::Error) + Send + 'static {
         let stream_error = Arc::clone(&self.stream_error);
         move |err| {
             error!("an error occurred on stream: {}", err);
@@ -551,7 +549,7 @@ impl CpalAudioProcessor {
             SampleFormat::F32 => {
                 device
                     .build_input_stream(
-                        &config.into(),
+                        config.into(),
                         move |data: &[f32], _: &_| {
                             // No logging on the RT capture thread (DOLL-250):
                             // the `log` facade takes a lock and may do I/O, which
@@ -893,7 +891,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let stream = match stream_config.sample_format() {
             SampleFormat::F32 => device
                 .build_input_stream(
-                    &stream_config.into(),
+                    stream_config.into(),
                     move |data: &[f32], _: &_| {
                         // DOLL-353: use the single audited RT-safe push helper
                         // (same as the recording callback) so the monitoring
