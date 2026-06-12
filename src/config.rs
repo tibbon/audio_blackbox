@@ -53,10 +53,11 @@ pub struct AppConfig {
     pub output_mode: Option<String>,
     /// Silence-detection threshold as a **normalized amplitude fraction**
     /// in [0.0, 1.0] (e.g. `0.01` = 1% of full scale). `0.0` disables
-    /// detection. Negative, NaN, and ±Inf values are rejected by
+    /// detection. Negative, NaN, ±Inf, and > 1.0 values are rejected by
     /// `get_silence_threshold`, which falls back to
-    /// `DEFAULT_SILENCE_THRESHOLD` (they do **not** disable detection).
-    /// `None` also falls back to `DEFAULT_SILENCE_THRESHOLD`.
+    /// `DEFAULT_SILENCE_THRESHOLD` (they do **not** disable detection;
+    /// a super-unity threshold would classify everything as silent —
+    /// DOLL-445). `None` also falls back to `DEFAULT_SILENCE_THRESHOLD`.
     pub silence_threshold: Option<f32>,
     /// Enable continuous recording — file rotates at
     /// `recording_cadence` intervals. `None` falls back to
@@ -432,7 +433,7 @@ duration = {}
 output_mode = "{}"
 
 # Silence threshold: normalized amplitude 0.0-1.0 (0.01 = 1% of full scale).
-# 0 disables silence detection.
+# 0 disables silence detection. Out-of-range values fall back to the default.
 # Default: {}
 silence_threshold = {}
 
@@ -551,9 +552,14 @@ silence_gate_timeout_secs = {}
 
     pub fn get_silence_threshold(&self) -> f32 {
         // Reject NaN, ±Inf, and negatives — any of those break the gate's
-        // `max_peak > threshold` comparison or produce nonsensical thresholds.
+        // `max_peak > threshold` comparison or produce nonsensical
+        // thresholds. Also reject > 1.0 (DOLL-445): the threshold is a
+        // normalized amplitude fraction and peaks from the capture path
+        // top out at full scale, so a super-unity threshold classifies
+        // EVERY recording as silent — the gate never opens, and in
+        // continuous mode the silence checker deletes every rotated file.
         let raw = self.silence_threshold.unwrap_or(DEFAULT_SILENCE_THRESHOLD);
-        if raw.is_finite() && raw >= 0.0 {
+        if raw.is_finite() && (0.0..=1.0).contains(&raw) {
             raw
         } else {
             DEFAULT_SILENCE_THRESHOLD
@@ -877,10 +883,22 @@ mod tests {
 
     #[test]
     #[allow(clippy::float_cmp)] // exact-value test: same literal in and out
-    fn test_silence_threshold_rejects_non_finite_or_negative() {
+    fn test_silence_threshold_rejects_out_of_range() {
         // NaN, ±Inf, and negative values fall back to the default rather
-        // than poison the gate's max_peak > threshold comparison.
-        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.1, -1.0] {
+        // than poison the gate's max_peak > threshold comparison. Values
+        // above 1.0 fall back too (DOLL-445): peaks are normalized to
+        // full scale, so a super-unity threshold marks every recording
+        // silent and the silence checker deletes them all.
+        for bad in [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -0.1,
+            -1.0,
+            1.000_1,
+            2.0,
+            100.0,
+        ] {
             let config = AppConfig {
                 silence_threshold: Some(bad),
                 ..AppConfig::default()
@@ -893,7 +911,8 @@ mod tests {
             );
         }
 
-        // Zero and positive finite values pass through.
+        // Zero and in-range values pass through (1.0 is the inclusive
+        // ceiling — degenerate but explicit).
         for good in [0.0_f32, 0.001, 0.5, 1.0] {
             let config = AppConfig {
                 silence_threshold: Some(good),
