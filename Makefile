@@ -244,12 +244,29 @@ export: archive
 		-allowProvisioningUpdates
 	@echo "Exported to $(TARGET_DIR)/export/"
 
-# Create DMG installer from exported app
+# Create a notarized DMG installer from the exported app (DOLL-451).
+# A Developer-ID-signed app still gets blocked by Gatekeeper on other
+# Macs unless the DMG is notarized and stapled. notarytool needs
+# credentials stored once via:
+#   xcrun notarytool store-credentials $(NOTARY_PROFILE) \
+#     --apple-id <you@example.com> --team-id FB8QBNNT6D \
+#     --password <app-specific password>
+# Override the profile name with: make dmg NOTARY_PROFILE=my-profile
+NOTARY_PROFILE ?= blackbox-notary
+DMG_PATH = $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
 .PHONY: dmg
 dmg: export
 	@echo "Creating DMG installer..."
-	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/$(APP_NAME).app" -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
-	@echo "DMG created at $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg"
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/$(APP_NAME).app" -ov -format UDZO $(DMG_PATH)
+	@echo "Notarizing $(DMG_PATH) (profile: $(NOTARY_PROFILE))..."
+	@xcrun notarytool submit "$(DMG_PATH)" --keychain-profile "$(NOTARY_PROFILE)" --wait || { \
+		echo ""; \
+		echo "Notarization failed. If credentials are missing, store them once with:"; \
+		echo "  xcrun notarytool store-credentials $(NOTARY_PROFILE) --apple-id <apple-id> --team-id FB8QBNNT6D --password <app-specific password>"; \
+		exit 1; \
+	}
+	@xcrun stapler staple "$(DMG_PATH)"
+	@echo "Notarized DMG created at $(DMG_PATH)"
 
 # Regenerate Xcode project from project.yml (requires xcodegen)
 .PHONY: xcodegen
@@ -335,8 +352,8 @@ help:
 	@echo "  release VERSION=X.Y.Z - Tag and push; CI builds + uploads to TestFlight"
 	@echo "  upload          - Archive and upload to App Store Connect (local)"
 	@echo "  archive         - Create Xcode archive for distribution"
-	@echo "  export          - Export signed app from archive"
-	@echo "  dmg             - Create DMG installer"
+	@echo "  export          - Export Developer-ID-signed app from archive (local)"
+	@echo "  dmg             - Create notarized DMG installer (needs notarytool credentials)"
 	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
 	@echo ""
 	@echo "Fastlane:"
