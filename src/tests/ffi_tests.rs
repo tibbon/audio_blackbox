@@ -494,3 +494,56 @@ fn test_get_peak_levels_idle_returns_zero_count() {
     assert_eq!(buf, [99.0_f32; 8]);
     blackbox_destroy(handle);
 }
+
+/// DOLL-446: `blackbox_stop_monitoring` used to reset the published status /
+/// peak bundles to idle unconditionally — disconnecting the FFI poll from a
+/// LIVE recording. `blackbox_is_recording` read false and the
+/// `write_failed` / `disk_space_low` data-loss signals went invisible while
+/// the engine kept writing to disk. With a recording active, the live
+/// bundles must survive a stop_monitoring call.
+#[test]
+fn test_stop_monitoring_preserves_live_recording_status() {
+    use std::sync::atomic::Ordering;
+
+    use tempfile::tempdir;
+
+    use crate::audio_recorder::AudioRecorder;
+    use crate::config::AppConfig;
+    use crate::constants::OutputMode;
+    use crate::cpal_processor::CpalAudioProcessor;
+    use crate::test_utils::test_env_no_silence;
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let handle = blackbox_create(std::ptr::null());
+        let processor = CpalAudioProcessor::new_for_test(dir, 44_100, &[0], OutputMode::Single)
+            .expect("test processor");
+        // Mark the processor as a live recording (Release mirrors the real
+        // start path; the FFI poll Acquire-loads the flag).
+        processor
+            .status_arcs()
+            .recording_active
+            .store(true, Ordering::Release);
+        // SAFETY: `handle` came from `blackbox_create` above and is not freed
+        // until the `blackbox_destroy` at the end of this test.
+        unsafe { &*handle }
+            .test_install_recorder(AudioRecorder::with_config(processor, AppConfig::default()));
+        assert!(blackbox_is_recording(handle));
+
+        assert_eq!(blackbox_stop_monitoring(handle), BLACKBOX_OK);
+        assert!(
+            blackbox_is_recording(handle),
+            "stop_monitoring must not wipe a live recording's published status"
+        );
+
+        // Clear the synthetic recording flag (via the shared bundle) so the
+        // recorder drops down the not-recording path, then destroy.
+        unsafe { &*handle }
+            .test_status_bundle()
+            .recording_active
+            .store(false, Ordering::Release);
+        blackbox_destroy(handle);
+    });
+}
