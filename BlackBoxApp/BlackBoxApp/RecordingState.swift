@@ -451,6 +451,17 @@ enum SleepWakePolicy {
         endPreventingSleep()
         isRecording = false
         recordingStartTime = nil
+        // Mirror stop()'s teardown of per-session UI state — without this,
+        // engine-initiated stops left stale meters, a frozen current-file
+        // size, and a dead config snapshot on screen (DOLL-448).
+        peakLevels = []
+        currentFileSizeText = nil
+        configSnapshot = nil
+        // And, like stop(), hand the audio stream back to the level meter
+        // if its window is still open.
+        if isMeterWindowOpen {
+            startMonitoring()
+        }
     }
 
     func handleWillSleep() {
