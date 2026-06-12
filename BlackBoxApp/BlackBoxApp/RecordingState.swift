@@ -440,6 +440,19 @@ enum SleepWakePolicy {
         Self.log.info("Sleep prevention disabled")
     }
 
+    /// Engine-side session teardown (DOLL-448): the engine has already
+    /// stopped (or refused to restart), so `stop()` — which calls
+    /// `bridge.stopRecording()` again — is not appropriate. These paths
+    /// used to flip `isRecording = false` directly and leaked the
+    /// `beginPreventingSleep` activity token: after a device disconnect
+    /// or unexpected engine stop, the Mac could never idle-sleep again
+    /// until the app quit or a later recording was stopped manually.
+    func markRecordingEnded() {
+        endPreventingSleep()
+        isRecording = false
+        recordingStartTime = nil
+    }
+
     func handleWillSleep() {
         let behavior = UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior) ?? "resume"
         let action = SleepWakePolicy.sleepAction(isRecording: isRecording, behavior: behavior)
@@ -651,6 +664,11 @@ enum SleepWakePolicy {
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                                  userInfo: [.announcement: String(localized: "Recording started")])
         } else {
+            // DOLL-448: release sleep prevention if this start was a
+            // restart of a live session (restartIfRecording) — the token
+            // from the original beginPreventingSleep would otherwise leak.
+            // No-op on a fresh start (no token yet).
+            endPreventingSleep()
             isRecording = false
             recordingStartTime = nil
             let detail = bridge.lastError
@@ -966,6 +984,16 @@ enum SleepWakePolicy {
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
         stopTimer()
         _ = bridge.stopRecording()
+        // The engine is stopped; reflect it before startRecordingInternal,
+        // whose double-start guard (DOLL-459) would otherwise see the stale
+        // true and return without restarting — leaving the engine stopped
+        // while the UI showed "Recording" until the next status poll
+        // flagged it as an unexpected stop. Sleep prevention is left in
+        // place: the session continues if the restart succeeds, and a
+        // failed restart releases it in startRecordingInternal's error
+        // branch (DOLL-448).
+        isRecording = false
+        recordingStartTime = nil
         peakLevels = []
         lastReportedWriteErrors = 0
         writeErrorsCount = 0
@@ -1388,8 +1416,7 @@ enum SleepWakePolicy {
             // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
             if isRecording && !status.is_recording {
                 stopTimer()
-                isRecording = false
-                recordingStartTime = nil
+                markRecordingEnded()
                 let msg = bridge.lastError ?? String(localized: "Recording stopped unexpectedly")
                 setTransientError(msg)
                 Self.log.error("Recording stopped unexpectedly: \(msg)")
@@ -1449,8 +1476,7 @@ enum SleepWakePolicy {
                 lastStreamRestart = now
 
                 if streamRestartCount > Self.maxConsecutiveStreamRestarts {
-                    isRecording = false
-                    recordingStartTime = nil
+                    markRecordingEnded()
                     streamRestartCount = 0
                     lastStreamRestart = nil
                     let msg = String(localized: "Your audio device keeps failing. Recording stopped \u{2014} check the device and try again.")
@@ -1471,8 +1497,7 @@ enum SleepWakePolicy {
                               identifier: "device-changed")
                 } else {
                     // No device available — stop for real
-                    isRecording = false
-                    recordingStartTime = nil
+                    markRecordingEnded()
                     let msg = String(localized: "Your audio device was disconnected and no alternative is available. Check your connections and try again.")
                     setTransientError(msg)
                     notifyUser(title: String(localized: "Recording Stopped"), message: msg)
