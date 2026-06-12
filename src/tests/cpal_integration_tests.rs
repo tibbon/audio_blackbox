@@ -868,11 +868,11 @@ fn test_stream_error_flag_propagation() {
 
         // Build the SAME closure the production cpal err_fn uses (via
         // `build_stream_err_callback`), then invoke it with a synthesized
-        // cpal::StreamError. If the body of `build_stream_err_callback`
+        // cpal::Error. If the body of `build_stream_err_callback`
         // (or the production wiring that calls it from the input-stream
         // builder) is reverted, this test fails — DOLL-106.
         let mut err_fn = processor.build_stream_err_callback();
-        err_fn(cpal::StreamError::DeviceNotAvailable);
+        err_fn(cpal::Error::new(cpal::ErrorKind::DeviceNotAvailable));
         assert!(
             processor.stream_error(),
             "stream_error must propagate through the trait accessor after the cpal err_fn fires"
