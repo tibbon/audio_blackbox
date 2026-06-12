@@ -221,4 +221,15 @@ final class SleepWakeGuardTests: XCTestCase {
         XCTAssertTrue(active, "redundant start must report the active recording")
         XCTAssertTrue(recorder.isRecording)
     }
+
+    /// DOLL-448: the engine-side teardown helper clears the recording UI
+    /// state (and releases the sleep-prevention activity token; with no
+    /// real session that release is a guarded no-op).
+    @MainActor
+    func testMarkRecordingEndedClearsRecordingState() {
+        let recorder = RecordingState()
+        recorder.isRecording = true
+        recorder.markRecordingEnded()
+        XCTAssertFalse(recorder.isRecording)
+    }
 }
