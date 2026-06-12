@@ -155,6 +155,89 @@ fn rotate_files_is_a_noop_when_disk_stopped() {
     });
 }
 
+/// DOLL-444: when creating the next period's file fails during rotation
+/// (output directory deleted, volume unmounted, disk full), the writer must
+/// latch the `write_failed` self-stop. Previously the error was only logged
+/// and `self.writer` stayed `None` — and since `write_samples` skips absent
+/// writers without bumping `write_errors`, every subsequent sample was
+/// silently discarded while the app kept showing "recording".
+#[test]
+fn rotation_create_failure_latches_write_failed_and_stops() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = single_state(dir);
+        let final_path = state.pending_files[0].1.clone();
+        let write_failed = Arc::clone(&state.write_failed);
+
+        // Land some audio in the current period.
+        state.write_samples(&vec![0.25_f32; 4_800]);
+
+        // Sabotage the next period: the output directory vanishes.
+        state.output_dir = format!("{dir}/vanished");
+        state.rotate_files();
+
+        assert!(
+            write_failed.load(Ordering::Relaxed),
+            "a failed rotation create must latch write_failed"
+        );
+        assert!(state.disk_stopped, "self-stop must latch disk_stopped");
+        assert!(state.writer.is_none());
+        assert!(state.pending_files.is_empty());
+        assert!(
+            Path::new(&final_path).exists(),
+            "the finished period's audio must still land under its final name"
+        );
+
+        // After the stop, write_samples is a no-op — no silent discard
+        // mislabeled as recording, no error-counter spin.
+        let errors_before = state.write_errors.load(Ordering::Relaxed);
+        state.write_samples(&vec![0.25_f32; 4_800]);
+        assert_eq!(state.write_errors.load(Ordering::Relaxed), errors_before);
+
+        // And further rotations stay no-ops (DOLL-350 guard).
+        state.rotate_files();
+        assert!(state.writer.is_none());
+        assert!(state.pending_files.is_empty());
+    });
+}
+
+/// DOLL-444, Split mode (the app default): a per-channel create failure during
+/// rotation latches the same self-stop, after the finished period's files have
+/// been renamed to their final names.
+#[test]
+fn split_rotation_create_failure_latches_after_renaming_finished_files() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = split_state(dir);
+        let finals: Vec<String> = state.pending_files.iter().map(|(_, f)| f.clone()).collect();
+        let write_failed = Arc::clone(&state.write_failed);
+
+        // Interleaved 2-channel audio for the current period.
+        state.write_samples(&vec![0.25_f32; 9_600]);
+
+        state.output_dir = format!("{dir}/vanished");
+        state.rotate_files();
+
+        assert!(
+            write_failed.load(Ordering::Relaxed),
+            "a failed channel create must latch write_failed"
+        );
+        assert!(state.disk_stopped);
+        assert!(state.multichannel_writers.iter().all(Option::is_none));
+        assert!(state.pending_files.is_empty());
+        for f in &finals {
+            assert!(
+                Path::new(f).exists(),
+                "finished channel file {f} must be renamed before the stop"
+            );
+        }
+    });
+}
+
 /// DOLL-347: the crash-recovery flush path (`flush_writers` → `RawWavWriter::flush`)
 /// backs the SIGKILL-safety guarantee — after a flush the in-progress
 /// `.recording.wav` must be a valid, playable WAV with the correct data size,
