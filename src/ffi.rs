@@ -154,6 +154,25 @@ impl BlackboxHandle {
             .clone()
     }
 
+    /// Test-only: install a recorder (e.g. wrapping
+    /// `CpalAudioProcessor::new_for_test`) and publish its processor's
+    /// status / peak bundles, mirroring what `blackbox_start_recording`
+    /// does after a successful start. Lets tests exercise FFI paths that
+    /// depend on a live recorder without opening a real audio stream
+    /// (DOLL-446).
+    #[cfg(test)]
+    pub(crate) fn test_install_recorder(&self, recorder: AudioRecorder<CpalAudioProcessor>) {
+        if let Ok(mut pl) = self.peak_levels.lock() {
+            *pl = recorder.get_processor().peak_levels_arc();
+        }
+        if let Ok(mut s) = self.status.lock() {
+            *s = recorder.get_processor().status_arcs();
+        }
+        if let Ok(mut guard) = self.recorder.lock() {
+            *guard = Some(recorder);
+        }
+    }
+
     fn set_error(&self, msg: String) {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(msg);
@@ -834,22 +853,36 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
 
     match handle.recorder.lock() {
         Ok(mut guard) => {
+            if let Some(recorder) = guard.as_mut() {
+                if let Err(e) = recorder.processor_mut().stop_monitoring() {
+                    return handle.set_error_from("Failed to stop monitoring", &e);
+                }
+                if recorder.get_processor().is_recording() {
+                    // DOLL-446: a live recording owns the published
+                    // bundles — resetting them to idle here disconnected
+                    // the FFI poll from a session still writing to disk:
+                    // is_recording read false and the write_failed /
+                    // disk_space_low data-loss signals went invisible.
+                    // Re-publish the processor's live arcs instead.
+                    if let Ok(mut pl) = handle.peak_levels.lock() {
+                        *pl = recorder.get_processor().peak_levels_arc();
+                    }
+                    if let Ok(mut s) = handle.status.lock() {
+                        *s = recorder.get_processor().status_arcs();
+                    }
+                    return BLACKBOX_OK;
+                }
+                // Not recording: release the recorder's resources.
+                drop(guard.take());
+            }
             // Clear cached peak / status under the recorder lock so the
-            // FFI poll path stays consistent with the installed recorder.
+            // FFI poll path stays consistent with the (now absent or
+            // idle) recorder.
             if let Ok(mut pl) = handle.peak_levels.lock() {
                 *pl = Arc::new(Vec::new());
             }
             if let Ok(mut s) = handle.status.lock() {
                 *s = ProcessorStatus::idle();
-            }
-            if let Some(recorder) = guard.as_mut() {
-                if let Err(e) = recorder.processor_mut().stop_monitoring() {
-                    return handle.set_error_from("Failed to stop monitoring", &e);
-                }
-                // If not recording, drop the recorder to release resources
-                if !recorder.get_processor().is_recording() {
-                    drop(guard.take());
-                }
             }
             BLACKBOX_OK
         }
