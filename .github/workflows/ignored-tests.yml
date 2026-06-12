@@ -50,5 +50,16 @@ jobs:
 
       # --test-threads=1 matches the per-PR `test` lane and avoids
       # contention between benchmarks that allocate / measure throughput.
+      #
+      # --features benchmarking (DOLL-450): the 7 #[ignore]d
+      # PerformanceTracker tests in src/tests/performance_tests.rs are
+      # additionally gated behind the `benchmarking` feature — without
+      # the flag they never even compiled here, so the lane created to
+      # stop ignored tests from "silently passing without executing"
+      # (DOLL-83) was itself silently skipping them. The feature is
+      # additive: the alloc + benchmark ignored tests run exactly as
+      # before. (Profile stays dev — these 7 are functional tracker
+      # tests, not perf floors; the bench smoke lane owns release-mode
+      # throughput assertions.)
       - name: Run ignored tests
-        run: cargo test --no-default-features -- --ignored --test-threads=1
+        run: cargo test --no-default-features --features benchmarking -- --ignored --test-threads=1
