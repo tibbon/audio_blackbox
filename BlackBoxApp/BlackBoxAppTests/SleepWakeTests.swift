@@ -209,4 +209,16 @@ final class SleepWakeGuardTests: XCTestCase {
         recorder.handleSessionDidResignActive()
         XCTAssertFalse(recorder.isRecording)
     }
+
+    /// DOLL-443: an already-active recording short-circuits `startAndWait`
+    /// and reports success — the resume callers branch on this result, so
+    /// a redundant start attempt must not read as "Resume Failed".
+    @MainActor
+    func testStartAndWaitReportsActiveRecordingOnRedundantStart() async {
+        let recorder = RecordingState()
+        recorder.isRecording = true
+        let active = await recorder.startAndWait()
+        XCTAssertTrue(active, "redundant start must report the active recording")
+        XCTAssertTrue(recorder.isRecording)
+    }
 }

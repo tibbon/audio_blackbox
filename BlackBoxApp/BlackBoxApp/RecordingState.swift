@@ -406,8 +406,9 @@ enum SleepWakePolicy {
                 await self?.bookmarkRestoreTask?.value
                 try? await Task.sleep(for: .milliseconds(500))
                 guard let self else { return }
-                self.start()
-                if self.isRecording {
+                // DOLL-443: await the outcome — reading isRecording right
+                // after a fire-and-forget start() races the permission await.
+                if await self.startAndWait() {
                     self.postNotification(title: String(localized: "Recording Started"),
                                           body: String(localized: "BlackBox started recording automatically."),
                                           identifier: "auto-record-started")
@@ -468,8 +469,10 @@ enum SleepWakePolicy {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
             guard let self, !self.isRecording else { return }
-            self.start()
-            if self.isRecording {
+            // DOLL-443: await the outcome — the old fire-and-forget start()
+            // + isRecording read always took the failure branch, posting
+            // "Resume Failed" even for successful resumes.
+            if await self.startAndWait() {
                 self.postNotification(title: String(localized: "Recording Resumed"),
                                       body: String(localized: "Recording resumed after wake."),
                                       identifier: "wake-resumed")
@@ -499,8 +502,8 @@ enum SleepWakePolicy {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
             guard let self, !self.isRecording else { return }
-            self.start()
-            if self.isRecording {
+            // DOLL-443: await the outcome (see handleDidWake).
+            if await self.startAndWait() {
                 self.postNotification(title: String(localized: "Recording Resumed"),
                                       body: String(localized: "Recording resumed after session switch."),
                                       identifier: "session-resumed")
@@ -544,30 +547,45 @@ enum SleepWakePolicy {
         }
     }
 
+    /// Fire-and-forget start for synchronous callers (menu button, hotkey,
+    /// notification action) whose UI already observes `isRecording` /
+    /// `errorMessage` for the outcome. The spawned Task ends naturally;
+    /// app termination cancels in-flight Tasks via structured-concurrency
+    /// cooperation, so no explicit Task.cancel is required from
+    /// applicationShouldTerminate.
     func start() {
+        Task { @MainActor in
+            await self.startAndWait()
+        }
+    }
+
+    /// Start recording and report whether a recording is active once the
+    /// attempt resolves. DOLL-443: `start()` returns before its internal
+    /// permission await does, so callers that branched on `isRecording`
+    /// immediately afterwards (auto-record notification, wake / session
+    /// resume) always read stale `false` — wake-resume posted "Resume
+    /// Failed" even when the resume succeeded a beat later. Those callers
+    /// must await this instead.
+    @discardableResult
+    func startAndWait() async -> Bool {
         // Debounce: rapid double-start (e.g. hotkey held, accessibility
         // automation) would otherwise launch two requestAccess flows in
-        // parallel. The Task hop below means isRecording stays false during
-        // the await — for as long as the user leaves the permission dialog
-        // open — so the isStartingRecording in-flight flag is what blocks
-        // re-entry across that window (DOLL-459); the isRecording guard
-        // alone only covered re-entry from the same MainActor turn.
-        guard !isRecording, !isStartingRecording else { return }
+        // parallel. isRecording stays false across the permission await —
+        // for as long as the user leaves the permission dialog open — so
+        // the isStartingRecording in-flight flag is what blocks re-entry
+        // across that window (DOLL-459); the isRecording guard alone only
+        // covered re-entry from the same MainActor turn.
+        guard !isRecording, !isStartingRecording else { return isRecording }
         isStartingRecording = true
         errorMessage = nil
-        Task { @MainActor in
-            // The Task scope ends naturally when this function returns;
-            // app termination cancels in-flight Tasks via Swift's
-            // structured-concurrency cooperation, so no explicit
-            // Task.cancel is required from applicationShouldTerminate.
-            defer { self.isStartingRecording = false }
-            if await self.checkMicrophonePermission() {
-                self.startRecordingInternal()
-            } else {
-                self.errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
-                self.statusText = String(localized: "Error")
-            }
+        defer { isStartingRecording = false }
+        if await checkMicrophonePermission() {
+            startRecordingInternal()
+        } else {
+            errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
+            statusText = String(localized: "Error")
         }
+        return isRecording
     }
 
     private func startRecordingInternal() {
