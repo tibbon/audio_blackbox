@@ -228,14 +228,20 @@ endif
 	@echo "Approve the release deployment at:"
 	@echo "  https://github.com/tibbon/audio_blackbox/actions"
 
-# Export signed app from archive (for direct distribution)
+# Export signed app from archive (for direct distribution).
+# DOLL-451: uses ExportOptionsLocal.plist (method: developer-id), which
+# writes the signed .app under $(TARGET_DIR)/export/. ExportOptions.plist
+# is the App Store Connect UPLOAD config (destination: upload) — pointing
+# export at it sent the archive to ASC and produced no local files, so
+# `make dmg` had nothing to package.
 .PHONY: export
 export: archive
 	@echo "Exporting signed app..."
 	xcodebuild -exportArchive \
 		-archivePath "$(ARCHIVE_PATH)" \
 		-exportPath "$(TARGET_DIR)/export" \
-		-exportOptionsPlist ExportOptions.plist
+		-exportOptionsPlist ExportOptionsLocal.plist \
+		-allowProvisioningUpdates
 	@echo "Exported to $(TARGET_DIR)/export/"
 
 # Create DMG installer from exported app

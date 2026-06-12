@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Used by `make export` / `make dmg` (DOLL-451): a LOCAL Developer ID
+     export that writes the signed .app to disk for direct (non-App
+     Store) distribution. The App Store Connect upload path uses
+     ExportOptions.plist instead — its method/destination UPLOAD the
+     archive and write nothing locally, which is why `make export` and
+     `make dmg` were broken while pointed at it. When moving the app to
+     a new Apple Developer account, update teamID here, in
+     ExportOptions.plist, and in BlackBoxApp/fastlane/Appfile in
+     lockstep. -->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>developer-id</string>
+	<key>teamID</key>
+	<string>FB8QBNNT6D</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+</dict>
+</plist>
