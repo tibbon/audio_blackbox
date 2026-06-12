@@ -219,6 +219,8 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      with:
+        components: clippy
 
     - name: Cache Rust dependencies
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
@@ -230,6 +232,16 @@ jobs:
         key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-bench-
+
+    # DOLL-450: nothing else compiles the `benchmarking`-gated test code
+    # (`src/tests/performance_tests.rs`, the `performance` module) — the
+    # clippy/test/msrv lanes run --no-default-features, the ffi lane runs
+    # --features ffi, and the release build below only builds the
+    # bench-writer BINARY. A breakage in that gated code shipped silently
+    # until someone ran the benchmarks locally. Same pattern as the ffi
+    # lane: clippy type-checks every target with the feature enabled.
+    - name: Run clippy (benchmarking, all targets)
+      run: cargo clippy --all-targets --features benchmarking -- -D warnings
 
     - name: Build bench binary (release)
       run: cargo build --release --bin bench-writer --features benchmarking
