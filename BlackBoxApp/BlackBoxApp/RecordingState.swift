@@ -59,6 +59,30 @@ enum SleepWakePolicy {
         guard isRecording else { return .ignore }
         return .pauseForResume
     }
+
+    /// Why `RecordingState.stop(reason:)` was called. Determines whether
+    /// a pending resume-on-wake survives the stop.
+    enum StopReason {
+        /// The user (menu, hotkey, Settings, quit) or the engine (disk
+        /// full, persistent write failures) ended the recording for good.
+        case user
+        /// A sleep / session-resign handler is pausing the recording
+        /// with the intent to resume on wake / session-active.
+        case sleepInterruption
+    }
+
+    /// Whether a stop with the given reason cancels a pending
+    /// resume-on-wake (clears `wasSleepInterrupted`).
+    ///
+    /// A user stop must cancel: without that, a manual stop inside the
+    /// 1.5 s deferred-resume window would let the deferred `start()`
+    /// resurrect a recording the user explicitly ended (DOLL-182). The
+    /// sleep-interruption stop must NOT cancel — it is the very stop
+    /// that just set the flag, and clearing it here made resume-on-wake
+    /// dead code (DOLL-442).
+    static func stopCancelsPendingResume(_ reason: StopReason) -> Bool {
+        reason == .user
+    }
 }
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
@@ -196,10 +220,11 @@ enum SleepWakePolicy {
     // wasSleepInterrupted (declared below) is set by both `handleWillSleep`
     // and `handleSessionDidResignActive` when their `SleepWakePolicy`
     // decision is `.pauseForResume`. It's cleared by `handleDidWake`,
-    // `handleSessionDidBecomeActive`, and `stop()` (DOLL-182 — without
-    // that last reset, a manual stop inside the 1.5s deferred-resume
-    // window let the resume Task resurrect a recording the user
-    // explicitly stopped).
+    // `handleSessionDidBecomeActive`, and any `stop(reason: .user)`
+    // (DOLL-182 — without that last reset, a manual stop inside the 1.5s
+    // deferred-resume window let the resume Task resurrect a recording
+    // the user explicitly stopped). The sleep-interruption stop passes
+    // `.sleepInterruption` and leaves the flag alone (DOLL-442).
     private var securityScopedURL: URL?
     private var lastReportedWriteErrors: Int = 0
 
@@ -430,7 +455,9 @@ enum SleepWakePolicy {
                              body: String(localized: "Your Mac is going to sleep."),
                              identifier: "recording-stopped")
         }
-        stop()
+        // .pauseForResume just set wasSleepInterrupted; stop() must not
+        // clear it or handleDidWake never resumes (DOLL-442).
+        stop(reason: action == .pauseForResume ? .sleepInterruption : .user)
         Self.log.info("Sleep: stopped recording (behavior=\(behavior))")
     }
 
@@ -458,7 +485,7 @@ enum SleepWakePolicy {
         let action = SleepWakePolicy.sessionResignAction(isRecording: isRecording)
         guard action == .pauseForResume else { return }
         wasSleepInterrupted = true
-        stop()
+        stop(reason: .sleepInterruption)
         Self.log.info("Fast User Switch: stopped recording for resume on return")
         postNotification(title: String(localized: "Recording Paused"),
                          body: String(localized: "User session switched. Recording will resume when you return."),
@@ -804,7 +831,7 @@ enum SleepWakePolicy {
         alert.runModal()
     }
 
-    func stop() {
+    func stop(reason: SleepWakePolicy.StopReason = .user) {
         let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
         let result = bridge.stopRecording()
@@ -847,11 +874,16 @@ enum SleepWakePolicy {
             currentFileSizeText = nil
             configSnapshot = nil
             wasGateIdle = false
-            // DOLL-182: clear the resume-on-wake flag here. Without this,
-            // a manual stop within the 1.5s deferred-resume window after
-            // sleep/wake or session resign/activate would let the deferred
-            // start() resurrect a recording the user explicitly stopped.
-            wasSleepInterrupted = false
+            // DOLL-182: a user stop cancels any pending resume-on-wake.
+            // Without this, a manual stop within the 1.5s deferred-resume
+            // window after sleep/wake or session resign/activate would let
+            // the deferred start() resurrect a recording the user
+            // explicitly stopped. The sleep-interruption stop is exempt —
+            // it just SET the flag, and clearing it here made
+            // resume-on-wake dead code (DOLL-442).
+            if SleepWakePolicy.stopCancelsPendingResume(reason) {
+                wasSleepInterrupted = false
+            }
             Self.log.info("Recording stopped")
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                                  userInfo: [.announcement: String(localized: "Recording stopped")])

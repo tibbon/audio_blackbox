@@ -107,7 +107,7 @@ The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackB
 | `sessionDidBecomeActive` | `wasSleepInterrupted` set | deferred `start()`, same as `didWake` |
 | `willPowerOff` | any | drain immediately via `recorder?.stop()` (DOLL-183) |
 
-`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop()` (DOLL-182 — otherwise a manual stop within the 1.5s deferred-resume window would let the deferred Task resurrect the recording).
+`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop(reason: .user)` (DOLL-182 — otherwise a manual stop within the 1.5s deferred-resume window would let the deferred Task resurrect the recording). The willSleep / sessionResign handlers stop with `reason: .sleepInterruption`, which preserves the flag they just set — `stop()` clearing it unconditionally made resume-on-wake dead code (DOLL-442).
 
 ### Security-scoped bookmark lifecycle
 

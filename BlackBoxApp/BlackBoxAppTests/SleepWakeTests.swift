@@ -61,6 +61,21 @@ final class SleepWakePolicyTests: XCTestCase {
     func testSessionResignPausesWhenRecording() {
         XCTAssertEqual(SleepWakePolicy.sessionResignAction(isRecording: true), .pauseForResume)
     }
+
+    // MARK: - stopCancelsPendingResume (DOLL-442)
+
+    /// A user stop must cancel a pending resume (DOLL-182: manual stop
+    /// inside the deferred-resume window must not be resurrected).
+    func testUserStopCancelsPendingResume() {
+        XCTAssertTrue(SleepWakePolicy.stopCancelsPendingResume(.user))
+    }
+
+    /// The sleep-interruption stop is the one that just set
+    /// `wasSleepInterrupted` — it must NOT clear it, or resume-on-wake
+    /// can never fire (DOLL-442).
+    func testSleepInterruptionStopPreservesPendingResume() {
+        XCTAssertFalse(SleepWakePolicy.stopCancelsPendingResume(.sleepInterruption))
+    }
 }
 
 // MARK: - Settings Tests
