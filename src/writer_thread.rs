@@ -1292,13 +1292,34 @@ pub fn writer_thread_main(
     let mut consecutive_empty: u8 = 0;
 
     loop {
-        // 1. Check for shutdown command (non-blocking)
-        if let Ok(WriterCommand::Shutdown(reply_tx)) = command_rx.try_recv() {
-            // Drain remaining samples from ring buffer
-            drain_remaining(&mut consumer, &mut state);
-            let result = state.finalize_all();
-            let _ = reply_tx.send(result);
-            return;
+        // 1. Check for shutdown command (non-blocking). A disconnected
+        //    channel is an implicit shutdown (DOLL-447): if the processor
+        //    drops its WriterThreadHandle without sending Shutdown — a
+        //    failed start tearing down after build_input_stream / play()
+        //    errors, or a replaced handle — the old `if let Ok(..)`
+        //    ignored TryRecvError::Disconnected and this thread spun
+        //    forever: leaked for the process lifetime, waking every 5 ms,
+        //    holding its `.recording.wav` temp files open and unrenamed.
+        match command_rx.try_recv() {
+            Ok(WriterCommand::Shutdown(reply_tx)) => {
+                // Drain remaining samples from ring buffer
+                drain_remaining(&mut consumer, &mut state);
+                let result = state.finalize_all();
+                let _ = reply_tx.send(result);
+                return;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                warn!(
+                    "Writer command channel disconnected without Shutdown — \
+                     draining and finalizing"
+                );
+                drain_remaining(&mut consumer, &mut state);
+                if let Err(e) = state.finalize_all() {
+                    error!("Error finalizing after command channel disconnect: {}", e);
+                }
+                return;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
 
         // 2. Check disk space periodically
