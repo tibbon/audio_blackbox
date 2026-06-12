@@ -853,12 +853,7 @@ impl WriterThreadState {
                      (disk full or output directory unwritable)",
                     self.consecutive_write_failures
                 );
-                // status flag only; reader loads Relaxed. (DOLL-437)
-                self.write_failed.store(true, Ordering::Relaxed);
-                self.disk_stopped = true;
-                if let Err(e) = self.finalize_all() {
-                    error!("Error finalizing after persistent write failures: {}", e);
-                }
+                self.latch_write_failed_stop();
             }
         } else if full_frames > 0 {
             self.consecutive_write_failures = 0;
@@ -978,7 +973,28 @@ impl WriterThreadState {
         Ok(())
     }
 
+    /// Latch the unwritable-output self-stop shared by the persistent
+    /// write-failure path (DOLL-349/437) and rotation file-creation
+    /// failure (DOLL-444): raise the `write_failed` status flag so the
+    /// UI reports a disk error, set `disk_stopped` so write_samples /
+    /// rotate_files become no-ops, and finalize so every sample that
+    /// reached disk is preserved under its final name.
+    fn latch_write_failed_stop(&mut self) {
+        // status flag only; reader loads Relaxed. (DOLL-437)
+        self.write_failed.store(true, Ordering::Relaxed);
+        self.disk_stopped = true;
+        if let Err(e) = self.finalize_all() {
+            error!("Error finalizing after write failure: {}", e);
+        }
+    }
+
     /// Rotate files: finalize current writers, rename, check silence, create new writers.
+    ///
+    /// DOLL-444: if creating any next-period file fails, this latches the
+    /// `write_failed` self-stop instead of carrying on with a `None`
+    /// writer — `write_samples` skips absent writers without even
+    /// bumping `write_errors`, so the old behavior silently discarded
+    /// every subsequent sample while the UI kept showing "recording".
     pub fn rotate_files(&mut self) {
         // DOLL-350: once a disk-low self-stop has fired, the writer thread keeps
         // looping to receive Shutdown. In continuous mode the RT callback still
@@ -1036,7 +1052,9 @@ impl WriterThreadState {
             worker.submit(final_files);
         }
 
-        // Create new files for the next recording period
+        // Create new files for the next recording period. Any creation
+        // failure latches the write_failed self-stop below (DOLL-444).
+        let mut create_failed = false;
         let ch_count = self.channel_count as usize;
         let date_str = (self.timestamp_fn)();
         match self.output_mode {
@@ -1060,6 +1078,7 @@ impl WriterThreadState {
                         }
                         Err(e) => {
                             error!("Failed to create channel WAV file: {}", e);
+                            create_failed = true;
                         }
                     }
                 }
@@ -1083,6 +1102,7 @@ impl WriterThreadState {
                     }
                     Err(e) => {
                         error!("Failed to create multichannel WAV file: {}", e);
+                        create_failed = true;
                     }
                 }
             }
@@ -1098,9 +1118,18 @@ impl WriterThreadState {
                     }
                     Err(e) => {
                         error!("Failed to create new WAV file: {}", e);
+                        create_failed = true;
                     }
                 }
             }
+        }
+
+        if create_failed {
+            warn!(
+                "Could not create next recording file(s) during rotation — \
+                 stopping recording (disk full or output directory unwritable)"
+            );
+            self.latch_write_failed_stop();
         }
     }
 
