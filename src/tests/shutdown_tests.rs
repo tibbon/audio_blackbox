@@ -176,3 +176,48 @@ fn shutdown_reply_surfaces_finalize_error() {
         );
     });
 }
+
+/// DOLL-447: dropping the command sender WITHOUT sending Shutdown — the exact
+/// teardown a failed start performs (`build_input_stream` / `play()` errors
+/// after the writer thread is already spawned, then the WriterThreadHandle is
+/// dropped) — must terminate the writer thread. The old `if let Ok(Shutdown)`
+/// ignored `TryRecvError::Disconnected`, so the thread spun forever: leaked
+/// for the process lifetime, waking every 5 ms, holding its `.recording.wav`
+/// temps open. It must instead drain, finalize (audio pushed before the
+/// failure still lands), and exit.
+#[test]
+fn dropped_command_channel_terminates_and_finalizes_writer() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let (mut producer, command_tx, handle) = spawn_writer(writer_state(dir, false));
+
+        // Land some audio, then sever the channel without a Shutdown.
+        let chunk = vec![0.25_f32; 4_410];
+        let (_, remainder) = producer.push_partial_slice(&chunk);
+        assert!(remainder.is_empty(), "test chunk must fit the ring buffer");
+        drop(command_tx);
+
+        // The writer notices the disconnect within one adaptive-sleep
+        // interval (≤5 ms); give it a generous deadline before declaring
+        // the leak regressed.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !handle.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            handle.is_finished(),
+            "writer thread must exit when its command channel disconnects"
+        );
+        handle.join().expect("writer thread must not panic");
+
+        // The audio pushed before the disconnect must land finalized.
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(
+            files.len(),
+            1,
+            "disconnect teardown must finalize the in-progress file: {files:?}"
+        );
+    });
+}
