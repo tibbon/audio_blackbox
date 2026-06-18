@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-06-17
+
+Polish-pass-7: roughly 100 commits of localization, real-time-safety
+hardening, audio-quality, accessibility, and release-pipeline work on
+top of 1.3.0. No breaking changes.
+
+### Added
+- Full localization groundwork: a base String Catalog
+  (`Localizable.xcstrings`, 248 keys) with a deterministic sync script
+  and a CI drift check; the remaining ~80 user-facing strings, plus
+  AppKit/notification/status literals, are now wrapped; number, byte,
+  and rate formatting is locale-aware.
+- TPDF dither when down-converting f32 capture to 16-bit PCM —
+  removes truncation distortion on quiet passages.
+- Silence-gate pre-roll: the idle batch is retained and replayed when
+  the gate opens, so the transient that trips the gate is no longer
+  clipped off the front of the file.
+- VoiceOver coverage across onboarding, the idle meter, the channel
+  grid, and the menu; the live audio meter is exposed to VoiceOver.
+- Menu recovery affordances for the no-devices and mic-denied states.
+- Mechanically-generated third-party license attribution.
+- Code-coverage measurement in CI (cargo-llvm-cov + Swift xccov).
+- Notarized + stapled DMG in `make dmg`; `make export`/`dmg` now use a
+  local Developer ID export plist.
+
+### Changed
+- Recordings default to the app container instead of `~/Music`.
+- `start()` outcome is awaitable; the re-entrancy guard is held across
+  the mic-permission await, and monitor/record mutual exclusion is
+  enforced in the engine and the FFI.
+- Stream-error auto-restart is capped and backed off on flaky devices.
+- Menu warning severity is conveyed via glyph rather than color; the
+  meter peak-hold marker decays from a clock; the 30 Hz meter timer is
+  paused when its window is occluded or nothing is active.
+- First-launch notification-permission request is deferred to the
+  first recording start.
+- Reduce Motion is honored for the level-bar animation; channel
+  checkboxes have larger hit targets; Settings/onboarding width scales
+  with Dynamic Type.
+- FFI `last_error` now carries the full error source chain; config
+  JSON parse failures are recorded there instead of swallowed.
+- Build is documented as arm64-only; the dead `rust-lib-universal`
+  target was removed.
+- Toolchain/dependencies: cpal 0.18 (unified error API) plus routine
+  Dependabot bumps.
+
+### Fixed
+- The recording engine stops on persistent `write_sample` failures,
+  surfacing a distinct `write_failed` status flag and an accurate
+  disk-error message; the self-stop latches across rotation
+  file-creation failures.
+- Live recording status is preserved across
+  `blackbox_stop_monitoring`; the resume-on-wake flag survives
+  sleep-initiated stops; sleep prevention is released on
+  engine-initiated stops.
+- Command-channel disconnect is treated as a writer-thread shutdown;
+  `finalize_all` finishes every writer before returning an error;
+  `rotate_files()` is guarded against `disk_stopped`.
+- `silence_threshold` above 1.0 and a `recording_cadence` of 0 are
+  rejected rather than producing a per-callback rotation storm.
+- A RIFF word-alignment pad byte is written for odd-length data
+  chunks.
+- `restoreOutputDirBookmark` no longer falls through on access
+  failure; the inverted Reset All Settings dialog logic is fixed; the
+  mid-recording Restart dialog defaults to Cancel.
+- `disambiguate_path` appends a nanosecond suffix instead of
+  overwriting an existing file.
+
+### Security
+- Release path hardened: cargo-audit and `Cargo.lock` freshness are
+  mirrored into the tag gate; the public GitHub Release is gated
+  behind the same manual approval as TestFlight; `.p12` and
+  provisioning artifacts are gitignored.
+
 ## [1.3.0] — 2026-05-20
 
 Polish-pass-6 (build 14): accessibility, UX, real-time-safety, and
@@ -185,7 +259,9 @@ Initial Mac App Store release. CLI binary plus SwiftUI menu-bar app.
 - Privacy-respecting design: no network access, all recordings stay
   local.
 
-[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/tibbon/audio_blackbox/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/tibbon/audio_blackbox/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/tibbon/audio_blackbox/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/tibbon/audio_blackbox/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/tibbon/audio_blackbox/compare/v1.0.1...v1.0.2
