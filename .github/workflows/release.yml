@@ -262,7 +262,7 @@ jobs:
       # the pinned fastlane (DOLL-137) and caches the gem set keyed on
       # the lockfile hash. No more "next minor fastlane release breaks
       # deliver mid-deploy" — bumps go through dependabot review.
-      uses: ruby/setup-ruby@9eb537ca036ebaed86729dcb9309076e4c5c3b74  # v1.314.0
+      uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b  # v1.321.0
       with:
         ruby-version: "3.3"
         working-directory: BlackBoxApp
