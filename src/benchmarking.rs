@@ -278,7 +278,7 @@ mod tests {
     fn test_write_to_log_error() {
         let result = write_to_log("/nonexistent/directory/file.log", "test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().kind() == std::io::ErrorKind::NotFound);
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]
