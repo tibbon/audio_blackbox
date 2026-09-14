@@ -17,7 +17,7 @@ By hand, the same steps:
 2. Branch off `main` as `tibbon/doll-N-short-slug`. The Linear branch button generates this name verbatim.
 3. Review the branch against [docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md), then open a PR. Mention the ticket in the body (`Closes DOLL-N.`) and list what checklist §6.4 asks for.
 4. Run `make check` before opening the PR (DOLL-652). It is the same gate CI runs — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, `cargo deny`, `cargo machete`, MSRV, FFI header parity, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze, plus the local-only Claude workflow tests (needs `node`) — and Actions minutes are scarce, so green locally first. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
-5. CI must be fully green before merge. Lanes: Format, Clippy (+ rustdoc, machete), MSRV (1.95), Test, FFI, Security audit (cargo deny), Benchmark smoke test, Swift app (+ swift-format, swiftlint, analyze).
+5. CI must be fully green before merge. Lanes: Format, Clippy (+ rustdoc, machete), MSRV (1.98), Test, FFI, Security audit (cargo deny), Benchmark smoke test, Swift app (+ swift-format, swiftlint, analyze).
 6. Merge via `gh pr merge <num> --rebase --admin` (linear history; keeps GitHub UI bright green for solo branches).
 7. Mark the Linear ticket Done with the PR URL attached.
 
