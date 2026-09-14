@@ -73,6 +73,21 @@ jobs:
     - name: Check Cargo.lock is up-to-date
       run: cargo update --locked --dry-run
 
+    # DOLL-652: rustdoc with warnings as errors (broken intra-doc links,
+    # unescaped backticks) and unused-dependency detection. Both are cheap
+    # on the warm cache above; they ride in this lane rather than a new one
+    # because Actions minutes are scarce.
+    - name: Rustdoc (warnings are errors)
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
+
+    - name: Install cargo-machete
+      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      with:
+        tool: cargo-machete
+
+    - name: Unused dependencies (cargo machete)
+      run: cargo machete
+
   # ── MSRV verification ─────────────────────────────────────────────
   # Cargo.toml claims `rust-version = "1.95"`. Without this job an
   # MSRV regression (someone adopting a 1.96-only feature) ships
@@ -186,7 +201,13 @@ jobs:
       run: python3 scripts/gen-acknowledgments.py --check
 
   # ── Security audit ─────────────────────────────────────────────────
-  # Check dependencies for known vulnerabilities (RUSTSEC advisories).
+  # cargo-deny (DOLL-652) replaces cargo-audit: the same RUSTSEC advisory
+  # DB (unmaintained/yanked advisories fail the lane, as `--deny warnings`
+  # did before) plus license allow-list, duplicate/wildcard bans and
+  # registry sources, all configured in deny.toml. A temporary advisory
+  # exemption goes in deny.toml `[advisories] ignore` with a rationale and
+  # an expiry note, never by loosening the lane. The job keeps its name
+  # because branch protection requires the "Security audit" context.
   audit:
     name: Security audit
     runs-on: macos-latest
@@ -195,16 +216,13 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-    - name: Install cargo-audit
-      uses: taiki-e/install-action@e96017355c8b613bff850d75294a872bbc98a6ef  # cargo-audit
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      with:
+        tool: cargo-deny
 
-    - name: Run audit
-      # --deny warnings escalates RUSTSEC unmaintained/yanked advisories
-      # from notice-only to lane-failing. Without this, deps that age out
-      # (cpal-style) print warnings but the lane stays green for months.
-      # If a specific advisory needs a temporary exemption, add it to
-      # audit.toml with a rationale + expiry rather than dropping the flag.
-      run: cargo audit --deny warnings
+    - name: cargo deny check
+      run: cargo deny check
 
   # ── Benchmark smoke test ───────────────────────────────────────────
   # Builds the bench binary in release mode and runs a quick smoke test
@@ -304,6 +322,18 @@ jobs:
           exit 1
         fi
 
+    # DOLL-652: Swift lint runs before the multi-minute Rust + Xcode builds
+    # so a style or API-hygiene failure costs seconds, not minutes.
+    # swift-format ships in the Xcode toolchain; SwiftLint is preinstalled on
+    # the macOS runner images (brew fallback in case an image drops it).
+    - name: Swift lint (swift-format + swiftlint --strict)
+      run: |
+        set -euo pipefail
+        swift format lint --strict --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+        command -v swiftlint >/dev/null 2>&1 || brew install swiftlint
+        swiftlint version
+        swiftlint lint --strict --quiet
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
@@ -346,7 +376,18 @@ jobs:
       # SWIFT_EMIT_LOC_STRINGS=YES makes the compiler emit .stringsdata as a
       # side effect of the build the tests need anyway — feeds the catalog
       # drift check below at no extra build cost (DOLL-449).
-      run: xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-"
+      # The full log is kept for `swiftlint analyze` (DOLL-652), which needs
+      # the swiftc invocations; the console gets the readable subset.
+      run: |
+        set -euo pipefail
+        mkdir -p target
+        xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" 2>&1 \
+          | tee target/xcodebuild.log \
+          | grep -E 'error:|warning:|Test Suite|Test Case.*(passed|failed)|Executed|\*\* ' || true
+        grep -q '\*\* TEST SUCCEEDED \*\*' target/xcodebuild.log
+
+    - name: Swift analyzer rules (unused declarations, imports, captures)
+      run: swiftlint analyze --strict --quiet --compiler-log-path target/xcodebuild.log
 
     # DOLL-449: xcodebuild never writes back to the String Catalog (only the
     # Xcode IDE does), so in a CLI-only workflow the committed catalog can

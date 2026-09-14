@@ -20,6 +20,16 @@ else
     echo "=== Pre-commit: fmt + clippy (set SKIP_TESTS=0 for full verify) ==="
     cargo fmt --all -- --check
     cargo clippy --all-targets --no-default-features --no-deps -- -D warnings
+    # Swift lint is sub-second; only worth running when Swift files are staged.
+    if git diff --cached --name-only | grep -q '\.swift$'; then
+        echo "=== Pre-commit: swift-format + swiftlint ==="
+        swift format lint --strict --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+        if command -v swiftlint >/dev/null 2>&1; then
+            swiftlint lint --strict --quiet
+        else
+            echo "(swiftlint not installed — brew install swiftlint; CI will run it)"
+        fi
+    fi
 fi
 
 echo "=== Pre-commit: passed ==="
