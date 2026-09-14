@@ -19,6 +19,9 @@ Mechanical enforcement lives in:
   `MainActor` default isolation, warnings as errors, hardening floor.
 - `scripts/check.sh` — the full loop. `make check` runs it. Green means done.
 
+`docs/reviewers/` splits this checklist into review lanes. The `/ship-ticket` workflow runs them
+until review converges (AGENTS.md "Workflow").
+
 ## 0. Rules of engagement for agents
 
 - Run `make check` (or `scripts/check.sh rust` / `swift` for one side) before claiming anything
