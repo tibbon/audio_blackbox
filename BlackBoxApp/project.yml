@@ -9,8 +9,15 @@ options:
   # — the i18n foundation for the String Catalog and adding languages later.
   developmentLanguage: en
 
+# DOLL-652: language mode, strict concurrency, warnings-as-errors and the
+# hardening floor live in Guardrails.xcconfig so they read as one document.
+# Anything under `settings` here overrides the xcconfig, so keep this list to
+# identity/versioning keys that scripts/check-versions.sh needs to find here.
+configFiles:
+  Debug: Guardrails.xcconfig
+  Release: Guardrails.xcconfig
+
 settings:
-  SWIFT_VERSION: "5.10"
   VERSIONING_SYSTEM: "apple-generic"
 
 targets:

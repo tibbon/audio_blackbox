@@ -2,34 +2,49 @@ import XCTest
 
 @testable import BlackBox_Audio_Recorder
 
+// Test cases opt out of the module's MainActor default: XCTest's inherited
+// initializers and setUp/tearDown are nonisolated, and an isolated subclass
+// can't override them. Tests that touch main-actor types are marked @MainActor.
+
 // MARK: - SleepWakePolicy Tests
 
-final class SleepWakePolicyTests: XCTestCase {
-
+nonisolated final class SleepWakePolicyTests: XCTestCase {
     // MARK: - sleepAction
 
     func testSleepActionIgnoresWhenNotRecording() {
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: false, behavior: "resume"), .ignore)
+            SleepWakePolicy.sleepAction(isRecording: false, behavior: "resume"),
+            .ignore
+        )
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: false, behavior: "stop"), .ignore)
+            SleepWakePolicy.sleepAction(isRecording: false, behavior: "stop"),
+            .ignore
+        )
     }
 
     func testSleepActionPausesForResumeWhenRecording() {
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: true, behavior: "resume"), .pauseForResume)
+            SleepWakePolicy.sleepAction(isRecording: true, behavior: "resume"),
+            .pauseForResume
+        )
     }
 
     func testSleepActionStopsWhenRecordingWithStopBehavior() {
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: true, behavior: "stop"), .stop)
+            SleepWakePolicy.sleepAction(isRecording: true, behavior: "stop"),
+            .stop
+        )
     }
 
     func testSleepActionUnknownBehaviorTreatedAsStop() {
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: true, behavior: "unknown"), .stop)
+            SleepWakePolicy.sleepAction(isRecording: true, behavior: "unknown"),
+            .stop
+        )
         XCTAssertEqual(
-            SleepWakePolicy.sleepAction(isRecording: true, behavior: ""), .stop)
+            SleepWakePolicy.sleepAction(isRecording: true, behavior: ""),
+            .stop
+        )
     }
 
     // MARK: - shouldResumeOnWake
@@ -80,8 +95,7 @@ final class SleepWakePolicyTests: XCTestCase {
 
 // MARK: - Settings Tests
 
-final class SleepWakeSettingsTests: XCTestCase {
-
+nonisolated final class SleepWakeSettingsTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SettingsKeys.sleepBehavior)
@@ -114,11 +128,15 @@ final class SleepWakeSettingsTests: XCTestCase {
     func testSleepBehaviorPersistence() {
         UserDefaults.standard.set("stop", forKey: SettingsKeys.sleepBehavior)
         XCTAssertEqual(
-            UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior), "stop")
+            UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior),
+            "stop"
+        )
 
         UserDefaults.standard.set("resume", forKey: SettingsKeys.sleepBehavior)
         XCTAssertEqual(
-            UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior), "resume")
+            UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior),
+            "resume"
+        )
     }
 
     func testPreventSleepPersistence() {
@@ -132,8 +150,7 @@ final class SleepWakeSettingsTests: XCTestCase {
 
 // MARK: - RecordingState Guard Path Tests
 
-final class SleepWakeGuardTests: XCTestCase {
-
+nonisolated final class SleepWakeGuardTests: XCTestCase {
     override func setUp() {
         super.setUp()
         // Prevent auto-record from firing during RecordingState init

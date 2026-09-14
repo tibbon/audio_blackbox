@@ -41,7 +41,9 @@ final class GlobalHotkeyManager {
     /// Must be set before calling `register()`.
     var action: (@MainActor () -> Void)?
 
-    private init() {}
+    private init() {
+        // Singleton: the hotkey and handler are installed lazily by register(_:).
+    }
 
     // MARK: - Public
 
@@ -57,13 +59,21 @@ final class GlobalHotkeyManager {
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
+        // SAFETY: `shared` is the only instance (private init) and lives for the
+        // whole process, so the unretained pointer can never dangle; `unregister()`
+        // removes the handler before any re-registration, so Carbon never holds a
+        // pointer past the handler's lifetime.
+        // swiftlint:disable:next passunretained_stored - self is the process-lifetime singleton and unregister() removes the handler
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, _, userData -> OSStatus in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
-                // Carbon delivers hotkey events on the main run loop, so the
-                // callback is already main-actor-isolated in practice.
+                // SAFETY (DOLL-161): Carbon dispatches application-target hotkey
+                // events on the main run loop, on the thread that installed the
+                // handler (main — this class is @MainActor), so the callback is
+                // already main-actor code that the C signature can't express.
+                // swiftlint:disable:next assume_isolated - Carbon delivers application-target events on the main run loop (DOLL-161)
                 MainActor.assumeIsolated {
                     let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData)
                         .takeUnretainedValue()
@@ -84,7 +94,7 @@ final class GlobalHotkeyManager {
         }
 
         let hotkeyID = EventHotKeyID(
-            signature: OSType(0x424C_4B58), // "BLKX"
+            signature: OSType(0x424C_4B58),  // "BLKX"
             id: 1
         )
         let registerStatus = RegisterEventHotKey(

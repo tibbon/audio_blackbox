@@ -40,7 +40,7 @@ struct MeterView: View {
     private var sampleRateDisplay: String {
         let rate = recorder.sampleRate
         guard rate > 0 else { return "\u{2014}" }
-        if rate % 1000 == 0 {
+        if rate.isMultiple(of: 1000) {
             return String(localized: "\(rate / 1000) kHz")
         }
         // DOLL-377: locale-aware decimal separator instead of a hardcoded "."
@@ -197,9 +197,11 @@ struct MeterView: View {
         // → 155 (DOLL-214/217 v3, elapsed + rotation countdown row).
         .frame(minWidth: 300, minHeight: 155)
         .navigationTitle(windowTitle)
-        .background(MeterWindowConfigurator { occluded in
-            recorder.isMeterWindowOccluded = occluded
-        })
+        .background(
+            MeterWindowConfigurator { occluded in
+                recorder.isMeterWindowOccluded = occluded
+            }
+        )
         .onAppear { recorder.isMeterWindowOpen = true }
         .onDisappear { recorder.isMeterWindowOpen = false }
         // DOLL-252: clip indicators are otherwise purely visual. Post one
@@ -288,10 +290,10 @@ private struct MeterBar: View {
     private static let meterGradient = LinearGradient(
         stops: [
             .init(color: Color(nsColor: .systemGreen), location: 0.0),
-            .init(color: Color(nsColor: .systemGreen), location: 0.7),    // -60 to -18 dB
-            .init(color: Color(nsColor: .systemYellow), location: 0.8),    // -12 dB
-            .init(color: Color(nsColor: .systemYellow), location: 0.92),   // -5 dB
-            .init(color: Color(nsColor: .systemRed), location: 0.95),      // -3 dB
+            .init(color: Color(nsColor: .systemGreen), location: 0.7),  // -60 to -18 dB
+            .init(color: Color(nsColor: .systemYellow), location: 0.8),  // -12 dB
+            .init(color: Color(nsColor: .systemYellow), location: 0.92),  // -5 dB
+            .init(color: Color(nsColor: .systemRed), location: 0.95),  // -3 dB
             .init(color: Color(nsColor: .systemRed), location: 1.0),
         ],
         startPoint: .leading,
@@ -314,7 +316,7 @@ private struct MeterBar: View {
                         .clipShape(.rect(cornerRadius: 3))
 
                     // dB scale tick marks
-                    ForEach(MeterBar.tickPositions, id: \.dB) { tick in
+                    ForEach(Self.tickPositions, id: \.dB) { tick in
                         let fraction = CGFloat((tick.dB + 60) / 60)
                         Rectangle()
                             .fill(Color.primary.opacity(0.15))
@@ -355,7 +357,9 @@ private struct MeterBar: View {
             Text(dBLabel)
                 .font(.system(.caption, design: .monospaced))
                 .frame(width: dBLabelWidth, alignment: .trailing)
-                .foregroundStyle(dBFS > -3 ? Color(nsColor: .systemRed) : dBFS > -12 ? Color(nsColor: .systemYellow) : .secondary)
+                .foregroundStyle(
+                    dBFS > -3 ? Color(nsColor: .systemRed) : dBFS > -12 ? Color(nsColor: .systemYellow) : .secondary
+                )
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
@@ -385,7 +389,7 @@ private struct MeterBar: View {
     /// the live signal level and the TimelineView then pauses.
     private func decayPeakHold() {
         guard ContinuousClock.now - peakHoldInstant > Self.holdDuration else { return }
-        let decayed = peakHold - 1.5 // ~1.5 dB per frame at 30 fps ≈ 45 dB/s
+        let decayed = peakHold - 1.5  // ~1.5 dB per frame at 30 fps ≈ 45 dB/s
         peakHold = max(decayed, dBFS)
     }
 }
@@ -397,16 +401,20 @@ private struct MeterWindowConfigurator: NSViewRepresentable {
     /// `false` when it becomes visible again (DOLL-348).
     var onOcclusionChange: @MainActor (Bool) -> Void
 
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         WindowConfiguratorView(onOcclusionChange: onOcclusionChange)
     }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_: NSView, context _: Context) {
+        // The occlusion observer is (re)installed in viewDidMoveToWindow; nothing varies per render.
+    }
 }
 
 private final class WindowConfiguratorView: NSView {
     private var configured = false
     private let onOcclusionChange: @MainActor (Bool) -> Void
-    private var occlusionObserver: NSObjectProtocol?
+    /// Main-actor consumer of the window's occlusion notifications. A Task
+    /// handle, unlike an observer token, is Sendable, so `deinit` can cancel it.
+    private var occlusionTask: Task<Void, Never>?
 
     init(onOcclusionChange: @escaping @MainActor (Bool) -> Void) {
         self.onOcclusionChange = onOcclusionChange
@@ -414,7 +422,7 @@ private final class WindowConfiguratorView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -429,19 +437,21 @@ private final class WindowConfiguratorView: NSView {
         // DOLL-348: pause the meter's 30 Hz poll whenever the window isn't
         // visible. `didChangeOcclusionStateNotification` fires for covering,
         // minimizing, and Space switches — none of which trigger SwiftUI's
-        // onDisappear.
-        if let occlusionObserver {
-            NotificationCenter.default.removeObserver(occlusionObserver)
-        }
+        // onDisappear. The notification sequence registers its observer when
+        // it is created (synchronously, here), so nothing posted before the
+        // Task starts iterating is lost; consuming it in a main-actor Task
+        // makes the publish compiler-proven main-actor code.
+        occlusionTask?.cancel()
+        let occlusionChanges = NotificationCenter.default.notifications(
+            named: NSWindow.didChangeOcclusionStateNotification,
+            object: window
+        )
         let publish = onOcclusionChange
-        occlusionObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification,
-            object: window,
-            queue: .main
-        ) { [weak window] _ in
-            guard let window else { return }
-            let occluded = !window.occlusionState.contains(.visible)
-            MainActor.assumeIsolated { publish(occluded) }
+        occlusionTask = Task { [weak window] in
+            for await _ in occlusionChanges {
+                guard let window else { return }
+                publish(!window.occlusionState.contains(.visible))
+            }
         }
         // Publish the current state immediately (the window may already be
         // visible when the view is installed).
@@ -449,8 +459,6 @@ private final class WindowConfiguratorView: NSView {
     }
 
     deinit {
-        if let occlusionObserver {
-            NotificationCenter.default.removeObserver(occlusionObserver)
-        }
+        occlusionTask?.cancel()
     }
 }

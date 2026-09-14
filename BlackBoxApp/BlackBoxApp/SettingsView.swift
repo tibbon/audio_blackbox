@@ -3,6 +3,11 @@ import ServiceManagement
 import StoreKit
 import SwiftUI
 
+// A declaration import (its own swift-format group) because a plain `import os.log`
+// can't satisfy both linters: swift-format orders imports by ASCII (lowercase last)
+// while swiftlint's sorted_imports is case-insensitive.
+import struct os.Logger
+
 struct SettingsView: View {
     var recorder: RecordingState
     @Environment(\.requestReview) private var requestReview
@@ -54,8 +59,10 @@ struct SettingsView: View {
 /// Disables minimize and zoom buttons on the Settings window per Apple HIG.
 /// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct SettingsWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { SettingsConfiguratorView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context _: Context) -> NSView { SettingsConfiguratorView() }
+    func updateNSView(_: NSView, context _: Context) {
+        // The window buttons are configured once in viewDidMoveToWindow; nothing varies per render.
+    }
 }
 
 private final class SettingsConfiguratorView: NSView {
@@ -73,6 +80,8 @@ private final class SettingsConfiguratorView: NSView {
 // MARK: - Recording Tab
 
 struct RecordingSettingsTab: View {
+    private static let logger = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "Settings")
+
     var recorder: RecordingState
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
@@ -99,7 +108,8 @@ struct RecordingSettingsTab: View {
                 Picker("Input Device", selection: $selectedDevice) {
                     // DOLL-215: append the resolved default device name so
                     // the user can see what "System Default" maps to.
-                    let defaultLabel: String = recorder.systemDefaultDeviceName
+                    let defaultLabel: String =
+                        recorder.systemDefaultDeviceName
                         .map { String(localized: "System Default (\($0))") } ?? String(localized: "System Default")
                     Text(defaultLabel).tag("")
                     ForEach(recorder.availableDevices, id: \.self) { device in
@@ -159,9 +169,14 @@ struct RecordingSettingsTab: View {
                 }
                 .accessibilityLabel("Bit depth")
                 .accessibilityHint("Precision of WAV recordings")
-                Text("24-bit is the professional standard. 16-bit saves space. 32-bit float offers maximum precision with larger files.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    """
+                    24-bit is the professional standard. 16-bit saves space. \
+                    32-bit float offers maximum precision with larger files.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("Silence Detection") {
@@ -221,7 +236,9 @@ struct RecordingSettingsTab: View {
                 // "Auto-split on silence" describes the real behavior.
                 Toggle("Auto-split on silence", isOn: $silenceGateEnabled)
                     .onChange(of: silenceGateEnabled) { applyConfig() }
-                    .accessibilityHint("Finalize the current file when audio goes silent and start a new one on the next signal")
+                    .accessibilityHint(
+                        "Finalize the current file when audio goes silent and start a new one on the next signal"
+                    )
 
                 if silenceGateEnabled {
                     Picker("Resume after:", selection: $silenceGateTimeout) {
@@ -234,9 +251,14 @@ struct RecordingSettingsTab: View {
                     .onChange(of: silenceGateTimeout) { applyConfig() }
                     .accessibilityLabel("Silence gate timeout")
 
-                    Text("When enabled, BlackBox waits for audio before creating files, and finalizes them after the selected silence duration. Saves disk space during long idle periods.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        """
+                        When enabled, BlackBox waits for audio before creating files, and finalizes them \
+                        after the selected silence duration. Saves disk space during long idle periods.
+                        """
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -254,8 +276,8 @@ struct RecordingSettingsTab: View {
         .formStyle(.grouped)
         .onAppear {
             syncCheckboxesFromChannelSpec()  // Load saved spec FIRST
-            refreshChannelCount()            // Then clamp to device capabilities
-            migrateStalePickerValues()       // DOLL-197
+            refreshChannelCount()  // Then clamp to device capabilities
+            migrateStalePickerValues()  // DOLL-197
             prevBitDepth = bitDepth
             prevChannelSpec = channelSpec
         }
@@ -273,9 +295,10 @@ struct RecordingSettingsTab: View {
         let silenceGateTimeoutPresets: Set<Int> = [60, 120, 300, 600, 1800]
         if !silenceGateTimeoutPresets.contains(silenceGateTimeout) {
             let original = silenceGateTimeout
-            silenceGateTimeout = silenceGateTimeoutPresets.min(by: {
-                abs($0 - original) < abs($1 - original)
-            }) ?? 300
+            silenceGateTimeout =
+                silenceGateTimeoutPresets.min(by: {
+                    abs($0 - original) < abs($1 - original)
+                }) ?? 300
         }
     }
 
@@ -310,8 +333,7 @@ struct RecordingSettingsTab: View {
         return min(exact, cap)
     }
 
-    @ViewBuilder
-    private var channelCheckboxes: some View {
+    @ViewBuilder private var channelCheckboxes: some View {
         let gridItems = Array(
             repeating: GridItem(.flexible(), alignment: .leading),
             count: channelGridColumns
@@ -322,18 +344,20 @@ struct RecordingSettingsTab: View {
         ScrollView {
             LazyVGrid(columns: gridItems, alignment: .leading, spacing: 8) {
                 ForEach(1...deviceChannelCount, id: \.self) { ch in
-                    Toggle(isOn: Binding(
-                        get: { selectedChannels.contains(ch) },
-                        set: { isOn in
-                            if isOn {
-                                selectedChannels.insert(ch)
-                            } else if selectedChannels.count > 1 {
-                                // Prevent deselecting the last channel
-                                selectedChannels.remove(ch)
+                    Toggle(
+                        isOn: Binding(
+                            get: { selectedChannels.contains(ch) },
+                            set: { isOn in
+                                if isOn {
+                                    selectedChannels.insert(ch)
+                                } else if selectedChannels.count > 1 {
+                                    // Prevent deselecting the last channel
+                                    selectedChannels.remove(ch)
+                                }
+                                syncChannelSpecFromCheckboxes()
                             }
-                            syncChannelSpecFromCheckboxes()
-                        }
-                    )) {
+                        )
+                    ) {
                         Text("Ch \(ch)")
                             .font(.body)
                             .monospacedDigit()
@@ -364,7 +388,9 @@ struct RecordingSettingsTab: View {
                 .monospacedDigit()
                 .onSubmit { commitChannelSpecText() }
                 .accessibilityLabel("Channel range")
-                .accessibilityHint("Enter channels as a comma-separated list with optional dash ranges, like 1-8, 16, 24-32")
+                .accessibilityHint(
+                    "Enter channels as a comma-separated list with optional dash ranges, like 1-8, 16, 24-32"
+                )
         }
 
         HStack {
@@ -410,9 +436,10 @@ struct RecordingSettingsTab: View {
             if token.contains("-") {
                 let bounds = token.split(separator: "-")
                 if bounds.count == 2,
-                   let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
-                   let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
-                   start >= 1, end >= start {
+                    let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                    let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
+                    start >= 1, end >= start
+                {
                     for ch in start...end { channels.insert(ch) }
                 }
             } else if let num = Int(token), num >= 1 {
@@ -429,7 +456,8 @@ struct RecordingSettingsTab: View {
     private func announceChannelSelection() {
         AccessibilityNotification.Announcement(
             String(localized: "\(selectedChannels.count) of \(deviceChannelCount) channels selected")
-        ).post()
+        )
+        .post()
     }
 
     private func syncChannelSpecFromCheckboxes() {
@@ -464,10 +492,13 @@ struct RecordingSettingsTab: View {
         // behavior as before — but the failure mode is now logged
         // instead of silently nil'd.
         switch RustBridge.getDeviceChannelCount(deviceName: selectedDevice) {
-        case .success(let n):
-            deviceChannelCount = n
+        case .success(let count):
+            deviceChannelCount = count
+
         case .failure(let err):
-            print("getDeviceChannelCount failed for \(selectedDevice): \(err)")
+            Self.logger.error(
+                "getDeviceChannelCount failed for \(selectedDevice): \(String(describing: err), privacy: .public)"
+            )
             deviceChannelCount = 0
         }
         if deviceChannelCount > 0 {
@@ -484,13 +515,14 @@ struct RecordingSettingsTab: View {
     private var thresholdPresetLabel: String {
         if silenceThreshold < 0.005 {
             return String(localized: "Studio Quiet")
-        } else if silenceThreshold < 0.02 {
-            return String(localized: "Home Office")
-        } else if silenceThreshold < 0.05 {
-            return String(localized: "Moderate")
-        } else {
-            return String(localized: "Noisy Environment")
         }
+        if silenceThreshold < 0.02 {
+            return String(localized: "Home Office")
+        }
+        if silenceThreshold < 0.05 {
+            return String(localized: "Moderate")
+        }
+        return String(localized: "Noisy Environment")
     }
 
     private var thresholdDescription: String {
@@ -511,20 +543,23 @@ struct RecordingSettingsTab: View {
         }
         recorder.bridge.setConfig(config)
     }
-
 }
 
+// The channel-spec helpers below are `nonisolated`: pure string parsing with no
+// shared state, called from main-actor code and from nonisolated unit tests alike.
+
 /// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
-func countChannels(_ spec: String) -> Int {
+nonisolated func countChannels(_ spec: String) -> Int {
     var channels = Set<Int>()
     for part in spec.split(separator: ",") {
         let token = part.trimmingCharacters(in: .whitespaces)
         if token.contains("-") {
             let bounds = token.split(separator: "-")
             if bounds.count == 2,
-               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
-               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
-               start >= 1, end >= start {
+                let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)),
+                start >= 1, end >= start
+            {
                 for ch in start...end { channels.insert(ch) }
             }
         } else if let num = Int(token), num >= 1 {
@@ -536,52 +571,61 @@ func countChannels(_ spec: String) -> Int {
 
 /// Convert a 1-based channel spec string to 0-based for the Rust engine.
 /// e.g. "1,3-5,8" → "0,2-4,7"
-func channelSpecToZeroBased(_ spec: String) -> String {
-    spec.split(separator: ",").map { part in
-        let token = part.trimmingCharacters(in: .whitespaces)
-        if token.contains("-") {
-            let bounds = token.split(separator: "-")
-            if bounds.count == 2,
-               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
-               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)) {
-                return "\(start - 1)-\(end - 1)"
+nonisolated func channelSpecToZeroBased(_ spec: String) -> String {
+    spec.split(separator: ",")
+        .map { part in
+            let token = part.trimmingCharacters(in: .whitespaces)
+            if token.contains("-") {
+                let bounds = token.split(separator: "-")
+                if bounds.count == 2,
+                    let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                    let end = Int(bounds[1].trimmingCharacters(in: .whitespaces))
+                {
+                    return "\(start - 1)-\(end - 1)"
+                }
+                return token
+            }
+            if let num = Int(token) {
+                return "\(num - 1)"
             }
             return token
-        } else if let num = Int(token) {
-            return "\(num - 1)"
         }
-        return token
-    }.joined(separator: ",")
+        .joined(separator: ",")
 }
 
 /// Convert a 0-based channel spec string to 1-based for the UI.
 /// e.g. "0,2-4,7" → "1,3-5,8"
-func channelSpecToOneBased(_ spec: String) -> String {
-    spec.split(separator: ",").map { part in
-        let token = part.trimmingCharacters(in: .whitespaces)
-        if token.contains("-") {
-            let bounds = token.split(separator: "-")
-            if bounds.count == 2,
-               let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
-               let end = Int(bounds[1].trimmingCharacters(in: .whitespaces)) {
-                return "\(start + 1)-\(end + 1)"
+nonisolated func channelSpecToOneBased(_ spec: String) -> String {
+    spec.split(separator: ",")
+        .map { part in
+            let token = part.trimmingCharacters(in: .whitespaces)
+            if token.contains("-") {
+                let bounds = token.split(separator: "-")
+                if bounds.count == 2,
+                    let start = Int(bounds[0].trimmingCharacters(in: .whitespaces)),
+                    let end = Int(bounds[1].trimmingCharacters(in: .whitespaces))
+                {
+                    return "\(start + 1)-\(end + 1)"
+                }
+                return token
+            }
+            if let num = Int(token) {
+                return "\(num + 1)"
             }
             return token
-        } else if let num = Int(token) {
-            return "\(num + 1)"
         }
-        return token
-    }.joined(separator: ",")
+        .joined(separator: ",")
 }
 
 /// Check if a channel spec uses legacy 0-based numbering (contains a "0" channel).
-func isLegacyZeroBasedSpec(_ spec: String) -> Bool {
+nonisolated func isLegacyZeroBasedSpec(_ spec: String) -> Bool {
     for part in spec.split(separator: ",") {
         let token = part.trimmingCharacters(in: .whitespaces)
         if token.contains("-") {
             let bounds = token.split(separator: "-")
             if let start = Int(bounds.first?.trimmingCharacters(in: .whitespaces) ?? ""),
-               start == 0 {
+                start == 0
+            {
                 return true
             }
         } else if let num = Int(token), num == 0 {
@@ -607,8 +651,8 @@ private func confirmSettingsChange(
     // DOLL-359: this dialog guards a disruptive action (finalize + split the
     // in-progress recording), so Cancel — not Restart — must be the default
     // that Return triggers. Matches confirmResetAllSettings / quitApp.
-    alert.buttons.first?.keyEquivalent = "" // Restart: no longer the default
-    alert.buttons.last?.keyEquivalent = "\r" // Cancel: default (Return)
+    alert.buttons.first?.keyEquivalent = ""  // Restart: no longer the default
+    alert.buttons.last?.keyEquivalent = "\r"  // Cancel: default (Return)
     NSApp.activate()
     if alert.runModal() == .alertFirstButtonReturn {
         onRestart()
@@ -690,7 +734,12 @@ struct OutputSettingsTab: View {
                 .accessibilityHint("One file per channel or one multichannel file")
                 if outputMode == "single" {
                     Label {
-                        Text("Creates a single multichannel WAV file. Some DAWs may not import files with more than 2 channels correctly.")
+                        Text(
+                            """
+                            Creates a single multichannel WAV file. \
+                            Some DAWs may not import files with more than 2 channels correctly.
+                            """
+                        )
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .accessibilityHidden(true)
@@ -708,9 +757,14 @@ struct OutputSettingsTab: View {
                 Toggle("Enable continuous recording", isOn: $continuousMode)
                     .onChange(of: continuousMode) { applyConfig() }
                     .accessibilityHint("Automatically rotate files at regular intervals")
-                Text("Automatically saves and starts a new file at regular intervals, so no audio is lost if the app closes unexpectedly.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    """
+                    Automatically saves and starts a new file at regular intervals, \
+                    so no audio is lost if the app closes unexpectedly.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
                 if continuousMode {
                     Picker("Rotate every:", selection: $cadenceSelection) {
@@ -753,7 +807,7 @@ struct OutputSettingsTab: View {
                                 .accessibilityLabel("Custom rotation interval")
                                 .accessibilityValue("\(recordingCadence) seconds")
                             Text("seconds")
-                            if recordingCadence >= 86400 {
+                            if recordingCadence >= 86_400 {
                                 Text("Maximum: 24 hours")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -780,7 +834,7 @@ struct OutputSettingsTab: View {
                     Text("1 GB").tag(1000)
                     Text("2 GB").tag(2000)
                     Text("5 GB").tag(5000)
-                    Text("10 GB").tag(10000)
+                    Text("10 GB").tag(10_000)
                 }
                 .onChange(of: minDiskSpaceMB) { applyConfig() }
                 .accessibilityLabel("Minimum free disk space")
@@ -806,11 +860,12 @@ struct OutputSettingsTab: View {
     /// cadenceSelection already handles this via "Custom"; the others
     /// need a one-shot migration.
     private func migrateStalePickerValues() {
-        let minDiskSpacePresets: Set<Int> = [0, 500, 1000, 2000, 5000, 10000]
+        let minDiskSpacePresets: Set<Int> = [0, 500, 1000, 2000, 5000, 10_000]
         if !minDiskSpacePresets.contains(minDiskSpaceMB) {
             let original = minDiskSpaceMB
             // Snap to the nearest preset.
-            minDiskSpaceMB = minDiskSpacePresets.min(by: { abs($0 - original) < abs($1 - original) })
+            minDiskSpaceMB =
+                minDiskSpacePresets.min(by: { abs($0 - original) < abs($1 - original) })
                 ?? 500
         }
 
@@ -838,7 +893,7 @@ struct OutputSettingsTab: View {
     private var fileSizeEstimate: String? {
         let channels = channelCount
         guard channels > 0, recordingCadence > 0 else { return nil }
-        let sampleRate = recorder.sampleRate > 0 ? recorder.sampleRate : 48000
+        let sampleRate = recorder.sampleRate > 0 ? recorder.sampleRate : 48_000
         let bytesPerSample = bitDepth / 8
         let fileCount = outputMode == "split" ? channels : 1
         let channelsPerFile = outputMode == "split" ? 1 : channels
@@ -867,17 +922,19 @@ struct OutputSettingsTab: View {
             return hours == 1
                 ? String(localized: "1 hour")
                 : String(localized: "\(hours) hours")
-        } else if hours > 0 {
+        }
+        if hours > 0 {
             return String(localized: "\(hours)h \(minutes)m")
-        } else if minutes > 0 && seconds == 0 {
+        }
+        if minutes > 0 && seconds == 0 {
             return minutes == 1
                 ? String(localized: "1 minute")
                 : String(localized: "\(minutes) minutes")
-        } else if minutes > 0 {
-            return String(localized: "\(minutes)m \(seconds)s")
-        } else {
-            return String(localized: "\(seconds)s")
         }
+        if minutes > 0 {
+            return String(localized: "\(minutes)m \(seconds)s")
+        }
+        return String(localized: "\(seconds)s")
     }
 
     private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]
@@ -893,8 +950,8 @@ struct OutputSettingsTab: View {
     private func commitCustomCadence() {
         if recordingCadence < 1 {
             recordingCadence = 1
-        } else if recordingCadence > 86400 {
-            recordingCadence = 86400
+        } else if recordingCadence > 86_400 {
+            recordingCadence = 86_400
         }
         applyConfig()
     }
@@ -928,7 +985,6 @@ struct OutputSettingsTab: View {
             recorder.saveOutputDirBookmark(for: url)
         }
     }
-
 }
 
 // MARK: - General Tab
@@ -942,7 +998,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(SettingsKeys.preventSleep) private var preventSleep: Bool = true
     @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
     @AppStorage(SettingsKeys.debugLogging) private var debugLogging = false
-    @State private var shortcutLabel: String = String(localized: "None")
+    @State private var shortcutLabel = String(localized: "None")
     @State private var isRecordingShortcut = false
     @State private var shortcutError: String?
 
@@ -964,9 +1020,14 @@ struct GeneralSettingsTab: View {
             Section("Sleep Behavior") {
                 Toggle("Prevent idle sleep while recording", isOn: $preventSleep)
                     .accessibilityHint("Keep your Mac awake during recording")
-                Text("When enabled, your Mac won't sleep from inactivity while recording. Lid close and manual sleep are unaffected.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    """
+                    When enabled, your Mac won't sleep from inactivity while recording. \
+                    Lid close and manual sleep are unaffected.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
                 Picker("When Mac sleeps during recording:", selection: $sleepBehavior) {
                     Text("Pause and resume on wake").tag("resume")
@@ -997,10 +1058,15 @@ struct GeneralSettingsTab: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Global keyboard shortcut for toggling recording")
-                    .accessibilityValue(shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel)
-                    .accessibilityHint(isRecordingShortcut
-                        ? String(localized: "Press a key combination, or Escape to cancel")
-                        : String(localized: "Click to record a new shortcut"))
+                    .accessibilityValue(
+                        shortcutLabel == String(localized: "None")
+                            ? String(localized: "No shortcut set") : shortcutLabel
+                    )
+                    .accessibilityHint(
+                        isRecordingShortcut
+                            ? String(localized: "Press a key combination, or Escape to cancel")
+                            : String(localized: "Click to record a new shortcut")
+                    )
 
                     if shortcutLabel != String(localized: "None") {
                         Button("Clear") {
@@ -1076,7 +1142,8 @@ struct GeneralSettingsTab: View {
         let alert = NSAlert()
         alert.messageText = String(localized: "Reset All Settings?")
         let recording = recorder.isRecording
-        alert.informativeText = String(localized: "This will restore all settings to their defaults. Your recordings will not be affected.")
+        alert.informativeText =
+            String(localized: "This will restore all settings to their defaults. Your recordings will not be affected.")
             + (recording ? String(localized: " The current recording will be stopped.") : "")
         alert.alertStyle = .warning
         // Affirmative-first to match every other dialog in the app (confirmSettingsChange,
@@ -1170,12 +1237,19 @@ struct ShortcutRecorderButton: NSViewRepresentable {
         return button
     }
 
-    func updateNSView(_ nsView: ShortcutRecorderNSButton, context: Context) {
+    func updateNSView(_ nsView: ShortcutRecorderNSButton, context _: Context) {
         nsView.title = isRecording ? String(localized: "Press shortcut\u{2026}") : shortcutLabel
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
+    }
+
+    /// SwiftUI's main-actor teardown hook, called before the coordinator is
+    /// released. It replaces a `deinit` cleanup: the monitor token is not
+    /// Sendable, so a nonisolated deinit can't touch it under Swift 6.
+    static func dismantleNSView(_: ShortcutRecorderNSButton, coordinator: Coordinator) {
+        coordinator.removeMonitor()
     }
 
     @MainActor
@@ -1187,26 +1261,24 @@ struct ShortcutRecorderButton: NSViewRepresentable {
             self.parent = parent
         }
 
-        // deinit is nonisolated — clean up the event monitor directly rather
-        // than calling stopRecording(), which is @MainActor (it also mutates
-        // parent state we can't reach from a nonisolated deinit).
-        deinit {
-            if let monitor = localMonitor {
-                NSEvent.removeMonitor(monitor)
-            }
-        }
-
         func startRecording() {
             parent.isRecording = true
             parent.error = nil
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 self?.handleKeyEvent(event)
-                return nil // Consume the event
+                return nil  // Consume the event
             }
         }
 
         func stopRecording() {
             parent.isRecording = false
+            removeMonitor()
+        }
+
+        /// Uninstall the key monitor if one is active. Also the teardown path
+        /// (via `dismantleNSView`), so a window closed mid-capture can't leave
+        /// a monitor swallowing every keyDown in the app.
+        func removeMonitor() {
             if let monitor = localMonitor {
                 NSEvent.removeMonitor(monitor)
                 localMonitor = nil
@@ -1253,7 +1325,9 @@ struct ShortcutRecorderButton: NSViewRepresentable {
                 manager.save(shortcut)
                 parent.shortcutLabel = shortcut.displayString
             } else {
-                parent.error = String(localized: "\(shortcut.displayString) couldn't be registered — try a different combination")
+                parent.error = String(
+                    localized: "\(shortcut.displayString) couldn't be registered — try a different combination"
+                )
             }
             stopRecording()
         }
@@ -1266,7 +1340,7 @@ class ShortcutRecorderNSButton: NSButton {
 
     override var acceptsFirstResponder: Bool { true }
 
-    override func mouseDown(with event: NSEvent) {
+    override func mouseDown(with _: NSEvent) {
         if coordinator?.parent.isRecording == true {
             coordinator?.stopRecording()
         } else {
