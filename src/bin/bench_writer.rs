@@ -205,7 +205,7 @@ fn run_direct(
         let spec = hound::WavSpec {
             channels: num_channels as u16,
             sample_rate,
-            bits_per_sample: 16,
+            bits_per_sample: 24,
             sample_format: hound::SampleFormat::Int,
         };
         let mut writer = hound::WavWriter::create(&path, spec).unwrap();
