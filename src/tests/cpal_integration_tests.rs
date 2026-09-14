@@ -63,7 +63,7 @@ fn rms_i32(samples: &[i32]) -> f64 {
             n * n
         })
         .sum();
-    (sum / samples.len() as f64).sqrt()
+    (sum / crate::numeric::len_to_f64(samples.len())).sqrt()
 }
 
 // ===========================================================================
@@ -634,7 +634,8 @@ fn test_32bit_recording() {
         assert_eq!(spec.bits_per_sample, 32);
         assert_eq!(samples.len(), 100);
 
-        let expected = (0.5_f32 * i32::MAX as f32).round() as i32;
+        // 0.5 x 2^31: the 32-bit full scale is 2^31, since i32::MAX has no exact f32.
+        let expected = 1_073_741_824;
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
@@ -727,7 +728,7 @@ fn test_f32_to_wav_sample_roundtrip_within_quantization_error() {
     let cases = [-1.0, -0.5, -0.25, -0.125, 0.0, 0.125, 0.25, 0.5, 0.999, 1.0];
     for a in cases {
         let i = f32_to_wav_sample(a, 16);
-        let recovered = i as f32 / 32767.0;
+        let recovered = f32::from(i16::try_from(i).expect("16-bit sample fits in i16")) / 32767.0;
         let err = (a - recovered).abs();
         assert!(
             err <= 1.0 / 32767.0,
@@ -815,11 +816,11 @@ fn test_split_mode_partial_frames() {
             CpalAudioProcessor::new_for_test(dir, 44100, &[0, 1, 2, 3], OutputMode::Split).unwrap();
 
         // Feed 10 samples for a 4-channel device = 2 full frames + 2 leftover
-        let data: Vec<f32> = (0..10).map(|i| (i as f32) * 0.1).collect();
+        let data: Vec<f32> = (0_u8..10).map(|i| f32::from(i) * 0.1).collect();
         processor.feed_test_data(&data, 4);
 
         // Feed 6 more = 2 leftover + 6 = 8 = 2 full frames
-        let data2: Vec<f32> = (0..6).map(|i| (i as f32) * 0.05).collect();
+        let data2: Vec<f32> = (0_u8..6).map(|i| f32::from(i) * 0.05).collect();
         processor.feed_test_data(&data2, 4);
 
         processor.finalize().unwrap();

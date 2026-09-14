@@ -101,7 +101,9 @@ fn test_gate_opens_on_signal() {
         assert_eq!(state.gate_state, GateState::Idle);
 
         // Feed audio above threshold
-        let signal: Vec<f32> = (0..48000).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        let signal: Vec<f32> = (0_u16..48_000)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
         state.write_samples(&signal);
         state.process_gate_open(); // simulate main loop processing
 
@@ -132,7 +134,9 @@ fn test_gate_closes_after_timeout() {
         state.silence_threshold = 0.01;
 
         // Feed signal to open the gate
-        let signal: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        let signal: Vec<f32> = (0_u16..4800)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
         state.write_samples(&signal);
         state.process_gate_open(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Recording);
@@ -183,7 +187,9 @@ fn test_gate_reopens_produces_separate_files() {
         state.set_timestamp_fn(clock.as_timestamp_fn());
 
         // First signal burst — opens the gate
-        let signal: Vec<f32> = (0..4800).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        let signal: Vec<f32> = (0_u16..4800)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
         state.write_samples(&signal);
         state.process_gate_open(); // simulate main loop processing
         assert_eq!(state.gate_state, GateState::Recording);
@@ -432,7 +438,9 @@ fn test_gate_recording_writes_onset_and_post_open_signal() {
 
         // Burst above threshold trips the gate; processed in the peaks-only
         // branch while idle, retained as pre-roll, replayed on open.
-        let trigger: Vec<f32> = (0..48_000).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
+        let trigger: Vec<f32> = (0_u16..48_000)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
         state.write_samples(&trigger);
         state.process_gate_open();
         assert_eq!(state.gate_state, GateState::Recording);

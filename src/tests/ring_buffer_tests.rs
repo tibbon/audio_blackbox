@@ -434,8 +434,8 @@ fn test_check_and_delete_silent_files_deletes_silent() {
         // Create a non-silent WAV file
         let loud_path = dir.join("loud.wav");
         let mut loud_writer = hound::WavWriter::create(&loud_path, spec).unwrap();
-        for i in 0..1000 {
-            let sample = ((i as f32 / 10.0).sin() * 16000.0) as i16;
+        for i in 0_u16..1000 {
+            let sample = ((f32::from(i) / 10.0).sin() * 16000.0) as i16;
             loud_writer.write_sample(sample).unwrap();
         }
         loud_writer.finalize().unwrap();
@@ -857,7 +857,7 @@ fn read_available_handles_ring_wraparound() {
         let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
 
         // Fill 6 and drain them so the read cursor sits near the buffer end.
-        let first: Vec<f32> = (1..=6).map(|i| i as f32 / 100.0).collect();
+        let first: Vec<f32> = (1_u8..=6).map(|i| f32::from(i) / 100.0).collect();
         let first_chunk = producer.write_chunk_uninit(first.len()).unwrap();
         first_chunk.fill_from_iter(first.iter().copied());
         assert_eq!(read_available(&mut consumer, &mut state), 6);
@@ -865,7 +865,7 @@ fn read_available_handles_ring_wraparound() {
         // Push 5 more: writes the last 2 slots then wraps to the front, so the
         // readable region spans the buffer boundary → read_chunk yields two
         // non-empty slices.
-        let second: Vec<f32> = (7..=11).map(|i| i as f32 / 100.0).collect();
+        let second: Vec<f32> = (7_u8..=11).map(|i| f32::from(i) / 100.0).collect();
         let second_chunk = producer.write_chunk_uninit(second.len()).unwrap();
         second_chunk.fill_from_iter(second.iter().copied());
         assert_eq!(read_available(&mut consumer, &mut state), 5);

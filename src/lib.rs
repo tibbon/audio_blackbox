@@ -38,6 +38,7 @@ pub mod ffi;
 mod macos_sample_rate_listener;
 #[cfg(test)]
 mod mock_processor;
+mod numeric;
 mod raw_wav_writer;
 mod silence_check_worker;
 mod utils;

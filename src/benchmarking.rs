@@ -97,7 +97,7 @@ impl PerformanceTracker {
                 if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
                     let cpu_usage = process.cpu_usage();
                     let memory_usage = process.memory();
-                    let memory_percent = (memory_usage as f32 / sys.total_memory() as f32) * 100.0;
+                    let memory_percent = percent_of(memory_usage, sys.total_memory());
 
                     let metric = PerformanceMetrics {
                         timestamp: Local::now(),
@@ -197,7 +197,7 @@ impl PerformanceTracker {
             return None;
         }
 
-        let len = metrics.len() as f32;
+        let len = crate::numeric::len_to_f32(metrics.len());
         let mut cpu_sum = 0.0;
         let mut memory_sum = 0;
         let mut memory_percent_sum = 0.0;
@@ -215,6 +215,19 @@ impl PerformanceTracker {
             memory_percent: memory_percent_sum / len,
         })
     }
+}
+
+/// `part` as a percentage of `whole`, to 0.01%, clamped to [0, 100].
+///
+/// Integer math first, so no `u64` is cast to a float (DOLL-653). A `whole`
+/// of 0 reports 0% rather than the NaN the old float division produced.
+fn percent_of(part: u64, whole: u64) -> f32 {
+    let basis_points = part
+        .saturating_mul(10_000)
+        .checked_div(whole)
+        .unwrap_or(0)
+        .min(10_000);
+    f32::from(u16::try_from(basis_points).unwrap_or(10_000)) / 100.0
 }
 
 impl Drop for PerformanceTracker {

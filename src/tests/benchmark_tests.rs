@@ -5,6 +5,7 @@ use std::time::Instant;
 use tempfile::tempdir;
 
 use crate::constants::{CacheAlignedPeak, OutputMode, RING_BUFFER_SECONDS};
+use crate::numeric::{count_to_f64, len_to_f32, len_to_f64};
 use crate::writer_thread::{WriterCommand, WriterThreadState, writer_thread_main};
 
 // ===========================================================================
@@ -29,7 +30,7 @@ fn generate_bench_data(total_channels: usize, frames: usize) -> Vec<f32> {
     let total = total_channels * frames;
     let mut data = vec![0.0_f32; total];
     for (i, sample) in data.iter_mut().enumerate() {
-        *sample = ((i as f32) * 0.01).sin() * 0.5;
+        *sample = (len_to_f32(i) * 0.01).sin() * 0.5;
     }
     data
 }
@@ -126,9 +127,9 @@ fn benchmark_direct_write_throughput() {
             let elapsed = start.elapsed();
 
             let total_samples = frames * ch_count;
-            let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
+            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
             // Real-time rate = sample_rate * ch_count samples/sec
-            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
             let realtime_multiple = samples_per_sec / realtime_rate;
 
             let errors = write_errors.load(Ordering::Relaxed);
@@ -218,8 +219,8 @@ fn benchmark_split_mode_throughput() {
             let elapsed = start.elapsed();
 
             let total_samples = frames * ch_count;
-            let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
+            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
             let realtime_multiple = samples_per_sec / realtime_rate;
 
             println!(
@@ -332,14 +333,14 @@ fn benchmark_ring_buffer_pipeline() {
             writer_handle.join().unwrap();
 
             let total_samples = frames * ch_count;
-            let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
+            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
             let realtime_multiple = samples_per_sec / realtime_rate;
             let drops = write_errors.load(Ordering::Relaxed);
 
             println!(
                 "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
-                (ring_size * 4) as f64 / (1024.0 * 1024.0),
+                len_to_f64(ring_size * 4) / (1024.0 * 1024.0),
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
             );
@@ -416,8 +417,8 @@ fn benchmark_rotation_overhead() {
                 state.rotate_files();
                 let elapsed = start.elapsed();
 
-                let ring_buffer_ms =
-                    (RING_BUFFER_SECONDS as f64).mul_add(1000.0, -elapsed.as_secs_f64() * 1000.0);
+                let ring_buffer_ms = len_to_f64(RING_BUFFER_SECONDS)
+                    .mul_add(1000.0, -elapsed.as_secs_f64() * 1000.0);
 
                 println!(
                     "  {ch_count:>4} {mode:>8} {:>12.2} ms {ring_buffer_ms:>14.0} ms left",
@@ -522,7 +523,7 @@ fn benchmark_monitor_vs_recording() {
                 .finalize_all()
                 .expect("benchmark output files should finalize cleanly");
 
-            let total_samples = (frames * ch_count) as f64;
+            let total_samples = len_to_f64(frames * ch_count);
             let monitor_rate = total_samples / monitor_elapsed.as_secs_f64();
             let record_rate = total_samples / record_elapsed.as_secs_f64();
             let speedup = monitor_rate / record_rate;
@@ -615,8 +616,8 @@ fn benchmark_monitor_pipeline() {
             writer_handle.join().unwrap();
 
             let total_samples = frames * ch_count;
-            let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
+            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
             let realtime_multiple = samples_per_sec / realtime_rate;
             let drops = write_errors.load(Ordering::Relaxed);
 
@@ -631,7 +632,7 @@ fn benchmark_monitor_pipeline() {
 
             println!(
                 "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
-                (ring_size * 4) as f64 / (1024.0 * 1024.0),
+                len_to_f64(ring_size * 4) / (1024.0 * 1024.0),
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
             );
@@ -723,7 +724,7 @@ fn benchmark_write_samples_overhead() {
             .finalize_all()
             .expect("benchmark output files should finalize cleanly");
 
-        let total_samples = (frames * ch_count) as f64;
+        let total_samples = len_to_f64(frames * ch_count);
         let monitor_rate = total_samples / (monitor_ms / 1000.0);
         let record_rate = total_samples / (record_ms / 1000.0);
         let disk_overhead_ms = record_ms - monitor_ms;
@@ -829,8 +830,9 @@ fn benchmark_ring_buffer_latency() {
             let occupancy = ring_size - producer.slots();
 
             // Calculate latency: occupancy / (sample_rate * channels) = seconds behind
-            let latency_us =
-                occupancy as f64 / (f64::from(sample_rate) * total_channels as f64) * 1_000_000.0;
+            let latency_us = len_to_f64(occupancy)
+                / (f64::from(sample_rate) * len_to_f64(total_channels))
+                * 1_000_000.0;
             latencies_us.push(latency_us);
 
             // Push chunk
@@ -857,11 +859,11 @@ fn benchmark_ring_buffer_latency() {
         let p50 = latencies_us[latencies_us.len() / 2];
         let p99 = latencies_us[latencies_us.len() * 99 / 100];
         let max = latencies_us.last().copied().unwrap_or(0.0);
-        let ring_buffer_capacity_us = RING_BUFFER_SECONDS as f64 * 1_000_000.0;
+        let ring_buffer_capacity_us = len_to_f64(RING_BUFFER_SECONDS) * 1_000_000.0;
 
         println!(
             "  Chunks sent:     {num_chunks:>6} ({:.1}s at real-time pace)",
-            num_chunks as f64 * 512.0 / f64::from(sample_rate),
+            len_to_f64(num_chunks) * 512.0 / f64::from(sample_rate),
         );
         println!("  Latency p50:     {p50:>9.0} us");
         println!("  Latency p99:     {p99:>9.0} us");
@@ -926,7 +928,7 @@ fn benchmark_monitor_cpu_idle() {
         let chunk_frames = 512;
         let chunk_samples = chunk_frames * total_channels;
         let chunk_duration =
-            std::time::Duration::from_secs_f64(chunk_frames as f64 / f64::from(sample_rate));
+            std::time::Duration::from_secs_f64(len_to_f64(chunk_frames) / f64::from(sample_rate));
         let data = generate_bench_data(total_channels, chunk_frames);
 
         let wall_start = Instant::now();
@@ -978,11 +980,11 @@ fn benchmark_monitor_cpu_idle() {
         );
         println!(
             "  Audio processed: {:>6.1}s ({total_frames} frames at {sample_rate}Hz)",
-            total_frames as f64 / f64::from(sample_rate),
+            count_to_f64(total_frames) / f64::from(sample_rate),
         );
         println!(
             "  CPU per chunk:   {:>6.0} ns",
-            cpu_time.as_nanos() as f64 / chunks_sent as f64,
+            cpu_time.as_secs_f64() * 1e9 / count_to_f64(chunks_sent),
         );
     });
 
@@ -1060,8 +1062,8 @@ fn benchmark_sample_rate_scaling() {
                     .expect("benchmark output files should finalize cleanly");
 
                 let total_samples = frames * ch_count;
-                let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-                let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+                let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
+                let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
                 let realtime_multiple = samples_per_sec / realtime_rate;
 
                 println!(
@@ -1147,8 +1149,8 @@ fn benchmark_bit_depth_comparison() {
                     .expect("benchmark output files should finalize cleanly");
 
                 let total_samples = frames * ch_count;
-                let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-                let realtime_rate = f64::from(sample_rate) * ch_count as f64;
+                let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
+                let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
                 let realtime_multiple = samples_per_sec / realtime_rate;
 
                 println!(
