@@ -472,6 +472,62 @@ fn test_check_and_delete_silent_files_skips_missing() {
 // Background silence thread doesn't block writer processing
 // ===========================================================================
 
+/// Mono 44.1 kHz recording state whose silence threshold (10.0) makes every
+/// finished file count as silent, so each rotation queues a silence check.
+fn all_silent_mono_state(dir: &str, write_errors: &Arc<AtomicU64>) -> WriterThreadState {
+    let mut state = WriterThreadState::new(
+        dir,
+        44100,
+        &[0],
+        OutputMode::Single,
+        10.0, // high threshold — everything is "silent"
+        Arc::clone(write_errors),
+        0,
+        Arc::new(AtomicBool::new(false)),
+        16,
+        Arc::from([CacheAlignedPeak::new(0)]),
+        false,
+        0,
+    )
+    .unwrap();
+    state.total_device_channels = 1;
+    state
+}
+
+/// Producer thread that floods 64-sample chunks into a ring until stopped.
+///
+/// The writer is doing real WAV writes, so the producer outpaces it slightly
+/// and modest overflow is expected. Tests watch the writer's
+/// `samples_consumed_total`, not the overflow count.
+struct Flooder {
+    stop: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl Flooder {
+    fn start(mut producer: rtrb::Producer<f32>, write_errors: Arc<AtomicU64>) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_flag = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            let chunk = generate_uniform_interleaved_f32(1, 64, &[0], 0.3);
+            while !stop_flag.load(Ordering::Relaxed) {
+                crate::cpal_processor::push_samples_with_overflow_count(
+                    &mut producer,
+                    &chunk,
+                    &write_errors,
+                );
+                std::thread::yield_now();
+            }
+        });
+        Self { stop, handle }
+    }
+
+    fn stop(self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.handle.join().expect("producer thread panicked");
+    }
+}
+
 #[test]
 fn test_rotation_silence_thread_does_not_block_writer() {
     // Verify that after rotation, the writer thread continues accepting
@@ -499,24 +555,8 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         // pushing without waiting for drain.
         let ring_size = 256;
         let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
-        let producer = Arc::new(std::sync::Mutex::new(producer));
 
-        let mut state = WriterThreadState::new(
-            dir,
-            44100,
-            &[0],
-            OutputMode::Single,
-            10.0, // high threshold — everything is "silent"
-            Arc::clone(&write_errors),
-            0,
-            Arc::new(AtomicBool::new(false)),
-            16,
-            Arc::from([CacheAlignedPeak::new(0)]),
-            false,
-            0,
-        )
-        .unwrap();
-        state.total_device_channels = 1;
+        let mut state = all_silent_mono_state(dir, &write_errors);
 
         // Inject a deterministic clock so rotation produces a distinct
         // filename without needing a wall-clock second to elapse.
@@ -533,28 +573,7 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
-        // Producer thread: floods 64-sample chunks into the tiny ring.
-        // The writer is doing real WAV writes so the producer outpaces
-        // it slightly — modest baseline overflow is expected. The signal
-        // we care about is the writer's `samples_consumed_total` advance,
-        // not the absolute overflow count.
-        let producer_should_stop = Arc::new(AtomicBool::new(false));
-        let producer_should_stop_c = Arc::clone(&producer_should_stop);
-        let producer_we = Arc::clone(&write_errors);
-        let producer_arc = Arc::clone(&producer);
-        let producer_handle = std::thread::spawn(move || {
-            let chunk = generate_uniform_interleaved_f32(1, 64, &[0], 0.3);
-            while !producer_should_stop_c.load(Ordering::Relaxed) {
-                if let Ok(mut p) = producer_arc.lock() {
-                    crate::cpal_processor::push_samples_with_overflow_count(
-                        &mut p,
-                        &chunk,
-                        &producer_we,
-                    );
-                }
-                std::thread::yield_now();
-            }
-        });
+        let flooder = Flooder::start(producer, Arc::clone(&write_errors));
 
         // Take the baseline only once the writer is demonstrably draining
         // under flood (a full ring's worth consumed), not after an
@@ -587,8 +606,7 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             std::time::Duration::from_millis(300),
         );
 
-        producer_should_stop.store(true, Ordering::Relaxed);
-        producer_handle.join().expect("producer thread panicked");
+        flooder.stop();
 
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();

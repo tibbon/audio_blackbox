@@ -285,11 +285,10 @@ decimal_literal_representation = "allow"  # 44100, 48000, 8_388_607 are decimal 
 integer_division = "allow"                # frame and byte math truncates by design
 let_underscore_untyped = "allow"          # noise; let_underscore_must_use is the one that matters
 
-# ---- Backlog (DOLL-653): on in the kit, parked until the existing sites are
-# fixed. Counts are from the adoption run (clippy 1.98, 2026-09-13). Flip one
-# line at a time and fix the sites in its own PR; do not #[expect] through it.
-too_many_lines = "allow"                  # 17 sites
-cognitive_complexity = "allow"            # 4 sites
+# ---- Backlog: empty. DOLL-653 fixed the sites of every lint DOLL-652 parked.
+# A lint that can't be fixed in the change that trips it is parked here as
+# "allow" with a site count and a ticket, and removed in its own PR once the
+# sites are fixed; never #[expect] through it.
 
 [package.metadata.bundle]
 name = "BlackBox Audio Recorder"

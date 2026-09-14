@@ -251,110 +251,74 @@ fn test_config_env_vars() {
     );
 }
 
+/// Legacy names cleared and every `BLACKBOX_*` override for the original nine
+/// fields set to a value that differs from `PRECEDENCE_FILE`.
+const PRECEDENCE_ENV: [(&str, Option<&str>); 18] = [
+    ("AUDIO_CHANNELS", None),
+    ("DEBUG", None),
+    ("RECORD_DURATION", None),
+    ("OUTPUT_MODE", None),
+    ("SILENCE_THRESHOLD", None),
+    ("CONTINUOUS_MODE", None),
+    ("RECORDING_CADENCE", None),
+    ("OUTPUT_DIR", None),
+    ("PERFORMANCE_LOGGING", None),
+    ("BLACKBOX_AUDIO_CHANNELS", Some("3,4,5")),
+    ("BLACKBOX_DEBUG", Some("true")),
+    ("BLACKBOX_DURATION", Some("120")),
+    ("BLACKBOX_OUTPUT_MODE", Some("split")),
+    ("BLACKBOX_SILENCE_THRESHOLD", Some("0.001")),
+    ("BLACKBOX_CONTINUOUS_MODE", Some("true")),
+    ("BLACKBOX_RECORDING_CADENCE", Some("600")),
+    ("BLACKBOX_OUTPUT_DIR", Some("/tmp/test_output")),
+    ("BLACKBOX_PERFORMANCE_LOGGING", Some("true")),
+];
+
+/// Config file values that `PRECEDENCE_ENV` should override.
+const PRECEDENCE_FILE: &str = r#"
+    # Config file values should be overridden by environment variables
+    audio_channels = "0,1,2"
+    debug = false
+    duration = 30
+    output_mode = "single"
+    silence_threshold = 0.1
+    continuous_mode = false
+    recording_cadence = 300
+    output_dir = "./recordings"
+    performance_logging = false
+"#;
+
 #[test]
 fn test_config_env_vars_precedence() {
     // Use temp_env to isolate the test environment
-    temp_env::with_vars(
-        [
-            ("AUDIO_CHANNELS", None::<&str>),
-            ("DEBUG", None::<&str>),
-            ("RECORD_DURATION", None::<&str>),
-            ("OUTPUT_MODE", None::<&str>),
-            ("SILENCE_THRESHOLD", None::<&str>),
-            ("CONTINUOUS_MODE", None::<&str>),
-            ("RECORDING_CADENCE", None::<&str>),
-            ("OUTPUT_DIR", None::<&str>),
-            ("PERFORMANCE_LOGGING", None::<&str>),
-            ("BLACKBOX_AUDIO_CHANNELS", Some("3,4,5")),
-            ("BLACKBOX_DEBUG", Some("true")),
-            ("BLACKBOX_DURATION", Some("120")),
-            ("BLACKBOX_OUTPUT_MODE", Some("split")),
-            ("BLACKBOX_SILENCE_THRESHOLD", Some("0.001")),
-            ("BLACKBOX_CONTINUOUS_MODE", Some("true")),
-            ("BLACKBOX_RECORDING_CADENCE", Some("600")),
-            ("BLACKBOX_OUTPUT_DIR", Some("/tmp/test_output")),
-            ("BLACKBOX_PERFORMANCE_LOGGING", Some("true")),
-        ],
-        || {
-            let temp_dir = tempdir().unwrap();
-            let config_path = temp_dir.path().join("blackbox.toml");
+    temp_env::with_vars(PRECEDENCE_ENV, || {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("blackbox.toml");
+        fs::write(&config_path, PRECEDENCE_FILE).unwrap();
 
-            // Create a minimal config file with different values
-            let config_content = r#"
-            # Config file values should be overridden by environment variables
-            audio_channels = "0,1,2"
-            debug = false
-            duration = 30
-            output_mode = "single"
-            silence_threshold = 0.1
-            continuous_mode = false
-            recording_cadence = 300
-            output_dir = "./recordings"
-            performance_logging = false
-        "#;
-            fs::write(&config_path, config_content).unwrap();
+        temp_env::with_var(
+            "BLACKBOX_CONFIG",
+            Some(config_path.to_str().unwrap()),
+            || assert_env_overrides_file(&AppConfig::load()),
+        );
+    });
+}
 
-            temp_env::with_var(
-                "BLACKBOX_CONFIG",
-                Some(config_path.to_str().unwrap()),
-                || {
-                    println!("Environment variables:");
-                    println!(
-                        "  BLACKBOX_AUDIO_CHANNELS: {:?}",
-                        std::env::var("BLACKBOX_AUDIO_CHANNELS")
-                    );
-                    println!("  BLACKBOX_DEBUG: {:?}", std::env::var("BLACKBOX_DEBUG"));
-
-                    let config = AppConfig::load();
-                    println!("Loaded config values:");
-                    println!("  audio_channels: {}", config.get_audio_channels());
-                    println!("  debug: {}", config.get_debug());
-
-                    assert_eq!(
-                        config.get_audio_channels(),
-                        "3,4,5",
-                        "Environment variable should override config file"
-                    );
-                    assert!(
-                        config.get_debug(),
-                        "Environment variable should override config file"
-                    );
-                    assert_eq!(
-                        config.get_duration(),
-                        120,
-                        "Environment variable should override config file"
-                    );
-                    assert_eq!(
-                        config.get_output_mode(),
-                        "split",
-                        "Environment variable should override config file"
-                    );
-                    assert!(
-                        (config.get_silence_threshold() - 0.001).abs() < f32::EPSILON,
-                        "Environment variable should override config file"
-                    );
-                    assert!(
-                        config.get_continuous_mode(),
-                        "Environment variable should override config file"
-                    );
-                    assert_eq!(
-                        config.get_recording_cadence(),
-                        600,
-                        "Environment variable should override config file"
-                    );
-                    assert_eq!(
-                        config.get_output_dir(),
-                        "/tmp/test_output",
-                        "Environment variable should override config file"
-                    );
-                    assert!(
-                        config.get_performance_logging(),
-                        "Environment variable should override config file"
-                    );
-                },
-            );
-        },
+/// Every field loaded under `PRECEDENCE_ENV` carries the environment value.
+fn assert_env_overrides_file(config: &AppConfig) {
+    const WHY: &str = "Environment variable should override config file";
+    assert_eq!(config.get_audio_channels(), "3,4,5", "{WHY}");
+    assert!(config.get_debug(), "{WHY}");
+    assert_eq!(config.get_duration(), 120, "{WHY}");
+    assert_eq!(config.get_output_mode(), "split", "{WHY}");
+    assert!(
+        (config.get_silence_threshold() - 0.001).abs() < f32::EPSILON,
+        "{WHY}"
     );
+    assert!(config.get_continuous_mode(), "{WHY}");
+    assert_eq!(config.get_recording_cadence(), 600, "{WHY}");
+    assert_eq!(config.get_output_dir(), "/tmp/test_output", "{WHY}");
+    assert!(config.get_performance_logging(), "{WHY}");
 }
 
 /// All env vars (prefixed + legacy) that touch the newer config fields,
