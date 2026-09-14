@@ -124,10 +124,10 @@ fn finalize_all_renames_every_channel() {
     });
 }
 
-/// DOLL-350: after a disk-low self-stop (finalize_all has already cleared the
+/// DOLL-350: after a disk-low self-stop (`finalize_all` has already cleared the
 /// writers + pending pairs), a continuous-mode rotation must NOT recreate empty
-/// `.recording.wav` temp files. Without the `disk_stopped` guard, rotate_files
-/// calls create_wav_writer again and leaks zero-length temps on the full disk.
+/// `.recording.wav` temp files. Without the `disk_stopped` guard, `rotate_files`
+/// calls `create_wav_writer` again and leaks zero-length temps on the full disk.
 #[test]
 fn rotate_files_is_a_noop_when_disk_stopped() {
     temp_env::with_vars(test_env_no_silence(), || {

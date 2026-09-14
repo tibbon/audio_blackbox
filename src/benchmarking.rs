@@ -18,7 +18,7 @@ pub struct PerformanceTracker {
     running: Arc<AtomicBool>,
     history_length: usize,
     interval_secs: u64,
-    /// JoinHandle for the worker thread spawned in `start`. Wrapped in
+    /// `JoinHandle` for the worker thread spawned in `start`. Wrapped in
     /// a `Mutex<Option>` because `stop` and `Drop` take `&self` and need
     /// to consume the handle (DOLL-143). Mirrors `SilenceCheckWorker`'s
     /// join-on-drop pattern in `writer_thread.rs`.

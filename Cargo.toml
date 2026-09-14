@@ -290,7 +290,6 @@ let_underscore_untyped = "allow"          # noise; let_underscore_must_use is th
 # line at a time and fix the sites in its own PR; do not #[expect] through it.
 cast_possible_truncation = "allow"        # 63 sites, sample/frame math
 cast_precision_loss = "allow"             # 55 sites, mostly u64 -> f64 in perf code
-doc_markdown = "allow"                    # 69 sites
 missing_errors_doc = "allow"              # 30 sites
 too_many_lines = "allow"                  # 17 sites
 cognitive_complexity = "allow"            # 4 sites

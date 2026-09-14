@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-/// MockAudioProcessor simulates audio processing for testing purposes
+/// `MockAudioProcessor` simulates audio processing for testing purposes
 /// without requiring actual audio hardware.
 #[expect(
     clippy::struct_excessive_bools,

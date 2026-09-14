@@ -51,6 +51,7 @@ doc-valid-idents = [
   "..",
   "macOS", "iOS", "SwiftUI", "AppKit", "CoreAudio", "AudioUnit", "AudioToolbox",
   "TestFlight", "GitHub", "OpenAPI",
+  "BlackBox", "MacBook", "SemVer",          # product and brand names, not identifiers (DOLL-653)
 ]
 
 # Hard bans. Each carries a reason so the diagnostic teaches the agent.

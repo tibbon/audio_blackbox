@@ -61,7 +61,7 @@ pub const BLACKBOX_ERR_IO: i32 = -4;
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
 /// Reserved (DOLL-128).
 ///
-/// The catch_unwind path that produced this code was removed in DOLL-90; no
+/// The `catch_unwind` path that produced this code was removed in DOLL-90; no
 /// FFI function currently returns -6. Kept in the surface so a future error
 /// doesn't silently reuse the slot the Swift bridge already maps to
 /// `BlackBoxError.internal`.
@@ -320,7 +320,7 @@ fn to_c_string(s: &str) -> *mut c_char {
 /// Note: an explicit `let h: HandleRef<'static> = validate_handle(ptr).?;`
 /// in a non-FFI helper still type-checks (the function is generic in
 /// `'a`, and the caller can pick `'static`). Closing that hole would
-/// require the closure-pattern API; the PhantomData closes the more
+/// require the closure-pattern API; the `PhantomData` closes the more
 /// common "accidental capture into a Send context" misuse.
 struct HandleRef<'a> {
     handle: &'a BlackboxHandle,

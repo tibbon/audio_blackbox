@@ -15,7 +15,7 @@ use crate::utils::parse_channel_string;
 
 /// The main struct responsible for coordinating audio recording.
 ///
-/// It takes an implementation of the AudioProcessor trait, configures it
+/// It takes an implementation of the `AudioProcessor` trait, configures it
 /// based on environment variables and config files, and manages the recording process.
 pub struct AudioRecorder<P: AudioProcessor> {
     processor: P,
@@ -33,7 +33,7 @@ impl<P: AudioProcessor> fmt::Debug for AudioRecorder<P> {
 }
 
 impl<P: AudioProcessor> AudioRecorder<P> {
-    /// Create a new AudioRecorder with the given processor.
+    /// Create a new `AudioRecorder` with the given processor.
     pub fn new(processor: P) -> Self {
         Self {
             processor,
@@ -41,7 +41,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         }
     }
 
-    /// Create a new AudioRecorder with the given processor and configuration.
+    /// Create a new `AudioRecorder` with the given processor and configuration.
     pub fn with_config(processor: P, config: AppConfig) -> Self {
         Self { processor, config }
     }

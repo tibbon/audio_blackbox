@@ -197,13 +197,13 @@ pub(crate) struct WriterThreadState {
     pub peak_levels: Arc<[CacheAlignedPeak]>,
     /// Partial frames carried over between ring buffer reads.
     frame_remainder: Vec<f32>,
-    /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
+    /// Pre-allocated buffer for combining `frame_remainder` + new data (avoids heap alloc).
     combined_buf: Vec<f32>,
     /// Set by `write_samples` when signal is detected in Idle mode.
-    /// The main loop opens writers before the next read, keeping write_samples I/O-free.
+    /// The main loop opens writers before the next read, keeping `write_samples` I/O-free.
     pub gate_pending_open: bool,
     /// Set by `write_samples` when silence timeout is reached in Recording mode.
-    /// The main loop finalizes writers, keeping write_samples free of file I/O.
+    /// The main loop finalizes writers, keeping `write_samples` free of file I/O.
     pub gate_pending_close: bool,
     /// Consecutive silent frames counted while gate is Recording.
     gate_silence_frames: u64,
@@ -223,7 +223,7 @@ pub(crate) struct WriterThreadState {
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
-    /// Pre-allocated CString of `output_dir` for `statvfs` calls (avoids heap alloc per check).
+    /// Pre-allocated `CString` of `output_dir` for `statvfs` calls (avoids heap alloc per check).
     #[cfg(unix)]
     output_dir_cstr: Option<CString>,
     pub sample_rate: u32,
@@ -984,8 +984,8 @@ impl WriterThreadState {
     /// Latch the unwritable-output self-stop shared by the persistent
     /// write-failure path (DOLL-349/437) and rotation file-creation
     /// failure (DOLL-444): raise the `write_failed` status flag so the
-    /// UI reports a disk error, set `disk_stopped` so write_samples /
-    /// rotate_files become no-ops, and finalize so every sample that
+    /// UI reports a disk error, set `disk_stopped` so `write_samples` /
+    /// `rotate_files` become no-ops, and finalize so every sample that
     /// reached disk is preserved under its final name.
     fn latch_write_failed_stop(&mut self) {
         // status flag only; reader loads Relaxed. (DOLL-437)

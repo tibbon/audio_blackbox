@@ -28,7 +28,7 @@ pub(crate) struct RawWavWriter {
     byte_width: u8,
 }
 
-/// 64 KB write buffer — same as the constant in writer_thread.rs.
+/// 64 KB write buffer — same as the constant in `writer_thread.rs`.
 const WAV_BUF_CAPACITY: usize = 65_536;
 
 impl RawWavWriter {
@@ -180,7 +180,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    /// Reads byte_rate (offset 28-31) and block_align (offset 32-33) from a WAV header.
+    /// Reads `byte_rate` (offset 28-31) and `block_align` (offset 32-33) from a WAV header.
     fn read_header_fields(path: &str) -> (u32, u16) {
         let bytes = std::fs::read(path).unwrap();
         let byte_rate = u32::from_le_bytes(bytes[28..32].try_into().unwrap());
