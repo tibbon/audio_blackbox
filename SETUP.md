@@ -115,17 +115,18 @@ only if you want to run `fastlane` from your machine.
 
 ### Toolchain
 
-Fastlane needs a modern Ruby (the system Ruby is too old). Match CI's **Ruby 3.3**:
+Fastlane needs a modern Ruby (the system Ruby is too old). Match CI's **Ruby 4.0**
+(the `ruby-version` in `.github/workflows/release.yml`):
 
 ```bash
-brew install ruby@3.3
-echo 'export PATH="'"$(brew --prefix ruby@3.3)"'/bin:$PATH"' >> ~/.zshrc
+brew install ruby                          # Homebrew's `ruby` formula is 4.0.x
+echo 'export PATH="'"$(brew --prefix ruby)"'/bin:$PATH"' >> ~/.zshrc
 exec zsh                                   # pick up the new PATH
 
 cd BlackBoxApp
-gem install bundler -v 4.0.9               # matches Gemfile.lock "BUNDLED WITH"
-bundle install                             # installs the pinned fastlane (2.236.1)
-fastlane --version                         # should print 2.236.1
+gem install bundler -v 4.0.20              # matches Gemfile.lock "BUNDLED WITH"
+bundle install                             # installs the pinned fastlane (2.240.0)
+fastlane --version                         # should print 2.240.0
 ```
 
 The `make fl-*` targets call `fastlane` directly (they don't use `bundle exec`),

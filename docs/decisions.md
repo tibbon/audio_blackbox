@@ -50,6 +50,7 @@ Tickets are listed by ID; add new entries as you reference them in code or docs.
 - **DOLL-652** — One guardrail loop: `make check` (`scripts/check.sh`) is the definition of done and mirrors every CI lane. `#[allow]` is a compile error; exceptions are `#[expect(..., reason)]`. Swift 6 strict concurrency lives in `Guardrails.xcconfig`.
 - **DOLL-653** — Backlog of lints parked as `allow` and SwiftLint size thresholds raised during DOLL-652. Shrink it one lint per PR; never grow it to get green.
 - **DOLL-654** — `/ship-ticket` workflow (`.claude/workflows/ship-ticket.js`) runs the ticket loop with a review loop built to converge: later rounds review only fixes, the skeptic rules out-of-scope requests into a follow-up, fixes stay small, and findings must halve each round. The first live run did not converge because the fixer built features for every gap reviewers found.
+- **DOLL-657** — MSRV raised to Rust 1.98, the latest stable minor, and release builds use it. The release lane runs fastlane on Ruby 4.0. Raise both on purpose, verifying locally first: `make check` for Rust, and for Ruby a `bundle exec` load of fastlane and every action the Fastfile calls.
 
 ## Cleanup / drift fixes
 
