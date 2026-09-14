@@ -80,66 +80,103 @@ fn test_write_samples_zero_alloc_monitor() {
 // Allocation counting: recording mode (WAV I/O via BufWriter)
 // ===========================================================================
 
+/// Steady-state heap allocations across 1000 `write_samples` calls of 512
+/// stereo frames at 48 kHz, after a warmup that lets `BufWriter` establish
+/// its internal buffer.
+fn recording_allocs(output_mode: OutputMode, bits_per_sample: u16) -> u64 {
+    let sample_rate: u32 = 48000;
+    let ch_count: usize = 2;
+    let temp_dir = tempdir().unwrap();
+    let dir = temp_dir.path().to_str().unwrap();
+    let write_errors = Arc::new(AtomicU64::new(0));
+    let channels: Vec<usize> = (0..ch_count).collect();
+
+    let mut state = WriterThreadState::new(
+        dir,
+        sample_rate,
+        &channels,
+        output_mode,
+        0.0,
+        Arc::clone(&write_errors),
+        0,
+        Arc::new(AtomicBool::new(false)),
+        bits_per_sample,
+        zero_peaks(ch_count),
+        false,
+        0,
+    )
+    .unwrap();
+    state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
+
+    let data = generate_data(ch_count, 512);
+
+    // Warmup: let BufWriter establish its internal buffer
+    for _ in 0..10 {
+        state.write_samples(&data);
+    }
+
+    // Measure
+    let iterations = 1000;
+    let before = alloc_counter::snapshot();
+    for _ in 0..iterations {
+        state.write_samples(&data);
+    }
+    let after = alloc_counter::snapshot();
+    let allocs = after - before;
+
+    println!(
+        "\n  Recording mode ({output_mode}, 2ch/48kHz/{bits_per_sample}-bit): {allocs} allocations across {iterations} write_samples() calls"
+    );
+    println!(
+        "  ({:.3} allocations per call)",
+        count_to_f64(allocs) / f64::from(iterations)
+    );
+
+    state
+        .finalize_all()
+        .expect("recording files should finalize cleanly");
+    allocs
+}
+
 #[test]
 #[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_recording() {
-    let sample_rate: u32 = 48000;
-    let ch_count: usize = 2;
-
     temp_env::with_vars(test_env_no_silence(), || {
-        let temp_dir = tempdir().unwrap();
-        let dir = temp_dir.path().to_str().unwrap();
-        let write_errors = Arc::new(AtomicU64::new(0));
-        let channels: Vec<usize> = (0..ch_count).collect();
-
-        let mut state = WriterThreadState::new(
-            dir,
-            sample_rate,
-            &channels,
-            OutputMode::Single,
-            0.0,
-            Arc::clone(&write_errors),
-            0,
-            Arc::new(AtomicBool::new(false)),
-            24,
-            zero_peaks(ch_count),
-            false,
-            0,
-        )
-        .unwrap();
-        state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
-
-        let data = generate_data(ch_count, 512);
-
-        // Warmup: let BufWriter establish its internal buffer
-        for _ in 0..10 {
-            state.write_samples(&data);
-        }
-
-        // Measure
-        let iterations = 1000;
-        let before = alloc_counter::snapshot();
-        for _ in 0..iterations {
-            state.write_samples(&data);
-        }
-        let after = alloc_counter::snapshot();
-        let allocs = after - before;
-
-        println!(
-            "\n  Recording mode (2ch/48kHz/24-bit): {allocs} allocations across {iterations} write_samples() calls"
-        );
-        println!(
-            "  ({:.3} allocations per call)",
-            count_to_f64(allocs) / f64::from(iterations)
-        );
-
-        state
-            .finalize_all()
-            .expect("recording files should finalize cleanly");
-
         assert_eq!(
-            allocs, 0,
+            recording_allocs(OutputMode::Single, 24),
+            0,
             "write_samples() in recording mode should have zero heap allocations in steady state"
+        );
+    });
+}
+
+/// Single mode at 16 bits runs the TPDF dither (DOLL-373) on every sample.
+#[test]
+#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
+fn test_write_samples_zero_alloc_recording_dithered() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        assert_eq!(
+            recording_allocs(OutputMode::Single, 16),
+            0,
+            "16-bit (dithered) recording should have zero heap allocations in steady state"
+        );
+    });
+}
+
+/// Split mode writes each channel through its own writer (`write_split_frames`).
+#[test]
+#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
+fn test_write_samples_zero_alloc_split() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        assert_eq!(
+            recording_allocs(OutputMode::Split, 24),
+            0,
+            "split-mode recording should have zero heap allocations in steady state"
+        );
+        assert_eq!(
+            recording_allocs(OutputMode::Split, 16),
+            0,
+            "16-bit (dithered) split-mode recording should have zero heap allocations in steady state"
         );
     });
 }
