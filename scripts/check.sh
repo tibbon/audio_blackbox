@@ -142,7 +142,7 @@ check_swift() {
   step "project.pbxproj matches project.yml (DOLL-160)"
   if have xcodegen; then
     if changed_by sh -c 'cd BlackBoxApp && xcodegen generate --quiet' -- BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj; then
-      echo "project.pbxproj is out of sync with project.yml (or your xcodegen differs from CI's pinned 2.45.3); it has been regenerated — commit it."
+      echo "project.pbxproj is out of sync with project.yml (or your xcodegen differs from CI's pinned 2.46.0); it has been regenerated — commit it."
       exit 1
     fi
   else
