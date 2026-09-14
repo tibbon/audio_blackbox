@@ -21,6 +21,15 @@ pub trait AudioProcessor {
     /// allocates the ring buffer, opens output files, and spawns the
     /// writer thread. Idempotent during a single recording session;
     /// callers typically pair with [`start_recording`](Self::start_recording).
+    ///
+    /// # Errors
+    ///
+    /// The cpal implementation fails when the pipeline can't be built: no usable
+    /// input device, a stream that won't build or start, or an unsupported sample
+    /// format ([`BlackboxError::AudioDevice`], [`BlackboxError::AudioDeviceSource`]);
+    /// free disk space below `min_disk_space_mb` ([`BlackboxError::InsufficientDiskSpace`]);
+    /// or an output directory or WAV file that can't be created
+    /// ([`BlackboxError::Io`], [`BlackboxError::WavSource`]).
     fn process_audio(
         &mut self,
         channels: &[usize],
@@ -32,8 +41,13 @@ pub trait AudioProcessor {
     /// Stop the audio stream, drain the ring buffer, finalize WAV
     /// headers, and join the writer + silence-check threads. Must be
     /// called before drop to avoid losing the tail of the recording.
-    /// Returns the first I/O error encountered; subsequent files are
-    /// still finalized on a best-effort basis.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error from finalizing an output file
+    /// ([`BlackboxError::Wav`]) or renaming it into place
+    /// ([`BlackboxError::Io`]). Later files are still finalized on a
+    /// best-effort basis.
     fn finalize(&mut self) -> Result<(), BlackboxError>;
 
     /// Begin the cpal stream so samples flow into the ring buffer.
@@ -41,12 +55,23 @@ pub trait AudioProcessor {
     /// called first to set up the pipeline. Returns immediately —
     /// recording continues asynchronously until `stop_recording` or
     /// `finalize`.
+    ///
+    /// # Errors
+    ///
+    /// The cpal implementation parses the configured channel list first
+    /// ([`BlackboxError::ChannelParse`]), then fails like
+    /// [`process_audio`](Self::process_audio).
     fn start_recording(&mut self, config: &AppConfig) -> Result<(), BlackboxError>;
 
     /// Pause the cpal stream without finalizing files. The pipeline
     /// stays configured so a subsequent `start_recording` resumes
     /// without re-allocating the ring buffer or reopening files. Use
     /// `finalize` to fully tear down.
+    ///
+    /// # Errors
+    ///
+    /// The cpal implementation finalizes the recording, so it fails like
+    /// [`finalize`](Self::finalize).
     fn stop_recording(&mut self) -> Result<(), BlackboxError>;
 
     /// Whether the cpal stream is currently running. False after
@@ -95,11 +120,23 @@ pub trait AudioProcessor {
     }
 
     /// Start monitoring audio levels without recording to disk.
+    ///
+    /// # Errors
+    ///
+    /// The default implementation never fails. The cpal implementation returns
+    /// [`BlackboxError::ChannelParse`] for an invalid channel list, and
+    /// [`BlackboxError::AudioDevice`] or [`BlackboxError::AudioDeviceSource`] when
+    /// the input device or its stream can't be opened.
     fn start_monitoring(&mut self, _config: &AppConfig) -> Result<(), BlackboxError> {
         Ok(())
     }
 
     /// Stop monitoring audio levels.
+    ///
+    /// # Errors
+    ///
+    /// Neither the default nor the cpal implementation returns an error today;
+    /// the `Result` leaves room for a teardown that can fail.
     fn stop_monitoring(&mut self) -> Result<(), BlackboxError> {
         Ok(())
     }

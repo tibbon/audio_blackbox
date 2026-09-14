@@ -488,6 +488,11 @@ silence_gate_timeout_secs = {}
     }
 
     /// Create a configuration file in the specified location
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::Io`] if the parent directory can't be created or
+    /// the file can't be written.
     pub fn create_config_file(&self, path: &str) -> Result<(), BlackboxError> {
         // Generate sample config content
         let config_content = Self::generate_sample_config();

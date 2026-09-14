@@ -176,6 +176,10 @@ impl CpalAudioProcessor {
     ///
     /// Probes the audio device for sample rate and stores config.
     /// WAV writers are not created until `process_audio()` is called.
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`with_config`](Self::with_config).
     pub fn new() -> Result<Self, BlackboxError> {
         Self::with_config(&AppConfig::load())
     }
@@ -184,6 +188,11 @@ impl CpalAudioProcessor {
     ///
     /// Defers device probing to `process_audio()` / `start_monitoring()` to
     /// avoid enumerating the audio device twice on recording start.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::Io`] if the output directory doesn't exist and
+    /// can't be created.
     pub fn with_config(config: &AppConfig) -> Result<Self, BlackboxError> {
         check_alsa_availability()?;
 
@@ -328,6 +337,12 @@ impl CpalAudioProcessor {
     }
 
     /// List all available input device names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::AudioDeviceSource`] if the audio host can't
+    /// enumerate input devices. Devices whose description can't be read are
+    /// skipped rather than reported.
     pub fn list_input_devices() -> Result<Vec<String>, BlackboxError> {
         let host = cpal::default_host();
         let devices = host
@@ -347,6 +362,13 @@ impl CpalAudioProcessor {
 
     /// Get the input channel count for a named device.
     /// Returns the channel count from the device's default input config.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::AudioDevice`] if there is no default input device
+    /// or no device named `device_name`, and [`BlackboxError::AudioDeviceSource`]
+    /// if devices can't be enumerated or the device's default input config can't
+    /// be read.
     pub fn get_device_channel_count(device_name: &str) -> Result<u16, BlackboxError> {
         let host = cpal::default_host();
 
@@ -1013,6 +1035,10 @@ impl CpalAudioProcessor {
     /// Create a `CpalAudioProcessor` for testing without requiring audio hardware.
     ///
     /// Uses `WriterThreadState` directly (no ring buffer or writer thread).
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`new_for_test_with_bits`](Self::new_for_test_with_bits).
     pub fn new_for_test(
         output_dir: &str,
         sample_rate: u32,
@@ -1023,6 +1049,12 @@ impl CpalAudioProcessor {
     }
 
     /// Like `new_for_test` but with configurable bit depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::Io`] if the output directory can't be created,
+    /// or a WAV error if an output file can't be opened. The disk-space check
+    /// is disabled here.
     pub fn new_for_test_with_bits(
         output_dir: &str,
         sample_rate: u32,
