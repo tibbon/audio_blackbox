@@ -26,7 +26,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
         components: rustfmt
 
@@ -44,7 +44,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
         components: clippy
 
@@ -57,7 +57,7 @@ jobs:
       # key, so feature artifacts built only by later jobs were dropped and
       # rebuilt every run. Distinct keys per feature bucket let each persist
       # its own target/. MSRV keeps its own key (different toolchain).
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -103,10 +103,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust 1.95
-      uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582  # 1.95
+      uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697  # 1.95
 
     - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -132,10 +132,10 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -164,7 +164,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
         components: clippy
 
@@ -172,7 +172,7 @@ jobs:
     # build): this lane builds dev-profile clippy + test artifacts, and two
     # jobs sharing one key race to save it (only the first wins — DOLL-271).
     - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -236,12 +236,12 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
         components: clippy
 
     - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -335,10 +335,10 @@ jobs:
         swiftlint lint --strict --quiet
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
 
     - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
@@ -355,7 +355,7 @@ jobs:
     # CodeQL traces every swiftc invocation, and a fully-cached build would
     # skip compilation and starve the extractor.)
     - name: Cache Xcode DerivedData
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: ~/Library/Developer/Xcode/DerivedData
         key: ${{ runner.os }}-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
