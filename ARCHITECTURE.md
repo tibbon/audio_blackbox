@@ -91,7 +91,7 @@ The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackB
 
 ### MenuBarExtra + Window-scene termination
 
-`AppDelegate` (in `BlackBoxApp.swift`) handles a known SwiftUI quirk: closing the last `Window` scene fires `applicationShouldTerminate`. The delegate returns `.terminateCancel` unless `explicitQuit == true`, so the app stays alive while keeping its menu bar item. Explicit Quit (menu bar, system shutdown) sets the flag then calls `terminate(nil)`.
+`AppDelegate` (in `AppDelegate.swift`) handles a known SwiftUI quirk: closing the last `Window` scene fires `applicationShouldTerminate`. The delegate returns `.terminateCancel` unless `explicitQuit == true`, so the app stays alive while keeping its menu bar item. Explicit Quit (menu bar, system shutdown) sets the flag then calls `terminate(nil)`.
 
 ### Sleep / wake matrix
 
