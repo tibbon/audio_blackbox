@@ -1,15 +1,10 @@
-import AppKit
-import BlackBoxFFI
 import Foundation
-import IOKit.ps
 import Observation
-import UserNotifications
 
-// Declaration imports (their own swift-format group) for the two modules whose
-// plain `import` can't satisfy both linters: swift-format orders imports by ASCII
-// (`AVFoundation` before `AppKit`, lowercase `os.log` last) while swiftlint's
-// sorted_imports is case-insensitive.
-import class AVFoundation.AVCaptureDevice
+// A declaration import (its own swift-format group) because a plain `import os.log`
+// can't satisfy both linters: swift-format orders imports by ASCII (lowercase last)
+// while swiftlint's sorted_imports is case-insensitive. The RecordingState+*.swift
+// extensions use the same form.
 import struct os.Logger
 
 /// Observable state for the menu bar UI, wrapping the Rust audio engine via FFI.
@@ -17,6 +12,14 @@ import struct os.Logger
 /// Every public stored property here is a SwiftUI binding target. Views observe
 /// these via `@Observable` change tracking; updates land on the main thread
 /// (the class is `@MainActor`-isolated) so binding reads are race-free.
+///
+/// This file holds the stored state, `init`, and the launch-time restore
+/// helpers. Behavior lives in `RecordingState+*.swift` extensions grouped by
+/// concern: Session (start/stop), StatusPoll (the 1 Hz engine poll),
+/// Monitoring (level meter), SleepWake, Notifications, OutputDirectory.
+/// Swift's `private` does not reach across files, so the session bookkeeping
+/// those extensions share is internal (DOLL-653); nothing outside
+/// `RecordingState` should read or write it.
 @MainActor
 @Observable
 final class RecordingState {
@@ -43,7 +46,7 @@ final class RecordingState {
     /// `start()` (hotkey + menu click, or a hotkey during the dialog) from
     /// enqueueing a second engine start whose failure path would mark the
     /// live recording as idle and make it unstoppable from the UI (DOLL-459).
-    private var isStartingRecording = false
+    var isStartingRecording = false
 
     /// Short status string for the menu's headline row ("Ready",
     /// "Recording...", "Error", elapsed time during a session). Always
@@ -120,20 +123,6 @@ final class RecordingState {
         didSet { syncMeterTimer() }
     }
 
-    /// Run the 30 Hz meter poll only while the window is open AND visible AND
-    /// there's actually a signal source (recording or monitoring). DOLL-374:
-    /// without the activity check, opening the meter while monitoring fails to
-    /// start (no device / denied) left the timer waking the CPU 30x/s forever
-    /// even though updatePeakLevels early-returns every tick. The isRecording /
-    /// isMonitoring didSet hooks re-run this when a source comes up or goes away.
-    private func syncMeterTimer() {
-        if isMeterWindowOpen, !isMeterWindowOccluded, isRecording || isMonitoring {
-            startMeterTimer()
-        } else {
-            stopMeterTimer()
-        }
-    }
-
     let bridge: RustBridge
     /// When the active session started. Exposed publicly (read-only via
     /// the encapsulation of the surrounding mutation paths) so menu views
@@ -142,8 +131,8 @@ final class RecordingState {
     /// bug where the per-tick `statusText` rewrite was resetting hover
     /// state on every open menu.
     var recordingStartTime: Date?
-    private var timerTask: Task<Void, Never>?
-    private var meterTimerTask: Task<Void, Never>?
+    var timerTask: Task<Void, Never>?
+    var meterTimerTask: Task<Void, Never>?
 
     // wasSleepInterrupted (declared below) is set by both `handleWillSleep`
     // and `handleSessionDidResignActive` when their `SleepWakePolicy`
@@ -153,17 +142,16 @@ final class RecordingState {
     // deferred-resume window let the resume Task resurrect a recording
     // the user explicitly stopped). The sleep-interruption stop passes
     // `.sleepInterruption` and leaves the flag alone (DOLL-442).
-    private var securityScopedURL: URL?
-    private var lastReportedWriteErrors: Int = 0
+    var securityScopedURL: URL?
+    var lastReportedWriteErrors: Int = 0
 
     // DOLL-351: cap rapid stream-error auto-restarts so a flapping device
     // (enumerates then immediately faults) can't spin an endless
     // stop/start/finalize loop. Restarts within the window below count toward
-    // the cap; a restart after a stable run resets the counter.
-    private var streamRestartCount = 0
-    private var lastStreamRestart: Date?
-    private static let maxConsecutiveStreamRestarts = 3
-    private static let streamRestartWindow: TimeInterval = 10
+    // the cap; a restart after a stable run resets the counter. The cap and
+    // window constants live with recoverFromStreamError in +StatusPoll.
+    var streamRestartCount = 0
+    var lastStreamRestart: Date?
 
     /// Total samples dropped since the active recording started. Mirrors
     /// `status.write_errors` from the engine, surfaced for UI display
@@ -224,36 +212,36 @@ final class RecordingState {
     /// change via Settings (which already triggers restartIfRecording
     /// in the common case, refreshing this snapshot for the next tick).
     /// DOLL-233.
-    private struct RecordingConfigSnapshot {
+    struct RecordingConfigSnapshot {
         var continuousMode: Bool
         var recordingCadence: Int
         var channelCount: Int
         var bitDepth: Int
         var outputMode: String
     }
-    private var configSnapshot: RecordingConfigSnapshot?
+    var configSnapshot: RecordingConfigSnapshot?
 
     /// Polling counter for battery checks — `updateDuration` ticks every
     /// 1 s; we check the power source every 30 ticks so the IOKit
     /// query overhead is negligible and the warning latency stays
     /// reasonable (max ~30 s after threshold crossing).
-    private var batteryCheckTick: Int = 0
+    var batteryCheckTick: Int = 0
 
     /// One-shot guard so the user only gets a single low-battery
     /// notification per recording — the menu caption stays visible
     /// for ongoing reinforcement, but we don't spam the system tray.
-    private var batteryNotificationFired = false
+    var batteryNotificationFired = false
 
     /// Tracks the previous tick's gate-idle state so the menu-flicker
     /// fix can write `statusText` only on the gate_idle↔active
     /// transition rather than every tick (the elapsed-time string is
     /// now rendered via Text(_, style: .timer)).
-    private var wasGateIdle = false
-    private var peakBuffer = [Float](repeating: 0, count: 255)
-    private var meterPollCount: Int = 0
-    private var meterPollTotalNs: UInt64 = 0
-    private var activityToken: (any NSObjectProtocol)?
-    private var wasSleepInterrupted = false
+    var wasGateIdle = false
+    var peakBuffer = [Float](repeating: 0, count: 255)
+    var meterPollCount: Int = 0
+    var meterPollTotalNs: UInt64 = 0
+    var activityToken: (any NSObjectProtocol)?
+    var wasSleepInterrupted = false
 
     /// Bookmark-restore Task (DOLL-181). Stored so auto-record can `await`
     /// it before starting, preventing a race where auto-record fires with
@@ -262,10 +250,9 @@ final class RecordingState {
     /// completes (we never read it later so dropping the reference is fine).
     private var bookmarkRestoreTask: Task<Void, Never>?
 
-    private static let bookmarkKey = SettingsKeys.outputDirBookmark
     /// `nonisolated` so completion handlers that run off the main actor (e.g. the
     /// UNUserNotificationCenter authorization callback) can log; Logger is Sendable.
-    nonisolated private static let log = Logger(
+    nonisolated static let log = Logger(
         subsystem: "com.dollhousemediatech.blackbox",
         category: "RecordingState"
     )
@@ -293,10 +280,20 @@ final class RecordingState {
 
     /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
     /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
-    private var debugLogging: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
+    var debugLogging: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
 
     /// True when running inside an XCTest host — skips hardware-dependent init.
     private static let isTesting = NSClassFromString("XCTestCase") != nil
+
+    /// Set once `requestNotificationAuth()` has run this launch, so the
+    /// deferred first-launch request (DOLL-464) fires at most once.
+    var hasRequestedNotificationAuth = false
+
+    // swiftlint:disable weak_delegate - UNUserNotificationCenter.delegate is weak, so this must be the owning reference
+    /// Delegate that handles notification action responses (e.g. "Restart Recording").
+    /// Stored as an instance property to keep the delegate alive.
+    let notificationDelegate = NotificationDelegate()
+    // swiftlint:enable weak_delegate
 
     init() {
         bridge = RustBridge()
@@ -357,144 +354,6 @@ final class RecordingState {
         }
     }
 
-    // MARK: - Sleep / Wake
-
-    private func beginPreventingSleep() {
-        guard activityToken == nil else { return }
-        let idleDisabled = UserDefaults.standard.object(forKey: SettingsKeys.preventSleep) as? Bool ?? true
-        var opts: ProcessInfo.ActivityOptions = .userInitiated  // always prevent App Nap
-        if SleepWakePolicy.shouldPreventSleep(settingEnabled: idleDisabled) {
-            opts.insert(.idleSystemSleepDisabled)
-        }
-        activityToken = ProcessInfo.processInfo.beginActivity(
-            options: opts,
-            reason: "BlackBox is recording audio"
-        )
-        Self.log.info("Sleep prevention: appNap=always idleSleep=\(idleDisabled)")
-    }
-
-    private func endPreventingSleep() {
-        guard let token = activityToken else { return }
-        ProcessInfo.processInfo.endActivity(token)
-        activityToken = nil
-        Self.log.info("Sleep prevention disabled")
-    }
-
-    /// Engine-side session teardown (DOLL-448): the engine has already
-    /// stopped (or refused to restart), so `stop()` — which calls
-    /// `bridge.stopRecording()` again — is not appropriate. These paths
-    /// used to flip `isRecording = false` directly and leaked the
-    /// `beginPreventingSleep` activity token: after a device disconnect
-    /// or unexpected engine stop, the Mac could never idle-sleep again
-    /// until the app quit or a later recording was stopped manually.
-    func markRecordingEnded() {
-        endPreventingSleep()
-        isRecording = false
-        recordingStartTime = nil
-        // Mirror stop()'s teardown of per-session UI state — without this,
-        // engine-initiated stops left stale meters, a frozen current-file
-        // size, and a dead config snapshot on screen (DOLL-448).
-        peakLevels = []
-        currentFileSizeText = nil
-        configSnapshot = nil
-        // And, like stop(), hand the audio stream back to the level meter
-        // if its window is still open.
-        if isMeterWindowOpen {
-            startMonitoring()
-        }
-    }
-
-    func handleWillSleep() {
-        let behavior = UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior) ?? "resume"
-        let action = SleepWakePolicy.sleepAction(isRecording: isRecording, behavior: behavior)
-        switch action {
-        case .ignore:
-            return
-
-        case .pauseForResume:
-            wasSleepInterrupted = true
-            postNotification(
-                title: String(localized: "Recording Paused"),
-                body: String(localized: "Your Mac is going to sleep. Recording will resume on wake."),
-                identifier: "sleep-paused"
-            )
-
-        case .stop:
-            postNotification(
-                title: String(localized: "Recording Stopped"),
-                body: String(localized: "Your Mac is going to sleep."),
-                identifier: "recording-stopped"
-            )
-        }
-        // .pauseForResume just set wasSleepInterrupted; stop() must not
-        // clear it or handleDidWake never resumes (DOLL-442).
-        stop(reason: action == .pauseForResume ? .sleepInterruption : .user)
-        Self.log.info("Sleep: stopped recording (behavior=\(behavior))")
-    }
-
-    func handleDidWake() {
-        guard SleepWakePolicy.shouldResumeOnWake(wasInterrupted: wasSleepInterrupted) else { return }
-        wasSleepInterrupted = false
-        Self.log.info("Wake: attempting to resume recording")
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1500))
-            guard let self, !isRecording else { return }
-            // DOLL-443: await the outcome — the old fire-and-forget start()
-            // + isRecording read always took the failure branch, posting
-            // "Resume Failed" even for successful resumes.
-            if await startAndWait() {
-                postNotification(
-                    title: String(localized: "Recording Resumed"),
-                    body: String(localized: "Recording resumed after wake."),
-                    identifier: "wake-resumed"
-                )
-            } else {
-                postNotification(
-                    title: String(localized: "Resume Failed"),
-                    body: String(localized: "Could not restart recording after wake. Check your audio device."),
-                    identifier: "wake-failed"
-                )
-            }
-        }
-    }
-
-    func handleSessionDidResignActive() {
-        let action = SleepWakePolicy.sessionResignAction(isRecording: isRecording)
-        guard action == .pauseForResume else { return }
-        wasSleepInterrupted = true
-        stop(reason: .sleepInterruption)
-        Self.log.info("Fast User Switch: stopped recording for resume on return")
-        postNotification(
-            title: String(localized: "Recording Paused"),
-            body: String(localized: "User session switched. Recording will resume when you return."),
-            identifier: "session-paused"
-        )
-    }
-
-    func handleSessionDidBecomeActive() {
-        guard SleepWakePolicy.shouldResumeOnWake(wasInterrupted: wasSleepInterrupted) else { return }
-        wasSleepInterrupted = false
-        Self.log.info("Fast User Switch: attempting to resume recording")
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1500))
-            guard let self, !isRecording else { return }
-            // DOLL-443: await the outcome (see handleDidWake).
-            if await startAndWait() {
-                postNotification(
-                    title: String(localized: "Recording Resumed"),
-                    body: String(localized: "Recording resumed after session switch."),
-                    identifier: "session-resumed"
-                )
-            } else {
-                postNotification(
-                    title: String(localized: "Resume Failed"),
-                    body: String(localized: "Could not restart recording after session switch."),
-                    identifier: "session-failed"
-                )
-            }
-        }
-    }
-
     // MARK: - Global Hotkey
 
     /// Restore and register the saved global keyboard shortcut.
@@ -518,490 +377,6 @@ final class RecordingState {
                 )
             )
         }
-    }
-
-    // MARK: - Actions
-
-    func toggle() {
-        if isRecording {
-            stop()
-        } else {
-            start()
-        }
-    }
-
-    /// Fire-and-forget start for synchronous callers (menu button, hotkey,
-    /// notification action) whose UI already observes `isRecording` /
-    /// `errorMessage` for the outcome. The spawned Task ends naturally;
-    /// app termination cancels in-flight Tasks via structured-concurrency
-    /// cooperation, so no explicit Task.cancel is required from
-    /// applicationShouldTerminate.
-    func start() {
-        Task { @MainActor in
-            await self.startAndWait()
-        }
-    }
-
-    /// Start recording and report whether a recording is active once the
-    /// attempt resolves. DOLL-443: `start()` returns before its internal
-    /// permission await does, so callers that branched on `isRecording`
-    /// immediately afterwards (auto-record notification, wake / session
-    /// resume) always read stale `false` — wake-resume posted "Resume
-    /// Failed" even when the resume succeeded a beat later. Those callers
-    /// must await this instead.
-    @discardableResult
-    func startAndWait() async -> Bool {
-        // Debounce: rapid double-start (e.g. hotkey held, accessibility
-        // automation) would otherwise launch two requestAccess flows in
-        // parallel. isRecording stays false across the permission await —
-        // for as long as the user leaves the permission dialog open — so
-        // the isStartingRecording in-flight flag is what blocks re-entry
-        // across that window (DOLL-459); the isRecording guard alone only
-        // covered re-entry from the same MainActor turn.
-        guard !isRecording, !isStartingRecording else { return isRecording }
-        isStartingRecording = true
-        errorMessage = nil
-        defer { isStartingRecording = false }
-        if await checkMicrophonePermission() {
-            startRecordingInternal()
-        } else {
-            errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
-            statusText = String(localized: "Error")
-        }
-        return isRecording
-    }
-
-    private func startRecordingInternal() {
-        // DOLL-459: defense in depth — re-check after the permission await.
-        // The guard in start() ran before the suspension; if a session began
-        // through another path while the dialog was up, a second
-        // bridge.startRecording() would fail and its error branch would mark
-        // the LIVE recording as idle (unstoppable from the UI).
-        guard !isRecording else { return }
-
-        // DOLL-464: for first-launch users (onboarding incomplete at init,
-        // so the eager request was skipped) this is the in-context moment
-        // to ask — a recording is starting, so stop/pause notifications now
-        // matter. No-op on every other launch (auth requested at init,
-        // DOLL-134) and after the first call.
-        requestNotificationAuthIfNeeded()
-
-        // DOLL-233: snapshot the config once at start so the per-tick
-        // computations downstream (rotation countdown, file-size estimate,
-        // preflight warning) read from in-memory fields instead of
-        // hitting UserDefaults 5-7 times per second.
-        configSnapshot = captureConfigSnapshot()
-
-        // DOLL-220: warn before we kick off the engine if the math says
-        // the per-file size will blow past the 4 GiB WAV-header cap. The
-        // engine still proceeds — the file just gets clamped — but the
-        // user gets notification and menu signal so they can adjust.
-        evaluatePreflightFileSizeWarning()
-
-        // Stop monitoring first — recording will take over the audio stream
-        if isMonitoring {
-            stopMonitoring()
-        }
-
-        let result = bridge.startRecording()
-        if result.isSuccess {
-            isRecording = true
-            recordingStartTime = Date()
-            // "Recording" (no trailing ellipsis or M:SS) is now a stable
-            // string — the live elapsed time is rendered separately via
-            // Text(_, style: .timer) so this value only changes on a
-            // gate-idle transition. Keeps the menu from re-rendering
-            // every second and resetting hover state.
-            statusText = String(localized: "Recording")
-            wasGateIdle = false
-            lastReportedWriteErrors = 0
-            writeErrorsCount = 0
-            isLowBatteryWarning = false
-            batteryNotificationFired = false
-            batteryCheckTick = 0
-            // DOLL-213: clear any stale post-Stop summary when a new
-            // recording begins; the just-started session is the new
-            // "current," and the old summary is no longer relevant.
-            lastRecordingDurationText = nil
-            // preflightSizeWarning is intentionally NOT cleared here —
-            // evaluatePreflightFileSizeWarning() runs just before
-            // bridge.startRecording() and already populates it (or nils
-            // it) for the current session. Clearing it here would wipe
-            // the warning the moment the engine acknowledged the start.
-            startTimer()
-            beginPreventingSleep()
-            Self.log.info("Recording started")
-            NSAccessibility.post(
-                element: NSApp as Any,
-                notification: .announcementRequested,
-                userInfo: [.announcement: String(localized: "Recording started")]
-            )
-        } else {
-            // DOLL-448: release sleep prevention if this start was a
-            // restart of a live session (restartIfRecording) — the token
-            // from the original beginPreventingSleep would otherwise leak.
-            // No-op on a fresh start (no token yet).
-            endPreventingSleep()
-            isRecording = false
-            recordingStartTime = nil
-            let detail = bridge.lastError
-            let err: String
-            switch result {
-            case .audioDevice:
-                err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
-
-            case .config:
-                let reason = detail ?? String(localized: "invalid settings")
-                err = String(localized: "Configuration error: \(reason)")
-
-            case .io:
-                err = String(localized: "Recording failed: disk error")
-
-            default:
-                err = detail ?? String(localized: "Failed to start recording")
-            }
-            setTransientError(err)
-            Self.log.error("Failed to start recording (code \(result.rawValue)): \(err)")
-        }
-    }
-
-    // MARK: - Monitoring
-
-    func startMonitoring() {
-        Task { @MainActor in
-            guard await self.checkMicrophonePermission() else { return }
-            // DOLL-459: the permission await can suspend across user
-            // interaction; re-check the record/monitor mutual exclusion
-            // afterwards so a stale monitor task doesn't grab the audio
-            // stream out from under an active (or in-flight) recording.
-            guard !self.isRecording, !self.isStartingRecording, !self.isMonitoring else { return }
-            let result = self.bridge.startMonitoring()
-            if result.isSuccess {
-                self.isMonitoring = true
-                Self.log.info("Audio monitoring started")
-            } else {
-                Self.log.error(
-                    "Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")"
-                )
-            }
-        }
-    }
-
-    func stopMonitoring() {
-        if bridge.stopMonitoring().isSuccess {
-            isMonitoring = false
-            peakLevels = []
-            Self.log.info("Audio monitoring stopped")
-        }
-    }
-
-    /// Restart monitoring to pick up config changes (channels, device).
-    /// No-op if not currently monitoring.
-    func restartMonitoring() {
-        guard isMonitoring else { return }
-        stopMonitoring()
-        startMonitoring()
-    }
-
-    // MARK: - Microphone Permission
-
-    private func checkMicrophonePermission() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            return true
-
-        case .notDetermined:
-            return await AVCaptureDevice.requestAccess(for: .audio)
-
-        case .denied, .restricted:
-            showMicrophonePermissionAlert()
-            return false
-
-        @unknown default:
-            return false
-        }
-    }
-
-    private func showMicrophonePermissionAlert() {
-        let alert = NSAlert()
-        // DOLL-438: AppKit takes plain String (not LocalizedStringKey), so these
-        // are wrapped in String(localized:) to enter the String Catalog.
-        alert.messageText = String(localized: "Microphone Access Required")
-        alert.informativeText = String(
-            localized: """
-                BlackBox needs microphone access to record audio. \
-                You can allow access in System Settings > Privacy & Security > Microphone.
-                """
-        )
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "Open System Settings"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
-
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
-
-    // MARK: - Notifications
-
-    /// Set once `requestNotificationAuth()` has run this launch, so the
-    /// deferred first-launch request (DOLL-464) fires at most once.
-    private var hasRequestedNotificationAuth = false
-
-    /// One-shot wrapper for the deferred first-recording request (DOLL-464).
-    /// No-op on launches where init() already requested (onboarding done)
-    /// or after the first call; the system dialog itself only ever shows
-    /// once per install regardless.
-    func requestNotificationAuthIfNeeded() {
-        guard !hasRequestedNotificationAuth else { return }
-        requestNotificationAuth()
-    }
-
-    private func requestNotificationAuth() {
-        hasRequestedNotificationAuth = true
-        let center = UNUserNotificationCenter.current()
-        // DOLL-185: capture the granted bool. Without this, a denial
-        // silently drops every later postNotification (sleep-paused,
-        // recording-stopped, wake events) and the user has no signal.
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
-            if let error {
-                Self.log.warning("Notification auth request failed: \(error.localizedDescription, privacy: .public)")
-            }
-            Task { @MainActor in
-                self?.notificationsAuthorized = granted
-            }
-        }
-
-        // Register "Restart Recording" action on recording-stopped notifications
-        let restartAction = UNNotificationAction(
-            identifier: "restart-recording",
-            title: String(localized: "Restart Recording")
-        )
-        let category = UNNotificationCategory(
-            identifier: "recording-stopped",
-            actions: [restartAction],
-            intentIdentifiers: []
-        )
-        center.setNotificationCategories([category])
-        center.delegate = notificationDelegate
-    }
-
-    /// Re-query notification authorization. Called from app-becomes-active
-    /// so a user who grants permission in System Settings has the app
-    /// pick that up without a relaunch (DOLL-185).
-    func refreshNotificationAuthorization() {
-        UNUserNotificationCenter.current()
-            .getNotificationSettings { [weak self] settings in
-                let granted =
-                    settings.authorizationStatus == .authorized
-                    || settings.authorizationStatus == .provisional
-                Task { @MainActor in
-                    self?.notificationsAuthorized = granted
-                }
-            }
-    }
-
-    // swiftlint:disable weak_delegate - UNUserNotificationCenter.delegate is weak, so this must be the owning reference
-    /// Delegate that handles notification action responses (e.g. "Restart Recording").
-    /// Stored as an instance property to keep the delegate alive.
-    private let notificationDelegate = NotificationDelegate()
-    // swiftlint:enable weak_delegate
-
-    /// Post a notification to Notification Center for events that occur while the app is in the background.
-    /// Uses a fixed identifier so new notifications of the same type replace old ones instead of stacking.
-    private func postNotification(title: String, body: String, identifier: String = "blackbox-info") {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = isRecording ? nil : .default
-        if identifier == "recording-stopped" {
-            content.categoryIdentifier = "recording-stopped"
-        }
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    /// Notify the user of a critical event using the appropriate channel:
-    /// modal alert if the app is in the foreground, notification if backgrounded.
-    /// Avoids showing both simultaneously.
-    private func notifyUser(title: String, message: String, identifier: String = "recording-stopped") {
-        if NSApp.isActive {
-            showCriticalAlert(title: title, message: message)
-        } else {
-            postNotification(title: title, body: message, identifier: identifier)
-        }
-    }
-
-    /// Set a transient error that auto-clears after 30 seconds.
-    /// Use for errors that don't require ongoing user action (device disconnect, disk full, etc.).
-    private func setTransientError(_ message: String) {
-        errorMessage = message
-        statusText = String(localized: "Error")
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(30))
-            guard let self, errorMessage == message else { return }
-            errorMessage = nil
-            if !isRecording { statusText = String(localized: "Ready") }
-        }
-    }
-
-    /// Show an NSAlert for critical errors that require the user's attention.
-    private func showCriticalAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "OK"))
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
-    func stop(reason: SleepWakePolicy.StopReason = .user) {
-        let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
-        stopTimer()
-        let result = bridge.stopRecording()
-        endPreventingSleep()
-        if result.isSuccess {
-            isRecording = false
-            recordingStartTime = nil
-            peakLevels = []
-            errorMessage = nil
-            statusText = String(localized: "Ready")
-            // DOLL-351: a clean stop clears any flapping-restart bookkeeping.
-            streamRestartCount = 0
-            lastStreamRestart = nil
-            // DOLL-213: surface a transient "last recording" summary for
-            // 30 s so the user gets confirmation of what just finished.
-            // Captured here (before the durations resets to 0) and
-            // displayed as a menu block with a Show in Finder button.
-            if sessionDuration > 0 {
-                lastRecordingDurationText = Self.formatRecordedDuration(sessionDuration)
-                let snapshot = lastRecordingDurationText
-                // DOLL-230: explicit @MainActor on the Task closure even
-                // though RecordingState is class-level @MainActor — under
-                // strict-concurrency the inherited isolation rules are
-                // subtle and this makes the mutation-after-await safe by
-                // construction regardless of how the surrounding class
-                // is later refactored.
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(30))
-                    guard let self,
-                        lastRecordingDurationText == snapshot,
-                        !isRecording
-                    else { return }
-                    lastRecordingDurationText = nil
-                }
-            }
-            writeErrorsCount = 0
-            isLowBatteryWarning = false
-            batteryNotificationFired = false
-            batteryCheckTick = 0
-            preflightSizeWarning = nil
-            currentFileSizeText = nil
-            configSnapshot = nil
-            wasGateIdle = false
-            // DOLL-182: a user stop cancels any pending resume-on-wake.
-            // Without this, a manual stop within the 1.5s deferred-resume
-            // window after sleep/wake or session resign/activate would let
-            // the deferred start() resurrect a recording the user
-            // explicitly stopped. The sleep-interruption stop is exempt —
-            // it just SET the flag, and clearing it here made
-            // resume-on-wake dead code (DOLL-442).
-            if SleepWakePolicy.stopCancelsPendingResume(reason) {
-                wasSleepInterrupted = false
-            }
-            Self.log.info("Recording stopped")
-            NSAccessibility.post(
-                element: NSApp as Any,
-                notification: .announcementRequested,
-                userInfo: [.announcement: String(localized: "Recording stopped")]
-            )
-
-            // Track successful sessions >5 min for App Store review prompt
-            if sessionDuration > 300 {
-                let key = SettingsKeys.successfulRecordingSessions
-                UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
-            }
-
-            // Resume monitoring if the meter window is still open
-            if isMeterWindowOpen {
-                startMonitoring()
-            }
-        } else {
-            let err = bridge.lastError ?? String(localized: "Failed to stop recording")
-            setTransientError(err)
-            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(err)")
-        }
-    }
-
-    func openOutputDir() {
-        let config = bridge.getConfig()
-        let dir = config?["output_dir"] as? String ?? "recordings"
-
-        let url: URL
-        if dir.hasPrefix("/") {
-            url = URL(fileURLWithPath: dir)
-        } else {
-            let cwd = FileManager.default.currentDirectoryPath
-            url = URL(fileURLWithPath: cwd).appendingPathComponent(dir)
-        }
-
-        // DOLL-114: defer the FileManager + NSWorkspace I/O off the main
-        // actor. Both calls hit disk / Launch Services and were
-        // synchronously blocking the UI on this user action. `@concurrent`
-        // runs the body on the global executor while keeping the caller's
-        // priority (unlike Task.detached).
-        Task { @concurrent in
-            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            // open(_:) reports whether Launch Services accepted the URL; there is no
-            // recovery path here beyond the Finder window simply not appearing.
-            await MainActor.run { _ = NSWorkspace.shared.open(url) }
-        }
-    }
-
-    func refreshDevices() {
-        availableDevices = RustBridge.listInputDevices()
-        systemDefaultDeviceName = RustBridge.defaultInputDeviceName()
-    }
-
-    func selectDevice(_ name: String) {
-        UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
-        bridge.setConfig(["input_device": name])
-        if isRecording {
-            restartIfRecording(reason: "device changed")
-        } else if isMonitoring {
-            restartMonitoring()
-        }
-    }
-
-    /// Finalize current WAV files and immediately start a new recording session
-    /// with the updated config. No-op if not currently recording.
-    func restartIfRecording(reason: String) {
-        guard isRecording else { return }
-        Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
-        stopTimer()
-        _ = bridge.stopRecording()
-        // The engine is stopped; reflect it before startRecordingInternal,
-        // whose double-start guard (DOLL-459) would otherwise see the stale
-        // true and return without restarting — leaving the engine stopped
-        // while the UI showed "Recording" until the next status poll
-        // flagged it as an unexpected stop. Sleep prevention is left in
-        // place: the session continues if the restart succeeds, and a
-        // failed restart releases it in startRecordingInternal's error
-        // branch (DOLL-448).
-        isRecording = false
-        recordingStartTime = nil
-        peakLevels = []
-        lastReportedWriteErrors = 0
-        writeErrorsCount = 0
-        // Battery state survives restart since the underlying hardware
-        // state is unchanged. Reset notification so a future cross of
-        // the threshold can fire fresh.
-        batteryCheckTick = 0
-        startRecordingInternal()
     }
 
     // MARK: - Settings Persistence
@@ -1066,727 +441,5 @@ final class RecordingState {
         if !config.isEmpty {
             bridge.setConfig(config)
         }
-    }
-
-    // MARK: - Rotation countdown (DOLL-214)
-    // Note: the per-tick string formatter was replaced by the
-    // `nextRotationDate` computed property + `Text(_, style: .timer)` in
-    // the menu — see the menu-flicker fix. Keeping the section heading
-    // so future grep / DOLL-214 archaeology lands on the right spot.
-
-    // MARK: - Config snapshot (DOLL-233)
-
-    /// Read the live UserDefaults values once and freeze them for the
-    /// duration of the recording. The per-tick callbacks
-    /// (`computeRotationCountdown`, `computeCurrentFileSize`,
-    /// `evaluatePreflightFileSizeWarning`) read this snapshot rather
-    /// than hitting UserDefaults 5-7 times every second.
-    private func captureConfigSnapshot() -> RecordingConfigSnapshot {
-        let defaults = UserDefaults.standard
-        let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
-        return RecordingConfigSnapshot(
-            continuousMode: defaults.object(forKey: SettingsKeys.continuousMode) as? Bool ?? false,
-            recordingCadence: defaults.integer(forKey: SettingsKeys.recordingCadence),
-            channelCount: countChannels(defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"),
-            bitDepth: bitDepthValue > 0 ? bitDepthValue : 24,
-            outputMode: defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
-        )
-    }
-
-    // MARK: - Last-recording summary (DOLL-213)
-
-    /// Format a TimeInterval as "M:SS" or "H:MM:SS" to match the live
-    /// "Recording 12:34" status format the user just saw counting up.
-    private static func formatRecordedDuration(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let secs = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
-            : String(format: "%d:%02d", minutes, secs)
-    }
-
-    /// Dismiss the post-Stop summary block early — called when the user
-    /// clicks the Show in Finder action in the summary (they've now
-    /// taken action on it, no need to keep showing it).
-    func dismissLastRecordingSummary() {
-        lastRecordingDurationText = nil
-    }
-
-    // MARK: - Current file size estimate (DOLL-217)
-
-    /// Estimate the current WAV file's size from elapsed-in-cycle ×
-    /// bytes-per-second. Uses last-seen sample rate (falls back to
-    /// 48 kHz when the engine hasn't reported one yet) and the snapshot
-    /// of bit depth + channel count + output mode captured at start.
-    /// Returns nil for misconfigured states so the menu hides the line.
-    /// DOLL-233: reads from the cached snapshot, not UserDefaults.
-    private func computeCurrentFileSize(elapsed: Int) -> String? {
-        guard let snapshot = configSnapshot, snapshot.channelCount > 0 else { return nil }
-
-        let bytesPerSample = snapshot.bitDepth / 8
-        let channelsPerFile = snapshot.outputMode == "split" ? 1 : snapshot.channelCount
-
-        let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
-        let bytesPerSecond = estSampleRate * bytesPerSample * channelsPerFile
-
-        // Continuous mode rotates every cadence seconds, so "current
-        // file" is the bytes accumulated since the most recent boundary.
-        // Single mode has no rotation — the file grows from start.
-        let elapsedInFile: Int
-        if snapshot.continuousMode, snapshot.recordingCadence > 0 {
-            elapsedInFile = elapsed % snapshot.recordingCadence
-        } else {
-            elapsedInFile = elapsed
-        }
-
-        let bytes = Int64(bytesPerSecond) * Int64(elapsedInFile)
-        return Self.formatFileSize(bytes)
-    }
-
-    /// Human-readable bytes with an "~" estimate hint. DOLL-377: use the
-    /// locale-aware binary byte-count format style instead of a hardcoded
-    /// "%.1f GB" with a "." separator, so a de_DE/fr_FR user sees "1,5 GB".
-    private static func formatFileSize(_ bytes: Int64) -> String {
-        "~" + bytes.formatted(.byteCount(style: .binary))
-    }
-
-    // MARK: - Pre-flight 4 GiB warning (DOLL-220)
-
-    /// WAV header `data` chunk is `u32`, so a single file maxes out at
-    /// 4 GiB - 1. DOLL-204 catches this on finalize and logs / clamps;
-    /// DOLL-220 catches it before we burn through hours of recording.
-    private static let wavMaxFileBytes = Int64(UInt32.max)
-
-    /// Inspect the current configuration and set `preflightSizeWarning`
-    /// (plus a notification + log line) when the projected per-file
-    /// bytes-per-rotation exceeds the 4 GiB WAV cap. Only meaningful for
-    /// continuous mode — single mode has no rotation interval to bound
-    /// the file with, so we leave it alone there.
-    /// DOLL-233: reads from the cached snapshot, populated immediately
-    /// before this method runs in startRecordingInternal.
-    private func evaluatePreflightFileSizeWarning() {
-        preflightSizeWarning = nil
-
-        guard let snapshot = configSnapshot, snapshot.continuousMode else { return }
-        let cadence = snapshot.recordingCadence
-        guard cadence > 0 else { return }
-        let channels = snapshot.channelCount
-        guard channels > 0 else { return }
-
-        let bytesPerSample = snapshot.bitDepth / 8
-        // In split mode each file holds one channel; in single mode all
-        // channels share a file. The cap applies per-file, so we project
-        // for the most populated file we'll create.
-        let channelsPerFile = snapshot.outputMode == "split" ? 1 : channels
-
-        // No reliable sample-rate signal until cpal connects, so fall
-        // back to 48 kHz when we haven't seen a session yet. This biases
-        // the warning toward false negatives — we'd rather under-warn
-        // than spook users about hypothetical hi-res setups they don't
-        // actually have.
-        let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
-
-        let bytesPerFile =
-            Int64(channelsPerFile)
-            * Int64(bytesPerSample)
-            * Int64(estSampleRate)
-            * Int64(cadence)
-
-        guard bytesPerFile > Self.wavMaxFileBytes else { return }
-
-        let gigabytes = Double(bytesPerFile) / 1_073_741_824.0
-        // DOLL-439/#40: localizable + locale-aware decimal (the GB value is
-        // pre-formatted so the String Catalog key carries a %@, not a "."-only %.1f).
-        let rateNote = sampleRate > 0 ? "" : String(localized: " (estimated at 48 kHz)")
-        let gbText = gigabytes.formatted(.number.precision(.fractionLength(1)))
-        let msg = String(
-            localized:
-                "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth."
-        )
-        preflightSizeWarning = msg
-        Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
-        notifyUser(
-            title: String(localized: "Large file warning"),
-            message: msg,
-            identifier: "preflight-4gb-warning"
-        )
-    }
-
-    // MARK: - Battery Monitoring (DOLL-225)
-
-    /// Threshold below which we warn that the current recording is at
-    /// risk of being cut off by a system shutdown. 20 % matches macOS's
-    /// own "battery low" alert level.
-    private static let lowBatteryThreshold = 20
-
-    /// Poll IOKit for the current internal battery state and flip
-    /// `isLowBatteryWarning` if we're discharging below the threshold.
-    /// On Macs with no internal battery (Mac mini, Studio, Pro) there's
-    /// nothing to warn about — we just leave the flag false.
-    private func checkBatteryState() {
-        guard let state = currentBatteryState() else {
-            // No internal battery, or IOKit query failed — clear any
-            // stale warning rather than leaving it pinned on.
-            if isLowBatteryWarning {
-                isLowBatteryWarning = false
-            }
-            batteryNotificationFired = false
-            return
-        }
-
-        let shouldWarn = !state.onACPower && state.percent <= Self.lowBatteryThreshold
-        if shouldWarn {
-            isLowBatteryWarning = true
-            if !batteryNotificationFired {
-                batteryNotificationFired = true
-                notifyUser(
-                    title: String(localized: "Battery Low"),
-                    message: String(
-                        localized:
-                            "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop."
-                    ),
-                    identifier: "battery-low"
-                )
-                Self.log.warning("Battery low while recording: \(state.percent)% on battery")
-            }
-        } else {
-            // Plugged back in or charge recovered — clear the warning so
-            // the user knows they're safe again. Allow a fresh notification
-            // if the cycle repeats.
-            if isLowBatteryWarning {
-                isLowBatteryWarning = false
-                batteryNotificationFired = false
-            }
-        }
-    }
-
-    /// Read the current internal-battery percent and AC-power flag, or
-    /// `nil` on desktops / when IOKit returns nothing usable.
-    private func currentBatteryState() -> (percent: Int, onACPower: Bool)? {
-        guard let infoRef = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
-            return nil
-        }
-        guard let sourcesRef = IOPSCopyPowerSourcesList(infoRef)?.takeRetainedValue() else {
-            return nil
-        }
-        let sources = sourcesRef as [CFTypeRef]
-        for source in sources {
-            guard
-                let desc = IOPSGetPowerSourceDescription(infoRef, source)?
-                    .takeUnretainedValue() as? [String: Any]
-            else {
-                continue
-            }
-            // Skip non-internal sources (e.g. UPS) — we only care about
-            // the laptop's own battery for "you're going to lose power."
-            guard (desc[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType else {
-                continue
-            }
-            let percent = desc[kIOPSCurrentCapacityKey] as? Int ?? 0
-            let powerState = desc[kIOPSPowerSourceStateKey] as? String
-            let onAC = powerState == kIOPSACPowerValue
-            return (percent, onAC)
-        }
-        return nil
-    }
-
-    // MARK: - Duration Timer
-
-    private func startTimer() {
-        timerTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { break }
-                self?.updateDuration()
-            }
-        }
-    }
-
-    private func stopTimer() {
-        timerTask?.cancel()
-        timerTask = nil
-    }
-
-    // MARK: - Meter Timer (fast polling for level meter window)
-
-    private func startMeterTimer() {
-        guard meterTimerTask == nil else { return }
-        meterTimerTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(33))
-                guard !Task.isCancelled else { break }
-                self?.updatePeakLevels()
-            }
-        }
-    }
-
-    private func stopMeterTimer() {
-        meterTimerTask?.cancel()
-        meterTimerTask = nil
-    }
-
-    private func updatePeakLevels() {
-        let debug = debugLogging
-        let start: ContinuousClock.Instant? = debug ? .now : nil
-
-        guard isRecording || isMonitoring else {
-            if !peakLevels.isEmpty { peakLevels = [] }
-            return
-        }
-
-        // DOLL-125: fillPeakLevels now returns Result so callers can
-        // distinguish lock-poison / invalid-arg / invalid-handle from a
-        // legitimate empty read. On error, log + leave peakLevels alone
-        // (UI keeps showing the last good values rather than collapsing
-        // to 0 channels every tick).
-        let count: Int
-        switch bridge.fillPeakLevels(into: &peakBuffer) {
-        case .success(let channelCount):
-            count = channelCount
-
-        case .failure(let err):
-            Self.log.error("fillPeakLevels failed: \(String(describing: err))")
-            return
-        }
-
-        // Only publish when values have visibly changed (avoids SwiftUI diffing overhead)
-        let needsUpdate: Bool
-        if peakLevels.count != count {
-            needsUpdate = true
-        } else {
-            var changed = false
-            for i in 0..<count where abs(peakBuffer[i] - peakLevels[i]) > 0.001 {
-                changed = true
-                break
-            }
-            needsUpdate = changed
-        }
-
-        if needsUpdate {
-            // DOLL-113: avoid the per-tick `Array(peakBuffer.prefix(count))`
-            // alloc + copy. When the channel count is unchanged (the common
-            // case in steady-state recording), `replaceSubrange` reuses
-            // the existing storage. We still trigger one @Observable
-            // notification per call.
-            if peakLevels.count == count {
-                peakLevels.replaceSubrange(0..<count, with: peakBuffer[0..<count])
-            } else {
-                // Channel count changed (e.g. recording started/stopped, or
-                // device switched mid-session). Realloc is fine here — it
-                // happens at most once per state transition, not per tick.
-                peakLevels = Array(peakBuffer.prefix(count))
-            }
-        }
-
-        if let start {
-            let elapsed = ContinuousClock.now - start
-            let (secs, atto) = elapsed.components
-            meterPollTotalNs += UInt64(secs) &* 1_000_000_000 &+ UInt64(atto / 1_000_000_000)
-            meterPollCount += 1
-            if meterPollCount >= 30 {
-                let avgNs = meterPollTotalNs / UInt64(meterPollCount)
-                Self.log.info("[MeterPerf] avg=\(avgNs)ns over \(self.meterPollCount) ticks, ch=\(count)")
-                meterPollCount = 0
-                meterPollTotalNs = 0
-            }
-        }
-    }
-
-    private func updateDuration() {
-        guard let start = recordingStartTime else { return }
-
-        // Menu-flicker fix: previously this method assigned a fresh
-        // "Recording M:SS" to `statusText` every second, which is an
-        // `@Observable` write that forced the dropdown to re-render and
-        // reset the user's hover/keyboard highlight. The elapsed time
-        // is now rendered by `Text(recordingStartTime, style: .timer)`
-        // in the menu, which auto-ticks internally without writing
-        // back to our observable state. Same approach via
-        // `nextRotationDate` for the rotation countdown.
-        let elapsed = Int(Date().timeIntervalSince(start))
-
-        // DOLL-217: estimated current-file size from elapsed × bytes/sec.
-        currentFileSizeText = computeCurrentFileSize(elapsed: elapsed)
-
-        // DOLL-225: check battery every 30 ticks (~30 s) — IOKit calls
-        // are cheap but not free, and a long recording shouldn't pay them
-        // every second when the state changes at most every few minutes.
-        batteryCheckTick += 1
-        if batteryCheckTick >= 30 {
-            batteryCheckTick = 0
-            checkBatteryState()
-        }
-
-        // Check status from Rust engine (lightweight C struct, no JSON)
-        if let status = bridge.getStatusFlags() {
-            // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
-            if isRecording && !status.is_recording {
-                stopTimer()
-                markRecordingEnded()
-                let msg = bridge.lastError ?? String(localized: "Recording stopped unexpectedly")
-                setTransientError(msg)
-                Self.log.error("Recording stopped unexpectedly: \(msg)")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // DOLL-216: surface the silence-gate idle state as "Armed
-            // (waiting for signal)". Updated only on transitions (not
-            // every tick) so the menu doesn't re-render needlessly —
-            // the live elapsed time is now rendered by
-            // Text(date, style: .timer) in the menu directly.
-            if status.gate_idle != wasGateIdle {
-                wasGateIdle = status.gate_idle
-                statusText =
-                    status.gate_idle
-                    ? String(localized: "Armed (waiting for signal)")
-                    : String(localized: "Recording")
-            }
-
-            // Sample rate changed on the audio device — restart to pick up new rate
-            // so the WAV header matches the actual audio data.
-            if status.sample_rate_changed {
-                Self.log.warning("Sample rate changed on device — finalizing and restarting")
-                restartIfRecording(reason: "sample rate changed")
-                notifyUser(
-                    title: String(localized: "Sample Rate Changed"),
-                    message: String(
-                        localized: "Your audio device's sample rate changed. Recording was restarted automatically."
-                    ),
-                    identifier: "sample-rate-changed"
-                )
-                return
-            }
-
-            // Audio stream error — device disconnected or driver failure.
-            // Finalize current files, then try to restart on the next available device.
-            if status.stream_error {
-                recoverFromStreamError()
-                return
-            }
-            // DOLL-437: persistent write failure (disk full mid-write, or the
-            // output directory became unwritable). Checked before disk_space_low
-            // so the cause is reported accurately rather than as a pre-emptive
-            // low-space warning or as CPU "heavy load" from the shared counter.
-            if status.write_failed {
-                stop()
-                let msg = String(
-                    localized: """
-                        Recording stopped: unable to write to disk. \
-                        Free up space or check the output folder's permissions, then try again.
-                        """
-                )
-                setTransientError(msg)
-                Self.log.error("Write failure — stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // Disk space low — stop recording gracefully
-            if status.disk_space_low {
-                stop()
-                let msg = String(localized: "Your disk is almost full. Free up space and try again.")
-                setTransientError(msg)
-                Self.log.error("Disk space low, stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // Write errors — cumulative counter from Rust engine
-            let writeErrors = Int(status.write_errors)
-            let newDrops = writeErrors - lastReportedWriteErrors
-            // DOLL-223: publish for UI even when below the threshold the
-            // existing logic warns at. Otherwise sub-500-sample drops
-            // happen invisibly.
-            writeErrorsCount = writeErrors
-
-            if writeErrors > 48_000 {
-                // Auto-stop if excessive (>48000 samples dropped across all channels)
-                stop()
-                let msg = String(
-                    localized: """
-                        Recording quality degraded \u{2014} your Mac may be under heavy load. \
-                        Try closing other applications.
-                        """
-                )
-                setTransientError(msg)
-                Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            if newDrops > 0 {
-                // Only log/display when NEW drops occur (counter is cumulative)
-                lastReportedWriteErrors = writeErrors
-                Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
-                if writeErrors > 500 {
-                    errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
-                }
-            }
-
-            // Sample rate — update for file size estimates in settings
-            let rate = Int(status.sample_rate)
-            if rate > 0, rate != sampleRate {
-                sampleRate = rate
-                UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
-            }
-        }
-    }
-
-    /// Finalize the current files after an audio-stream error and restart on
-    /// the next available device — or stop for good once the DOLL-351
-    /// flapping cap is hit. Split out of `updateDuration` so the 1 Hz status
-    /// poll stays readable.
-    private func recoverFromStreamError() {
-        Self.log.error("Stream error detected — finalizing files and attempting restart")
-        stopTimer()
-        _ = bridge.stopRecording()
-        peakLevels = []
-        lastReportedWriteErrors = 0
-        writeErrorsCount = 0
-        isLowBatteryWarning = false
-        batteryNotificationFired = false
-        batteryCheckTick = 0
-        // preflightSizeWarning intentionally preserved: the config
-        // hasn't changed on stream-error recovery, so the warning
-        // is still valid for the restarted file.
-
-        // DOLL-351: flapping-device guard. Count restarts that happen
-        // close together; a restart after a stable run resets the
-        // counter. Once the cap is hit, stop for real instead of
-        // looping. The 1 Hz status poll naturally spaces attempts ~1s
-        // apart, which is the effective backoff.
-        let now = Date()
-        if let last = lastStreamRestart, now.timeIntervalSince(last) < Self.streamRestartWindow {
-            streamRestartCount += 1
-        } else {
-            streamRestartCount = 1
-        }
-        lastStreamRestart = now
-
-        if streamRestartCount > Self.maxConsecutiveStreamRestarts {
-            markRecordingEnded()
-            streamRestartCount = 0
-            lastStreamRestart = nil
-            let msg = String(
-                localized: """
-                    Your audio device keeps failing. \
-                    Recording stopped \u{2014} check the device and try again.
-                    """
-            )
-            setTransientError(msg)
-            Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
-            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-            return
-        }
-
-        if bridge.startRecording().isSuccess {
-            // Restarted successfully (e.g., System Default fell back to built-in mic)
-            recordingStartTime = Date()
-            statusText = String(localized: "Recording")
-            startTimer()
-            Self.log.info("Recording restarted on available device")
-            notifyUser(
-                title: String(localized: "Device Changed"),
-                message: String(
-                    localized: "Your audio device changed. Recording continued on the next available device."
-                ),
-                identifier: "device-changed"
-            )
-        } else {
-            // No device available — stop for real
-            markRecordingEnded()
-            let msg = String(
-                localized: """
-                    Your audio device was disconnected and no alternative is available. \
-                    Check your connections and try again.
-                    """
-            )
-            setTransientError(msg)
-            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-        }
-    }
-
-    // MARK: - Security-Scoped Bookmarks
-
-    /// Point recording at the in-container default directory
-    /// (`Self.defaultOutputDir`). The container is always writable, so —
-    /// unlike a user-selected folder — it needs no security-scoped bookmark;
-    /// any previously stored bookmark is cleared so a stale one can't shadow
-    /// the default on the next launch. (DOLL-344)
-    func useDefaultOutputDir() {
-        let url = Self.defaultOutputDir
-        do {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        } catch {
-            // Non-fatal: the Rust writer also creates missing directories. Log
-            // and still point config at the path.
-            Self.log.error("Failed to create default output directory: \(error.localizedDescription)")
-        }
-        releaseOutputDirAccess()
-        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-        UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
-        bridge.setConfig(["output_dir": url.path])
-        Self.log.info("Using default in-container output directory: \(url.path)")
-    }
-
-    /// Save a security-scoped bookmark for a **user-selected** output directory
-    /// (one chosen via `NSOpenPanel`). Creates the directory if it doesn't
-    /// exist. Do NOT call this for the in-container default — use
-    /// `useDefaultOutputDir()`, which needs no bookmark (DOLL-344).
-    func saveOutputDirBookmark(for url: URL) {
-        do {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            let bookmarkData = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
-            UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
-
-            // Release previous access if any
-            securityScopedURL?.stopAccessingSecurityScopedResource()
-            securityScopedURL = url
-
-            // Update Rust config with the chosen path
-            bridge.setConfig(["output_dir": url.path])
-            Self.log.info("Saved output directory bookmark: \(url.path)")
-        } catch {
-            let err = String(localized: "Failed to save directory bookmark: \(error.localizedDescription)")
-            errorMessage = err
-            Self.log.error("\(err)")
-        }
-    }
-
-    /// Restore the security-scoped bookmark on launch.
-    ///
-    /// DOLL-114: called from a deferred Task (see `init`) so the bookmark
-    /// resolution + security scope acquisition + bridge.setConfig (each of
-    /// which can hit disk or IPC) run after the launch path, not on it.
-    private func restoreOutputDirBookmark() {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
-            // No bookmark means either a first run or the user is on the
-            // in-container default (which never stores one). Ensure that
-            // default exists and points the engine at it, rather than leaving
-            // Rust on its relative "recordings" fallback (unwritable under the
-            // sandbox). Also recovers users migrating from the old, broken
-            // ~/Music default whose bookmark save silently failed. (DOLL-344)
-            Self.log.info("No saved output directory bookmark; using in-container default")
-            useDefaultOutputDir()
-            return
-        }
-        do {
-            var isStale = false
-            let url = try URL(
-                resolvingBookmarkData: data,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            // Access is deliberately held, not scoped with `defer`: the engine writes
-            // into this directory for the rest of the session. It is released by
-            // releaseOutputDirAccess() (quit / switch to the default dir) or replaced
-            // by saveOutputDirBookmark(for:), which stops the previous URL first.
-            // swiftlint:disable:next security_scoped_balance - held for the session; stopped in releaseOutputDirAccess() / saveOutputDirBookmark(for:)
-            if url.startAccessingSecurityScopedResource() {
-                securityScopedURL = url
-                bridge.setConfig(["output_dir": url.path])
-                UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
-                Self.log.info("Restored output directory: \(url.path)\(isStale ? " (stale, refreshing)" : "")")
-                // DOLL-379: only refresh a stale bookmark when access actually
-                // succeeded — otherwise we'd persist a .withSecurityScope
-                // bookmark for a URL whose scope was never acquired.
-                if isStale {
-                    saveOutputDirBookmark(for: url)
-                }
-            } else {
-                // DOLL-379: access failed. Drop the unusable bookmark so it
-                // doesn't re-trigger this prompt every launch, and return so we
-                // can't fall through to the stale re-save above (which would
-                // re-persist a bookmark for an unscoped URL and point the engine
-                // at an unwritable path).
-                Self.log.warning("Failed to access security-scoped resource: \(url.path)")
-                UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-                promptToReselectOutputDir(failedPath: url.path)
-            }
-        } catch {
-            Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-            let failedPath =
-                UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath)
-                ?? String(localized: "the configured directory")
-            promptToReselectOutputDir(failedPath: failedPath)
-        }
-    }
-
-    /// Show an alert asking the user to re-select their output directory when
-    /// a security-scoped bookmark can no longer be resolved (e.g. volume unmounted).
-    private func promptToReselectOutputDir(failedPath: String) {
-        // Defer to next run loop so init() completes before showing UI
-        Task { [weak self] in
-            guard let self else { return }
-            let alert = NSAlert()
-            alert.messageText = String(localized: "Output Directory Unavailable")
-            alert.informativeText = String(
-                localized:
-                    "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
-            )
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: String(localized: "Choose Directory\u{2026}"))
-            alert.addButton(withTitle: String(localized: "Use Default"))
-            NSApp.activate(ignoringOtherApps: true)
-            if alert.runModal() == .alertFirstButtonReturn {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.canCreateDirectories = true
-                panel.prompt = String(localized: "Select")
-                panel.message = String(localized: "Select output directory for recordings")
-                if panel.runModal() == .OK, let url = panel.url {
-                    saveOutputDirBookmark(for: url)
-                }
-            } else {
-                // Use the in-container default (no security scope needed). The
-                // old ~/Music default is unwritable under the sandbox. (DOLL-344)
-                useDefaultOutputDir()
-            }
-        }
-    }
-
-    /// Release security-scoped resource access.
-    func releaseOutputDirAccess() {
-        securityScopedURL?.stopAccessingSecurityScopedResource()
-        securityScopedURL = nil
-    }
-}
-
-// MARK: - Notification Action Handler
-
-/// Handles notification action responses (e.g. "Restart Recording" button).
-/// Separate class because UNUserNotificationCenterDelegate requires NSObject conformance.
-private class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
-        _: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler handler: @escaping () -> Void
-    ) {
-        if response.actionIdentifier == "restart-recording" {
-            Task { @MainActor in
-                // Find the RecordingState — it's the source of truth for the app
-                if let app = NSApp.delegate as? AppDelegate, let recorder = app.recorder {
-                    recorder.start()
-                }
-            }
-        }
-        handler()
-    }
-
-    /// Show notifications even when the app is in the foreground (needed for
-    /// notification actions to be accessible).
-    func userNotificationCenter(
-        _: UNUserNotificationCenter,
-        willPresent _: UNNotification,
-        withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        handler([.banner])
     }
 }
