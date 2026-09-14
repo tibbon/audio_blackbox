@@ -11,7 +11,7 @@ use log::error;
 
 use crate::writer_thread::check_and_delete_silent_files;
 
-pub struct SilenceCheckWorker {
+pub(crate) struct SilenceCheckWorker {
     /// Channel sender. Wrapped in `Option` so `Drop` can take + drop it
     /// before joining, which closes the channel and lets the worker exit
     /// its `recv()` loop cleanly.
@@ -25,14 +25,14 @@ impl SilenceCheckWorker {
     /// Callers store `silence_worker: None` and the writer thread keeps
     /// running — silent files just don't get auto-deleted that session
     /// (DOLL-122).
-    pub fn new(threshold: f32) -> Option<Self> {
+    pub(crate) fn new(threshold: f32) -> Option<Self> {
         // Bounded channel: 8 batches in flight is generous given that
         // rotation cadence is per-second at the fastest. Backpressure on
         // the rotation path (a brief block on `send`) is preferable to
         // unbounded memory growth.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<String>>(8);
         let handle = match std::thread::Builder::new()
-            .name("blackbox-silence".to_string())
+            .name("blackbox-silence".to_owned())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
                 // SAFETY: macOS-only libc QoS call. No pointer args;
@@ -56,7 +56,7 @@ impl SilenceCheckWorker {
             }
         };
 
-        Some(SilenceCheckWorker {
+        Some(Self {
             tx: Some(tx),
             handle: Some(handle),
         })
@@ -65,9 +65,12 @@ impl SilenceCheckWorker {
     /// Submit a batch of file paths for silence checking. Best-effort: if
     /// the channel is closed (worker died), the batch is silently dropped
     /// — matches the prior `spawn(...).ok()` behavior.
-    pub fn submit(&self, files: Vec<String>) {
+    pub(crate) fn submit(&self, files: Vec<String>) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(files);
+            let batch = files.len();
+            if tx.send(files).is_err() {
+                log::debug!("silence-check worker already stopped; dropping {batch} files");
+            }
         }
     }
 }
@@ -77,8 +80,10 @@ impl Drop for SilenceCheckWorker {
         // Drop the sender first to close the channel; the worker's
         // `recv()` returns Err and the loop exits.
         self.tx.take();
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+        if let Some(h) = self.handle.take()
+            && h.join().is_err()
+        {
+            error!("silence-check worker panicked");
         }
     }
 }

@@ -5,6 +5,7 @@
 //! the correct sample rate in the new WAV header.
 
 use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -68,7 +69,7 @@ unsafe extern "C" {
 }
 
 /// RAII guard: registers a CoreAudio property listener on creation, removes on drop.
-pub struct SampleRateListener {
+pub(crate) struct SampleRateListener {
     device_id: AudioObjectID,
     /// Raw pointer to an `AtomicBool` (the inner value of an `Arc<AtomicBool>`,
     /// produced via `Arc::into_raw`). The listener owns exactly one strong
@@ -100,27 +101,32 @@ unsafe impl Send for SampleRateListener {}
 impl SampleRateListener {
     /// Register a CoreAudio listener for sample rate changes on the given device.
     /// Returns `None` if the device can't be found or registration fails.
-    pub fn new(device_name: Option<&str>, flag: Arc<AtomicBool>) -> Option<Self> {
+    pub(crate) fn new(device_name: Option<&str>, flag: Arc<AtomicBool>) -> Option<Self> {
         let device_id = find_device_id(device_name)?;
-        let client_data = Arc::into_raw(Arc::clone(&flag)) as *mut c_void;
+        // One strong count is handed to CoreAudio as the callback's client
+        // data; it is reclaimed only on the failure path below (see Drop for
+        // why the success path never reclaims it).
+        let client_data = Arc::into_raw(flag).cast_mut().cast::<c_void>();
 
+        // SAFETY: `device_id` came from CoreAudio, `rate_addr()` outlives the
+        // call, `on_rate_changed` matches `ListenerProc`, and `client_data`
+        // points at a live `AtomicBool` whose strong count we own.
         let status = unsafe {
             AudioObjectAddPropertyListener(device_id, &rate_addr(), on_rate_changed, client_data)
         };
 
         if status != 0 {
-            // Reclaim the Arc since registration failed
+            // SAFETY: registration failed, so CoreAudio never stored
+            // `client_data`; the strong count from `into_raw` above is still
+            // ours and is reclaimed exactly once here.
             unsafe {
-                drop(Arc::from_raw(client_data as *const AtomicBool));
+                drop(Arc::from_raw(client_data.cast_const().cast::<AtomicBool>()));
             }
-            warn!(
-                "Failed to register sample rate listener (status {})",
-                status
-            );
+            warn!("Failed to register sample rate listener (status {status})");
             return None;
         }
 
-        info!("Registered sample rate listener on device {}", device_id);
+        info!("Registered sample rate listener on device {device_id}");
         Some(Self {
             device_id,
             client_data,
@@ -130,6 +136,9 @@ impl SampleRateListener {
 
 impl Drop for SampleRateListener {
     fn drop(&mut self) {
+        // SAFETY: mirrors the `AudioObjectAddPropertyListener` call in `new`
+        // with the same device, selector, callback, and client data, so
+        // CoreAudio removes exactly the listener we registered.
         let status = unsafe {
             AudioObjectRemovePropertyListener(
                 self.device_id,
@@ -139,7 +148,7 @@ impl Drop for SampleRateListener {
             )
         };
         if status != 0 {
-            warn!("Failed to remove sample rate listener (status {})", status);
+            warn!("Failed to remove sample rate listener (status {status})");
         }
         // LEAKS BY DESIGN — see SAFETY block on `unsafe impl Send` above.
         // Apple's docs don't guarantee that callbacks already in flight on
@@ -150,11 +159,16 @@ impl Drop for SampleRateListener {
         // `sizeof(AtomicBool) = 1` byte per listener, bounded by the
         // recording lifecycle.
         //
-        // Reconstitute and forget rather than letting the raw pointer fall
-        // off the stack — the explicit `mem::forget` is grep-able and
+        // Reconstitute into a `ManuallyDrop` rather than letting the raw
+        // pointer fall off the stack — the explicit leak is grep-able and
         // makes the intent obvious to a future reader.
-        let arc_back = unsafe { Arc::from_raw(self.client_data as *const AtomicBool) };
-        std::mem::forget(arc_back);
+        //
+        // SAFETY: `client_data` came from `Arc::into_raw` in `new` and the
+        // strong count it carries has not been reclaimed (registration
+        // succeeded, so the failure path in `new` did not run).
+        let _leaked_on_purpose = ManuallyDrop::new(unsafe {
+            Arc::from_raw(self.client_data.cast_const().cast::<AtomicBool>())
+        });
     }
 }
 
@@ -174,7 +188,11 @@ unsafe extern "C" fn on_rate_changed(
     client_data: *mut c_void,
 ) -> i32 {
     if !client_data.is_null() {
-        let flag = unsafe { &*(client_data as *const AtomicBool) };
+        // SAFETY: non-null `client_data` is the pointer handed to
+        // `AudioObjectAddPropertyListener` in `new`, which points at an
+        // `AtomicBool` that is never freed (see Drop), so it is valid for
+        // the shared read here no matter which thread delivers the callback.
+        let flag = unsafe { &*client_data.cast_const().cast::<AtomicBool>() };
         // status flag only; reader at sample_rate_changed() loads Relaxed.
         flag.store(true, Ordering::Relaxed);
     }
@@ -199,6 +217,9 @@ fn default_input_device() -> Option<AudioObjectID> {
     let mut device_id: AudioObjectID = 0;
     let mut size = size_of::<AudioObjectID>() as u32;
 
+    // SAFETY: `addr` and `size` outlive the call; the out pointer refers to
+    // `device_id`, whose size matches the `size` we pass, so CoreAudio
+    // cannot write past it.
     let status = unsafe {
         AudioObjectGetPropertyData(
             SYSTEM_OBJECT,
@@ -220,7 +241,9 @@ fn device_by_name(name: &str) -> Option<AudioObjectID> {
     };
 
     let mut size: u32 = 0;
-    let status = unsafe {
+    // SAFETY: `addr` and `size` outlive the call; no data buffer is passed,
+    // only the size out-parameter.
+    let size_status = unsafe {
         AudioObjectGetPropertyDataSize(
             SYSTEM_OBJECT,
             &raw const addr,
@@ -229,13 +252,16 @@ fn device_by_name(name: &str) -> Option<AudioObjectID> {
             &raw mut size,
         )
     };
-    if status != 0 || size == 0 {
+    if size_status != 0 || size == 0 {
         return None;
     }
 
     let count = size as usize / size_of::<AudioObjectID>();
-    let mut ids = vec![0u32; count];
+    let mut ids = vec![0_u32; count];
 
+    // SAFETY: `ids` holds exactly `size` bytes of `AudioObjectID`s (the size
+    // CoreAudio reported above) and outlives the call, so the fill cannot
+    // overrun it.
     let status = unsafe {
         AudioObjectGetPropertyData(
             SYSTEM_OBJECT,
@@ -264,6 +290,8 @@ fn device_name(device_id: AudioObjectID) -> Option<String> {
     let mut name_ref: CFStringRef = std::ptr::null();
     let mut size = size_of::<CFStringRef>() as u32;
 
+    // SAFETY: the out pointer refers to `name_ref`, a pointer-sized slot
+    // matching `size`; CoreAudio writes at most that many bytes.
     let status = unsafe {
         AudioObjectGetPropertyData(
             device_id,

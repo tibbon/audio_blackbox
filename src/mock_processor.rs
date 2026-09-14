@@ -10,14 +10,26 @@ use std::path::PathBuf;
 
 /// MockAudioProcessor simulates audio processing for testing purposes
 /// without requiring actual audio hardware.
-#[allow(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is an independently observable piece of test-double state; folding them into an enum would obscure what a given test asserts"
+)]
+#[derive(Debug)]
 pub struct MockAudioProcessor {
+    /// Channel list captured from the last `process_audio` call.
     pub channels: Vec<usize>,
+    /// Output mode captured from the last `process_audio` call.
     pub output_mode: OutputMode,
+    /// Debug flag captured from the last `process_audio` call.
     pub debug: bool,
+    /// Set once `process_audio` has run; cleared again by `stop_recording`.
     pub audio_processed: bool,
+    /// Set once `finalize` has been called.
     pub finalized: bool,
+    /// Path of the main WAV file the mock writes.
     pub file_name: String,
+    /// Every file written by the last `process_audio` call, so tests can
+    /// assert on (or clean up) the outputs.
     pub created_files: Vec<String>,
     /// When true, creates files with very low amplitude samples that will be
     /// detected as silent by the silence detection algorithm. Used for testing
@@ -28,20 +40,37 @@ pub struct MockAudioProcessor {
 }
 
 impl MockAudioProcessor {
+    /// Build a mock that writes to `file_name` with every flag off.
     #[cfg(test)]
+    #[must_use]
     pub fn new(file_name: &str) -> Self {
-        MockAudioProcessor {
+        Self {
             channels: Vec::new(),
             output_mode: OutputMode::default(),
             debug: false,
             audio_processed: false,
             finalized: false,
-            file_name: file_name.to_string(),
+            file_name: file_name.to_owned(),
             created_files: Vec::new(),
             create_silent_file: false,
             should_fail_finalize: false,
         }
     }
+}
+
+/// Write 1000 frames of a deterministic ramp scaled by `amplitude`.
+///
+/// `amplitude == 0` yields an all-zero file so the silence-deletion tests
+/// have something the detector classifies as silent.
+fn write_mock_wav(path: &Path, spec: hound::WavSpec, amplitude: i32) -> hound::Result<()> {
+    let mut writer = hound::WavWriter::create(path, spec)?;
+    for i in 0..1000_i32 {
+        let sample = i.rem_euclid(100) * amplitude;
+        for _ in 0..spec.channels {
+            writer.write_sample(sample)?;
+        }
+    }
+    writer.finalize()
 }
 
 impl AudioProcessor for MockAudioProcessor {
@@ -50,7 +79,7 @@ impl AudioProcessor for MockAudioProcessor {
         channels: &[usize],
         output_mode: OutputMode,
         debug: bool,
-        _config: &crate::config::AppConfig,
+        _config: &AppConfig,
     ) -> Result<(), BlackboxError> {
         self.channels = channels.to_vec();
         self.output_mode = output_mode;
@@ -80,20 +109,8 @@ impl AudioProcessor for MockAudioProcessor {
             sample_format: hound::SampleFormat::Int,
         };
 
-        match hound::WavWriter::create(&self.file_name, spec) {
-            Ok(mut writer) => {
-                for i in 0..1000 {
-                    let sample = (i % 100) * amplitude;
-                    let _ = writer.write_sample(sample);
-                    if !matches!(output_mode, OutputMode::Split) {
-                        let _ = writer.write_sample(sample);
-                    }
-                }
-                let _ = writer.finalize();
-            }
-            Err(e) => {
-                error!("Error creating test WAV file: {}", e);
-            }
+        if let Err(e) = write_mock_wav(Path::new(&self.file_name), spec, amplitude) {
+            error!("Error creating test WAV file: {e}");
         }
 
         self.created_files.push(self.file_name.clone());
@@ -103,11 +120,11 @@ impl AudioProcessor for MockAudioProcessor {
             for &channel in channels {
                 let base_path = Path::new(&self.file_name);
                 let file_name = base_path.file_stem().and_then(|s| s.to_str()).map_or_else(
-                    || format!("{}-ch{}", self.file_name, channel),
+                    || format!("{}-ch{channel}", self.file_name),
                     |stem| {
                         base_path.extension().and_then(|s| s.to_str()).map_or_else(
-                            || format!("{}-ch{}", stem, channel),
-                            |ext| format!("{}-ch{}.{}", stem, channel, ext),
+                            || format!("{stem}-ch{channel}"),
+                            |ext| format!("{stem}-ch{channel}.{ext}"),
                         )
                     },
                 );
@@ -120,24 +137,13 @@ impl AudioProcessor for MockAudioProcessor {
                 self.created_files
                     .push(file_path.to_string_lossy().into_owned());
 
-                let spec = hound::WavSpec {
+                let channel_spec = hound::WavSpec {
                     channels: 1,
-                    sample_rate: 44100,
-                    bits_per_sample: 24,
-                    sample_format: hound::SampleFormat::Int,
+                    ..spec
                 };
 
-                match hound::WavWriter::create(&file_path, spec) {
-                    Ok(mut writer) => {
-                        for i in 0..1000 {
-                            let sample = (i % 100) * amplitude;
-                            let _ = writer.write_sample(sample);
-                        }
-                        let _ = writer.finalize();
-                    }
-                    Err(e) => {
-                        error!("Error creating test WAV file: {}", e);
-                    }
+                if let Err(e) = write_mock_wav(&file_path, channel_spec, amplitude) {
+                    error!("Error creating test WAV file: {e}");
                 }
             }
             debug!(
@@ -162,7 +168,7 @@ impl AudioProcessor for MockAudioProcessor {
         self.finalized = true;
 
         if self.should_fail_finalize {
-            return Err(BlackboxError::Wav("Simulated finalize failure".to_string()));
+            return Err(BlackboxError::Wav("Simulated finalize failure".to_owned()));
         }
 
         // Check if we should apply the silence threshold using AppConfig
@@ -176,10 +182,10 @@ impl AudioProcessor for MockAudioProcessor {
             let files_to_delete = self.created_files.clone();
             for file_path in &files_to_delete {
                 if let Err(e) = fs::remove_file(file_path) {
-                    error!("Failed to delete silent file in test: {}", e);
+                    error!("Failed to delete silent file in test: {e}");
                     return Err(BlackboxError::Io(e));
                 }
-                debug!("Deleted silent test file: {}", file_path);
+                debug!("Deleted silent test file: {file_path}");
             }
         }
 

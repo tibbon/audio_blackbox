@@ -58,7 +58,7 @@ fn test_ring_buffer_overflow_counted() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -70,7 +70,7 @@ fn test_ring_buffer_overflow_counted() {
 
         let rotation_clone = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Fill the ring buffer past capacity by calling the SAME helper the
@@ -121,7 +121,7 @@ fn test_writer_thread_processes_all_samples() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -133,7 +133,7 @@ fn test_writer_thread_processes_all_samples() {
 
         let rotation_clone = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Push 500 samples
@@ -182,7 +182,7 @@ fn test_writer_thread_rotation() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -201,7 +201,7 @@ fn test_writer_thread_rotation() {
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Push first batch of samples
@@ -247,8 +247,7 @@ fn test_writer_thread_rotation() {
         assert_eq!(
             files.len(),
             2,
-            "Expected 2 WAV files after rotation, found: {:?}",
-            files
+            "Expected 2 WAV files after rotation, found: {files:?}"
         );
     });
 }
@@ -277,7 +276,7 @@ fn test_writer_thread_shutdown_drains() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -289,7 +288,7 @@ fn test_writer_thread_shutdown_drains() {
 
         let rotation_clone = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Push samples and immediately shutdown (without sleeping)
@@ -345,7 +344,7 @@ fn test_writer_thread_silence_on_rotation() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -359,7 +358,7 @@ fn test_writer_thread_silence_on_rotation() {
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
         let handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Push silent data
@@ -402,8 +401,7 @@ fn test_writer_thread_silence_on_rotation() {
         let files = wav_files_in(temp_dir.path());
         assert!(
             files.is_empty(),
-            "Silent files should have been deleted, found: {:?}",
-            files
+            "Silent files should have been deleted, found: {files:?}"
         );
     });
 }
@@ -426,26 +424,26 @@ fn test_check_and_delete_silent_files_deletes_silent() {
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer = hound::WavWriter::create(&silent_path, spec).unwrap();
+        let mut silent_writer = hound::WavWriter::create(&silent_path, spec).unwrap();
         for _ in 0..1000 {
-            writer.write_sample(0_i16).unwrap();
+            silent_writer.write_sample(0_i16).unwrap();
         }
-        writer.finalize().unwrap();
+        silent_writer.finalize().unwrap();
         assert!(silent_path.exists());
 
         // Create a non-silent WAV file
         let loud_path = dir.join("loud.wav");
-        let mut writer = hound::WavWriter::create(&loud_path, spec).unwrap();
+        let mut loud_writer = hound::WavWriter::create(&loud_path, spec).unwrap();
         for i in 0..1000 {
             let sample = ((i as f32 / 10.0).sin() * 16000.0) as i16;
-            writer.write_sample(sample).unwrap();
+            loud_writer.write_sample(sample).unwrap();
         }
-        writer.finalize().unwrap();
+        loud_writer.finalize().unwrap();
         assert!(loud_path.exists());
 
         let files = vec![
-            silent_path.to_str().unwrap().to_string(),
-            loud_path.to_str().unwrap().to_string(),
+            silent_path.to_str().unwrap().to_owned(),
+            loud_path.to_str().unwrap().to_owned(),
         ];
 
         // threshold must be > 0 (0 disables silence detection in is_silent)
@@ -461,7 +459,7 @@ fn test_check_and_delete_silent_files_deletes_silent() {
 fn test_check_and_delete_silent_files_skips_missing() {
     temp_env::with_vars(default_test_env(), || {
         // Passing a nonexistent file path should not panic
-        let files = vec!["/tmp/nonexistent_test_file_12345.wav".to_string()];
+        let files = vec!["/tmp/nonexistent_test_file_12345.wav".to_owned()];
         check_and_delete_silent_files(&files, 0.01);
         // Should complete without panic — error is just logged
     });
@@ -510,7 +508,7 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -529,7 +527,7 @@ fn test_rotation_silence_thread_does_not_block_writer() {
         let rotation_clone = Arc::clone(&rotation_needed);
         let rotation_signal = Arc::clone(&rotation_needed);
         let writer_handle = std::thread::spawn(move || {
-            writer_thread_main(consumer, rotation_clone, command_rx, state);
+            writer_thread_main(consumer, &rotation_clone, &command_rx, state);
         });
 
         // Producer thread: floods 64-sample chunks into the tiny ring.
@@ -555,9 +553,14 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             }
         });
 
-        // Let the system reach a steady state under flooding.
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        let pre_rotation_consumed = samples_counter.load(Ordering::Relaxed);
+        // Take the baseline only once the writer is demonstrably draining
+        // under flood (a full ring's worth consumed), not after an
+        // arbitrary nap.
+        let pre_rotation_consumed = crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            ring_size as u64,
+            std::time::Duration::from_secs(1),
+        );
 
         // Signal rotation while the producer is still flooding.
         clock.advance();
@@ -573,9 +576,13 @@ fn test_rotation_silence_thread_does_not_block_writer() {
             std::time::Duration::from_millis(300),
         );
 
-        // Measure forward progress during the post-rotation window.
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        let post_rotation_consumed = samples_counter.load(Ordering::Relaxed);
+        // Forward progress past the baseline within a bounded window; a
+        // writer stalled on a synchronous silence check never gets here.
+        let post_rotation_consumed = crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            pre_rotation_consumed + 1,
+            std::time::Duration::from_millis(300),
+        );
 
         producer_should_stop.store(true, Ordering::Relaxed);
         producer_handle.join().expect("producer thread panicked");
@@ -623,7 +630,7 @@ fn test_new_fails_when_disk_space_low() {
             999_000_000, // 999 TB in MB
             Arc::clone(&disk_space_low),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         );
@@ -663,7 +670,7 @@ fn test_new_succeeds_when_disk_check_disabled() {
             0,
             Arc::clone(&disk_space_low),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         );
@@ -699,7 +706,7 @@ fn test_writer_thread_disk_space_check_sets_flag() {
             0, // Disable in constructor — we'll set it manually after creation
             Arc::clone(&disk_space_low),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -741,7 +748,7 @@ fn test_disk_stopped_skips_writes() {
             0,
             Arc::clone(&disk_space_low),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -750,8 +757,8 @@ fn test_disk_stopped_skips_writes() {
 
         // List all .wav files including the in-progress `.recording.wav`
         // tmp files (which `wav_files_in` filters out).
-        let all_wav = |dir: &std::path::Path| -> Vec<std::path::PathBuf> {
-            std::fs::read_dir(dir)
+        let all_wav = |root: &std::path::Path| -> Vec<std::path::PathBuf> {
+            std::fs::read_dir(root)
                 .unwrap()
                 .filter_map(Result::ok)
                 .map(|e| e.path())
@@ -840,7 +847,7 @@ fn read_available_handles_ring_wraparound() {
             0,
             Arc::new(AtomicBool::new(false)),
             24,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )
@@ -851,16 +858,16 @@ fn read_available_handles_ring_wraparound() {
 
         // Fill 6 and drain them so the read cursor sits near the buffer end.
         let first: Vec<f32> = (1..=6).map(|i| i as f32 / 100.0).collect();
-        let chunk = producer.write_chunk_uninit(first.len()).unwrap();
-        chunk.fill_from_iter(first.iter().copied());
+        let first_chunk = producer.write_chunk_uninit(first.len()).unwrap();
+        first_chunk.fill_from_iter(first.iter().copied());
         assert_eq!(read_available(&mut consumer, &mut state), 6);
 
         // Push 5 more: writes the last 2 slots then wraps to the front, so the
         // readable region spans the buffer boundary → read_chunk yields two
         // non-empty slices.
         let second: Vec<f32> = (7..=11).map(|i| i as f32 / 100.0).collect();
-        let chunk = producer.write_chunk_uninit(second.len()).unwrap();
-        chunk.fill_from_iter(second.iter().copied());
+        let second_chunk = producer.write_chunk_uninit(second.len()).unwrap();
+        second_chunk.fill_from_iter(second.iter().copied());
         assert_eq!(read_available(&mut consumer, &mut state), 5);
 
         state.finalize_all().unwrap();

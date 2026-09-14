@@ -6,10 +6,11 @@ use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use sysinfo::System;
 
 /// Struct to track performance metrics over time
+#[derive(Debug)]
 pub struct PerformanceTracker {
     enabled: bool,
     log_path: String,
@@ -18,7 +19,7 @@ pub struct PerformanceTracker {
     history_length: usize,
     interval_secs: u64,
     /// JoinHandle for the worker thread spawned in `start`. Wrapped in
-    /// a Mutex<Option> because `stop` and `Drop` take `&self` and need
+    /// a `Mutex<Option>` because `stop` and `Drop` take `&self` and need
     /// to consume the handle (DOLL-143). Mirrors `SilenceCheckWorker`'s
     /// join-on-drop pattern in `writer_thread.rs`.
     handle: Mutex<Option<thread::JoinHandle<()>>>,
@@ -27,18 +28,23 @@ pub struct PerformanceTracker {
 /// Struct to store a single performance snapshot
 #[derive(Clone, Debug)]
 pub struct PerformanceMetrics {
+    /// Wall-clock time the sample was taken.
     pub timestamp: DateTime<Local>,
+    /// Process CPU usage in percent of one core, as reported by sysinfo.
     pub cpu_usage: f32,
+    /// Resident memory in bytes.
     pub memory_usage: u64,
+    /// Resident memory as a percentage of total system memory.
     pub memory_percent: f32,
 }
 
 impl PerformanceTracker {
     /// Create a new performance tracker
+    #[must_use]
     pub fn new(enabled: bool, log_path: &str, history_length: usize, interval_secs: u64) -> Self {
-        PerformanceTracker {
+        Self {
             enabled,
-            log_path: log_path.to_string(),
+            log_path: log_path.to_owned(),
             metrics: Arc::new(Mutex::new(VecDeque::with_capacity(history_length))),
             running: Arc::new(AtomicBool::new(false)),
             history_length,
@@ -81,7 +87,7 @@ impl PerformanceTracker {
             );
 
             if let Err(e) = write_to_log(&log_path, &header) {
-                error!("Failed to initialize performance log: {}", e);
+                error!("Failed to initialize performance log: {e}");
             }
 
             // Monitoring loop
@@ -122,10 +128,14 @@ impl PerformanceTracker {
                     );
 
                     if let Err(e) = write_to_log(&log_path, &log_line) {
-                        error!("Failed to write to performance log: {}", e);
+                        error!("Failed to write to performance log: {e}");
                     }
                 }
 
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "sampling interval of the perf-log thread; `running` is polled each tick and there is nothing else to wait on"
+                )]
                 thread::sleep(Duration::from_secs(interval_secs));
             }
         });
@@ -157,8 +167,10 @@ impl PerformanceTracker {
         // `stop` is called twice, the second call sees None and is a
         // no-op (matches AtomicBool::store idempotence).
         let handle = self.handle.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.join();
+        if let Some(h) = handle
+            && h.join().is_err()
+        {
+            error!("performance tracker thread panicked");
         }
     }
 
@@ -171,8 +183,7 @@ impl PerformanceTracker {
         // Match the DOLL-115 `.lock().ok()` convention — poisoned-lock
         // means a tracker thread panicked; surface as None rather than
         // re-panicking on the caller's thread.
-        let metrics = self.metrics.lock().ok()?;
-        metrics.back().cloned()
+        self.metrics.lock().ok()?.back().cloned()
     }
 
     /// Get the average performance metrics over the tracked history
@@ -200,7 +211,7 @@ impl PerformanceTracker {
         Some(PerformanceMetrics {
             timestamp: Local::now(),
             cpu_usage: cpu_sum / len,
-            memory_usage: (memory_sum as f32 / len) as u64,
+            memory_usage: memory_sum / u64::try_from(metrics.len()).unwrap_or(u64::MAX),
             memory_percent: memory_percent_sum / len,
         })
     }
@@ -228,12 +239,12 @@ fn write_to_log(path: &str, content: &str) -> std::io::Result<()> {
 }
 
 /// Measures elapsed time for a function and returns the duration
-#[allow(dead_code)] // only consumed by tests; signature kept stable for future use
-pub fn measure_execution_time<F, T>(f: F) -> (T, Duration)
+#[cfg(test)]
+pub(crate) fn measure_execution_time<F, T>(f: F) -> (T, Duration)
 where
     F: FnOnce() -> T,
 {
-    let start = Instant::now();
+    let start = std::time::Instant::now();
     let result = f();
     let duration = start.elapsed();
     (result, duration)
@@ -241,6 +252,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "these tests let wall-clock elapse on purpose: the tracker samples on its own thread at a fixed interval, so there is no state to rendezvous on"
+    )]
     use super::*;
     use std::thread;
     use std::time::Duration;
@@ -357,7 +372,7 @@ mod tests {
 
         // Write a test header directly to the log
         let header = "timestamp,cpu_usage,memory_usage_bytes,memory_percent\n";
-        let _ = write_to_log(&log_path, header);
+        write_to_log(&log_path, header).expect("header write should succeed");
 
         // Start tracker
         tracker.start();
@@ -371,10 +386,7 @@ mod tests {
         // Verify that the file exists - we don't check content as it's environment dependent
         let file_exists = std::path::Path::new(&log_path).exists();
         if !file_exists {
-            println!(
-                "Warning: performance log file wasn't created at {}",
-                log_path
-            );
+            println!("Warning: performance log file wasn't created at {log_path}");
         }
     }
 
@@ -389,8 +401,11 @@ mod tests {
 
         thread::sleep(Duration::from_secs(4));
 
-        let metrics = tracker.metrics.lock().unwrap();
-        assert!(metrics.len() <= history_length);
+        let history_len = tracker.metrics.lock().unwrap().len();
+        assert!(
+            history_len <= history_length,
+            "history should be capped at {history_length}, got {history_len}"
+        );
 
         tracker.stop();
     }

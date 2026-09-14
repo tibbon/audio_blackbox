@@ -33,7 +33,9 @@ pub enum BlackboxError {
     /// (cpal device-config, build-stream, play-stream, etc.).
     #[error("Audio device error: {context}")]
     AudioDeviceSource {
+        /// What was being attempted when the device layer failed.
         context: String,
+        /// The underlying cpal (or other device-layer) error.
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -69,7 +71,9 @@ pub enum BlackboxError {
     /// concrete WAV-related error).
     #[error("WAV error: {context}")]
     WavSource {
+        /// What was being attempted when the WAV layer failed.
         context: String,
+        /// The underlying `hound::Error` (or other WAV-layer error).
         #[source]
         source: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
@@ -78,7 +82,12 @@ pub enum BlackboxError {
     /// `min_disk_space_mb` precondition fails. Distinct from `Io` so the UI
     /// can surface a "free up space" message rather than a generic IO error.
     #[error("Insufficient disk space: {available_mb} MB available, {required_mb} MB required")]
-    InsufficientDiskSpace { available_mb: u64, required_mb: u64 },
+    InsufficientDiskSpace {
+        /// Free space on the output volume, in MB.
+        available_mb: u64,
+        /// The configured `min_disk_space_mb` floor.
+        required_mb: u64,
+    },
 }
 
 impl BlackboxError {
@@ -89,6 +98,7 @@ impl BlackboxError {
     /// `std::error::Error::source()`. The FFI layer formats errors with this
     /// helper so `blackbox_get_last_error` (the Swift UI's only user-facing
     /// diagnostic) carries the actual cause, not just the context (DOLL-457).
+    #[must_use]
     pub fn full_chain(&self) -> String {
         use std::error::Error;
         let mut out = self.to_string();

@@ -101,15 +101,15 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
-        AppConfig {
-            audio_channels: Some(DEFAULT_CHANNELS.to_string()),
+        Self {
+            audio_channels: Some(DEFAULT_CHANNELS.to_owned()),
             debug: Some(DEFAULT_DEBUG),
             duration: Some(DEFAULT_DURATION),
-            output_mode: Some(DEFAULT_OUTPUT_MODE.to_string()),
+            output_mode: Some(DEFAULT_OUTPUT_MODE.to_owned()),
             silence_threshold: Some(DEFAULT_SILENCE_THRESHOLD),
             continuous_mode: Some(DEFAULT_CONTINUOUS_MODE),
             recording_cadence: Some(DEFAULT_RECORDING_CADENCE),
-            output_dir: Some(DEFAULT_OUTPUT_DIR.to_string()),
+            output_dir: Some(DEFAULT_OUTPUT_DIR.to_owned()),
             performance_logging: Some(DEFAULT_PERFORMANCE_LOGGING),
             input_device: None,
             min_disk_space_mb: Some(DEFAULT_MIN_DISK_SPACE_MB),
@@ -122,8 +122,9 @@ impl Default for AppConfig {
 
 impl AppConfig {
     /// Create a new configuration with default values
+    #[must_use]
     pub fn new() -> Self {
-        AppConfig::default()
+        Self::default()
     }
 
     /// Find the configuration file path
@@ -171,24 +172,25 @@ impl AppConfig {
     }
 
     /// Load configuration from file, if available
+    #[must_use]
     pub fn load() -> Self {
-        let mut config = AppConfig::default();
+        let mut config = Self::default();
 
         // Try to find and load the configuration file
         if let Some(config_path) = Self::find_config_file() {
             match fs::read_to_string(&config_path) {
-                Ok(content) => match toml::from_str::<AppConfig>(&content) {
+                Ok(content) => match toml::from_str::<Self>(&content) {
                     Ok(file_config) => {
                         info!("Loaded configuration from {}", config_path.display());
                         // Merge with defaults
                         config.merge(file_config);
                     }
                     Err(e) => {
-                        error!("Error parsing config file: {}", e);
+                        error!("Error parsing config file: {e}");
                     }
                 },
                 Err(e) => {
-                    error!("Error reading config file: {}", e);
+                    error!("Error reading config file: {e}");
                 }
             }
         }
@@ -200,7 +202,7 @@ impl AppConfig {
     }
 
     /// Merge another configuration into this one, only taking values that are Some
-    pub fn merge(&mut self, other: AppConfig) {
+    pub fn merge(&mut self, other: Self) {
         if other.audio_channels.is_some() {
             self.audio_channels = other.audio_channels;
         }
@@ -257,30 +259,26 @@ impl AppConfig {
     /// Apply environment variables to override configuration
     fn apply_env_vars(&mut self) {
         // Try both prefixed and unprefixed environment variables
-        let channels = std::env::var("BLACKBOX_AUDIO_CHANNELS")
+        let channels = env::var("BLACKBOX_AUDIO_CHANNELS")
             .ok()
-            .or_else(|| std::env::var("AUDIO_CHANNELS").ok());
+            .or_else(|| env::var("AUDIO_CHANNELS").ok());
         if let Some(val) = channels {
             self.audio_channels = Some(val);
         }
 
-        let debug = std::env::var("BLACKBOX_DEBUG")
+        let debug = env::var("BLACKBOX_DEBUG")
             .ok()
             .and_then(|s| Self::parse_bool(&s))
-            .or_else(|| {
-                std::env::var("DEBUG")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-            });
+            .or_else(|| env::var("DEBUG").ok().and_then(|s| Self::parse_bool(&s)));
         if let Some(val) = debug {
             self.debug = Some(val);
         }
 
-        let duration = std::env::var("BLACKBOX_DURATION")
+        let duration = env::var("BLACKBOX_DURATION")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("RECORD_DURATION")
+                env::var("RECORD_DURATION")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -288,18 +286,18 @@ impl AppConfig {
             self.duration = Some(val);
         }
 
-        let output_mode = std::env::var("BLACKBOX_OUTPUT_MODE")
+        let output_mode = env::var("BLACKBOX_OUTPUT_MODE")
             .ok()
-            .or_else(|| std::env::var("OUTPUT_MODE").ok());
+            .or_else(|| env::var("OUTPUT_MODE").ok());
         if let Some(val) = output_mode {
             self.output_mode = Some(val);
         }
 
-        let threshold = std::env::var("BLACKBOX_SILENCE_THRESHOLD")
+        let threshold = env::var("BLACKBOX_SILENCE_THRESHOLD")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("SILENCE_THRESHOLD")
+                env::var("SILENCE_THRESHOLD")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -307,11 +305,11 @@ impl AppConfig {
             self.silence_threshold = Some(val);
         }
 
-        let continuous = std::env::var("BLACKBOX_CONTINUOUS_MODE")
+        let continuous = env::var("BLACKBOX_CONTINUOUS_MODE")
             .ok()
             .and_then(|s| Self::parse_bool(&s))
             .or_else(|| {
-                std::env::var("CONTINUOUS_MODE")
+                env::var("CONTINUOUS_MODE")
                     .ok()
                     .and_then(|s| Self::parse_bool(&s))
             });
@@ -319,11 +317,11 @@ impl AppConfig {
             self.continuous_mode = Some(val);
         }
 
-        let cadence = std::env::var("BLACKBOX_RECORDING_CADENCE")
+        let cadence = env::var("BLACKBOX_RECORDING_CADENCE")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("RECORDING_CADENCE")
+                env::var("RECORDING_CADENCE")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -331,18 +329,18 @@ impl AppConfig {
             self.recording_cadence = Some(val);
         }
 
-        let output_dir = std::env::var("BLACKBOX_OUTPUT_DIR")
+        let output_dir = env::var("BLACKBOX_OUTPUT_DIR")
             .ok()
-            .or_else(|| std::env::var("OUTPUT_DIR").ok());
+            .or_else(|| env::var("OUTPUT_DIR").ok());
         if let Some(val) = output_dir {
             self.output_dir = Some(val);
         }
 
-        let perf_logging = std::env::var("BLACKBOX_PERFORMANCE_LOGGING")
+        let perf_logging = env::var("BLACKBOX_PERFORMANCE_LOGGING")
             .ok()
             .and_then(|s| Self::parse_bool(&s))
             .or_else(|| {
-                std::env::var("PERFORMANCE_LOGGING")
+                env::var("PERFORMANCE_LOGGING")
                     .ok()
                     .and_then(|s| Self::parse_bool(&s))
             });
@@ -350,18 +348,18 @@ impl AppConfig {
             self.performance_logging = Some(val);
         }
 
-        let input_device = std::env::var("BLACKBOX_INPUT_DEVICE")
+        let input_device = env::var("BLACKBOX_INPUT_DEVICE")
             .ok()
-            .or_else(|| std::env::var("INPUT_DEVICE").ok());
+            .or_else(|| env::var("INPUT_DEVICE").ok());
         if let Some(val) = input_device {
             self.input_device = Some(val);
         }
 
-        let min_disk = std::env::var("BLACKBOX_MIN_DISK_SPACE_MB")
+        let min_disk = env::var("BLACKBOX_MIN_DISK_SPACE_MB")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("MIN_DISK_SPACE_MB")
+                env::var("MIN_DISK_SPACE_MB")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -369,11 +367,11 @@ impl AppConfig {
             self.min_disk_space_mb = Some(val);
         }
 
-        let bits = std::env::var("BLACKBOX_BITS_PER_SAMPLE")
+        let bits = env::var("BLACKBOX_BITS_PER_SAMPLE")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("BITS_PER_SAMPLE")
+                env::var("BITS_PER_SAMPLE")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -381,11 +379,11 @@ impl AppConfig {
             self.bits_per_sample = Some(val);
         }
 
-        let gate_enabled = std::env::var("BLACKBOX_SILENCE_GATE_ENABLED")
+        let gate_enabled = env::var("BLACKBOX_SILENCE_GATE_ENABLED")
             .ok()
             .and_then(|s| Self::parse_bool(&s))
             .or_else(|| {
-                std::env::var("SILENCE_GATE_ENABLED")
+                env::var("SILENCE_GATE_ENABLED")
                     .ok()
                     .and_then(|s| Self::parse_bool(&s))
             });
@@ -393,11 +391,11 @@ impl AppConfig {
             self.silence_gate_enabled = Some(val);
         }
 
-        let gate_timeout = std::env::var("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS")
+        let gate_timeout = env::var("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
             .or_else(|| {
-                std::env::var("SILENCE_GATE_TIMEOUT_SECS")
+                env::var("SILENCE_GATE_TIMEOUT_SECS")
                     .ok()
                     .and_then(|s| s.parse().ok())
             });
@@ -407,8 +405,9 @@ impl AppConfig {
     }
 
     /// Generate a sample configuration file with comments
+    #[must_use]
     pub fn generate_sample_config() -> String {
-        let default_config = AppConfig::default();
+        let default_config = Self::default();
 
         // Create a string with comments and the default values
         let sample = format!(
@@ -417,82 +416,70 @@ impl AppConfig {
 # Values set here can be overridden by environment variables.
 
 # Audio channels to record (comma-separated list or ranges like 0-2)
-# Default: {}
+# Default: {DEFAULT_CHANNELS}
 audio_channels = "{}"
 
 # Enable debug output (true/false)
-# Default: {}
+# Default: {DEFAULT_DEBUG}
 debug = {}
 
 # Recording duration in seconds (0 for unlimited)
-# Default: {}
+# Default: {DEFAULT_DURATION}
 duration = {}
 
 # Output mode: "single" (one file), "split" (one file per channel)
-# Default: {}
+# Default: {DEFAULT_OUTPUT_MODE}
 output_mode = "{}"
 
 # Silence threshold: normalized amplitude 0.0-1.0 (0.01 = 1% of full scale).
 # 0 disables silence detection. Out-of-range values fall back to the default.
-# Default: {}
+# Default: {DEFAULT_SILENCE_THRESHOLD}
 silence_threshold = {}
 
 # Continuous recording mode (true/false)
-# Default: {}
+# Default: {DEFAULT_CONTINUOUS_MODE}
 continuous_mode = {}
 
 # Recording cadence in seconds (how often to rotate files in continuous mode).
 # Must be >= 1; 0 falls back to the default.
-# Default: {}
+# Default: {DEFAULT_RECORDING_CADENCE}
 recording_cadence = {}
 
 # Output directory for recordings
-# Default: {}
+# Default: {DEFAULT_OUTPUT_DIR}
 output_dir = "{}"
 
 # Enable performance logging (true/false)
-# Default: {}
+# Default: {DEFAULT_PERFORMANCE_LOGGING}
 performance_logging = {}
 
 # Bits per sample for WAV output (16, 24, or 32)
-# Default: {}
+# Default: {DEFAULT_BITS_PER_SAMPLE}
 bits_per_sample = {}
 
 # Silence gate: auto-split on silence (finalize the current file and open a
 # new one on next signal) (true/false)
-# Default: {}
+# Default: {DEFAULT_SILENCE_GATE_ENABLED}
 silence_gate_enabled = {}
 
 # Seconds of silence before the gate closes and finalizes files
-# Default: {}
+# Default: {DEFAULT_SILENCE_GATE_TIMEOUT_SECS}
 silence_gate_timeout_secs = {}
 
 # Input device name (leave commented out for system default)
 # input_device = "MacBook Pro Microphone"
 "#,
-            DEFAULT_CHANNELS,
             default_config.get_audio_channels(),
-            DEFAULT_DEBUG,
             default_config.get_debug(),
-            DEFAULT_DURATION,
             default_config.get_duration(),
-            DEFAULT_OUTPUT_MODE,
             default_config.get_output_mode(),
-            DEFAULT_SILENCE_THRESHOLD,
             default_config.get_silence_threshold(),
-            DEFAULT_CONTINUOUS_MODE,
             default_config.get_continuous_mode(),
-            DEFAULT_RECORDING_CADENCE,
             default_config.get_recording_cadence(),
-            DEFAULT_OUTPUT_DIR,
             default_config.get_output_dir(),
-            DEFAULT_PERFORMANCE_LOGGING,
             default_config.get_performance_logging(),
-            DEFAULT_BITS_PER_SAMPLE,
             default_config.get_bits_per_sample(),
-            DEFAULT_SILENCE_GATE_ENABLED,
             default_config.get_silence_gate_enabled(),
-            DEFAULT_SILENCE_GATE_TIMEOUT_SECS,
             default_config.get_silence_gate_timeout_secs()
         );
 
@@ -521,24 +508,33 @@ silence_gate_timeout_secs = {}
     // Accessor methods — env vars are already resolved by apply_env_vars() during load().
     // These just unwrap the Option with a default fallback.
 
+    /// Channel spec in comma + range form (`"0,2-4,7"`, 0-based); `BLACKBOX_AUDIO_CHANNELS`.
+    #[must_use]
     pub fn get_audio_channels(&self) -> String {
         self.audio_channels
             .clone()
-            .unwrap_or_else(|| DEFAULT_CHANNELS.to_string())
+            .unwrap_or_else(|| DEFAULT_CHANNELS.to_owned())
     }
 
+    /// Whether verbose debug logging is on; `BLACKBOX_DEBUG`.
+    #[must_use]
     pub fn get_debug(&self) -> bool {
         self.debug.unwrap_or(DEFAULT_DEBUG)
     }
 
+    /// Recording length in seconds, `0` = unlimited; `BLACKBOX_DURATION`.
+    #[must_use]
     pub fn get_duration(&self) -> u64 {
         self.duration.unwrap_or(DEFAULT_DURATION)
     }
 
+    /// Raw output mode string, `"single"` or `"split"`; `BLACKBOX_OUTPUT_MODE`.
+    /// See [`output_mode_parsed`](Self::output_mode_parsed) for the typed form.
+    #[must_use]
     pub fn get_output_mode(&self) -> String {
         self.output_mode
             .clone()
-            .unwrap_or_else(|| DEFAULT_OUTPUT_MODE.to_string())
+            .unwrap_or_else(|| DEFAULT_OUTPUT_MODE.to_owned())
     }
 
     /// Parsed output mode. Falls back to the default if the configured value
@@ -550,6 +546,10 @@ silence_gate_timeout_secs = {}
             .unwrap_or_default()
     }
 
+    /// Normalized amplitude (0.0–1.0) below which a recording counts as silent,
+    /// `0` disables the check; `BLACKBOX_SILENCE_THRESHOLD`. Out-of-range values
+    /// fall back to the default.
+    #[must_use]
     pub fn get_silence_threshold(&self) -> f32 {
         // Reject NaN, ±Inf, and negatives — any of those break the gate's
         // `max_peak > threshold` comparison or produce nonsensical
@@ -566,10 +566,15 @@ silence_gate_timeout_secs = {}
         }
     }
 
+    /// Whether to keep rotating files indefinitely; `BLACKBOX_CONTINUOUS_MODE`.
+    #[must_use]
     pub fn get_continuous_mode(&self) -> bool {
         self.continuous_mode.unwrap_or(DEFAULT_CONTINUOUS_MODE)
     }
 
+    /// Seconds between file rotations in continuous mode;
+    /// `BLACKBOX_RECORDING_CADENCE`. `0` falls back to the default.
+    #[must_use]
     pub fn get_recording_cadence(&self) -> u64 {
         // Reject 0 — the rotation threshold is `sample_rate * channels *
         // cadence`, so a zero cadence makes the RT callback's counter cross
@@ -582,11 +587,14 @@ silence_gate_timeout_secs = {}
         }
     }
 
+    /// Directory recordings are written to; `BLACKBOX_OUTPUT_DIR`. Paths with
+    /// `..` components fall back to the default.
+    #[must_use]
     pub fn get_output_dir(&self) -> String {
         let dir = self
             .output_dir
             .clone()
-            .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_string());
+            .unwrap_or_else(|| DEFAULT_OUTPUT_DIR.to_owned());
 
         // Reject paths containing ".." components to prevent path traversal
         let has_parent_traversal = Path::new(&dir)
@@ -594,29 +602,37 @@ silence_gate_timeout_secs = {}
             .any(|c| matches!(c, Component::ParentDir));
 
         if has_parent_traversal {
-            warn!(
-                "Output directory '{}' contains path traversal components, using default",
-                dir
-            );
-            return DEFAULT_OUTPUT_DIR.to_string();
+            warn!("Output directory '{dir}' contains path traversal components, using default");
+            return DEFAULT_OUTPUT_DIR.to_owned();
         }
 
         dir
     }
 
+    /// Whether to emit per-operation timing logs (needs the `benchmarking`
+    /// feature); `BLACKBOX_PERFORMANCE_LOGGING`.
+    #[must_use]
     pub fn get_performance_logging(&self) -> bool {
         self.performance_logging
             .unwrap_or(DEFAULT_PERFORMANCE_LOGGING)
     }
 
+    /// cpal input device name, `None` = system default; `BLACKBOX_INPUT_DEVICE`.
+    #[must_use]
     pub fn get_input_device(&self) -> Option<String> {
         self.input_device.clone()
     }
 
+    /// Free-space floor in MB below which recording refuses to start, `0`
+    /// disables the check; `BLACKBOX_MIN_DISK_SPACE_MB`.
+    #[must_use]
     pub fn get_min_disk_space_mb(&self) -> u64 {
         self.min_disk_space_mb.unwrap_or(DEFAULT_MIN_DISK_SPACE_MB)
     }
 
+    /// WAV bit depth, one of 16 / 24 / 32; `BLACKBOX_BITS_PER_SAMPLE`. Other
+    /// values fall back to the default.
+    #[must_use]
     pub fn get_bits_per_sample(&self) -> u16 {
         match self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE) {
             16 | 24 | 32 => self.bits_per_sample.unwrap_or(DEFAULT_BITS_PER_SAMPLE),
@@ -624,11 +640,16 @@ silence_gate_timeout_secs = {}
         }
     }
 
+    /// Whether the silence gate closes WAV files while input is silent;
+    /// `BLACKBOX_SILENCE_GATE_ENABLED`.
+    #[must_use]
     pub fn get_silence_gate_enabled(&self) -> bool {
         self.silence_gate_enabled
             .unwrap_or(DEFAULT_SILENCE_GATE_ENABLED)
     }
 
+    /// Seconds of silence before the gate closes; `BLACKBOX_SILENCE_GATE_TIMEOUT_SECS`.
+    #[must_use]
     pub fn get_silence_gate_timeout_secs(&self) -> u64 {
         self.silence_gate_timeout_secs
             .unwrap_or(DEFAULT_SILENCE_GATE_TIMEOUT_SECS)
@@ -643,7 +664,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert_eq!(config.audio_channels, Some(DEFAULT_CHANNELS.to_string()));
+        assert_eq!(config.audio_channels, Some(DEFAULT_CHANNELS.to_owned()));
         assert_eq!(config.debug, Some(DEFAULT_DEBUG));
     }
 
@@ -653,7 +674,7 @@ mod tests {
             vec![("AUDIO_CHANNELS", Some("0,2,3")), ("DEBUG", Some("true"))],
             || {
                 let mut config = AppConfig {
-                    audio_channels: Some(DEFAULT_CHANNELS.to_string()),
+                    audio_channels: Some(DEFAULT_CHANNELS.to_owned()),
                     debug: Some(false),
                     duration: None,
                     output_mode: None,
@@ -673,7 +694,7 @@ mod tests {
                 config.apply_env_vars();
 
                 // Verify environment variables were applied correctly
-                assert_eq!(config.audio_channels, Some("0,2,3".to_string()));
+                assert_eq!(config.audio_channels, Some("0,2,3".to_owned()));
                 assert!(config.get_debug());
 
                 // Test the getter methods
@@ -805,43 +826,43 @@ mod tests {
 
     #[test]
     fn test_output_dir_rejects_path_traversal() {
-        let config = AppConfig {
-            output_dir: Some("../../../etc/passwd".to_string()),
+        let leading_traversal = AppConfig {
+            output_dir: Some("../../../etc/passwd".to_owned()),
             ..AppConfig::default()
         };
-        assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
+        assert_eq!(leading_traversal.get_output_dir(), DEFAULT_OUTPUT_DIR);
 
-        let config = AppConfig {
-            output_dir: Some("recordings/../../../tmp".to_string()),
+        let embedded_traversal = AppConfig {
+            output_dir: Some("recordings/../../../tmp".to_owned()),
             ..AppConfig::default()
         };
-        assert_eq!(config.get_output_dir(), DEFAULT_OUTPUT_DIR);
+        assert_eq!(embedded_traversal.get_output_dir(), DEFAULT_OUTPUT_DIR);
 
         // Normal paths should be fine
-        let config = AppConfig {
-            output_dir: Some("my/recordings".to_string()),
+        let relative_dir = AppConfig {
+            output_dir: Some("my/recordings".to_owned()),
             ..AppConfig::default()
         };
-        assert_eq!(config.get_output_dir(), "my/recordings");
+        assert_eq!(relative_dir.get_output_dir(), "my/recordings");
 
-        let config = AppConfig {
-            output_dir: Some("/absolute/path/recordings".to_string()),
+        let absolute_dir = AppConfig {
+            output_dir: Some("/absolute/path/recordings".to_owned()),
             ..AppConfig::default()
         };
-        assert_eq!(config.get_output_dir(), "/absolute/path/recordings");
+        assert_eq!(absolute_dir.get_output_dir(), "/absolute/path/recordings");
     }
 
     #[test]
     fn test_merge_configs() {
         let mut base_config = AppConfig {
-            audio_channels: Some("0,1".to_string()),
+            audio_channels: Some("0,1".to_owned()),
             debug: Some(false),
             duration: Some(10),
-            output_mode: Some("single".to_string()),
+            output_mode: Some("single".to_owned()),
             silence_threshold: Some(0.0),
             continuous_mode: Some(false),
             recording_cadence: Some(300),
-            output_dir: Some("./recordings".to_string()),
+            output_dir: Some("./recordings".to_owned()),
             performance_logging: Some(false),
             input_device: None,
             min_disk_space_mb: Some(500),
@@ -851,10 +872,10 @@ mod tests {
         };
 
         let override_config = AppConfig {
-            audio_channels: Some("2,3".to_string()),
+            audio_channels: Some("2,3".to_owned()),
             debug: Some(true),
             duration: None, // This shouldn't override
-            output_mode: Some("split".to_string()),
+            output_mode: Some("split".to_owned()),
             silence_threshold: None,   // This shouldn't override
             continuous_mode: None,     // This shouldn't override
             recording_cadence: None,   // This shouldn't override
@@ -870,19 +891,22 @@ mod tests {
         base_config.merge(override_config);
 
         // Check that only the Some values were overridden
-        assert_eq!(base_config.audio_channels, Some("2,3".to_string()));
+        assert_eq!(base_config.audio_channels, Some("2,3".to_owned()));
         assert!(base_config.get_debug());
         assert_eq!(base_config.duration, Some(10)); // Unchanged
-        assert_eq!(base_config.output_mode, Some("split".to_string()));
+        assert_eq!(base_config.output_mode, Some("split".to_owned()));
         assert_eq!(base_config.silence_threshold, Some(0.0)); // Unchanged
         assert_eq!(base_config.continuous_mode, Some(false)); // Unchanged
         assert_eq!(base_config.recording_cadence, Some(300)); // Unchanged
-        assert_eq!(base_config.output_dir, Some("./recordings".to_string())); // Unchanged
+        assert_eq!(base_config.output_dir, Some("./recordings".to_owned())); // Unchanged
         assert_eq!(base_config.performance_logging, Some(false)); // Unchanged
     }
 
     #[test]
-    #[allow(clippy::float_cmp)] // exact-value test: same literal in and out
+    #[expect(
+        clippy::float_cmp,
+        reason = "exact-value test: same literal in and out"
+    )]
     fn test_silence_threshold_rejects_out_of_range() {
         // NaN, ±Inf, and negative values fall back to the default rather
         // than poison the gate's max_peak > threshold comparison. Values
@@ -906,8 +930,7 @@ mod tests {
             assert_eq!(
                 config.get_silence_threshold(),
                 DEFAULT_SILENCE_THRESHOLD,
-                "silence_threshold = {} should fall back to default",
-                bad
+                "silence_threshold = {bad} should fall back to default"
             );
         }
 
@@ -928,27 +951,33 @@ mod tests {
     /// default instead.
     #[test]
     fn test_recording_cadence_rejects_zero() {
-        let config = AppConfig {
+        let zero_cadence = AppConfig {
             recording_cadence: Some(0),
             ..AppConfig::default()
         };
-        assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
+        assert_eq!(
+            zero_cadence.get_recording_cadence(),
+            DEFAULT_RECORDING_CADENCE
+        );
 
         // Positive values pass through.
         for good in [1, 60, 300, 86_400] {
-            let config = AppConfig {
+            let good_cadence = AppConfig {
                 recording_cadence: Some(good),
                 ..AppConfig::default()
             };
-            assert_eq!(config.get_recording_cadence(), good);
+            assert_eq!(good_cadence.get_recording_cadence(), good);
         }
 
         // None falls back to default.
-        let config = AppConfig {
+        let unset_cadence = AppConfig {
             recording_cadence: None,
             ..AppConfig::default()
         };
-        assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
+        assert_eq!(
+            unset_cadence.get_recording_cadence(),
+            DEFAULT_RECORDING_CADENCE
+        );
     }
 
     /// DOLL-458: the env-var path also lands a raw 0 in the field; the

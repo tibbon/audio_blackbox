@@ -16,6 +16,11 @@
 //! `test_measure_execution_time` stays as a regular `#[test]` because it has
 //! a sub-second sleep and tests a pure measurement helper, not the tracker.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "every sleep here lets real wall-clock elapse on purpose: the tracker samples on a background thread at a fixed 1 s interval and `measure_execution_time` measures elapsed time, so there is no state to rendezvous on"
+)]
+
 use crate::benchmarking::{PerformanceTracker, measure_execution_time};
 use std::thread;
 use std::time::Duration;
@@ -41,7 +46,7 @@ fn test_performance_tracker_basic() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -64,7 +69,7 @@ fn test_performance_tracker_disabled() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(false, &log_path, 10, 1);
     tracker.start();
@@ -88,7 +93,7 @@ fn test_performance_tracker_history() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 5, 1);
     tracker.start();
@@ -115,7 +120,7 @@ fn test_performance_tracker_stop_start() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
 
@@ -151,7 +156,7 @@ fn test_performance_tracker_metrics_range() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -176,7 +181,7 @@ fn test_performance_tracker_log_file() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
     tracker.start();
@@ -199,7 +204,7 @@ fn test_performance_tracker_multiple_starts() {
         .join("perf.log")
         .to_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let tracker = PerformanceTracker::new(true, &log_path, 10, 1);
 

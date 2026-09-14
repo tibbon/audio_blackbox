@@ -17,6 +17,7 @@
 /// frequency scaled by the given amplitude.  Channels not listed are silent.
 /// Returns `total_channels * samples_per_channel` interleaved samples.
 #[cfg(test)]
+#[must_use]
 pub fn generate_interleaved_f32(
     total_channels: usize,
     samples_per_channel: usize,
@@ -37,6 +38,7 @@ pub fn generate_interleaved_f32(
 
 /// Generate interleaved f32 data that is all zeros (silence).
 #[cfg(test)]
+#[must_use]
 pub fn generate_silent_interleaved_f32(
     total_channels: usize,
     samples_per_channel: usize,
@@ -50,7 +52,9 @@ pub fn generate_silent_interleaved_f32(
 /// instead of `thread::sleep` for an arbitrary "long enough" duration
 /// (DOLL-127).
 ///
-/// Panics if the timeout elapses before the counter reaches target —
+/// # Panics
+///
+/// If the timeout elapses before the counter reaches target —
 /// the caller's expectation is that the writer thread WILL drain the
 /// pushed samples, so a timeout indicates a real test failure
 /// (writer wedged, lost samples, etc.) rather than a flake.
@@ -72,6 +76,10 @@ pub fn wait_for_samples_consumed(
              (final count: {n})"
         );
         // 1ms poll keeps the test responsive without busy-waiting.
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "this is the wait helper the ban points callers at; the 1 ms nap between atomic polls bounds CPU without spinning"
+        )]
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
@@ -81,6 +89,11 @@ pub fn wait_for_samples_consumed(
 /// Used by rotation tests to wait for the writer thread to acknowledge a
 /// rotation request (the writer flips `rotation_needed` back to `false`
 /// after rotating). Replaces a fixed `thread::sleep` rendezvous (DOLL-127).
+///
+/// # Panics
+///
+/// If the flag is still set when `timeout` elapses: the writer never
+/// acknowledged the request, which is a test failure, not a flake.
 #[cfg(test)]
 pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std::time::Duration) {
     let start = std::time::Instant::now();
@@ -89,6 +102,10 @@ pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std:
             start.elapsed() < timeout,
             "flag did not clear within {timeout:?}"
         );
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "this is the wait helper the ban points callers at; the 1 ms nap between atomic polls bounds CPU without spinning"
+        )]
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
@@ -100,6 +117,7 @@ pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std:
 /// Consolidated here from previously duplicated copies in lib.rs +
 /// recorder_tests.rs (DOLL-118).
 #[cfg(test)]
+#[must_use]
 pub fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {
     use crate::constants::{DEFAULT_CHANNELS, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE};
     vec![
@@ -138,6 +156,7 @@ pub fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {
 /// `default_test_env()` with `SILENCE_THRESHOLD` set to `0` so the
 /// silence-deletion code paths don't fire mid-test (DOLL-118).
 #[cfg(test)]
+#[must_use]
 pub fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
     let mut env = default_test_env();
     env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
@@ -148,6 +167,7 @@ pub fn test_env_no_silence() -> Vec<(&'static str, Option<&'static str>)> {
 /// Generate interleaved f32 data where `selected_channels` all get a sine
 /// wave at the same `amplitude`.
 #[cfg(test)]
+#[must_use]
 pub fn generate_uniform_interleaved_f32(
     total_channels: usize,
     samples_per_channel: usize,
@@ -172,13 +192,15 @@ pub fn generate_uniform_interleaved_f32(
 /// `Arc<AtomicU64>`, so the test can advance the clock at the moment it
 /// signals a rotation.
 #[cfg(test)]
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MockClock {
     tick: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 #[cfg(test)]
 impl MockClock {
+    /// Create a clock starting at tick 0.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -191,6 +213,7 @@ impl MockClock {
 
     /// Return a `Send + Sync` closure suitable to pass to
     /// `WriterThreadState::set_timestamp_fn`.
+    #[must_use]
     pub fn as_timestamp_fn(&self) -> std::sync::Arc<dyn Fn() -> String + Send + Sync> {
         let tick = std::sync::Arc::clone(&self.tick);
         std::sync::Arc::new(move || {

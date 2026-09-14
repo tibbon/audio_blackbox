@@ -202,9 +202,7 @@ fn test_split_mode_channel_isolation() {
 
         assert!(
             rms0 > rms2 * 2.0,
-            "Channel 0 RMS ({}) should be much larger than channel 2 RMS ({})",
-            rms0,
-            rms2
+            "Channel 0 RMS ({rms0}) should be much larger than channel 2 RMS ({rms2})"
         );
     });
 }
@@ -250,8 +248,7 @@ fn test_multichannel_mode_three_channels() {
         let fname = files[0].to_str().unwrap();
         assert!(
             fname.contains("-multichannel"),
-            "File should have multichannel suffix: {}",
-            fname
+            "File should have multichannel suffix: {fname}"
         );
 
         let (spec, samples) = read_wav(&files[0]);
@@ -367,8 +364,7 @@ fn test_no_stale_temp_files_after_finalize() {
         let rec_files = recording_wav_files_in(temp_dir.path());
         assert!(
             rec_files.is_empty(),
-            "No .recording.wav files should remain after finalize, found: {:?}",
-            rec_files
+            "No .recording.wav files should remain after finalize, found: {rec_files:?}"
         );
     });
 }
@@ -434,8 +430,7 @@ fn test_finalize_deletes_silent_file() {
         let files = wav_files_in(temp_dir.path());
         assert!(
             files.is_empty(),
-            "Silent file should have been deleted, but found: {:?}",
-            files
+            "Silent file should have been deleted, but found: {files:?}"
         );
     });
 }
@@ -515,14 +510,12 @@ fn test_split_mode_silence_per_channel() {
         assert_eq!(
             files.len(),
             1,
-            "Only the loud channel file should remain, found: {:?}",
-            files
+            "Only the loud channel file should remain, found: {files:?}"
         );
         let name = files[0].to_str().unwrap();
         assert!(
             name.contains("-ch1"),
-            "Remaining file should be ch1, got: {}",
-            name
+            "Remaining file should be ch1, got: {name}"
         );
     });
 }
@@ -614,8 +607,7 @@ fn test_24bit_recording() {
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
-                "24-bit sample {} mismatch: got {}, want {}",
-                i, s, expected
+                "24-bit sample {i} mismatch: got {s}, want {expected}"
             );
         }
     });
@@ -646,8 +638,7 @@ fn test_32bit_recording() {
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
-                "32-bit sample {} mismatch: got {}, want {}",
-                i, s, expected
+                "32-bit sample {i} mismatch: got {s}, want {expected}"
             );
         }
     });
@@ -701,11 +692,7 @@ fn test_f32_to_wav_sample_conversion() {
     assert_eq!(f32_to_wav_sample(0.0, 32), 0);
     // f32 precision means 1.0 * i32::MAX may not be exact
     let max32 = f32_to_wav_sample(1.0, 32);
-    assert!(
-        max32 > 2_000_000_000,
-        "32-bit max should be large: {}",
-        max32
-    );
+    assert!(max32 > 2_000_000_000, "32-bit max should be large: {max32}");
 }
 
 #[test]
@@ -744,9 +731,7 @@ fn test_f32_to_wav_sample_roundtrip_within_quantization_error() {
         let err = (a - recovered).abs();
         assert!(
             err <= 1.0 / 32767.0,
-            "roundtrip error {} exceeds 1 LSB for amplitude {}",
-            err,
-            a
+            "roundtrip error {err} exceeds 1 LSB for amplitude {a}"
         );
     }
 }

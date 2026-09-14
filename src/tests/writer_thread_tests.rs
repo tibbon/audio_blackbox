@@ -25,7 +25,7 @@ fn single_state(dir: &str) -> WriterThreadState {
         0,
         Arc::new(AtomicBool::new(false)),
         24,
-        Arc::new(vec![CacheAlignedPeak::new(0)]),
+        Arc::from([CacheAlignedPeak::new(0)]),
         false,
         0,
     )
@@ -39,7 +39,7 @@ fn single_state(dir: &str) -> WriterThreadState {
 fn read_wav_data_size(path: &str) -> u32 {
     let mut f = File::open(path).expect("open wav");
     f.seek(SeekFrom::Start(40)).expect("seek to data size");
-    let mut b = [0u8; 4];
+    let mut b = [0_u8; 4];
     f.read_exact(&mut b).expect("read data size");
     u32::from_le_bytes(b)
 }
@@ -59,7 +59,7 @@ fn split_state(dir: &str) -> WriterThreadState {
         0, // min_disk_space_mb: disabled
         Arc::new(AtomicBool::new(false)),
         24,
-        Arc::new((0..2).map(|_| CacheAlignedPeak::new(0)).collect()),
+        Arc::from([CacheAlignedPeak::new(0), CacheAlignedPeak::new(0)]),
         false, // gate_enabled: false → writers created immediately
         0,
     )
@@ -89,7 +89,7 @@ fn finalize_all_continues_past_a_failed_rename() {
         // Sabotage channel 0's destination so its rename fails (ENOENT: the
         // parent directory does not exist), leaving channel 1 intact.
         let good_final = state.pending_files[1].1.clone();
-        state.pending_files[0].1 = format!("{}/does_not_exist/ch0.wav", dir);
+        state.pending_files[0].1 = format!("{dir}/does_not_exist/ch0.wav");
 
         let result = state.finalize_all();
 
@@ -269,7 +269,7 @@ fn flush_writers_makes_unfinalized_recording_readable() {
         assert_eq!(spec.bits_per_sample, 24);
         assert_eq!(
             reader.len(),
-            n as u32,
+            u32::try_from(n).expect("sample count fits in u32"),
             "flushed header must report every written sample"
         );
     });
@@ -453,7 +453,7 @@ fn dither_perturbs_16bit_output_but_not_24bit() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new(vec![CacheAlignedPeak::new(0)]),
+            Arc::from([CacheAlignedPeak::new(0)]),
             false,
             0,
         )

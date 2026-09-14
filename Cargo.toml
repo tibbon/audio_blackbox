@@ -60,13 +60,240 @@ default = []
 benchmarking = ["dep:sysinfo"]
 ffi = []
 
-# These lints will only be activated when using cargo clippy
+# ---------------------------------------------------------------------------
+# Lints (DOLL-652). Groups get priority -1 so the individual entries win.
+# CI and `scripts/check.sh` run clippy with `-D warnings`, so every "warn"
+# here is an error at the gate while staying a warning in the editor.
+# Per-target tightening (e.g. the FFI module) goes in that file as
+# `#![warn(...)]`; per-site relief is `#[expect(lint, reason = "...")]`,
+# never `#[allow]` (clippy::allow_attributes enforces this).
+# ---------------------------------------------------------------------------
+[lints.rust]
+# unsafe and FFI hygiene
+unsafe_op_in_unsafe_fn = "deny"
+missing_unsafe_on_extern = "deny"
+unsafe_attr_outside_unsafe = "deny"
+improper_ctypes = "deny"
+improper_ctypes_definitions = "deny"
+dangling_pointers_from_temporaries = "deny"
+ffi_unwind_calls = "warn"
+# API surface and docs
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unnameable_types = "warn"
+# Idioms
+rust_2018_idioms = { level = "warn", priority = -1 }
+keyword_idents_2024 = "warn"
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+single_use_lifetimes = "warn"
+redundant_lifetimes = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+unused_import_braces = "warn"
+unused_macro_rules = "warn"
+macro_use_extern_crate = "warn"
+meta_variable_misuse = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+# Off: `let _ = x` on a Drop type is deliberate here (join handles, send results);
+# clippy::let_underscore_must_use catches the case that matters.
+let_underscore_drop = "allow"
+variant_size_differences = "warn"
+non_ascii_idents = "deny"
+# Noisy with dev-deps under --all-targets; cargo machete covers it in check.sh.
+unused_crate_dependencies = "allow"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+missing_crate_level_docs = "warn"
+unescaped_backticks = "warn"
+
 [lints.clippy]
+# ---- Groups ----
+all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -2 }
-# Allow specific lints that are problematic for this codebase
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# ---- Lint hygiene: agents must not silence lints silently ----
+allow_attributes = "deny"                  # use #[expect(..., reason = "...")]
+allow_attributes_without_reason = "deny"
+blanket_clippy_restriction_lints = "deny"
+
+# ---- Panics and unwraps ----
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "warn"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "warn"
+unwrap_in_result = "warn"
+panic_in_result_fn = "warn"
+get_unwrap = "warn"
+missing_assert_message = "warn"
+missing_asserts_for_indexing = "warn"
+indexing_slicing = "allow"                 # src/ffi.rs turns this on at module level
+
+# ---- unsafe and pointers ----
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+missing_safety_doc = "deny"
+mem_forget = "warn"
+as_ptr_cast_mut = "warn"
+ptr_as_ptr = "warn"
+ref_as_ptr = "warn"
+borrow_as_ptr = "warn"
+cast_ptr_alignment = "warn"
+transmute_ptr_to_ptr = "warn"
+fn_to_numeric_cast_any = "deny"
+default_union_representation = "warn"
+exhaustive_enums = "allow"                 # src/ffi.rs turns this on: ABI enums must be closed
+exhaustive_structs = "allow"
+
+# ---- Numeric casts and floats ----
+as_conversions = "allow"                   # too noisy for DSP; the cast_* lints below cover it
+cast_possible_wrap = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+float_cmp = "warn"
+float_cmp_const = "warn"
+lossy_float_literal = "warn"
+modulo_arithmetic = "warn"
+imprecise_flops = "warn"
+suboptimal_flops = "warn"
+unused_rounding = "warn"
+manual_clamp = "warn"
+suspicious_xor_used_as_pow = "warn"
+precedence_bits = "warn"
+arithmetic_side_effects = "allow"          # src/ffi.rs turns this on at module level
+
+# ---- Logging, IO, process ----
+print_stdout = "warn"                      # stdout goes nowhere in a GUI app; CLI bins #![expect] this
+print_stderr = "warn"
+dbg_macro = "deny"
+use_debug = "warn"
+exit = "deny"                              # a library never exits the host process
+verbose_file_reads = "warn"
+create_dir = "warn"
+filetype_is_file = "warn"
+disallowed_methods = "deny"                # configured in clippy.toml
+disallowed_macros = "deny"
+disallowed_types = "deny"
+
+# ---- Ownership and performance ----
+clone_on_ref_ptr = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+large_stack_arrays = "warn"
+large_stack_frames = "warn"
+large_types_passed_by_value = "warn"
+needless_pass_by_value = "warn"
+needless_pass_by_ref_mut = "warn"
+redundant_clone = "warn"
+unnecessary_box_returns = "warn"
+str_to_string = "warn"
+string_add = "warn"
+format_push_string = "warn"
+iter_over_hash_type = "warn"               # hash order must never reach an output
+significant_drop_tightening = "warn"
+significant_drop_in_scrutinee = "warn"
+await_holding_lock = "warn"
+await_holding_refcell_ref = "warn"
+unused_async = "warn"
+future_not_send = "warn"
+infinite_loop = "warn"
+
+# ---- API surface, docs, structure ----
+missing_panics_doc = "warn"
+must_use_candidate = "warn"
+return_self_not_must_use = "warn"
+partial_pub_fields = "warn"
+pub_without_shorthand = "warn"
+error_impl_error = "warn"
+same_name_method = "warn"
+wildcard_enum_match_arm = "warn"
+match_wildcard_for_single_variants = "warn"
+map_err_ignore = "warn"
+let_underscore_must_use = "warn"
+unused_result_ok = "warn"
+if_then_some_else_none = "warn"
+semicolon_if_nothing_returned = "warn"
+shadow_unrelated = "warn"
+tests_outside_test_module = "warn"
+self_named_module_files = "warn"           # foo.rs + foo/, no mod.rs
+cfg_not_test = "warn"
+empty_drop = "warn"
+empty_structs_with_brackets = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+string_slice = "warn"
+try_err = "warn"
+unnecessary_self_imports = "warn"
+unneeded_field_pattern = "warn"
+unseparated_literal_suffix = "warn"
+deref_by_slicing = "warn"
+mixed_read_write_in_expression = "warn"
+non_zero_suggestions = "warn"
+map_with_unused_argument_over_ranges = "warn"
+set_contains_or_insert = "warn"
+renamed_function_params = "warn"
+struct_excessive_bools = "warn"
+
+# ---- Deliberately off, with reasons ----
+module_name_repetitions = "allow"          # FFI-facing names repeat the module on purpose
+similar_names = "allow"                    # DSP: x0/x1/y0/y1 are the correct names
+many_single_char_names = "allow"           # same
+option_if_let_else = "allow"               # usually less readable than the match
+missing_const_for_fn = "allow"             # churny; revisit per crate
+redundant_pub_crate = "allow"              # conflicts with unreachable_pub
+missing_inline_in_public_items = "allow"
+single_call_fn = "allow"
+implicit_return = "allow"
+question_mark_used = "allow"
+pattern_type_mismatch = "allow"
+min_ident_chars = "allow"
+absolute_paths = "allow"
+pub_use = "allow"
+mod_module_files = "allow"                 # we chose self_named_module_files
+separated_literal_suffix = "allow"         # we chose unseparated
+shadow_reuse = "allow"
+shadow_same = "allow"
+single_char_lifetime_names = "allow"
+impl_trait_in_params = "allow"
+missing_trait_methods = "allow"
+ref_patterns = "allow"
+else_if_without_else = "allow"
+non_ascii_literal = "allow"
+std_instead_of_core = "allow"              # only for no_std crates
+std_instead_of_alloc = "allow"
+multiple_crate_versions = "allow"          # cargo deny reports this with better context
+cargo_common_metadata = "allow"            # app crates are not published
+wildcard_dependencies = "deny"
+# Pre-existing: the FFI status handle wraps a cpal Stream (not Send/Sync) in
+# an Arc that is only ever touched under the recorder mutex.
 arc_with_non_send_sync = "allow"
-module_name_repetitions = "allow"
+
+# ---- Policy for this codebase (on in the kit, off here on purpose) ----
+decimal_literal_representation = "allow"  # 44100, 48000, 8_388_607 are decimal by nature
+integer_division = "allow"                # frame and byte math truncates by design
+let_underscore_untyped = "allow"          # noise; let_underscore_must_use is the one that matters
+
+# ---- Backlog (DOLL-653): on in the kit, parked until the existing sites are
+# fixed. Counts are from the adoption run (clippy 1.98, 2026-09-13). Flip one
+# line at a time and fix the sites in its own PR; do not #[expect] through it.
+cast_possible_truncation = "allow"        # 63 sites, sample/frame math
+cast_precision_loss = "allow"             # 55 sites, mostly u64 -> f64 in perf code
+doc_markdown = "allow"                    # 69 sites
+missing_errors_doc = "allow"              # 30 sites
+too_many_lines = "allow"                  # 17 sites
+cognitive_complexity = "allow"            # 4 sites
 
 [package.metadata.bundle]
 name = "BlackBox Audio Recorder"

@@ -7,7 +7,7 @@ use std::error::Error;
 fn test_wav_source_chain_preserved() {
     let inner = hound::Error::FormatError("not a wav");
     let err = BlackboxError::WavSource {
-        context: "Failed to open WAV file at /tmp/foo.wav".to_string(),
+        context: "Failed to open WAV file at /tmp/foo.wav".to_owned(),
         source: Box::new(inner),
     };
 
@@ -30,7 +30,7 @@ fn test_audio_device_source_chain_preserved() {
     use std::io;
     let inner = io::Error::other("device timed out");
     let err = BlackboxError::AudioDeviceSource {
-        context: "Failed to build input stream".to_string(),
+        context: "Failed to build input stream".to_owned(),
         source: Box::new(inner),
     };
 
@@ -98,7 +98,7 @@ fn test_full_chain_includes_root_cause() {
     use std::io;
     let root = io::Error::new(io::ErrorKind::PermissionDenied, "device is busy");
     let err = BlackboxError::AudioDeviceSource {
-        context: "Failed to build input stream".to_string(),
+        context: "Failed to build input stream".to_owned(),
         source: Box::new(root),
     };
 

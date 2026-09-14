@@ -85,23 +85,23 @@ fn test_config_merge() {
             let mut config2 = AppConfig::default();
 
             // Set some values in config1
-            config1.audio_channels = Some("0".to_string());
+            config1.audio_channels = Some("0".to_owned());
             config1.debug = Some(true);
 
             // Set different values in config2
-            config2.audio_channels = Some("1,2".to_string()); // Different from config1
+            config2.audio_channels = Some("1,2".to_owned()); // Different from config1
             config2.debug = Some(false); // Different from config1
             config2.duration = Some(60);
-            config2.output_mode = Some("split".to_string());
+            config2.output_mode = Some("split".to_owned());
 
             // Merge config2 into config1
             config1.merge(config2);
 
             // Verify merged values - config2 values should overwrite config1
-            assert_eq!(config1.audio_channels, Some("1,2".to_string()));
+            assert_eq!(config1.audio_channels, Some("1,2".to_owned()));
             assert_eq!(config1.debug, Some(false));
             assert_eq!(config1.duration, Some(60));
-            assert_eq!(config1.output_mode, Some("split".to_string()));
+            assert_eq!(config1.output_mode, Some("split".to_owned()));
         },
     );
 }
@@ -133,16 +133,16 @@ fn test_config_defaults() {
             let config = AppConfig::default();
 
             // Check the default initialization values
-            assert_eq!(config.audio_channels, Some(DEFAULT_CHANNELS.to_string()));
+            assert_eq!(config.audio_channels, Some(DEFAULT_CHANNELS.to_owned()));
             assert_eq!(config.debug, Some(DEFAULT_DEBUG));
             assert_eq!(config.duration, Some(DEFAULT_DURATION));
-            assert_eq!(config.output_mode, Some(DEFAULT_OUTPUT_MODE.to_string()));
+            assert_eq!(config.output_mode, Some(DEFAULT_OUTPUT_MODE.to_owned()));
             assert!(
                 (config.get_silence_threshold() - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON
             );
             assert_eq!(config.continuous_mode, Some(DEFAULT_CONTINUOUS_MODE));
             assert_eq!(config.recording_cadence, Some(DEFAULT_RECORDING_CADENCE));
-            assert_eq!(config.output_dir, Some(DEFAULT_OUTPUT_DIR.to_string()));
+            assert_eq!(config.output_dir, Some(DEFAULT_OUTPUT_DIR.to_owned()));
             assert_eq!(
                 config.performance_logging,
                 Some(DEFAULT_PERFORMANCE_LOGGING)
@@ -401,7 +401,7 @@ fn test_newer_fields_from_toml() {
             Some(config_path.to_str().unwrap()),
             || {
                 let config = AppConfig::load();
-                assert_eq!(config.get_input_device(), Some("Test Mic".to_string()));
+                assert_eq!(config.get_input_device(), Some("Test Mic".to_owned()));
                 assert_eq!(config.get_min_disk_space_mb(), 123);
                 assert_eq!(config.get_bits_per_sample(), 16);
                 assert!(!config.get_silence_gate_enabled());
@@ -449,7 +449,7 @@ fn test_newer_fields_env_override_toml() {
             Some(config_path.to_str().unwrap()),
             || {
                 let config = AppConfig::load();
-                assert_eq!(config.get_input_device(), Some("Env Mic".to_string()));
+                assert_eq!(config.get_input_device(), Some("Env Mic".to_owned()));
                 assert_eq!(config.get_min_disk_space_mb(), 777);
                 assert_eq!(config.get_bits_per_sample(), 32);
                 assert!(config.get_silence_gate_enabled());
@@ -478,7 +478,7 @@ fn test_newer_fields_legacy_env_names_and_prefix_precedence() {
     }
     temp_env::with_vars(legacy, || {
         let config = AppConfig::load();
-        assert_eq!(config.get_input_device(), Some("Legacy Mic".to_string()));
+        assert_eq!(config.get_input_device(), Some("Legacy Mic".to_owned()));
         assert_eq!(config.get_min_disk_space_mb(), 55);
         assert_eq!(config.get_bits_per_sample(), 16);
         assert!(!config.get_silence_gate_enabled());
@@ -499,7 +499,7 @@ fn test_newer_fields_legacy_env_names_and_prefix_precedence() {
     }
     temp_env::with_vars(both, || {
         let config = AppConfig::load();
-        assert_eq!(config.get_input_device(), Some("Prefixed Mic".to_string()));
+        assert_eq!(config.get_input_device(), Some("Prefixed Mic".to_owned()));
         assert_eq!(config.get_min_disk_space_mb(), 66);
     });
 }
@@ -598,7 +598,7 @@ fn test_merge_carries_newer_fields() {
         recording_cadence: None,
         output_dir: None,
         performance_logging: None,
-        input_device: Some("Overlay Mic".to_string()),
+        input_device: Some("Overlay Mic".to_owned()),
         min_disk_space_mb: Some(999),
         bits_per_sample: Some(32),
         silence_gate_enabled: Some(false),
@@ -607,7 +607,7 @@ fn test_merge_carries_newer_fields() {
 
     base.merge(overlay);
 
-    assert_eq!(base.input_device, Some("Overlay Mic".to_string()));
+    assert_eq!(base.input_device, Some("Overlay Mic".to_owned()));
     assert_eq!(base.min_disk_space_mb, Some(999));
     assert_eq!(base.bits_per_sample, Some(32));
     assert_eq!(base.silence_gate_enabled, Some(false));

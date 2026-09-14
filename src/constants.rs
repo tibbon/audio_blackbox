@@ -13,24 +13,24 @@
 //!    `OutputMode::as_str` at config-load boundaries; downstream code
 //!    pattern-matches on the enum.
 
-pub const DEFAULT_CHANNELS: &str = "0";
-pub const DEFAULT_DEBUG: bool = false;
-pub const DEFAULT_DURATION: u64 = 30;
-pub const DEFAULT_OUTPUT_MODE: &str = "single";
-pub const DEFAULT_SILENCE_THRESHOLD: f32 = 0.01;
-pub const MAX_CHANNELS: usize = 255;
+pub(crate) const DEFAULT_CHANNELS: &str = "0";
+pub(crate) const DEFAULT_DEBUG: bool = false;
+pub(crate) const DEFAULT_DURATION: u64 = 30;
+pub(crate) const DEFAULT_OUTPUT_MODE: &str = "single";
+pub(crate) const DEFAULT_SILENCE_THRESHOLD: f32 = 0.01;
+pub(crate) const MAX_CHANNELS: usize = 255;
 
 // Constants for continuous recording mode
-pub const DEFAULT_CONTINUOUS_MODE: bool = false;
-pub const DEFAULT_RECORDING_CADENCE: u64 = 300; // 5 minutes
-pub const DEFAULT_OUTPUT_DIR: &str = "recordings";
-pub const DEFAULT_PERFORMANCE_LOGGING: bool = false;
-pub const DEFAULT_BITS_PER_SAMPLE: u16 = 24;
+pub(crate) const DEFAULT_CONTINUOUS_MODE: bool = false;
+pub(crate) const DEFAULT_RECORDING_CADENCE: u64 = 300; // 5 minutes
+pub(crate) const DEFAULT_OUTPUT_DIR: &str = "recordings";
+pub(crate) const DEFAULT_PERFORMANCE_LOGGING: bool = false;
+pub(crate) const DEFAULT_BITS_PER_SAMPLE: u16 = 24;
 // Disk space monitoring
-pub const DEFAULT_MIN_DISK_SPACE_MB: u64 = 500;
+pub(crate) const DEFAULT_MIN_DISK_SPACE_MB: u64 = 500;
 // Silence gate
-pub const DEFAULT_SILENCE_GATE_ENABLED: bool = true;
-pub const DEFAULT_SILENCE_GATE_TIMEOUT_SECS: u64 = 300;
+pub(crate) const DEFAULT_SILENCE_GATE_ENABLED: bool = true;
+pub(crate) const DEFAULT_SILENCE_GATE_TIMEOUT_SECS: u64 = 300;
 
 // Ring buffer constants
 /// How many seconds of audio the ring buffer can hold (at device sample rate * channels).
@@ -40,7 +40,7 @@ pub const RING_BUFFER_SECONDS: usize = 5;
 /// Larger chunks reduce per-iteration overhead (fewer `read_chunk()` atomics,
 /// `write_samples()` calls, and peak publish cycles). At 48 kHz / 64 ch,
 /// 16 384 samples ≈ 5.3 ms — well within the 33 ms meter polling window.
-pub const WRITER_THREAD_READ_CHUNK: usize = 16_384;
+pub(crate) const WRITER_THREAD_READ_CHUNK: usize = 16_384;
 
 /// Cache-line-aligned atomic peak level.
 ///
@@ -50,12 +50,13 @@ pub const WRITER_THREAD_READ_CHUNK: usize = 16_384;
 /// values pack into the same cache line, causing unnecessary invalidation traffic
 /// at high channel counts (16+).
 #[repr(C, align(64))]
-pub struct CacheAlignedPeak {
+#[derive(Debug)]
+pub(crate) struct CacheAlignedPeak {
     pub value: std::sync::atomic::AtomicU32,
 }
 
 impl CacheAlignedPeak {
-    pub fn new(val: u32) -> Self {
+    pub(crate) fn new(val: u32) -> Self {
         Self {
             value: std::sync::atomic::AtomicU32::new(val),
         }
@@ -79,6 +80,7 @@ pub enum OutputMode {
 
 impl OutputMode {
     /// Parse from a config string. Returns `None` for invalid values.
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "single" => Some(Self::Single),
@@ -87,6 +89,8 @@ impl OutputMode {
         }
     }
 
+    /// Config-file spelling of this mode; the inverse of [`parse`](Self::parse).
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Single => "single",
