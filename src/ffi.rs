@@ -45,7 +45,11 @@ use crate::error::BlackboxError;
 // ── FFI error codes (mirrored as #defines in blackbox_ffi.h) ─────────────
 /// Success.
 pub const BLACKBOX_OK: i32 = 0;
-/// `handle` is null, did not come from `blackbox_create`, or was already destroyed.
+/// `handle` is null or its magic word does not match.
+///
+/// A handle that was already destroyed usually lands here, but only on a
+/// best-effort basis: passing a destroyed handle to any `blackbox_*` function
+/// is undefined behavior.
 pub const BLACKBOX_ERR_INVALID_HANDLE: i32 = -1;
 /// The audio device could not be opened or its stream failed to start.
 pub const BLACKBOX_ERR_AUDIO_DEVICE: i32 = -2;
@@ -341,7 +345,10 @@ impl std::ops::Deref for HandleRef<'_> {
 /// # FFI contract (caller must uphold)
 ///
 /// - `handle` is either null OR a pointer that originated from a successful
-///   call to `blackbox_create` (which `Box::leak`-s a `BlackboxHandle`).
+///   call to `blackbox_create` (which `Box::into_raw`-s a `BlackboxHandle`)
+///   and has not been passed to `blackbox_destroy`. A destroyed handle points
+///   at freed memory, so reading its magic word is itself undefined behavior;
+///   the check catches most stale handles but cannot be relied on.
 /// - The Swift side does not call `blackbox_destroy(h)` concurrently with any
 ///   other `blackbox_*` call against the same `h`. Concurrent destroy + read
 ///   is a data race the magic check cannot detect (a freed allocation could
@@ -356,7 +363,7 @@ fn validate_handle<'a>(handle: *const BlackboxHandle) -> Option<HandleRef<'a>> {
         return None;
     }
     // SAFETY: per the FFI contract documented above, `handle` originated from
-    // `blackbox_create` (Box::leak) and is not concurrently freed. The magic
+    // `blackbox_create` (Box::into_raw) and has not been freed. The magic
     // word check is a UAF mitigation, not a soundness argument.
     let h: &'a BlackboxHandle = unsafe { &*handle };
     h.is_valid().then_some(HandleRef {
@@ -422,7 +429,10 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
 /// Destroy a `BlackboxHandle`, freeing all resources.
 ///
 /// If recording is in progress it will be stopped first.
-/// Passing null is a safe no-op.
+/// Passing null is a safe no-op. Destroying the same handle twice, or using
+/// it after this call, is undefined behavior: the magic-word CAS below only
+/// prevents a double free when both calls reach it before the winner frees
+/// the allocation.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_destroy(handle: *mut BlackboxHandle) {
     if handle.is_null() {
@@ -787,12 +797,13 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
 /// Returns the number of channels actually written (>= 0), or one of these
 /// negative error codes on failure:
 ///
-/// * `BLACKBOX_ERR_INVALID_HANDLE` — handle is null or freed.
+/// * `BLACKBOX_ERR_INVALID_HANDLE` — handle is null or its magic word does not
+///   match (best effort for a destroyed handle, which is undefined behavior).
 /// * `BLACKBOX_ERR_INVALID_ARG` — `out` is null or `max_channels` <= 0.
 /// * `BLACKBOX_ERR_LOCK_POISONED` — internal lock was poisoned by a prior panic.
 ///
-/// This is a lightweight alternative to `blackbox_get_status_json` for meter UIs —
-/// no JSON serialization, no string allocation, just atomic reads into the buffer.
+/// Designed for meter UIs polled at display rate: no JSON serialization, no
+/// string allocation, just atomic reads into the buffer.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_peak_levels(
     handle: *const BlackboxHandle,
