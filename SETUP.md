@@ -125,12 +125,20 @@ exec zsh                                   # pick up the new PATH
 
 cd BlackBoxApp
 gem install bundler -v 4.0.20              # matches Gemfile.lock "BUNDLED WITH"
+bundle config set --local path vendor/bundle
 bundle install                             # installs the pinned fastlane (2.240.0)
-fastlane --version                         # should print 2.240.0
+bundle exec fastlane --version             # should print 2.240.0
 ```
 
+The bundle goes in `BlackBoxApp/vendor/bundle` (gitignored), the same place CI's
+`bundler-cache` puts it. A plain `bundle install` into Homebrew's gem directory
+fails on Ruby 4.0 with `Permission denied ... plugins/rdoc_plugin.rb`, because
+Homebrew links that file read-only from the keg (DOLL-658).
+
 The `make fl-*` targets call `fastlane` directly (they don't use `bundle exec`),
-so `fastlane` must be on your `PATH` at the pinned version.
+so `fastlane` must be on your `PATH` at the pinned version. `brew install fastlane`
+works when Homebrew's version matches `Gemfile.lock`. Otherwise run the lane
+from `BlackBoxApp` as `bundle exec fastlane <lane>`.
 
 ### App Store Connect credentials
 
