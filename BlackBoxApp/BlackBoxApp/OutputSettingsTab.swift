@@ -13,174 +13,13 @@ struct OutputSettingsTab: View {
     @State private var outputDir: String = "recordings"
     @State private var cadenceSelection: Int = 300
     @State private var prevOutputMode: String = "split"
-    /// Tracks focus on the custom-cadence TextField so DOLL-196 can
-    /// clamp + applyConfig only when the user commits (focus loss /
-    /// Return), not on every keystroke. The old onChange-clamp made a
-    /// user typing "60" briefly see the field jump as intermediate
-    /// values were clipped to the lower bound.
-    @FocusState private var customCadenceFocused: Bool
 
     var body: some View {
         Form {
-            Section("Output Directory") {
-                HStack {
-                    Text(displayPath)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .accessibilityLabel("Output directory: \(outputDir)")
-                    Button("Choose\u{2026}") {
-                        chooseDirectory()
-                    }
-                    .accessibilityHint("Opens a file picker to select the output directory")
-                }
-                Button {
-                    recorder.openOutputDir()
-                } label: {
-                    Label("Open in Finder", systemImage: "folder")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityHint("Opens the output directory in Finder")
-            }
-
-            Section("Output Mode") {
-                Picker("Output Mode", selection: $outputMode) {
-                    Text("Split (one file per channel)").tag("split")
-                    Text("Multichannel (single file)").tag("single")
-                }
-                .labelsHidden()
-                .pickerStyle(.radioGroup)
-                .onChange(of: outputMode) {
-                    let old = prevOutputMode
-                    guard outputMode != old else { return }
-                    prevOutputMode = outputMode
-                    guard recorder.isRecording else {
-                        applyConfig()
-                        return
-                    }
-                    confirmSettingsChange(reason: String(localized: "output mode")) {
-                        applyConfig()
-                        recorder.restartIfRecording(reason: "output mode changed")
-                    } onCancel: {
-                        prevOutputMode = old
-                        outputMode = old
-                    }
-                }
-                .accessibilityLabel("Output mode")
-                .accessibilityHint("One file per channel or one multichannel file")
-                if outputMode == "single" {
-                    Label {
-                        Text(
-                            """
-                            Creates a single multichannel WAV file. \
-                            Some DAWs may not import files with more than 2 channels correctly.
-                            """
-                        )
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .accessibilityHidden(true)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-                } else {
-                    Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Continuous Recording") {
-                Toggle("Enable continuous recording", isOn: $continuousMode)
-                    .onChange(of: continuousMode) { applyConfig() }
-                    .accessibilityHint("Automatically rotate files at regular intervals")
-                Text(
-                    """
-                    Automatically saves and starts a new file at regular intervals, \
-                    so no audio is lost if the app closes unexpectedly.
-                    """
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                if continuousMode {
-                    Picker("Rotate every:", selection: $cadenceSelection) {
-                        // DOLL-222: short presets at the top so the user
-                        // can verify that rotation is actually happening
-                        // (5 min is too long to wait for a smoke test).
-                        // The duration itself signals "for testing" — no
-                        // real user would pick 30 s for production audio.
-                        Text("30 seconds").tag(30)
-                        Text("1 minute").tag(60)
-                        Text("5 minutes").tag(300)
-                        Text("15 minutes").tag(900)
-                        Text("30 minutes").tag(1800)
-                        Text("1 hour").tag(3600)
-                        Text("2 hours").tag(7200)
-                        Text("Custom").tag(-1)
-                    }
-                    .onChange(of: cadenceSelection) {
-                        if cadenceSelection > 0 {
-                            recordingCadence = cadenceSelection
-                            applyConfig()
-                        }
-                    }
-                    .accessibilityLabel("Rotation interval")
-
-                    if cadenceSelection == -1 {
-                        HStack {
-                            TextField("", value: $recordingCadence, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 80)
-                                .focused($customCadenceFocused)
-                                // DOLL-196: clamp + applyConfig on focus
-                                // loss / Return, not on every keystroke.
-                                // The old onChange-clamp made the field
-                                // jump to 1 mid-typing.
-                                .onSubmit { commitCustomCadence() }
-                                .onChange(of: customCadenceFocused) { _, focused in
-                                    if !focused { commitCustomCadence() }
-                                }
-                                .accessibilityLabel("Custom rotation interval")
-                                .accessibilityValue("\(recordingCadence) seconds")
-                            Text("seconds")
-                            if recordingCadence >= 86_400 {
-                                Text("Maximum: 24 hours")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else if recordingCadence > 0 {
-                                Text("(\(cadenceDescription))")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
-                        }
-                    }
-
-                    if let estimate = fileSizeEstimate {
-                        Text("Estimated file size per chunk: \(estimate)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Section("Disk Space") {
-                Picker("Minimum free space:", selection: $minDiskSpaceMB) {
-                    Text("Disabled").tag(0)
-                    Text("500 MB").tag(500)
-                    Text("1 GB").tag(1000)
-                    Text("2 GB").tag(2000)
-                    Text("5 GB").tag(5000)
-                    Text("10 GB").tag(10_000)
-                }
-                .onChange(of: minDiskSpaceMB) { applyConfig() }
-                .accessibilityLabel("Minimum free disk space")
-                Text("Recording stops automatically when free disk space drops below this threshold.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            outputDirectorySection
+            outputModeSection
+            continuousRecordingSection
+            diskSpaceSection
         }
         .formStyle(.grouped)
         .onAppear {
@@ -188,6 +27,161 @@ struct OutputSettingsTab: View {
             syncCadenceSelection()
             migrateStalePickerValues()
             prevOutputMode = outputMode
+        }
+    }
+
+    private var outputDirectorySection: some View {
+        Section("Output Directory") {
+            HStack {
+                Text(displayPath)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("Output directory: \(outputDir)")
+                Button("Choose\u{2026}") {
+                    chooseDirectory()
+                }
+                .accessibilityHint("Opens a file picker to select the output directory")
+            }
+            Button {
+                recorder.openOutputDir()
+            } label: {
+                Label("Open in Finder", systemImage: "folder")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityHint("Opens the output directory in Finder")
+        }
+    }
+
+    private var outputModeSection: some View {
+        Section("Output Mode") {
+            Picker("Output Mode", selection: $outputMode) {
+                Text("Split (one file per channel)").tag("split")
+                Text("Multichannel (single file)").tag("single")
+            }
+            .labelsHidden()
+            .pickerStyle(.radioGroup)
+            .onChange(of: outputMode) { outputModeChanged() }
+            .accessibilityLabel("Output mode")
+            .accessibilityHint("One file per channel or one multichannel file")
+            outputModeCaption
+        }
+    }
+
+    @ViewBuilder private var outputModeCaption: some View {
+        if outputMode == "single" {
+            Label {
+                Text(
+                    """
+                    Creates a single multichannel WAV file. \
+                    Some DAWs may not import files with more than 2 channels correctly.
+                    """
+                )
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .accessibilityHidden(true)
+            }
+            .font(.caption)
+            .foregroundStyle(Color(nsColor: .systemOrange))
+        } else {
+            Text("Creates a separate WAV file for each channel. Compatible with all DAWs.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var continuousRecordingSection: some View {
+        Section("Continuous Recording") {
+            Toggle("Enable continuous recording", isOn: $continuousMode)
+                .onChange(of: continuousMode) { applyConfig() }
+                .accessibilityHint("Automatically rotate files at regular intervals")
+            Text(
+                """
+                Automatically saves and starts a new file at regular intervals, \
+                so no audio is lost if the app closes unexpectedly.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if continuousMode {
+                rotationControls
+            }
+        }
+    }
+
+    @ViewBuilder private var rotationControls: some View {
+        Picker("Rotate every:", selection: $cadenceSelection) {
+            // DOLL-222: short presets at the top so the user
+            // can verify that rotation is actually happening
+            // (5 min is too long to wait for a smoke test).
+            // The duration itself signals "for testing" — no
+            // real user would pick 30 s for production audio.
+            Text("30 seconds").tag(30)
+            Text("1 minute").tag(60)
+            Text("5 minutes").tag(300)
+            Text("15 minutes").tag(900)
+            Text("30 minutes").tag(1800)
+            Text("1 hour").tag(3600)
+            Text("2 hours").tag(7200)
+            Text("Custom").tag(-1)
+        }
+        .onChange(of: cadenceSelection) {
+            if cadenceSelection > 0 {
+                recordingCadence = cadenceSelection
+                applyConfig()
+            }
+        }
+        .accessibilityLabel("Rotation interval")
+
+        if cadenceSelection == -1 {
+            CustomCadenceField(recordingCadence: $recordingCadence, onCommit: commitCustomCadence)
+        }
+
+        if let estimate = fileSizeEstimate {
+            Text("Estimated file size per chunk: \(estimate)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var diskSpaceSection: some View {
+        Section("Disk Space") {
+            Picker("Minimum free space:", selection: $minDiskSpaceMB) {
+                Text("Disabled").tag(0)
+                Text("500 MB").tag(500)
+                Text("1 GB").tag(1000)
+                Text("2 GB").tag(2000)
+                Text("5 GB").tag(5000)
+                Text("10 GB").tag(10_000)
+            }
+            .onChange(of: minDiskSpaceMB) { applyConfig() }
+            .accessibilityLabel("Minimum free disk space")
+            Text("Recording stops automatically when free disk space drops below this threshold.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Apply an output-mode pick: immediately when idle, or after the user
+    /// confirms a restart while recording (reverting the picker on Cancel).
+    private func outputModeChanged() {
+        let old = prevOutputMode
+        guard outputMode != old else { return }
+        prevOutputMode = outputMode
+        guard recorder.isRecording else {
+            applyConfig()
+            return
+        }
+        confirmSettingsChange(reason: String(localized: "output mode")) {
+            applyConfig()
+            recorder.restartIfRecording(reason: "output mode changed")
+        } onCancel: {
+            prevOutputMode = old
+            outputMode = old
         }
     }
 
@@ -251,29 +245,6 @@ struct OutputSettingsTab: View {
         // DOLL-377: locale-aware binary byte formatting (honors the user's
         // decimal separator / unit labels) instead of a hardcoded "%.1f GB".
         Int64(bytes).formatted(.byteCount(style: .binary))
-    }
-
-    private var cadenceDescription: String {
-        let hours = recordingCadence / 3600
-        let minutes = (recordingCadence % 3600) / 60
-        let seconds = recordingCadence % 60
-        if hours > 0 && minutes == 0 && seconds == 0 {
-            return hours == 1
-                ? String(localized: "1 hour")
-                : String(localized: "\(hours) hours")
-        }
-        if hours > 0 {
-            return String(localized: "\(hours)h \(minutes)m")
-        }
-        if minutes > 0 && seconds == 0 {
-            return minutes == 1
-                ? String(localized: "1 minute")
-                : String(localized: "\(minutes) minutes")
-        }
-        if minutes > 0 {
-            return String(localized: "\(minutes)m \(seconds)s")
-        }
-        return String(localized: "\(seconds)s")
     }
 
     private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]

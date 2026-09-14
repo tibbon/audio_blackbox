@@ -20,6 +20,7 @@
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */; };
+		8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */ = {isa = PBXBuildFile; fileRef = CABDBB4ADB98586777721416 /* CustomCadenceField.swift */; };
 		86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
 		901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C8B317B7C306370E48F169 /* ChannelSpec.swift */; };
@@ -74,6 +75,7 @@
 		BE10D00516431CD06B0874FE /* SettingsKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsKeys.swift; sourceTree = "<group>"; };
 		BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsTab.swift; sourceTree = "<group>"; };
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		CABDBB4ADB98586777721416 /* CustomCadenceField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomCadenceField.swift; sourceTree = "<group>"; };
 		CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetectionSection.swift; sourceTree = "<group>"; };
 		EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+SleepWake.swift"; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
@@ -119,6 +121,7 @@
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */,
 				72C8B317B7C306370E48F169 /* ChannelSpec.swift */,
+				CABDBB4ADB98586777721416 /* CustomCadenceField.swift */,
 				BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */,
 				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
@@ -258,6 +261,7 @@
 				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
 				DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */,
 				901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */,
+				8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */,
 				B37E1AC67BACBE9D8170A4D6 /* GeneralSettingsTab.swift in Sources */,
 				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
 				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
