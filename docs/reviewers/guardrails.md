@@ -63,7 +63,6 @@ contracts and docs around the code moved with it.
   `GlobalHotkeyManager.swift` (DOLL-161); the deliberate leak in `macos_sample_rate_listener.rs`.
 - `CHANGELOG.md` is written in the release PR, not per change; `[Unreleased]` staying empty is
   normal. For a user-visible change, a line in the PR description is enough (low if missing).
-- The SwiftLint size thresholds above the kit values are deliberate (DOLL-653). Only flag them if
-  the branch loosens them further. The `Cargo.toml` backlog block is empty; flag any addition
-  that lacks a site count and a ticket.
+- The SwiftLint size thresholds are back at the kit's values (DOLL-653); flag any raise. The
+  `Cargo.toml` backlog block is empty; flag any addition that lacks a site count and a ticket.
 - Existing Swift tests are XCTest; that is not a deprecated idiom.
