@@ -7,20 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
 		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
 		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
+		4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */; };
 		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
 		5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0674B223253655522C4B25 /* SleepWakePolicy.swift */; };
+		5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98679487F91174C239180404 /* RecordingState+Notifications.swift */; };
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
+		8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */; };
 		86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */; };
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
+		9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */; };
 		BE185DA077E00152905E3845 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E06870571E2C3D34F75C6 /* CoreTests.swift */; };
 		D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAA96D336F9106E336A98A7 /* MeterView.swift */; };
 		E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C515ABD54DB00D283F73A524 /* OnboardingView.swift */; };
 		F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */; };
+		F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1992609A38241E7F7388606F /* RecordingState+Session.swift */; };
 		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -36,12 +42,17 @@
 
 /* Begin PBXFileReference section */
 		01DDEAE84906E5E68097EE69 /* Guardrails.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Guardrails.xcconfig; sourceTree = "<group>"; };
+		05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Monitoring.swift"; sourceTree = "<group>"; };
 		0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeTests.swift; sourceTree = "<group>"; };
+		1992609A38241E7F7388606F /* RecordingState+Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Session.swift"; sourceTree = "<group>"; };
 		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
 		3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
+		51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+StatusPoll.swift"; sourceTree = "<group>"; };
 		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A3E06870571E2C3D34F75C6 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		98679487F91174C239180404 /* RecordingState+Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Notifications.swift"; sourceTree = "<group>"; };
+		98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+OutputDirectory.swift"; sourceTree = "<group>"; };
 		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -51,6 +62,7 @@
 		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		BE10D00516431CD06B0874FE /* SettingsKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsKeys.swift; sourceTree = "<group>"; };
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+SleepWake.swift"; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
 		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
 		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -98,6 +110,12 @@
 				C515ABD54DB00D283F73A524 /* OnboardingView.swift */,
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
+				05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */,
+				98679487F91174C239180404 /* RecordingState+Notifications.swift */,
+				98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */,
+				1992609A38241E7F7388606F /* RecordingState+Session.swift */,
+				EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */,
+				51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
 				BE10D00516431CD06B0874FE /* SettingsKeys.swift */,
 				FD293BB00932B1C1871E349D /* SettingsView.swift */,
@@ -220,6 +238,12 @@
 				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
 				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
 				E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */,
+				8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */,
+				5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */,
+				0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */,
+				F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */,
+				4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */,
+				9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */,
 				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
 				427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */,
