@@ -273,6 +273,32 @@ pub(crate) fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     saturating_i32((sample.clamp(-1.0, 1.0) * pcm_full_scale(bits_per_sample)).round())
 }
 
+/// Create `output_dir` if needed and refuse to start below the free-space
+/// threshold, raising `disk_space_low` for the status poll.
+fn prepare_output_dir(
+    output_dir: &str,
+    min_disk_space_mb: u64,
+    disk_space_low: &AtomicBool,
+) -> Result<(), BlackboxError> {
+    if !Path::new(output_dir).exists() {
+        fs::create_dir_all(output_dir)?;
+    }
+
+    // Fail early if disk space is already below threshold
+    if min_disk_space_mb > 0
+        && let Some(available_mb) = available_disk_space_mb(output_dir)
+        && available_mb < min_disk_space_mb
+    {
+        // status flag only; reader at disk_space_low() loads Relaxed.
+        disk_space_low.store(true, Ordering::Relaxed);
+        return Err(BlackboxError::InsufficientDiskSpace {
+            available_mb,
+            required_mb: min_disk_space_mb,
+        });
+    }
+    Ok(())
+}
+
 /// Pack up to `MAX_CHANNELS` channel indices into the inline array the hot
 /// path reads, returning the array and how many entries are set.
 ///
@@ -344,7 +370,8 @@ fn convert_sample(s: f32, scale: f32, dither: bool, rng: &mut u32) -> i32 {
 }
 
 impl WriterThreadState {
-    /// Create a new `WriterThreadState` with initial WAV writers set up.
+    /// Create a new `WriterThreadState` with initial WAV writers set up
+    /// (none yet when the silence gate starts idle).
     #[expect(
         clippy::too_many_arguments,
         reason = "constructor mirrors the config fields one-to-one; a builder would add a heap round-trip per recording start"
@@ -363,80 +390,33 @@ impl WriterThreadState {
         gate_enabled: bool,
         gate_timeout_secs: u64,
     ) -> Result<Self, BlackboxError> {
-        if !Path::new(output_dir).exists() {
-            fs::create_dir_all(output_dir)?;
-        }
-
-        // Fail early if disk space is already below threshold
-        if min_disk_space_mb > 0
-            && let Some(available_mb) = available_disk_space_mb(output_dir)
-            && available_mb < min_disk_space_mb
-        {
-            // status flag only; reader at disk_space_low() loads Relaxed.
-            disk_space_low.store(true, Ordering::Relaxed);
-            return Err(BlackboxError::InsufficientDiskSpace {
-                available_mb,
-                required_mb: min_disk_space_mb,
-            });
-        }
-
-        let sample_scale = pcm_full_scale(bits_per_sample);
-
-        let (ch_arr, channel_count) = pack_channels(channels);
-
-        let gate_idle = Arc::new(AtomicBool::new(gate_enabled));
-        let initial_gate_state = if gate_enabled {
-            GateState::Idle
-        } else {
-            GateState::Recording
-        };
+        prepare_output_dir(output_dir, min_disk_space_mb, &disk_space_low)?;
 
         let mut state = Self {
-            sample_scale,
+            sample_scale: pcm_full_scale(bits_per_sample),
             monitor_only: false,
-            disk_stopped: false,
             gate_enabled,
-            gate_state: initial_gate_state,
+            gate_state: if gate_enabled {
+                GateState::Idle
+            } else {
+                GateState::Recording
+            },
             output_mode,
-            channel_count,
-            total_device_channels: 0, // set by caller or process_audio
-            disk_check_counter: 0,
-            flush_frame_counter: 0,
-            channels: ch_arr,
-            peak_scratch: [0.0_f32; MAX_CHANNELS],
-            active_indices: [0_u8; MAX_CHANNELS],
-            active_count: 0,
-            active_cache_frame_size: usize::MAX,
-            dither_rng: 0x9E37_79B9, // nonzero xorshift32 seed (DOLL-373)
-            consecutive_write_failures: 0,
-            writer: None,
-            multichannel_writers: Vec::new(),
             write_errors,
-            peak_levels,
-            frame_remainder: Vec::new(),
-            combined_buf: Vec::new(),
-            gate_pending_open: false,
-            gate_pending_close: false,
-            gate_silence_frames: 0,
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
-            gate_idle,
-            gate_preroll: Vec::new(),
+            gate_idle: Arc::new(AtomicBool::new(gate_enabled)),
             output_dir: output_dir.to_owned(),
             #[cfg(unix)]
             output_dir_cstr: CString::new(output_dir).ok(),
-            sample_rate,
             bits_per_sample,
             current_spec: crate::raw_wav_writer::WavSpec {
                 channels: 1,
                 sample_rate,
                 bits_per_sample,
             },
-            pending_files: Vec::new(),
             silence_threshold,
             min_disk_space_mb,
             disk_space_low,
-            write_failed: Arc::new(AtomicBool::new(false)),
-            timestamp_fn: Arc::new(timestamp_now),
             // SilenceCheckWorker::new returns Option (DOLL-122) — spawn
             // failures degrade to "no silence checks this session"
             // rather than crashing the recording.
@@ -445,8 +425,7 @@ impl WriterThreadState {
             } else {
                 None
             },
-            #[cfg(test)]
-            samples_consumed_total: Arc::new(AtomicU64::new(0)),
+            ..Self::base(sample_rate, channels, peak_levels)
         };
 
         // When gate is enabled, start idle (no files). Writers are created on first signal.
@@ -467,19 +446,24 @@ impl WriterThreadState {
         channels: &[usize],
         peak_levels: Arc<[CacheAlignedPeak]>,
     ) -> Self {
-        let sample_scale = 8_388_607.0_f32; // 24-bit max (monitor mode is always 24-bit)
+        Self::base(sample_rate, channels, peak_levels)
+    }
 
+    /// Fields shared by both constructors, with every mode-specific field at
+    /// its monitor-mode value: 24-bit scale, no files, gate and silence checks
+    /// off. `new` overrides the recording fields with struct update syntax.
+    fn base(sample_rate: u32, channels: &[usize], peak_levels: Arc<[CacheAlignedPeak]>) -> Self {
         let (ch_arr, channel_count) = pack_channels(channels);
 
         Self {
-            sample_scale,
+            sample_scale: 8_388_607.0_f32, // 24-bit max (monitor mode is always 24-bit)
             monitor_only: true,
             disk_stopped: false,
             gate_enabled: false,
             gate_state: GateState::Recording,
             output_mode: OutputMode::Single, // unused in monitor mode
             channel_count,
-            total_device_channels: 0,
+            total_device_channels: 0, // set by caller or process_audio
             disk_check_counter: 0,
             flush_frame_counter: 0,
             channels: ch_arr,
@@ -538,34 +522,16 @@ impl WriterThreadState {
         info!("Setting up split mode with {ch_count} channels");
 
         self.multichannel_writers.clear();
-        for _ in 0..ch_count {
-            self.multichannel_writers.push(None);
-        }
+        self.multichannel_writers.resize_with(ch_count, || None);
 
-        for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-            let final_path =
-                disambiguate_path(&format!("{}/{date_str}-ch{channel}.wav", self.output_dir));
-            let tmp_path = tmp_wav_path(&final_path);
-
-            let spec = crate::raw_wav_writer::WavSpec {
-                channels: 1,
-                sample_rate: self.sample_rate,
-                bits_per_sample: self.bits_per_sample,
-            };
-
-            let writer = create_wav_writer(&tmp_path, spec)?;
-
+        for idx in 0..ch_count {
+            let final_path = self.period_path(&date_str, &format!("-ch{}", self.channels[idx]));
+            let writer =
+                self.open_pending_writer(final_path, self.mono_spec(), "channel WAV file")?;
             self.multichannel_writers[idx] = Some(writer);
-            self.pending_files.push((tmp_path, final_path.clone()));
-            info!("Created channel WAV file: {final_path}");
         }
 
-        self.current_spec = crate::raw_wav_writer::WavSpec {
-            channels: 1,
-            sample_rate: self.sample_rate,
-            bits_per_sample: self.bits_per_sample,
-        };
-
+        self.current_spec = self.mono_spec();
         Ok(())
     }
 
@@ -573,25 +539,12 @@ impl WriterThreadState {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
-        let final_path =
-            disambiguate_path(&format!("{}/{date_str}-multichannel.wav", self.output_dir));
-        let tmp_path = tmp_wav_path(&final_path);
-
         info!("Setting up multichannel mode with {ch_count} channels");
 
-        let spec = crate::raw_wav_writer::WavSpec {
-            channels: u16::from(self.channel_count),
-            sample_rate: self.sample_rate,
-            bits_per_sample: self.bits_per_sample,
-        };
-
-        let writer = create_wav_writer(&tmp_path, spec)?;
-
-        self.writer = Some(writer);
+        let spec = self.multichannel_spec();
+        let final_path = self.period_path(&date_str, "-multichannel");
+        self.writer = Some(self.open_pending_writer(final_path, spec, "multichannel WAV file")?);
         self.current_spec = spec;
-        self.pending_files.push((tmp_path, final_path.clone()));
-
-        info!("Created multichannel WAV file: {final_path}");
         Ok(())
     }
 
@@ -601,25 +554,53 @@ impl WriterThreadState {
 
         info!("Setting up standard mode with {ch_count} channels");
 
-        let num_channels: u16 = if ch_count == 1 { 1 } else { 2 };
-
-        let final_path = disambiguate_path(&format!("{}/{date_str}.wav", self.output_dir));
-        let tmp_path = tmp_wav_path(&final_path);
-
         let spec = crate::raw_wav_writer::WavSpec {
-            channels: num_channels,
+            channels: if ch_count == 1 { 1 } else { 2 },
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
         };
-
-        let writer = create_wav_writer(&tmp_path, spec)?;
-
-        self.writer = Some(writer);
+        let final_path = self.period_path(&date_str, "");
+        self.writer = Some(self.open_pending_writer(final_path, spec, "WAV file")?);
         self.current_spec = spec;
-        self.pending_files.push((tmp_path, final_path.clone()));
-
-        info!("Created WAV file: {final_path}");
         Ok(())
+    }
+
+    /// `<output_dir>/<date_str><suffix>.wav`, made unique if that file exists.
+    fn period_path(&self, date_str: &str, suffix: &str) -> String {
+        disambiguate_path(&format!("{}/{date_str}{suffix}.wav", self.output_dir))
+    }
+
+    /// Spec of one per-channel file in split mode.
+    const fn mono_spec(&self) -> crate::raw_wav_writer::WavSpec {
+        crate::raw_wav_writer::WavSpec {
+            channels: 1,
+            sample_rate: self.sample_rate,
+            bits_per_sample: self.bits_per_sample,
+        }
+    }
+
+    /// Spec of the interleaved file for more than two channels.
+    fn multichannel_spec(&self) -> crate::raw_wav_writer::WavSpec {
+        crate::raw_wav_writer::WavSpec {
+            channels: u16::from(self.channel_count),
+            sample_rate: self.sample_rate,
+            bits_per_sample: self.bits_per_sample,
+        }
+    }
+
+    /// Create the temp-file writer for `final_path` and record the pending
+    /// tmp → final rename, logging `Created {what}: {final_path}`.
+    fn open_pending_writer(
+        &mut self,
+        final_path: String,
+        spec: crate::raw_wav_writer::WavSpec,
+        what: &str,
+    ) -> Result<RawWavWriter, BlackboxError> {
+        let tmp_path = tmp_wav_path(&final_path);
+        let writer = create_wav_writer(&tmp_path, spec)?;
+        info!("Created {what}: {final_path}");
+        self.pending_files.push((tmp_path, final_path));
+        Ok(writer)
     }
 
     /// Check available disk space and stop writing if below threshold.
@@ -709,6 +690,10 @@ impl WriterThreadState {
     /// Handles partial frames: if `data` doesn't divide evenly by `total_device_channels`,
     /// leftover samples are stored in `frame_remainder` and prepended to the next call.
     /// Also tracks per-channel peak levels for metering.
+    ///
+    /// The per-frame loops live in `track_peaks`, `write_split_frames` and
+    /// `write_single_frames`. Each is called once per batch, so the split adds
+    /// no call per frame (DOLL-653).
     pub(crate) fn write_samples(&mut self, data: &[f32]) {
         // If total_device_channels is 0 or disk stopped, skip writing
         if self.total_device_channels == 0 || self.disk_stopped {
@@ -716,19 +701,21 @@ impl WriterThreadState {
         }
 
         // DOLL-465: detach the pre-roll buffer so the gate-idle branch can
-        // fill it while `frame_data` immutably borrows `self.combined_buf`
-        // below; reattached at the end of the function.
+        // fill it while `frame_data` is borrowed; reattached at the end.
+        // `combined_buf` is detached the same way so the batch helpers below
+        // can take `&mut self` (DOLL-653). `mem::take` doesn't allocate.
         let mut gate_preroll = std::mem::take(&mut self.gate_preroll);
+        let mut combined_buf = std::mem::take(&mut self.combined_buf);
 
         // Prepend any leftover samples from the previous call using a pre-allocated buffer
         let work_data: &[f32] = if self.frame_remainder.is_empty() {
             data
         } else {
-            self.combined_buf.clear();
-            self.combined_buf.extend_from_slice(&self.frame_remainder);
-            self.combined_buf.extend_from_slice(data);
+            combined_buf.clear();
+            combined_buf.extend_from_slice(&self.frame_remainder);
+            combined_buf.extend_from_slice(data);
             self.frame_remainder.clear();
-            &self.combined_buf
+            &combined_buf
         };
 
         let frame_size = self.total_device_channels as usize;
@@ -741,137 +728,180 @@ impl WriterThreadState {
         }
 
         let frame_data = &work_data[..used];
-
-        // Cache scale factor on the stack for the inner loop
-        let scale = self.sample_scale;
-        // DOLL-373: dither 16-bit output. Copy the RNG state into a local so
-        // the per-sample draws don't borrow `self` inside the write loops
-        // (which hold &mut self.writer / multichannel_writers); written back
-        // after the loops.
-        let dither = self.bits_per_sample == 16;
-        let mut rng = self.dither_rng;
-        // DOLL-349: count write_sample failures this batch (disk full / I/O
-        // error), distinct from ring-buffer overflow. Drives the self-stop below.
-        let mut write_failures = 0_u64;
-
         let ch_count = self.channel_count as usize;
-        let ch_slice = &self.channels[..ch_count];
 
         // Reset only active channels in peak scratch buffer (no heap alloc)
         for p in &mut self.peak_scratch[..ch_count] {
             *p = 0.0;
         }
+        self.refresh_active_channels(frame_size);
 
-        // Pre-filter `ch_slice` to only contain channels in range for this
-        // device's frame size. This hoists the bounds check OUT of the
-        // per-frame loop so `frame.get_unchecked` is sound in the hot path
-        // (DOLL-126). Out-of-range channels (e.g. a config that requested
-        // ch5 on a 2-channel device) are skipped for the batch — same
-        // graceful-skip behavior the prior `frame.get()` Option-match
-        // produced.
-        //
-        // DOLL-375: the active set is a pure function of the (immutable)
-        // channel list and `frame_size`, so cache it and rebuild only when
-        // `frame_size` changes — instead of zero-initialising a 255-byte array
-        // and re-scanning every channel on every `write_samples` call.
-        if self.active_cache_frame_size != frame_size {
-            let mut count = 0_usize;
-            // `ch_slice` holds at most MAX_CHANNELS (255) entries, so every
-            // position fits a u8 index.
-            for (idx, &channel) in (0_u8..=u8::MAX).zip(ch_slice) {
-                if (channel as usize) < frame_size {
-                    self.active_indices[count] = idx;
-                    count += 1;
+        let write_failures =
+            if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
+                // Monitor mode or gate idle: only track peaks, no disk writes
+                self.track_peaks(frame_data, frame_size);
+                // DOLL-465: retain this batch while the gate is idle — if it's
+                // the one that trips the gate, `process_gate_open` replays it so
+                // the signal onset isn't lost. Last batch wins; clear+extend
+                // reuses the allocation. Bounded by the caller's batch size
+                // (`WRITER_THREAD_READ_CHUNK` in production).
+                if self.gate_enabled && !self.monitor_only && self.gate_state == GateState::Idle {
+                    gate_preroll.clear();
+                    gate_preroll.extend_from_slice(frame_data);
                 }
-            }
-            self.active_count = count;
-            self.active_cache_frame_size = frame_size;
+                0
+            } else {
+                match self.output_mode {
+                    OutputMode::Split => self.write_split_frames(frame_data, frame_size),
+                    OutputMode::Single => self.write_single_frames(frame_data, frame_size),
+                }
+            };
+
+        self.note_write_failures(write_failures, full_frames);
+        self.publish_peaks(ch_count);
+        if self.gate_enabled && !self.monitor_only {
+            self.update_gate(ch_count, full_frames);
         }
+
+        // DOLL-465: reattach the buffers detached at the top.
+        self.gate_preroll = gate_preroll;
+        self.combined_buf = combined_buf;
+    }
+
+    /// Rebuild the cached list of channel positions that exist on a device
+    /// with `frame_size` channels.
+    ///
+    /// Pre-filters `channels` to those in range for this device's frame size.
+    /// This hoists the bounds check OUT of the per-frame loops so
+    /// `frame.get_unchecked` is sound in the hot path (DOLL-126). Out-of-range
+    /// channels (e.g. a config that requested ch5 on a 2-channel device) are
+    /// skipped for the batch — same graceful-skip behavior the prior
+    /// `frame.get()` Option-match produced.
+    ///
+    /// DOLL-375: the active set is a pure function of the (immutable) channel
+    /// list and `frame_size`, so it is cached and rebuilt only when
+    /// `frame_size` changes — instead of zero-initialising a 255-byte array
+    /// and re-scanning every channel on every `write_samples` call.
+    #[inline]
+    fn refresh_active_channels(&mut self, frame_size: usize) {
+        if self.active_cache_frame_size == frame_size {
+            return;
+        }
+        let mut count = 0_usize;
+        // `channels` holds at most MAX_CHANNELS (255) entries, so every
+        // position fits a u8 index.
+        let ch_slice = &self.channels[..self.channel_count as usize];
+        for (idx, &channel) in (0_u8..=u8::MAX).zip(ch_slice) {
+            if (channel as usize) < frame_size {
+                self.active_indices[count] = idx;
+                count += 1;
+            }
+        }
+        self.active_count = count;
+        self.active_cache_frame_size = frame_size;
+    }
+
+    /// Track per-channel peaks for a batch of whole frames without writing.
+    #[inline]
+    fn track_peaks(&mut self, frame_data: &[f32], frame_size: usize) {
+        let ch_slice = &self.channels[..self.channel_count as usize];
         let active_idx_slice = &self.active_indices[..self.active_count];
-
-        if self.monitor_only || (self.gate_enabled && self.gate_state == GateState::Idle) {
-            // Monitor mode or gate idle: only track peaks, no disk writes
-            for frame in frame_data.chunks_exact(frame_size) {
-                for &active_idx in active_idx_slice {
-                    let idx = active_idx as usize;
-                    let channel = ch_slice[idx] as usize;
-                    // SAFETY: pre-filter above guaranteed `channel < frame_size`,
-                    // and `chunks_exact` yields frames of exactly `frame_size`
-                    // samples — so `channel` is in bounds.
-                    let s = unsafe { *frame.get_unchecked(channel) };
-                    if s.is_finite() {
-                        self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                    }
-                }
-            }
-            // DOLL-465: retain this batch while the gate is idle — if it's
-            // the one that trips the gate, `process_gate_open` replays it so
-            // the signal onset isn't lost. Last batch wins; clear+extend
-            // reuses the allocation. Bounded by the caller's batch size
-            // (`WRITER_THREAD_READ_CHUNK` in production).
-            if self.gate_enabled && !self.monitor_only && self.gate_state == GateState::Idle {
-                gate_preroll.clear();
-                gate_preroll.extend_from_slice(frame_data);
-            }
-        } else {
-            match self.output_mode {
-                OutputMode::Split => {
-                    for frame in frame_data.chunks_exact(frame_size) {
-                        for &active_idx in active_idx_slice {
-                            let idx = active_idx as usize;
-                            let channel = ch_slice[idx] as usize;
-                            // SAFETY: see comment above.
-                            let s = unsafe { *frame.get_unchecked(channel) };
-                            if s.is_finite() {
-                                self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                            }
-                            if let Some(w) = &mut self.multichannel_writers[idx]
-                                && w.write_sample(convert_sample(s, scale, dither, &mut rng))
-                                    .is_err()
-                            {
-                                self.write_errors.fetch_add(1, Ordering::Relaxed);
-                                write_failures += 1;
-                            }
-                        }
-                    }
-                }
-                #[expect(
-                    clippy::excessive_nesting,
-                    reason = "hot-path sample loop (DOLL-653): splitting it costs a call per frame; revisit with the too_many_lines backlog"
-                )]
-                OutputMode::Single => {
-                    if let Some(w) = &mut self.writer {
-                        for frame in frame_data.chunks_exact(frame_size) {
-                            for &active_idx in active_idx_slice {
-                                let idx = active_idx as usize;
-                                let channel = ch_slice[idx] as usize;
-                                // SAFETY: see comment above.
-                                let s = unsafe { *frame.get_unchecked(channel) };
-                                if s.is_finite() {
-                                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
-                                }
-                                if w.write_sample(convert_sample(s, scale, dither, &mut rng))
-                                    .is_err()
-                                {
-                                    self.write_errors.fetch_add(1, Ordering::Relaxed);
-                                    write_failures += 1;
-                                }
-                            }
-                        }
-                    }
+        for frame in frame_data.chunks_exact(frame_size) {
+            for &active_idx in active_idx_slice {
+                let idx = active_idx as usize;
+                let channel = ch_slice[idx] as usize;
+                // SAFETY: `refresh_active_channels` guaranteed
+                // `channel < frame_size`, and `chunks_exact` yields frames of
+                // exactly `frame_size` samples — so `channel` is in bounds.
+                let s = unsafe { *frame.get_unchecked(channel) };
+                if s.is_finite() {
+                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                 }
             }
         }
+    }
 
-        // DOLL-349: react to persistent write_sample failures (disk full or
-        // otherwise unwritable). Previously every failed write just bumped the
-        // shared overflow counter and recording spun on forever, persisting no
-        // audio and misreporting the cause as CPU "heavy load". Track
-        // consecutive failures and, once they add up to ~1s of audio, stop like
-        // the disk-low path (finalize what landed, latch disk_stopped), and
-        // raise the distinct `write_failed` flag (DOLL-437) so the UI shows
-        // "unable to write to disk" rather than the low-space message. A batch
-        // that writes cleanly clears the streak.
+    /// Split mode: write each active channel of a batch to its own file and
+    /// track peaks. Returns how many samples failed to write (DOLL-349).
+    #[inline]
+    fn write_split_frames(&mut self, frame_data: &[f32], frame_size: usize) -> u64 {
+        let scale = self.sample_scale;
+        // DOLL-373: dither 16-bit output. The RNG state lives in a local so the
+        // per-sample draws don't borrow `self` inside the loop, and is written
+        // back after it.
+        let dither = self.bits_per_sample == 16;
+        let mut rng = self.dither_rng;
+        let mut write_failures = 0_u64;
+        let ch_slice = &self.channels[..self.channel_count as usize];
+        let active_idx_slice = &self.active_indices[..self.active_count];
+        for frame in frame_data.chunks_exact(frame_size) {
+            for &active_idx in active_idx_slice {
+                let idx = active_idx as usize;
+                let channel = ch_slice[idx] as usize;
+                // SAFETY: see `track_peaks`.
+                let s = unsafe { *frame.get_unchecked(channel) };
+                if s.is_finite() {
+                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                }
+                if let Some(w) = &mut self.multichannel_writers[idx]
+                    && w.write_sample(convert_sample(s, scale, dither, &mut rng))
+                        .is_err()
+                {
+                    self.write_errors.fetch_add(1, Ordering::Relaxed);
+                    write_failures += 1;
+                }
+            }
+        }
+        self.dither_rng = rng;
+        write_failures
+    }
+
+    /// Single mode: write a batch's active channels interleaved into one file
+    /// and track peaks. Returns how many samples failed to write (DOLL-349).
+    #[inline]
+    fn write_single_frames(&mut self, frame_data: &[f32], frame_size: usize) -> u64 {
+        let Some(w) = self.writer.as_mut() else {
+            return 0;
+        };
+        let scale = self.sample_scale;
+        // DOLL-373: see `write_split_frames`.
+        let dither = self.bits_per_sample == 16;
+        let mut rng = self.dither_rng;
+        let mut write_failures = 0_u64;
+        let ch_slice = &self.channels[..self.channel_count as usize];
+        let active_idx_slice = &self.active_indices[..self.active_count];
+        for frame in frame_data.chunks_exact(frame_size) {
+            for &active_idx in active_idx_slice {
+                let idx = active_idx as usize;
+                let channel = ch_slice[idx] as usize;
+                // SAFETY: see `track_peaks`.
+                let s = unsafe { *frame.get_unchecked(channel) };
+                if s.is_finite() {
+                    self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
+                }
+                if w.write_sample(convert_sample(s, scale, dither, &mut rng))
+                    .is_err()
+                {
+                    self.write_errors.fetch_add(1, Ordering::Relaxed);
+                    write_failures += 1;
+                }
+            }
+        }
+        self.dither_rng = rng;
+        write_failures
+    }
+
+    /// DOLL-349: react to persistent `write_sample` failures (disk full or
+    /// otherwise unwritable).
+    ///
+    /// Previously every failed write just bumped the shared overflow counter
+    /// and recording spun on forever, persisting no audio and misreporting the
+    /// cause as CPU "heavy load". Track consecutive failures and, once they add
+    /// up to ~1s of audio, stop like the disk-low path (finalize what landed,
+    /// latch `disk_stopped`), and raise the distinct `write_failed` flag
+    /// (DOLL-437) so the UI shows "unable to write to disk" rather than the
+    /// low-space message. A batch that writes cleanly clears the streak.
+    fn note_write_failures(&mut self, write_failures: u64, full_frames: usize) {
         if write_failures > 0 {
             self.consecutive_write_failures = self
                 .consecutive_write_failures
@@ -888,10 +918,16 @@ impl WriterThreadState {
         } else if full_frames > 0 {
             self.consecutive_write_failures = 0;
         }
+    }
 
-        // Publish peaks to shared atomics (only active channels, not full array).
-        // peak_levels.len() == ch_count (both derived from the same channel list at construction),
-        // so zip is always exhaustive over the active channels with no bounds check per iteration.
+    /// Publish peaks to the shared atomics (only active channels, not the full
+    /// array).
+    ///
+    /// `peak_levels.len() == ch_count` (both derived from the same channel list
+    /// at construction), so the zip is exhaustive over the active channels
+    /// with no bounds check per iteration.
+    #[inline]
+    fn publish_peaks(&self, ch_count: usize) {
         for (peak_slot, &peak) in self
             .peak_levels
             .iter()
@@ -899,44 +935,38 @@ impl WriterThreadState {
         {
             peak_slot.value.store(peak.to_bits(), Ordering::Relaxed);
         }
+    }
 
-        // Silence gate transitions
-        if self.gate_enabled && !self.monitor_only {
-            let max_peak = self.peak_scratch[..ch_count]
-                .iter()
-                .copied()
-                .fold(0.0_f32, f32::max);
-            let has_signal = max_peak > self.silence_threshold;
+    /// Silence gate transitions for the batch just processed.
+    ///
+    /// Only sets `gate_pending_open` / `gate_pending_close`; the main loop
+    /// opens and finalizes writers, which keeps `write_samples` free of file
+    /// I/O.
+    fn update_gate(&mut self, ch_count: usize, full_frames: usize) {
+        let max_peak = self.peak_scratch[..ch_count]
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max);
+        let has_signal = max_peak > self.silence_threshold;
 
-            match self.gate_state {
-                GateState::Idle => {
-                    if has_signal {
-                        // Flag for the main loop to open writers before the next read.
-                        // Keeps write_samples() free of file I/O.
-                        self.gate_pending_open = true;
-                        self.gate_silence_frames = 0;
-                    }
+        match self.gate_state {
+            GateState::Idle => {
+                if has_signal {
+                    self.gate_pending_open = true;
+                    self.gate_silence_frames = 0;
                 }
-                GateState::Recording => {
-                    if has_signal {
-                        self.gate_silence_frames = 0;
-                    } else {
-                        self.gate_silence_frames += full_frames as u64;
-                        if self.gate_silence_frames >= self.gate_timeout_frames {
-                            // Flag for the main loop to finalize writers.
-                            // Keeps write_samples() free of file I/O.
-                            self.gate_pending_close = true;
-                        }
+            }
+            GateState::Recording => {
+                if has_signal {
+                    self.gate_silence_frames = 0;
+                } else {
+                    self.gate_silence_frames += full_frames as u64;
+                    if self.gate_silence_frames >= self.gate_timeout_frames {
+                        self.gate_pending_close = true;
                     }
                 }
             }
         }
-
-        // DOLL-373: persist the dither RNG advance for the next batch.
-        self.dither_rng = rng;
-
-        // DOLL-465: reattach the pre-roll buffer detached at the top.
-        self.gate_preroll = gate_preroll;
     }
 
     /// Process a pending gate open: create WAV files and transition to Recording.
@@ -1041,6 +1071,31 @@ impl WriterThreadState {
         }
         info!("Rotating recording files...");
 
+        let final_files = self.close_period_files();
+
+        // Hand the recently-rotated files to the dedicated silence-check
+        // worker. The writer thread immediately resumes draining the ring
+        // buffer during rotation; silence detection happens off-thread.
+        if !final_files.is_empty()
+            && let Some(worker) = self.silence_worker.as_ref()
+        {
+            worker.submit(final_files);
+        }
+
+        // Create new files for the next recording period. Any creation
+        // failure latches the write_failed self-stop (DOLL-444).
+        if !self.open_next_period_files() {
+            warn!(
+                "Could not create next recording file(s) during rotation — \
+                 stopping recording (disk full or output directory unwritable)"
+            );
+            self.latch_write_failed_stop();
+        }
+    }
+
+    /// Finalize the current period's writers and rename their temp files
+    /// into place. Returns the final paths that were renamed.
+    fn close_period_files(&mut self) -> Vec<String> {
         // Take all pending (tmp → final) pairs from the previous period
         let old_pending: Vec<(String, String)> = std::mem::take(&mut self.pending_files);
 
@@ -1062,101 +1117,70 @@ impl WriterThreadState {
 
         // Rename tmp files to final paths
         let mut final_files = Vec::new();
-        for (tmp_path, final_path) in &old_pending {
-            if Path::new(tmp_path).exists() {
-                if let Err(e) = fs::rename(tmp_path, final_path) {
-                    error!("Error renaming {tmp_path} to {final_path}: {e}");
-                } else {
-                    info!("Finalized recording to {final_path}");
-                    final_files.push(final_path.clone());
-                }
+        for (tmp_path, final_path) in old_pending {
+            if !Path::new(&tmp_path).exists() {
+                continue;
+            }
+            if let Err(e) = fs::rename(&tmp_path, &final_path) {
+                error!("Error renaming {tmp_path} to {final_path}: {e}");
+            } else {
+                info!("Finalized recording to {final_path}");
+                final_files.push(final_path);
             }
         }
+        final_files
+    }
 
-        // Hand the recently-rotated files to the dedicated silence-check
-        // worker. The writer thread immediately resumes draining the ring
-        // buffer during rotation; silence detection happens off-thread.
-        if !final_files.is_empty()
-            && let Some(worker) = self.silence_worker.as_ref()
-        {
-            worker.submit(final_files);
-        }
-
-        // Create new files for the next recording period. Any creation
-        // failure latches the write_failed self-stop below (DOLL-444).
-        let mut create_failed = false;
+    /// Open the next period's files. Returns `false` if any could not be
+    /// created; the ones that did open stay open (DOLL-444).
+    fn open_next_period_files(&mut self) -> bool {
         let ch_count = self.channel_count as usize;
         let date_str = (self.timestamp_fn)();
         match self.output_mode {
             OutputMode::Split => {
-                for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-                    let final_path = disambiguate_path(&format!(
-                        "{}/{date_str}-ch{channel}.wav",
-                        self.output_dir
-                    ));
-                    let tmp = tmp_wav_path(&final_path);
-                    let spec = crate::raw_wav_writer::WavSpec {
-                        channels: 1,
-                        sample_rate: self.sample_rate,
-                        bits_per_sample: self.bits_per_sample,
-                    };
-                    match create_wav_writer(&tmp, spec) {
-                        Ok(w) => {
-                            self.multichannel_writers[idx] = Some(w);
-                            self.pending_files.push((tmp, final_path.clone()));
-                            info!("Created channel WAV file: {final_path}");
-                        }
+                let mut all_created = true;
+                for idx in 0..ch_count {
+                    let final_path =
+                        self.period_path(&date_str, &format!("-ch{}", self.channels[idx]));
+                    match self.open_pending_writer(final_path, self.mono_spec(), "channel WAV file")
+                    {
+                        Ok(w) => self.multichannel_writers[idx] = Some(w),
                         Err(e) => {
                             error!("Failed to create channel WAV file: {e}");
-                            create_failed = true;
+                            all_created = false;
                         }
                     }
                 }
+                all_created
             }
             OutputMode::Single if ch_count > 2 => {
-                let final_path =
-                    disambiguate_path(&format!("{}/{date_str}-multichannel.wav", self.output_dir));
-                let tmp = tmp_wav_path(&final_path);
-                let spec = crate::raw_wav_writer::WavSpec {
-                    channels: u16::from(self.channel_count),
-                    sample_rate: self.sample_rate,
-                    bits_per_sample: self.bits_per_sample,
-                };
-                match create_wav_writer(&tmp, spec) {
+                let final_path = self.period_path(&date_str, "-multichannel");
+                let spec = self.multichannel_spec();
+                match self.open_pending_writer(final_path, spec, "multichannel WAV file") {
                     Ok(w) => {
                         self.writer = Some(w);
-                        self.pending_files.push((tmp, final_path.clone()));
-                        info!("Created multichannel WAV file: {final_path}");
+                        true
                     }
                     Err(e) => {
                         error!("Failed to create multichannel WAV file: {e}");
-                        create_failed = true;
+                        false
                     }
                 }
             }
             OutputMode::Single => {
-                let final_path = disambiguate_path(&format!("{}/{date_str}.wav", self.output_dir));
-                let tmp = tmp_wav_path(&final_path);
-                match create_wav_writer(&tmp, self.current_spec) {
+                let final_path = self.period_path(&date_str, "");
+                match self.open_pending_writer(final_path, self.current_spec, "new recording file")
+                {
                     Ok(w) => {
                         self.writer = Some(w);
-                        self.pending_files.push((tmp, final_path.clone()));
-                        info!("Created new recording file: {final_path}");
+                        true
                     }
                     Err(e) => {
                         error!("Failed to create new WAV file: {e}");
-                        create_failed = true;
+                        false
                     }
                 }
             }
-        }
-
-        if create_failed {
-            warn!(
-                "Could not create next recording file(s) during rotation — \
-                 stopping recording (disk full or output directory unwritable)"
-            );
-            self.latch_write_failed_stop();
         }
     }
 

@@ -406,6 +406,24 @@ impl CpalAudioProcessor {
             })
     }
 
+    /// Read `device`'s current default config and publish its sample rate to
+    /// `sample_rate` and the lock-free mirror.
+    ///
+    /// Uses the device's current default config (sample rate, channels,
+    /// format). This avoids changing `kAudioDevicePropertyNominalSampleRate`
+    /// on macOS, which would conflict with DAWs and other pro audio apps
+    /// sharing the device.
+    fn load_input_config(
+        &mut self,
+        device: &cpal::Device,
+    ) -> Result<cpal::SupportedStreamConfig, BlackboxError> {
+        let config = default_input_config(device)?;
+        self.sample_rate = config.sample_rate();
+        self.sample_rate_atomic
+            .store(self.sample_rate, Ordering::Relaxed);
+        Ok(config)
+    }
+
     fn process_audio_impl(
         &mut self,
         channels: &[usize],
@@ -438,65 +456,20 @@ impl CpalAudioProcessor {
                 .map_or_else(|_| "unknown".to_owned(), |d| d.name().to_owned())
         );
 
-        // Use the device's current default config (sample rate, channels, format).
-        // This avoids changing kAudioDevicePropertyNominalSampleRate on macOS,
-        // which would conflict with DAWs and other pro audio apps sharing the device.
-        let config =
-            device
-                .default_input_config()
-                .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to get default input stream config".to_owned(),
-                    source: Box::new(e),
-                })?;
-
+        let config = self.load_input_config(&device)?;
         debug!("Default input stream config: {config:?}");
 
         // Keep cpal's u16 for the writer state; index math uses usize.
         let device_channels = config.channels();
         let total_channels = usize::from(device_channels);
         let sample_rate = config.sample_rate();
-        self.sample_rate = sample_rate;
-        self.sample_rate_atomic
-            .store(sample_rate, Ordering::Relaxed);
 
-        // Auto-adapt to available channels
-        let mut actual_channels: Vec<usize> = Vec::new();
-        for &channel in channels {
-            if channel < total_channels {
-                actual_channels.push(channel);
-            } else {
-                warn!(
-                    "Channel {channel} not available on device. Device only has {total_channels} channels."
-                );
-            }
-        }
-
-        if actual_channels.is_empty() {
-            warn!(
-                "No requested channels available. Using all available channels (0 to {}).",
-                total_channels - 1
-            );
-            actual_channels = (0..total_channels).collect();
-        }
-
+        let actual_channels = recording_channels(channels, total_channels);
         info!("Using channels: {actual_channels:?}");
 
-        // Output mode is now an enum — invalid values are impossible by construction.
-
-        // Capture config values before entering the closure
-        let silence_threshold = app_config.get_silence_threshold();
-        let min_disk_space_mb = app_config.get_min_disk_space_mb();
-        let bits_per_sample = app_config.get_bits_per_sample();
-
         // Create per-channel peak levels for metering
-        let peak_levels: Arc<[CacheAlignedPeak]> =
-            std::iter::repeat_with(|| CacheAlignedPeak::new(0))
-                .take(actual_channels.len())
-                .collect();
+        let peak_levels = new_peak_levels(actual_channels.len());
         self.peak_levels = Arc::clone(&peak_levels);
-
-        let gate_enabled = app_config.get_silence_gate_enabled();
-        let gate_timeout_secs = app_config.get_silence_gate_timeout_secs();
 
         // Create writer thread state with initial WAV writers
         let mut state = WriterThreadState::new(
@@ -504,14 +477,14 @@ impl CpalAudioProcessor {
             sample_rate,
             &actual_channels,
             output_mode,
-            silence_threshold,
+            app_config.get_silence_threshold(),
             Arc::clone(&self.write_errors),
-            min_disk_space_mb,
+            app_config.get_min_disk_space_mb(),
             Arc::clone(&self.disk_space_low),
-            bits_per_sample,
+            app_config.get_bits_per_sample(),
             peak_levels,
-            gate_enabled,
-            gate_timeout_secs,
+            app_config.get_silence_gate_enabled(),
+            app_config.get_silence_gate_timeout_secs(),
         )?;
         self.gate_idle = Arc::clone(&state.gate_idle);
         state.total_device_channels = device_channels;
@@ -519,51 +492,10 @@ impl CpalAudioProcessor {
         // a persistent-write-failure stop is visible to the FFI status poll.
         state.write_failed = Arc::clone(&self.write_failed);
 
-        // Create ring buffer
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
-        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
-
-        // Create rotation flag and command channel
-        let rotation_needed = Arc::new(AtomicBool::new(false));
-        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
-        // Clone for the writer thread
-        let rotation_needed_writer = Arc::clone(&rotation_needed);
-
-        // Spawn writer thread with elevated priority to avoid ring buffer overflow
-        let join_handle = std::thread::Builder::new()
-            .name("blackbox-writer".to_owned())
-            .spawn(move || {
-                #[cfg(target_os = "macos")]
-                // SAFETY: macOS-only libc call. No pointer args; affects
-                // only the current thread's QoS attribute. The passed
-                // `qos_class_t` is a valid enum variant; a different
-                // (invalid) value could in principle be unsound, but
-                // every call site here passes a known-good constant.
-                unsafe {
-                    libc::pthread_set_qos_class_self_np(
-                        libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
-                        0,
-                    );
-                }
-                writer_thread_main(consumer, &rotation_needed_writer, &command_rx, state);
-            })
-            .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to spawn writer thread".to_owned(),
-                source: Box::new(e),
-            })?;
-
+        let pipeline = spawn_writer_pipeline("blackbox-writer", "writer", ring_size, state)?;
         // Store handle (producer goes to the callback, not into the handle)
-        self.writer_thread = Some(WriterThreadHandle {
-            command_tx,
-            join_handle: Some(join_handle),
-        });
-
-        // Clone write_errors for the callback
-        let write_errors = Arc::clone(&self.write_errors);
-        let continuous_mode = self.continuous_mode;
-        let recording_cadence = self.recording_cadence;
-        let rotation_needed_cb = Arc::clone(&rotation_needed);
+        self.writer_thread = Some(pipeline.handle);
 
         // Error callback — set atomic flag so Swift UI can detect device
         // disconnects. Built via a method on `self` so the same closure
@@ -571,72 +503,14 @@ impl CpalAudioProcessor {
         // `build_stream_err_callback` now fails both production wiring
         // and the propagation test (DOLL-106).
         let err_fn = self.build_stream_err_callback();
-
-        // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
-        let rotation_threshold =
-            rotation_threshold_samples(sample_rate, total_channels, recording_cadence);
-        let mut rotation_sample_counter: u64 = 0;
-
-        // Build the input stream
-        #[expect(
-            clippy::wildcard_enum_match_arm,
-            reason = "cpal adds sample formats between releases; anything not listed is rejected at runtime by name"
-        )]
-        let stream = match config.sample_format() {
-            SampleFormat::F32 => {
-                device
-                    .build_input_stream(
-                        config.into(),
-                        move |data: &[f32], _: &_| {
-                            // No logging on the RT capture thread (DOLL-250):
-                            // the `log` facade takes a lock and may do I/O, which
-                            // is a real-time-safety violation that causes audio
-                            // dropouts. Sample-count signals belong on the writer
-                            // thread (see `write_errors` atomic).
-
-                            // Check rotation via sample counter (zero syscalls)
-                            if continuous_mode
-                                && advance_rotation_counter(
-                                    &mut rotation_sample_counter,
-                                    data.len(),
-                                    rotation_threshold,
-                                )
-                            {
-                                // Status flag only — the flag carries no
-                                // companion payload (samples travel through
-                                // rtrb with its own synchronization), so
-                                // Relaxed suffices and is marginally cheaper
-                                // on the RT thread (DOLL-391). Matches the
-                                // other RT status flags in this file.
-                                rotation_needed_cb.store(true, Ordering::Relaxed);
-                            }
-
-                            push_samples_with_overflow_count(&mut producer, data, &write_errors);
-                        },
-                        err_fn,
-                        None,
-                    )
-                    .map_err(|e| BlackboxError::AudioDeviceSource {
-                        context: "Failed to build input stream".to_owned(),
-                        source: Box::new(e),
-                    })?
-            }
-            _ => {
-                return Err(BlackboxError::AudioDevice(format!(
-                    "Unsupported sample format: {:?}",
-                    config.sample_format()
-                )));
-            }
-        };
-
-        // Start recording
-        stream
-            .play()
-            .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to play stream".to_owned(),
-                source: Box::new(e),
-            })?;
-
+        let callback = recording_callback(
+            pipeline.producer,
+            Arc::clone(&self.write_errors),
+            pipeline.rotation_needed,
+            self.continuous_mode,
+            rotation_threshold_samples(sample_rate, total_channels, self.recording_cadence),
+        );
+        let stream = start_f32_input_stream(&device, config, callback, err_fn)?;
         self.stream = Some(Box::new(stream));
 
         // Register sample rate change listener (macOS only)
@@ -657,6 +531,186 @@ impl CpalAudioProcessor {
 
         Ok(())
     }
+}
+
+/// The device's current default input config.
+fn default_input_config(
+    device: &cpal::Device,
+) -> Result<cpal::SupportedStreamConfig, BlackboxError> {
+    device
+        .default_input_config()
+        .map_err(|e| BlackboxError::AudioDeviceSource {
+            context: "Failed to get default input stream config".to_owned(),
+            source: Box::new(e),
+        })
+}
+
+/// The channels to record: the requested ones the device has, or all of its
+/// channels when it has none of them. Logs each channel that is dropped.
+fn recording_channels(requested: &[usize], total_channels: usize) -> Vec<usize> {
+    for &channel in requested.iter().filter(|&&ch| ch >= total_channels) {
+        warn!(
+            "Channel {channel} not available on device. Device only has {total_channels} channels."
+        );
+    }
+    available_channels(requested, total_channels).unwrap_or_else(|| {
+        warn!(
+            "No requested channels available. Using all available channels (0 to {}).",
+            total_channels - 1
+        );
+        (0..total_channels).collect()
+    })
+}
+
+/// The requested channels that exist on a device with `total_channels`
+/// inputs, in order, or `None` when none of them do.
+fn available_channels(requested: &[usize], total_channels: usize) -> Option<Vec<usize>> {
+    let kept: Vec<usize> = requested
+        .iter()
+        .copied()
+        .filter(|&ch| ch < total_channels)
+        .collect();
+    (!kept.is_empty()).then_some(kept)
+}
+
+/// One zeroed peak-level slot per recorded channel, shared with the FFI meter.
+fn new_peak_levels(count: usize) -> Arc<[CacheAlignedPeak]> {
+    std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+        .take(count)
+        .collect()
+}
+
+/// The capture side of a running writer thread.
+struct WriterPipeline {
+    /// Pushes captured samples into the ring the thread drains.
+    producer: rtrb::Producer<f32>,
+    /// Set by the capture callback when a rotation is due.
+    rotation_needed: Arc<AtomicBool>,
+    /// Shuts the thread down.
+    handle: WriterThreadHandle,
+}
+
+/// Create the ring buffer, rotation flag and command channel, and spawn the
+/// thread that drains the ring into `state`. The thread runs at the
+/// user-interactive quality-of-service class to avoid ring buffer overflow.
+fn spawn_writer_pipeline(
+    thread_name: &str,
+    what: &str,
+    ring_size: usize,
+    state: WriterThreadState,
+) -> Result<WriterPipeline, BlackboxError> {
+    let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
+    let rotation_needed = Arc::new(AtomicBool::new(false));
+    let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+    let rotation_needed_writer = Arc::clone(&rotation_needed);
+
+    let join_handle = std::thread::Builder::new()
+        .name(thread_name.to_owned())
+        .spawn(move || {
+            #[cfg(target_os = "macos")]
+            // SAFETY: macOS-only libc call. No pointer args; affects
+            // only the current thread's QoS attribute. The passed
+            // `qos_class_t` is a valid enum variant; a different
+            // (invalid) value could in principle be unsound, but
+            // every call site here passes a known-good constant.
+            unsafe {
+                libc::pthread_set_qos_class_self_np(
+                    libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
+                    0,
+                );
+            }
+            writer_thread_main(consumer, &rotation_needed_writer, &command_rx, state);
+        })
+        .map_err(|e| BlackboxError::AudioDeviceSource {
+            context: format!("Failed to spawn {what} thread"),
+            source: Box::new(e),
+        })?;
+
+    Ok(WriterPipeline {
+        producer,
+        rotation_needed,
+        handle: WriterThreadHandle {
+            command_tx,
+            join_handle: Some(join_handle),
+        },
+    })
+}
+
+/// The recording stream's data callback: flag a rotation once a cadence
+/// period of samples has arrived, then push the batch into the ring.
+fn recording_callback(
+    mut producer: rtrb::Producer<f32>,
+    write_errors: Arc<AtomicU64>,
+    rotation_needed: Arc<AtomicBool>,
+    continuous_mode: bool,
+    rotation_threshold: u64,
+) -> impl FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static {
+    // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
+    let mut rotation_sample_counter: u64 = 0;
+    move |data: &[f32], _: &_| {
+        // No logging on the RT capture thread (DOLL-250):
+        // the `log` facade takes a lock and may do I/O, which
+        // is a real-time-safety violation that causes audio
+        // dropouts. Sample-count signals belong on the writer
+        // thread (see `write_errors` atomic).
+
+        // Check rotation via sample counter (zero syscalls)
+        if continuous_mode
+            && advance_rotation_counter(
+                &mut rotation_sample_counter,
+                data.len(),
+                rotation_threshold,
+            )
+        {
+            // Status flag only — the flag carries no
+            // companion payload (samples travel through
+            // rtrb with its own synchronization), so
+            // Relaxed suffices and is marginally cheaper
+            // on the RT thread (DOLL-391). Matches the
+            // other RT status flags in this file.
+            rotation_needed.store(true, Ordering::Relaxed);
+        }
+
+        push_samples_with_overflow_count(&mut producer, data, &write_errors);
+    }
+}
+
+/// Build an f32 input stream on `device` and start it.
+///
+/// cpal adds sample formats between releases; anything other than f32 is
+/// rejected by name before a stream is built.
+fn start_f32_input_stream<D, E>(
+    device: &cpal::Device,
+    config: cpal::SupportedStreamConfig,
+    data_callback: D,
+    err_fn: E,
+) -> Result<cpal::Stream, BlackboxError>
+where
+    D: FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static,
+    E: FnMut(cpal::Error) + Send + 'static,
+{
+    if config.sample_format() != SampleFormat::F32 {
+        return Err(BlackboxError::AudioDevice(format!(
+            "Unsupported sample format: {:?}",
+            config.sample_format()
+        )));
+    }
+
+    let stream = device
+        .build_input_stream(config.into(), data_callback, err_fn, None)
+        .map_err(|e| BlackboxError::AudioDeviceSource {
+            context: "Failed to build input stream".to_owned(),
+            source: Box::new(e),
+        })?;
+
+    stream
+        .play()
+        .map_err(|e| BlackboxError::AudioDeviceSource {
+            context: "Failed to play stream".to_owned(),
+            source: Box::new(e),
+        })?;
+
+    Ok(stream)
 }
 
 impl AudioProcessor for CpalAudioProcessor {
@@ -838,125 +892,44 @@ impl AudioProcessor for CpalAudioProcessor {
 
         let host = cpal::default_host();
         let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
-
-        let stream_config =
-            device
-                .default_input_config()
-                .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to get default input stream config".to_owned(),
-                    source: Box::new(e),
-                })?;
+        let stream_config = self.load_input_config(&device)?;
 
         let device_channels = stream_config.channels();
         let total_channels = usize::from(device_channels);
         let sample_rate = stream_config.sample_rate();
-        self.sample_rate = sample_rate;
-        self.sample_rate_atomic
-            .store(sample_rate, Ordering::Relaxed);
 
         // Determine which channels to monitor
-        let channels_str = config.get_audio_channels();
-        let requested_channels = parse_channel_string(&channels_str)?;
-        let mut actual_channels: Vec<usize> = Vec::new();
-        for &channel in &requested_channels {
-            if channel < total_channels {
-                actual_channels.push(channel);
-            }
-        }
-        if actual_channels.is_empty() {
-            actual_channels = (0..total_channels).collect();
-        }
+        let requested_channels = parse_channel_string(&config.get_audio_channels())?;
+        let actual_channels = available_channels(&requested_channels, total_channels)
+            .unwrap_or_else(|| (0..total_channels).collect());
 
         info!("Starting audio monitoring on channels: {actual_channels:?}");
 
         // Create per-channel peak levels for metering
-        let peak_levels: Arc<[CacheAlignedPeak]> =
-            std::iter::repeat_with(|| CacheAlignedPeak::new(0))
-                .take(actual_channels.len())
-                .collect();
+        let peak_levels = new_peak_levels(actual_channels.len());
         self.peak_levels = Arc::clone(&peak_levels);
 
         // Create monitor-only writer thread state (no file I/O)
         let mut state = WriterThreadState::new_monitor(sample_rate, &actual_channels, peak_levels);
         state.total_device_channels = device_channels;
 
-        // Create ring buffer
+        // Monitor mode doesn't need rotation, but writer_thread_main expects the flag.
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
-        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
+        let pipeline = spawn_writer_pipeline("blackbox-monitor", "monitor", ring_size, state)?;
+        self.writer_thread = Some(pipeline.handle);
+        let mut producer = pipeline.producer;
 
-        // Monitor mode doesn't need rotation, but writer_thread_main expects it
-        let rotation_needed = Arc::new(AtomicBool::new(false));
-        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
-        let rotation_needed_writer = Arc::clone(&rotation_needed);
-
-        let join_handle = std::thread::Builder::new()
-            .name("blackbox-monitor".to_owned())
-            .spawn(move || {
-                #[cfg(target_os = "macos")]
-                // SAFETY: same as the recording-writer site above —
-                // libc QoS call with no pointer args, affects only this
-                // thread's QoS class.
-                unsafe {
-                    libc::pthread_set_qos_class_self_np(
-                        libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
-                        0,
-                    );
-                }
-                writer_thread_main(consumer, &rotation_needed_writer, &command_rx, state);
-            })
-            .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to spawn monitor thread".to_owned(),
-                source: Box::new(e),
-            })?;
-
-        self.writer_thread = Some(WriterThreadHandle {
-            command_tx,
-            join_handle: Some(join_handle),
-        });
-
-        // Clone write_errors for the callback
         let write_errors = Arc::clone(&self.write_errors);
-
         // Error callback — same shared method as the recording path.
         let err_fn = self.build_stream_err_callback();
-
-        #[expect(
-            clippy::wildcard_enum_match_arm,
-            reason = "cpal adds sample formats between releases; anything not listed is rejected at runtime by name"
-        )]
-        let stream = match stream_config.sample_format() {
-            SampleFormat::F32 => device
-                .build_input_stream(
-                    stream_config.into(),
-                    move |data: &[f32], _: &_| {
-                        // DOLL-353: use the single audited RT-safe push helper
-                        // (same as the recording callback) so the monitoring
-                        // producer can't drift from the overflow-counting
-                        // contract covered by push_samples_counts_rejected_suffix.
-                        push_samples_with_overflow_count(&mut producer, data, &write_errors);
-                    },
-                    err_fn,
-                    None,
-                )
-                .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to build input stream".to_owned(),
-                    source: Box::new(e),
-                })?,
-            _ => {
-                return Err(BlackboxError::AudioDevice(format!(
-                    "Unsupported sample format: {:?}",
-                    stream_config.sample_format()
-                )));
-            }
+        let callback = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            // DOLL-353: use the single audited RT-safe push helper
+            // (same as the recording callback) so the monitoring
+            // producer can't drift from the overflow-counting
+            // contract covered by push_samples_counts_rejected_suffix.
+            push_samples_with_overflow_count(&mut producer, data, &write_errors);
         };
-
-        stream
-            .play()
-            .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to play stream".to_owned(),
-                source: Box::new(e),
-            })?;
+        let stream = start_f32_input_stream(&device, stream_config, callback, err_fn)?;
 
         self.stream = Some(Box::new(stream));
         self.monitoring = true;

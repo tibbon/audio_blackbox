@@ -256,152 +256,82 @@ impl AppConfig {
         }
     }
 
-    /// Apply environment variables to override configuration
+    /// Apply environment variables to override configuration.
+    ///
+    /// Each setting reads its `BLACKBOX_` variable first and falls back to the
+    /// legacy unprefixed name. A variable that is unset or doesn't parse
+    /// leaves the value from the file.
     fn apply_env_vars(&mut self) {
-        // Try both prefixed and unprefixed environment variables
-        let channels = env::var("BLACKBOX_AUDIO_CHANNELS")
-            .ok()
-            .or_else(|| env::var("AUDIO_CHANNELS").ok());
-        if let Some(val) = channels {
-            self.audio_channels = Some(val);
+        fn number<T: std::str::FromStr>(s: &str) -> Option<T> {
+            s.parse().ok()
         }
+        let text = |s: &str| Some(s.to_owned());
+        let flag = Self::parse_bool;
 
-        let debug = env::var("BLACKBOX_DEBUG")
-            .ok()
-            .and_then(|s| Self::parse_bool(&s))
-            .or_else(|| env::var("DEBUG").ok().and_then(|s| Self::parse_bool(&s)));
-        if let Some(val) = debug {
-            self.debug = Some(val);
-        }
-
-        let duration = env::var("BLACKBOX_DURATION")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("RECORD_DURATION")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = duration {
-            self.duration = Some(val);
-        }
-
-        let output_mode = env::var("BLACKBOX_OUTPUT_MODE")
-            .ok()
-            .or_else(|| env::var("OUTPUT_MODE").ok());
-        if let Some(val) = output_mode {
-            self.output_mode = Some(val);
-        }
-
-        let threshold = env::var("BLACKBOX_SILENCE_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("SILENCE_THRESHOLD")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = threshold {
-            self.silence_threshold = Some(val);
-        }
-
-        let continuous = env::var("BLACKBOX_CONTINUOUS_MODE")
-            .ok()
-            .and_then(|s| Self::parse_bool(&s))
-            .or_else(|| {
-                env::var("CONTINUOUS_MODE")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-            });
-        if let Some(val) = continuous {
-            self.continuous_mode = Some(val);
-        }
-
-        let cadence = env::var("BLACKBOX_RECORDING_CADENCE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("RECORDING_CADENCE")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = cadence {
-            self.recording_cadence = Some(val);
-        }
-
-        let output_dir = env::var("BLACKBOX_OUTPUT_DIR")
-            .ok()
-            .or_else(|| env::var("OUTPUT_DIR").ok());
-        if let Some(val) = output_dir {
-            self.output_dir = Some(val);
-        }
-
-        let perf_logging = env::var("BLACKBOX_PERFORMANCE_LOGGING")
-            .ok()
-            .and_then(|s| Self::parse_bool(&s))
-            .or_else(|| {
-                env::var("PERFORMANCE_LOGGING")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-            });
-        if let Some(val) = perf_logging {
-            self.performance_logging = Some(val);
-        }
-
-        let input_device = env::var("BLACKBOX_INPUT_DEVICE")
-            .ok()
-            .or_else(|| env::var("INPUT_DEVICE").ok());
-        if let Some(val) = input_device {
-            self.input_device = Some(val);
-        }
-
-        let min_disk = env::var("BLACKBOX_MIN_DISK_SPACE_MB")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("MIN_DISK_SPACE_MB")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = min_disk {
-            self.min_disk_space_mb = Some(val);
-        }
-
-        let bits = env::var("BLACKBOX_BITS_PER_SAMPLE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("BITS_PER_SAMPLE")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = bits {
-            self.bits_per_sample = Some(val);
-        }
-
-        let gate_enabled = env::var("BLACKBOX_SILENCE_GATE_ENABLED")
-            .ok()
-            .and_then(|s| Self::parse_bool(&s))
-            .or_else(|| {
-                env::var("SILENCE_GATE_ENABLED")
-                    .ok()
-                    .and_then(|s| Self::parse_bool(&s))
-            });
-        if let Some(val) = gate_enabled {
-            self.silence_gate_enabled = Some(val);
-        }
-
-        let gate_timeout = env::var("BLACKBOX_SILENCE_GATE_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                env::var("SILENCE_GATE_TIMEOUT_SECS")
-                    .ok()
-                    .and_then(|s| s.parse().ok())
-            });
-        if let Some(val) = gate_timeout {
-            self.silence_gate_timeout_secs = Some(val);
-        }
+        set_if_some(
+            &mut self.audio_channels,
+            env_override("BLACKBOX_AUDIO_CHANNELS", "AUDIO_CHANNELS", text),
+        );
+        set_if_some(
+            &mut self.debug,
+            env_override("BLACKBOX_DEBUG", "DEBUG", flag),
+        );
+        set_if_some(
+            &mut self.duration,
+            env_override("BLACKBOX_DURATION", "RECORD_DURATION", number),
+        );
+        set_if_some(
+            &mut self.output_mode,
+            env_override("BLACKBOX_OUTPUT_MODE", "OUTPUT_MODE", text),
+        );
+        set_if_some(
+            &mut self.silence_threshold,
+            env_override("BLACKBOX_SILENCE_THRESHOLD", "SILENCE_THRESHOLD", number),
+        );
+        set_if_some(
+            &mut self.continuous_mode,
+            env_override("BLACKBOX_CONTINUOUS_MODE", "CONTINUOUS_MODE", flag),
+        );
+        set_if_some(
+            &mut self.recording_cadence,
+            env_override("BLACKBOX_RECORDING_CADENCE", "RECORDING_CADENCE", number),
+        );
+        set_if_some(
+            &mut self.output_dir,
+            env_override("BLACKBOX_OUTPUT_DIR", "OUTPUT_DIR", text),
+        );
+        set_if_some(
+            &mut self.performance_logging,
+            env_override("BLACKBOX_PERFORMANCE_LOGGING", "PERFORMANCE_LOGGING", flag),
+        );
+        set_if_some(
+            &mut self.input_device,
+            env_override("BLACKBOX_INPUT_DEVICE", "INPUT_DEVICE", text),
+        );
+        set_if_some(
+            &mut self.min_disk_space_mb,
+            env_override("BLACKBOX_MIN_DISK_SPACE_MB", "MIN_DISK_SPACE_MB", number),
+        );
+        set_if_some(
+            &mut self.bits_per_sample,
+            env_override("BLACKBOX_BITS_PER_SAMPLE", "BITS_PER_SAMPLE", number),
+        );
+        set_if_some(
+            &mut self.silence_gate_enabled,
+            env_override(
+                "BLACKBOX_SILENCE_GATE_ENABLED",
+                "SILENCE_GATE_ENABLED",
+                flag,
+            ),
+        );
+        set_if_some(
+            &mut self.silence_gate_timeout_secs,
+            env_override(
+                "BLACKBOX_SILENCE_GATE_TIMEOUT_SECS",
+                "SILENCE_GATE_TIMEOUT_SECS",
+                number,
+            ),
+        );
     }
 
     /// Generate a sample configuration file with comments
@@ -658,6 +588,22 @@ silence_gate_timeout_secs = {}
     pub fn get_silence_gate_timeout_secs(&self) -> u64 {
         self.silence_gate_timeout_secs
             .unwrap_or(DEFAULT_SILENCE_GATE_TIMEOUT_SECS)
+    }
+}
+
+/// The `name` variable parsed with `parse`, else the `legacy` variable parsed
+/// the same way. A `name` value that fails to parse falls through to `legacy`.
+fn env_override<T>(name: &str, legacy: &str, parse: impl Fn(&str) -> Option<T>) -> Option<T> {
+    env::var(name)
+        .ok()
+        .and_then(|s| parse(&s))
+        .or_else(|| env::var(legacy).ok().and_then(|s| parse(&s)))
+}
+
+/// Overwrite `slot` only when `value` is `Some`.
+fn set_if_some<T>(slot: &mut Option<T>, value: Option<T>) {
+    if value.is_some() {
+        *slot = value;
     }
 }
 

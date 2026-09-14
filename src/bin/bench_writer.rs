@@ -165,109 +165,134 @@ fn run_direct(
     total_frames: usize,
     chunk_data: &[f32],
 ) {
+    if mode == "split" {
+        run_direct_split(dir, sample_rate, num_channels, total_frames, chunk_data);
+    } else {
+        run_direct_single(dir, sample_rate, num_channels, total_frames, chunk_data);
+    }
+}
+
+/// Split mode: one mono 24-bit file per channel.
+fn run_direct_split(
+    dir: &str,
+    sample_rate: u32,
+    num_channels: usize,
+    total_frames: usize,
+    chunk_data: &[f32],
+) {
     use std::io::BufWriter;
 
-    let chunk_frames = chunk_data.len() / num_channels;
     let channel_indices: Vec<usize> = (0..num_channels).collect();
     let write_errors = Arc::new(AtomicU64::new(0));
-
-    if mode == "split" {
-        let mut writers: Vec<Option<hound::WavWriter<BufWriter<std::fs::File>>>> = Vec::new();
-        for ch in 0..num_channels {
-            let path = format!("{dir}/bench-ch{ch}.recording.wav");
-            let spec = hound::WavSpec {
-                channels: 1,
-                sample_rate,
-                bits_per_sample: 24,
-                sample_format: hound::SampleFormat::Int,
-            };
-            writers.push(Some(hound::WavWriter::create(&path, spec).unwrap()));
-        }
-
-        eprintln!("Writing {total_frames} frames in split mode ({num_channels} files)...");
-        let start = Instant::now();
-
-        let mut frames_written = 0;
-        while frames_written < total_frames {
-            let frames_this_chunk = chunk_frames.min(total_frames - frames_written);
-            let samples_this_chunk = frames_this_chunk * num_channels;
-            let data = &chunk_data[..samples_this_chunk];
-
-            for frame in data.chunks(num_channels) {
-                for (idx, &channel) in channel_indices.iter().enumerate() {
-                    if channel < frame.len()
-                        && let Some(w) = &mut writers[idx]
-                    {
-                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                        let sample = f32_to_wav_sample(frame[channel], 24);
-                        if w.write_sample(sample).is_err() {
-                            write_errors.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                }
-            }
-
-            frames_written += frames_this_chunk;
-        }
-
-        let elapsed = start.elapsed();
-        report_results(
-            num_channels,
-            total_frames,
-            elapsed,
-            write_errors.load(Ordering::Relaxed),
-            sample_rate,
-        );
-
-        for w in &mut writers {
-            if let Some(writer) = w.take() {
-                writer.finalize().expect("finalize split wav");
-            }
-        }
-    } else {
-        let path = format!("{dir}/bench.recording.wav");
+    let mut writers: Vec<Option<hound::WavWriter<BufWriter<std::fs::File>>>> = Vec::new();
+    for ch in 0..num_channels {
+        let path = format!("{dir}/bench-ch{ch}.recording.wav");
         let spec = hound::WavSpec {
-            channels: u16::try_from(num_channels).expect("--channels fits in u16"),
+            channels: 1,
             sample_rate,
             bits_per_sample: 24,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        writers.push(Some(hound::WavWriter::create(&path, spec).unwrap()));
+    }
 
-        eprintln!("Writing {total_frames} frames in single/multichannel mode...");
-        let start = Instant::now();
+    eprintln!("Writing {total_frames} frames in split mode ({num_channels} files)...");
+    let start = Instant::now();
 
-        let mut frames_written = 0;
-        while frames_written < total_frames {
-            let frames_this_chunk = chunk_frames.min(total_frames - frames_written);
-            let samples_this_chunk = frames_this_chunk * num_channels;
-            let data = &chunk_data[..samples_this_chunk];
-
-            for frame in data.chunks(num_channels) {
-                for &channel in &channel_indices {
-                    if channel < frame.len() {
-                        // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                        let sample = f32_to_wav_sample(frame[channel], 24);
-                        if writer.write_sample(sample).is_err() {
-                            write_errors.fetch_add(1, Ordering::Relaxed);
-                        }
+    feed_chunks(chunk_data, num_channels, total_frames, |data| {
+        for frame in data.chunks(num_channels) {
+            for (idx, &channel) in channel_indices.iter().enumerate() {
+                if channel < frame.len()
+                    && let Some(w) = &mut writers[idx]
+                {
+                    // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                    let sample = f32_to_wav_sample(frame[channel], 24);
+                    if w.write_sample(sample).is_err() {
+                        write_errors.fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
-
-            frames_written += frames_this_chunk;
         }
+    });
 
-        let elapsed = start.elapsed();
-        report_results(
-            num_channels,
-            total_frames,
-            elapsed,
-            write_errors.load(Ordering::Relaxed),
-            sample_rate,
-        );
+    let elapsed = start.elapsed();
+    report_results(
+        num_channels,
+        total_frames,
+        elapsed,
+        write_errors.load(Ordering::Relaxed),
+        sample_rate,
+    );
 
-        writer.finalize().expect("finalize wav");
+    for w in &mut writers {
+        if let Some(writer) = w.take() {
+            writer.finalize().expect("finalize split wav");
+        }
+    }
+}
+
+/// Single mode: every channel interleaved into one 24-bit file.
+fn run_direct_single(
+    dir: &str,
+    sample_rate: u32,
+    num_channels: usize,
+    total_frames: usize,
+    chunk_data: &[f32],
+) {
+    let channel_indices: Vec<usize> = (0..num_channels).collect();
+    let write_errors = Arc::new(AtomicU64::new(0));
+    let path = format!("{dir}/bench.recording.wav");
+    let spec = hound::WavSpec {
+        channels: u16::try_from(num_channels).expect("--channels fits in u16"),
+        sample_rate,
+        bits_per_sample: 24,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+
+    eprintln!("Writing {total_frames} frames in single/multichannel mode...");
+    let start = Instant::now();
+
+    feed_chunks(chunk_data, num_channels, total_frames, |data| {
+        for frame in data.chunks(num_channels) {
+            for &channel in &channel_indices {
+                if channel < frame.len() {
+                    // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                    let sample = f32_to_wav_sample(frame[channel], 24);
+                    if writer.write_sample(sample).is_err() {
+                        write_errors.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+    });
+
+    let elapsed = start.elapsed();
+    report_results(
+        num_channels,
+        total_frames,
+        elapsed,
+        write_errors.load(Ordering::Relaxed),
+        sample_rate,
+    );
+
+    writer.finalize().expect("finalize wav");
+}
+
+/// Hand `write` `total_frames` frames of `chunk_data`, one chunk at a time
+/// (the last chunk trimmed to fit), the way cpal delivers callbacks.
+fn feed_chunks(
+    chunk_data: &[f32],
+    num_channels: usize,
+    total_frames: usize,
+    mut write: impl FnMut(&[f32]),
+) {
+    let chunk_frames = chunk_data.len() / num_channels;
+    let mut frames_written = 0;
+    while frames_written < total_frames {
+        let frames_this_chunk = chunk_frames.min(total_frames - frames_written);
+        write(&chunk_data[..frames_this_chunk * num_channels]);
+        frames_written += frames_this_chunk;
     }
 }
 
