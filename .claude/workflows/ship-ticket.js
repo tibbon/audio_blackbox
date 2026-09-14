@@ -413,7 +413,7 @@ Failing step: ${g.failingStep}
 Errors:
 ${g.errorExcerpt}
 ${context ? `\nContext: ${context}\n` : ''}
-Make the smallest change that fixes the root cause. Reproduce first with the narrowest command for that step (for example cargo clippy --all-targets --features ffi -- -D warnings, cargo test --no-default-features <name> -- --test-threads=1, swiftlint lint --strict, ./scripts/check-ffi-header.sh), then confirm it passes. If a new lint fires on code this branch did not touch, fix it there or park it in the Cargo.toml DOLL-653 backlog block with a count (AGENTS.md invariant); do not #[expect] your way through unrelated files. If the only real fix changes behavior beyond what the failing check demands, change nothing and return ok=false with the reason.
+Make the smallest change that fixes the root cause. Reproduce first with the narrowest command for that step (for example cargo clippy --all-targets --features ffi -- -D warnings, cargo test --no-default-features <name> -- --test-threads=1, swiftlint lint --strict, ./scripts/check-ffi-header.sh), then confirm it passes. If a new lint fires on code this branch did not touch, fix it there or park it in the Cargo.toml lint backlog block with a count and a ticket (AGENTS.md invariant); do not #[expect] your way through unrelated files. If the only real fix changes behavior beyond what the failing check demands, change nothing and return ok=false with the reason.
 ${CODE_RULES}
 ${GIT_RULES}
 ${FIXUP_RULES(commits)}

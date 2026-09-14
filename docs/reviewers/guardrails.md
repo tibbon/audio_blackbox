@@ -8,11 +8,11 @@ contracts and docs around the code moved with it.
 ## In your lane
 - Lint silencing (§0, §5): new `#[expect]` whose `reason` does not state a true invariant
   ("clippy is wrong", "needed to compile"); an `#[expect]` placed on unrelated files to get green
-  (AGENTS.md: park it in the DOLL-653 backlog block with a count instead); `// swiftlint:disable`
+  (AGENTS.md: park it in the `Cargo.toml` backlog block with a count instead); `// swiftlint:disable`
   without `:next` or without a reason; new `@unchecked Sendable`, `nonisolated(unsafe)`, `try!`,
   `as!`, force unwraps outside tests.
 - Crate-wide lint policy changed in `Cargo.toml [lints]` or `clippy.toml` without a comment, or a
-  DOLL-653 backlog lint re-enabled without fixing its sites.
+  backlog lint re-enabled without fixing its sites.
 - Test tampering (§5): a loosened assertion, a widened float tolerance with no reason, a deleted
   test, a new `#[ignore]` or `XCTSkip`, a test edited in the same commit as the code it guards
   without the PR saying why (§0 wants that change in its own commit).
@@ -63,6 +63,7 @@ contracts and docs around the code moved with it.
   `GlobalHotkeyManager.swift` (DOLL-161); the deliberate leak in `macos_sample_rate_listener.rs`.
 - `CHANGELOG.md` is written in the release PR, not per change; `[Unreleased]` staying empty is
   normal. For a user-visible change, a line in the PR description is enough (low if missing).
-- The parked lints in `Cargo.toml` "Backlog (DOLL-653)" and the raised SwiftLint size thresholds
-  are deliberate. Only flag them if the branch loosens them further.
+- The SwiftLint size thresholds above the kit values are deliberate (DOLL-653). Only flag them if
+  the branch loosens them further. The `Cargo.toml` backlog block is empty; flag any addition
+  that lacks a site count and a ticket.
 - Existing Swift tests are XCTest; that is not a deprecated idiom.

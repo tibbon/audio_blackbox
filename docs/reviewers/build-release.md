@@ -19,7 +19,7 @@ Runs when: the branch touches `.github/`, `scripts/`, `Makefile`, `Cargo.toml`, 
   Missing tools must stay reported, never skipped silently.
 - Rust manifest policy (§1.8): MSRV (`rust-version` in `Cargo.toml`, `msrv` in `clippy.toml`, the
   MSRV CI lane) moves together and in its own commit; a lint level change in `[lints]` carries a
-  comment; the DOLL-653 backlog block is only ever shrunk; `panic = "abort"` stays in
+  comment; the `Cargo.toml` lint backlog block is only ever shrunk; `panic = "abort"` stays in
   `[profile.release]` (DOLL-90); new crates pass `cargo deny` with a license on the allow-list and
   regenerate `ACKNOWLEDGMENTS.md`; `deny.toml` ignores carry a reason and a removal date.
 - Lockfile: `Cargo.lock` changes match the manifest change; unrelated crate bumps in a feature
