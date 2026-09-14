@@ -217,7 +217,7 @@ fn shutdown_reply_surfaces_finalize_error() {
 
 /// DOLL-447: dropping the command sender WITHOUT sending Shutdown — the exact
 /// teardown a failed start performs (`build_input_stream` / `play()` errors
-/// after the writer thread is already spawned, then the WriterThreadHandle is
+/// after the writer thread is already spawned, then the `WriterThreadHandle` is
 /// dropped) — must terminate the writer thread. The old `if let Ok(Shutdown)`
 /// ignored `TryRecvError::Disconnected`, so the thread spun forever: leaked
 /// for the process lifetime, waking every 5 ms, holding its `.recording.wav`

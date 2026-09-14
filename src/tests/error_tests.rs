@@ -72,7 +72,7 @@ fn test_string_only_variants_have_no_source() {
     }
 }
 
-/// `Io(#[from] std::io::Error)` must expose its underlying io::Error via
+/// `Io(#[from] std::io::Error)` must expose its underlying `io::Error` via
 /// `source()` so log forwarders can downcast and inspect the OS error.
 /// Round 3 review (DOLL-130) found that `Io` had no targeted variant test
 /// — only the source-bearing struct variants were directly covered.
@@ -112,7 +112,7 @@ fn test_full_chain_includes_root_cause() {
     );
 }
 
-/// `Io`'s Display already embeds the io::Error message; full_chain must not
+/// `Io`'s Display already embeds the `io::Error` message; `full_chain` must not
 /// print it twice ("I/O error: denied: denied").
 #[test]
 fn test_full_chain_does_not_duplicate_io_message() {
@@ -126,7 +126,7 @@ fn test_full_chain_does_not_duplicate_io_message() {
     );
 }
 
-/// Variants without a source: full_chain is just Display.
+/// Variants without a source: `full_chain` is just Display.
 #[test]
 fn test_full_chain_equals_display_when_no_source() {
     let err = BlackboxError::Wav("bad header".into());

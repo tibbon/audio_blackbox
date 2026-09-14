@@ -58,7 +58,7 @@ impl ProcessorStatus {
     }
 }
 
-/// CpalAudioProcessor handles recording from audio devices using the CPAL library,
+/// `CpalAudioProcessor` handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 ///
 /// File I/O is performed on a dedicated writer thread. The cpal audio callback
@@ -73,7 +73,7 @@ pub struct CpalAudioProcessor {
     channels: Vec<usize>,
     output_mode: OutputMode,
     debug: bool,
-    /// Counts write_sample errors and ring buffer overflow drops (atomic for RT safety).
+    /// Counts `write_sample` errors and ring buffer overflow drops (atomic for RT safety).
     write_errors: Arc<AtomicU64>,
     /// Set by the writer thread when disk space drops below threshold.
     disk_space_low: Arc<AtomicBool>,
@@ -83,7 +83,7 @@ pub struct CpalAudioProcessor {
     write_failed: Arc<AtomicBool>,
     /// Set by the cpal error callback when the audio stream encounters an error.
     stream_error: Arc<AtomicBool>,
-    /// CoreAudio listener for sample rate changes (dropped before sample_rate_changed).
+    /// CoreAudio listener for sample rate changes (dropped before `sample_rate_changed`).
     #[cfg(target_os = "macos")]
     rate_listener: Option<crate::macos_sample_rate_listener::SampleRateListener>,
     /// Set by the CoreAudio listener when the device's sample rate changes mid-recording.
@@ -99,7 +99,7 @@ pub struct CpalAudioProcessor {
     monitoring_active: Arc<AtomicBool>,
     /// Mirrors `sample_rate` for the same reason; 0 when idle.
     sample_rate_atomic: Arc<AtomicU32>,
-    /// Handle to the writer thread (None when idle; set by process_audio or start_monitoring, cleared by finalize or stop_monitoring).
+    /// Handle to the writer thread (None when idle; set by `process_audio` or `start_monitoring`, cleared by finalize or `stop_monitoring`).
     writer_thread: Option<WriterThreadHandle>,
     /// Whether monitoring mode is active (levels without recording).
     monitoring: bool,
@@ -172,7 +172,7 @@ impl std::fmt::Debug for CpalAudioProcessor {
 }
 
 impl CpalAudioProcessor {
-    /// Create a new CpalAudioProcessor instance, loading config from env/TOML.
+    /// Create a new `CpalAudioProcessor` instance, loading config from env/TOML.
     ///
     /// Probes the audio device for sample rate and stores config.
     /// WAV writers are not created until `process_audio()` is called.
@@ -180,7 +180,7 @@ impl CpalAudioProcessor {
         Self::with_config(&AppConfig::load())
     }
 
-    /// Create a new CpalAudioProcessor using the provided configuration.
+    /// Create a new `CpalAudioProcessor` using the provided configuration.
     ///
     /// Defers device probing to `process_audio()` / `start_monitoring()` to
     /// avoid enumerating the audio device twice on recording start.
@@ -231,7 +231,7 @@ impl CpalAudioProcessor {
         Arc::clone(&self.peak_levels)
     }
 
-    /// Build the cpal err_fn callback used when constructing the input
+    /// Build the cpal `err_fn` callback used when constructing the input
     /// stream. Extracted as a method so the SAME closure the production
     /// stream uses can be exercised by tests — reverting the body here
     /// breaks both production wiring AND the test (DOLL-106).
@@ -1190,7 +1190,7 @@ mod rotation_tests {
         assert_eq!(mono, 1_000);
     }
 
-    /// recording_cadence = 0 → threshold 0 → EVERY callback signals a
+    /// `recording_cadence` = 0 → threshold 0 → EVERY callback signals a
     /// rotation (the DOLL-458 rotation storm). `get_recording_cadence` now
     /// rejects 0 at the config boundary, so production can't reach this —
     /// the test documents why that guard exists and what the raw arithmetic

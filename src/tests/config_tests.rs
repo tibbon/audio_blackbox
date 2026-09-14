@@ -375,8 +375,8 @@ fn newer_field_env_cleared() -> Vec<(&'static str, Option<&'static str>)> {
     ]
 }
 
-/// DOLL-454: the newer fields (input_device, min_disk_space_mb,
-/// bits_per_sample, silence_gate_*) load from TOML — config_tests previously
+/// DOLL-454: the newer fields (`input_device`, `min_disk_space_mb`,
+/// `bits_per_sample`, `silence_gate_*`) load from TOML — `config_tests` previously
 /// covered only the original 9 fields, so a broken serde rename or a typo'd
 /// field name would ship green.
 #[test]
@@ -413,7 +413,7 @@ fn test_newer_fields_from_toml() {
 
 /// DOLL-454: each newer field's BLACKBOX_-prefixed env var must parse AND
 /// take precedence over a conflicting TOML value. A typo in one env-var name
-/// inside apply_env_vars would previously ship green.
+/// inside `apply_env_vars` would previously ship green.
 #[test]
 fn test_newer_fields_env_override_toml() {
     let mut vars = newer_field_env_cleared();
@@ -506,7 +506,7 @@ fn test_newer_fields_legacy_env_names_and_prefix_precedence() {
 
 /// DOLL-454: unparseable env values for the newer fields must fall through to
 /// the TOML tier (forgiving validation), and a parseable-but-invalid
-/// bits_per_sample from env (e.g. 20) is rejected by the getter — falling
+/// `bits_per_sample` from env (e.g. 20) is rejected by the getter — falling
 /// back to the DEFAULT (24), not to the TOML value it overrode.
 #[test]
 fn test_newer_fields_invalid_env_values_fall_back() {
@@ -583,7 +583,7 @@ fn test_newer_fields_invalid_env_values_fall_back() {
     });
 }
 
-/// DOLL-454: merge() must carry each NEWER field across when Some — the
+/// DOLL-454: `merge()` must carry each NEWER field across when Some — the
 /// existing merge tests only assert that None doesn't override.
 #[test]
 fn test_merge_carries_newer_fields() {

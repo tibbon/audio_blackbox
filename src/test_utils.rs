@@ -115,7 +115,7 @@ pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std:
 /// every `BLACKBOX_*` override. Use with `temp_env::with_vars(...)`.
 ///
 /// Consolidated here from previously duplicated copies in lib.rs +
-/// recorder_tests.rs (DOLL-118).
+/// `recorder_tests.rs` (DOLL-118).
 #[cfg(test)]
 #[must_use]
 pub fn default_test_env() -> Vec<(&'static str, Option<&'static str>)> {

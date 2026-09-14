@@ -11,7 +11,7 @@ use crate::config::AppConfig;
 use crate::constants::OutputMode;
 use crate::error::BlackboxError;
 
-/// The AudioProcessor trait defines the interface for processing audio data.
+/// The `AudioProcessor` trait defines the interface for processing audio data.
 ///
 /// Implementations of this trait are responsible for handling the actual audio
 /// processing, including recording from input devices and writing to WAV files.

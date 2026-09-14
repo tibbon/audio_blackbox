@@ -21,7 +21,7 @@ pub(crate) struct SilenceCheckWorker {
 
 impl SilenceCheckWorker {
     /// Construct a new worker. Returns `None` if the underlying thread
-    /// spawn fails (resource exhaustion: EAGAIN/ENOMEM/RLIMIT_NPROC).
+    /// spawn fails (resource exhaustion: `EAGAIN/ENOMEM/RLIMIT_NPROC`).
     /// Callers store `silence_worker: None` and the writer thread keeps
     /// running — silent files just don't get auto-deleted that session
     /// (DOLL-122).

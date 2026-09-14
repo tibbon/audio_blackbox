@@ -116,7 +116,7 @@ fn test_create_with_invalid_json() {
 
 /// DOLL-456: a syntactically valid document with ONE type-mismatched field
 /// makes serde reject the whole document. The handle must still be created
-/// (defaults), but last_error must record that every caller setting was
+/// (defaults), but `last_error` must record that every caller setting was
 /// discarded — previously this was completely silent.
 #[test]
 fn test_create_type_mismatch_sets_last_error_and_keeps_defaults() {
@@ -534,7 +534,7 @@ fn test_get_peak_levels_idle_returns_zero_count() {
 /// LIVE recording. `blackbox_is_recording` read false and the
 /// `write_failed` / `disk_space_low` data-loss signals went invisible while
 /// the engine kept writing to disk. With a recording active, the live
-/// bundles must survive a stop_monitoring call.
+/// bundles must survive a `stop_monitoring` call.
 #[test]
 fn test_stop_monitoring_preserves_live_recording_status() {
     use std::sync::atomic::Ordering;
