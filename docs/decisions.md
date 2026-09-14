@@ -10,7 +10,7 @@ Tickets are listed by ID; add new entries as you reference them in code or docs.
 
 - **DOLL-101** — Atomic ordering doctrine: payload-carrying flags (e.g. `recording_active` paired with `sample_rate_atomic`) use Acquire/Release. Status-only flags (`gate_idle`, `disk_space_low`, `stream_error`, `sample_rate_changed`, the ctrlc shutdown flag) use Relaxed. See `ARCHITECTURE.md § Atomic ordering`.
 
-- **DOLL-124** — FFI lock-acquisition order: `recorder` is outermost; the other inner mutexes (`config`, `last_error`, `peak_levels`, `status`) are taken alone, never nested with each other. Documented in `src/ffi.rs:84-97`.
+- **DOLL-124** — FFI lock-acquisition order: `recorder` is outermost; the other inner mutexes (`config`, `last_error`, `peak_levels`, `status`) are taken alone, never nested with each other. Documented on `BlackboxHandle` in `src/ffi.rs`.
 
 - **DOLL-147** — `cpal_processor.rs` and `writer_thread.rs` split into focused modules. The CoreAudio sample-rate listener and silence-check worker became their own files.
 
