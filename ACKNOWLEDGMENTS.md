@@ -322,6 +322,11 @@ grateful to their authors and contributors.
 - **License**: Unlicense OR MIT
 - **Repository**: <https://github.com/BurntSushi/jiff>
 
+### jiff-core
+
+- **License**: Unlicense OR MIT
+- **Repository**: <https://github.com/BurntSushi/jiff>
+
 ### memchr
 
 - **License**: Unlicense OR MIT
