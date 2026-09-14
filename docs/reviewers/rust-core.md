@@ -14,8 +14,9 @@ Files the `realtime-audio` and `ffi-unsafe` lanes also cover get both reviews; s
   value; `Arc::clone(&x)` rather than `x.clone()`; `Arc<Mutex<T>>` only with a named owner and a
   single writer; shared buffers are `Arc<[T]>`; hot loops take slices, not `Vec<T>`.
 - Numeric and units (§1.4): every `as` cast is checked for truncation and sign (the crate allows
-  `as_conversions` and relies on the `cast_*` lints, two of which are parked in DOLL-653, so read
-  casts by hand); sizes crossing to C use `try_from`. Constants carry units in name or doc
+  `as_conversions` and relies on the `cast_*` lints; a deliberately lossy conversion goes through
+  `src/numeric.rs` with its bound stated, except local `#[expect]`s in `bench-writer` and
+  `property_size`, so read the remaining casts by hand); sizes crossing to C use `try_from`. Constants carry units in name or doc
   (`_hz`, `_secs`, `_mb`). Float comparisons use a tolerance; NaN is handled explicitly; sorting
   uses `total_cmp`.
 - Configuration (`src/config.rs`): precedence stays env over TOML over defaults, and within env

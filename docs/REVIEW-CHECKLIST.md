@@ -8,7 +8,8 @@ what cannot, plus the things the lints only flag for a human to judge.
 Mechanical enforcement lives in:
 
 - `Cargo.toml [lints.*]` — lint levels (rustc, rustdoc, clippy). Groups at priority -1, then
-  individual entries. The "Backlog (DOLL-653)" block lists lints parked as `allow` with counts.
+  individual entries. The "Backlog" block lists lints parked as `allow` with counts and a
+  ticket; it has been empty since DOLL-653.
 - `clippy.toml` — thresholds, test-only relief, and the hard bans (`thread::sleep`, `home_dir`,
   `partial_cmp`) with the reason each diagnostic prints.
 - `deny.toml` — advisories, license allow-list, duplicate and wildcard bans, sources.
@@ -97,8 +98,11 @@ until review converges (AGENTS.md "Workflow").
 
 ### 1.4 Numeric and DSP code
 - Every `as` cast is reviewed for truncation and sign. Length/size conversions for the C ABI
-  use `try_from` and return an error (`cast_sign_loss`, `cast_possible_wrap` warn;
-  `cast_possible_truncation` / `cast_precision_loss` are parked in the DOLL-653 backlog).
+  use `try_from` and return an error (`cast_sign_loss`, `cast_possible_wrap`,
+  `cast_possible_truncation` and `cast_precision_loss` all warn). A deliberately lossy conversion
+  goes through `src/numeric.rs`, which states the bound. The exceptions carry the same kind of
+  `#[expect]` locally: `bench-writer`, which can't reach `pub(crate)` helpers, and the
+  compile-time-asserted `property_size` in `macos_sample_rate_listener.rs`.
 - Constants carry units in their names or docs (`sample_rate_hz`, `gate_timeout_secs`).
 - Sample conversion and silence detection have reference tests with the tolerance stated in
   the test. No `assert_eq!` on floats.
