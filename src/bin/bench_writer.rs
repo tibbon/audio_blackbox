@@ -200,19 +200,7 @@ fn run_direct_split(
     let start = Instant::now();
 
     feed_chunks(chunk_data, num_channels, total_frames, |data| {
-        for frame in data.chunks(num_channels) {
-            for (idx, &channel) in channel_indices.iter().enumerate() {
-                if channel < frame.len()
-                    && let Some(w) = &mut writers[idx]
-                {
-                    // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                    let sample = f32_to_wav_sample(frame[channel], 24);
-                    if w.write_sample(sample).is_err() {
-                        write_errors.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
+        write_split_chunk(data, &channel_indices, &mut writers, &write_errors);
     });
 
     let elapsed = start.elapsed();
@@ -254,17 +242,7 @@ fn run_direct_single(
     let start = Instant::now();
 
     feed_chunks(chunk_data, num_channels, total_frames, |data| {
-        for frame in data.chunks(num_channels) {
-            for &channel in &channel_indices {
-                if channel < frame.len() {
-                    // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
-                    let sample = f32_to_wav_sample(frame[channel], 24);
-                    if writer.write_sample(sample).is_err() {
-                        write_errors.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
+        write_single_chunk(data, &channel_indices, &mut writer, &write_errors);
     });
 
     let elapsed = start.elapsed();
@@ -277,6 +255,47 @@ fn run_direct_single(
     );
 
     writer.finalize().expect("finalize wav");
+}
+
+/// Split mode per-chunk work: each channel's sample to its own writer.
+fn write_split_chunk(
+    data: &[f32],
+    channel_indices: &[usize],
+    writers: &mut [Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>>],
+    write_errors: &AtomicU64,
+) {
+    for frame in data.chunks(channel_indices.len()) {
+        for (&channel, writer) in channel_indices.iter().zip(writers.iter_mut()) {
+            if channel < frame.len()
+                && let Some(w) = writer
+                // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+                && w.write_sample(f32_to_wav_sample(frame[channel], 24)).is_err()
+            {
+                write_errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+/// Single mode per-chunk work: every channel interleaved into one writer.
+fn write_single_chunk(
+    data: &[f32],
+    channel_indices: &[usize],
+    writer: &mut hound::WavWriter<std::io::BufWriter<std::fs::File>>,
+    write_errors: &AtomicU64,
+) {
+    for frame in data.chunks(channel_indices.len()) {
+        for &channel in channel_indices {
+            // 24-bit; same clamp+round contract as the production hot path (DOLL-110).
+            if channel < frame.len()
+                && writer
+                    .write_sample(f32_to_wav_sample(frame[channel], 24))
+                    .is_err()
+            {
+                write_errors.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
 }
 
 /// Hand `write` `total_frames` frames of `chunk_data`, one chunk at a time

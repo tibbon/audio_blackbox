@@ -94,42 +94,8 @@ impl PerformanceTracker {
             while running.load(Ordering::Relaxed) {
                 sys.refresh_all();
 
-                if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
-                    let cpu_usage = process.cpu_usage();
-                    let memory_usage = process.memory();
-                    let memory_percent = percent_of(memory_usage, sys.total_memory());
-
-                    let metric = PerformanceMetrics {
-                        timestamp: Local::now(),
-                        cpu_usage,
-                        memory_usage,
-                        memory_percent,
-                    };
-
-                    // Add to metrics queue and limit its size. Mirrors the
-                    // DOLL-115 `.lock().ok()` pattern: a poisoned lock here
-                    // means an earlier panic on the metrics-collector
-                    // thread; we'd rather drop a sample than abort the
-                    // whole tracker thread.
-                    if let Ok(mut metrics_guard) = metrics.lock() {
-                        metrics_guard.push_back(metric.clone());
-                        while metrics_guard.len() > history_length {
-                            metrics_guard.pop_front();
-                        }
-                    }
-
-                    // Log to file
-                    let log_line = format!(
-                        "{},{:.2},{},{:.2}\n",
-                        metric.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                        metric.cpu_usage,
-                        metric.memory_usage,
-                        metric.memory_percent
-                    );
-
-                    if let Err(e) = write_to_log(&log_path, &log_line) {
-                        error!("Failed to write to performance log: {e}");
-                    }
+                if let Some(metric) = sample_process(&sys, pid) {
+                    record_metric(&metrics, history_length, &log_path, metric);
                 }
 
                 #[expect(
@@ -214,6 +180,50 @@ impl PerformanceTracker {
             memory_usage: memory_sum / u64::try_from(metrics.len()).unwrap_or(u64::MAX),
             memory_percent: memory_percent_sum / len,
         })
+    }
+}
+
+/// CPU and memory use of process `pid` from the latest `sys` refresh, or
+/// `None` if the process isn't in the snapshot.
+fn sample_process(sys: &System, pid: u32) -> Option<PerformanceMetrics> {
+    let process = sys.process(sysinfo::Pid::from_u32(pid))?;
+    let memory_usage = process.memory();
+    Some(PerformanceMetrics {
+        timestamp: Local::now(),
+        cpu_usage: process.cpu_usage(),
+        memory_usage,
+        memory_percent: percent_of(memory_usage, sys.total_memory()),
+    })
+}
+
+/// Append `metric` to the bounded history and to the log file.
+fn record_metric(
+    metrics: &Mutex<VecDeque<PerformanceMetrics>>,
+    history_length: usize,
+    log_path: &str,
+    metric: PerformanceMetrics,
+) {
+    let log_line = format!(
+        "{},{:.2},{},{:.2}\n",
+        metric.timestamp.format("%Y-%m-%d %H:%M:%S"),
+        metric.cpu_usage,
+        metric.memory_usage,
+        metric.memory_percent
+    );
+
+    // Add to metrics queue and limit its size. Mirrors the DOLL-115
+    // `.lock().ok()` pattern: a poisoned lock here means an earlier panic on
+    // the metrics-collector thread; we'd rather drop a sample than abort the
+    // whole tracker thread.
+    if let Ok(mut metrics_guard) = metrics.lock() {
+        metrics_guard.push_back(metric);
+        while metrics_guard.len() > history_length {
+            metrics_guard.pop_front();
+        }
+    }
+
+    if let Err(e) = write_to_log(log_path, &log_line) {
+        error!("Failed to write to performance log: {e}");
     }
 }
 

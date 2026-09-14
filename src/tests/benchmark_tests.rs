@@ -54,6 +54,139 @@ fn format_rate(samples_per_sec: f64) -> String {
     }
 }
 
+/// A recording `WriterThreadState` for `ch_count` device channels with silence
+/// detection, the disk-space check and the gate off, so a benchmark measures
+/// only the write path.
+fn bench_state(
+    dir: &str,
+    sample_rate: u32,
+    ch_count: usize,
+    output_mode: OutputMode,
+    bits_per_sample: u16,
+    write_errors: &Arc<AtomicU64>,
+) -> WriterThreadState {
+    let channels: Vec<usize> = (0..ch_count).collect();
+    let mut state = WriterThreadState::new(
+        dir,
+        sample_rate,
+        &channels,
+        output_mode,
+        0.0, // No silence detection — measure just I/O
+        Arc::clone(write_errors),
+        0,
+        Arc::new(AtomicBool::new(false)),
+        bits_per_sample,
+        zero_peaks(ch_count),
+        false,
+        0,
+    )
+    .unwrap();
+    state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
+    state
+}
+
+/// A monitor-only `WriterThreadState` for `ch_count` device channels.
+fn bench_monitor_state(
+    sample_rate: u32,
+    ch_count: usize,
+    peak_levels: Arc<[CacheAlignedPeak]>,
+) -> WriterThreadState {
+    let channels: Vec<usize> = (0..ch_count).collect();
+    let mut state = WriterThreadState::new_monitor(sample_rate, &channels, peak_levels);
+    state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
+    state
+}
+
+/// A writer thread draining a ring into a state, wired the way
+/// `process_audio_impl` runs it (the rotation flag is never set).
+struct BenchPipeline {
+    producer: rtrb::Producer<f32>,
+    command_tx: std::sync::mpsc::SyncSender<WriterCommand>,
+    writer: std::thread::JoinHandle<()>,
+}
+
+impl BenchPipeline {
+    fn spawn(name: &str, state: WriterThreadState, ring_size: usize) -> Self {
+        let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
+        let rotation_needed = Arc::new(AtomicBool::new(false));
+        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+        let writer = std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(move || {
+                writer_thread_main(consumer, &rotation_needed, &command_rx, state);
+            })
+            .unwrap();
+        Self {
+            producer,
+            command_tx,
+            writer,
+        }
+    }
+
+    /// Push `data` in `chunk_samples` chunks as fast as possible. A chunk the
+    /// full ring rejects counts as dropped, like the real callback, and the
+    /// producer yields so the writer can catch up.
+    fn push_all(&mut self, data: &[f32], chunk_samples: usize, write_errors: &AtomicU64) {
+        for chunk in data.chunks(chunk_samples) {
+            if let Ok(write_chunk) = self.producer.write_chunk_uninit(chunk.len()) {
+                write_chunk.fill_from_iter(chunk.iter().copied());
+            } else {
+                write_errors.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                std::thread::yield_now();
+            }
+        }
+    }
+
+    /// Drain and finalize through `WriterCommand::Shutdown`, then join. Returns
+    /// when the writer confirmed the drain, so timings exclude the join.
+    fn shutdown(self) -> Instant {
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        self.command_tx
+            .send(WriterCommand::Shutdown(reply_tx))
+            .unwrap();
+        reply_rx.recv().unwrap().unwrap();
+        let drained = Instant::now();
+        self.writer.join().unwrap();
+        drained
+    }
+}
+
+/// Title block and column header of the pipeline throughput tables.
+fn print_pipeline_header(title: &str, path: &str) {
+    println!("\n============================================================");
+    println!("  Benchmark: {title}");
+    println!("  ({path})");
+    println!("============================================================");
+    print_release_note();
+    println!(
+        "  {:>4} {:>12} {:>15} {:>12} {:>10} {:>8}",
+        "Ch", "Ring size", "Time (ms)", "Samples/s", "Realtime", "Drops"
+    );
+    println!(
+        "  {:-<4} {:-<12} {:-<15} {:-<12} {:-<10} {:-<8}",
+        "", "", "", "", "", ""
+    );
+}
+
+/// One row of a pipeline throughput table.
+fn print_pipeline_row(
+    ch_count: usize,
+    ring_size: usize,
+    elapsed: std::time::Duration,
+    frames: usize,
+    sample_rate: u32,
+    drops: u64,
+) {
+    let samples_per_sec = len_to_f64(frames * ch_count) / elapsed.as_secs_f64();
+    let realtime_multiple = samples_per_sec / (f64::from(sample_rate) * len_to_f64(ch_count));
+    println!(
+        "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
+        len_to_f64(ring_size * 4) / (1024.0 * 1024.0),
+        elapsed.as_secs_f64() * 1000.0,
+        format_rate(samples_per_sec),
+    );
+}
+
 // ===========================================================================
 // Benchmark 1: Direct WriterThreadState throughput
 //
@@ -89,27 +222,10 @@ fn benchmark_direct_write_throughput() {
             let dir = temp_dir.path().to_str().unwrap();
             let write_errors = Arc::new(AtomicU64::new(0));
 
-            let channels: Vec<usize> = (0..ch_count).collect();
             // Use "single" mode for >2 channels (multichannel), split for benchmarking split too
             let output_mode = OutputMode::Single;
 
-            let mut state = WriterThreadState::new(
-                dir,
-                sample_rate,
-                &channels,
-                output_mode,
-                0.0,
-                Arc::clone(&write_errors),
-                0,
-                Arc::new(AtomicBool::new(false)),
-                16,
-                zero_peaks(ch_count),
-                false,
-                0,
-            )
-            .unwrap();
-            state.total_device_channels =
-                u16::try_from(ch_count).expect("channel count fits in u16");
+            let mut state = bench_state(dir, sample_rate, ch_count, output_mode, 16, &write_errors);
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -190,25 +306,14 @@ fn benchmark_split_mode_throughput() {
             let dir = temp_dir.path().to_str().unwrap();
             let write_errors = Arc::new(AtomicU64::new(0));
 
-            let channels: Vec<usize> = (0..ch_count).collect();
-
-            let mut state = WriterThreadState::new(
+            let mut state = bench_state(
                 dir,
                 sample_rate,
-                &channels,
+                ch_count,
                 OutputMode::Split,
-                0.0,
-                Arc::clone(&write_errors),
-                0,
-                Arc::new(AtomicBool::new(false)),
                 16,
-                zero_peaks(ch_count),
-                false,
-                0,
-            )
-            .unwrap();
-            state.total_device_channels =
-                u16::try_from(ch_count).expect("channel count fits in u16");
+                &write_errors,
+            );
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -254,18 +359,9 @@ fn benchmark_ring_buffer_pipeline() {
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 
-    println!("\n============================================================");
-    println!("  Benchmark: Full ring buffer pipeline");
-    println!("  (producer thread → rtrb → writer thread → WAV)");
-    println!("============================================================");
-    print_release_note();
-    println!(
-        "  {:>4} {:>12} {:>15} {:>12} {:>10} {:>8}",
-        "Ch", "Ring size", "Time (ms)", "Samples/s", "Realtime", "Drops"
-    );
-    println!(
-        "  {:-<4} {:-<12} {:-<15} {:-<12} {:-<10} {:-<8}",
-        "", "", "", "", "", ""
+    print_pipeline_header(
+        "Full ring buffer pipeline",
+        "producer thread → rtrb → writer thread → WAV",
     );
 
     temp_env::with_vars(test_env_no_silence(), || {
@@ -274,79 +370,29 @@ fn benchmark_ring_buffer_pipeline() {
             let dir = temp_dir.path().to_str().unwrap();
             let write_errors = Arc::new(AtomicU64::new(0));
 
-            let channels: Vec<usize> = (0..ch_count).collect();
-
-            let mut state = WriterThreadState::new(
+            let state = bench_state(
                 dir,
                 sample_rate,
-                &channels,
+                ch_count,
                 OutputMode::Single,
-                0.0,
-                Arc::clone(&write_errors),
-                0,
-                Arc::new(AtomicBool::new(false)),
                 16,
-                zero_peaks(ch_count),
-                false,
-                0,
-            )
-            .unwrap();
-            state.total_device_channels =
-                u16::try_from(ch_count).expect("channel count fits in u16");
+                &write_errors,
+            );
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
-            let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
-
-            let rotation_needed = Arc::new(AtomicBool::new(false));
-            let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
-            let rotation_clone = Arc::clone(&rotation_needed);
-            let writer_handle = std::thread::Builder::new()
-                .name("bench-writer".to_owned())
-                .spawn(move || {
-                    writer_thread_main(consumer, &rotation_clone, &command_rx, state);
-                })
-                .unwrap();
+            let mut pipeline = BenchPipeline::spawn("bench-writer", state, ring_size);
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
             let chunk_samples = 512 * ch_count; // Simulate typical cpal callback size
 
-            let write_errors_cb = Arc::clone(&write_errors);
             let start = Instant::now();
-
-            // Simulate audio callback: push chunks at roughly real-time pace
-            // (but as fast as possible — we're measuring max throughput)
-            for chunk in data.chunks(chunk_samples) {
-                if let Ok(write_chunk) = producer.write_chunk_uninit(chunk.len()) {
-                    write_chunk.fill_from_iter(chunk.iter().copied());
-                } else {
-                    // Ring buffer full — count drops like the real callback does
-                    write_errors_cb.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-                    // Brief yield to let writer thread catch up
-                    std::thread::yield_now();
-                }
-            }
+            pipeline.push_all(&data, chunk_samples, &write_errors);
 
             // Shutdown writer thread (will drain remaining samples)
-            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-            command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
-            reply_rx.recv().unwrap().unwrap();
-            let elapsed = start.elapsed();
-            writer_handle.join().unwrap();
-
-            let total_samples = frames * ch_count;
-            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
-            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
-            let realtime_multiple = samples_per_sec / realtime_rate;
+            let elapsed = pipeline.shutdown().duration_since(start);
             let drops = write_errors.load(Ordering::Relaxed);
-
-            println!(
-                "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
-                len_to_f64(ring_size * 4) / (1024.0 * 1024.0),
-                elapsed.as_secs_f64() * 1000.0,
-                format_rate(samples_per_sec),
-            );
+            print_pipeline_row(ch_count, ring_size, elapsed, frames, sample_rate, drops);
         }
     });
 
@@ -385,25 +431,7 @@ fn benchmark_rotation_overhead() {
                 let dir = temp_dir.path().to_str().unwrap();
                 let write_errors = Arc::new(AtomicU64::new(0));
 
-                let channels: Vec<usize> = (0..ch_count).collect();
-
-                let mut state = WriterThreadState::new(
-                    dir,
-                    sample_rate,
-                    &channels,
-                    mode,
-                    0.0, // No silence detection — measure just I/O
-                    Arc::clone(&write_errors),
-                    0,
-                    Arc::new(AtomicBool::new(false)),
-                    16,
-                    zero_peaks(ch_count),
-                    false,
-                    0,
-                )
-                .unwrap();
-                state.total_device_channels =
-                    u16::try_from(ch_count).expect("channel count fits in u16");
+                let mut state = bench_state(dir, sample_rate, ch_count, mode, 16, &write_errors);
 
                 // The rotated file's name comes from the timestamp source;
                 // a mock clock makes it distinct without waiting for a
@@ -497,25 +525,15 @@ fn benchmark_monitor_vs_recording() {
             let temp_dir = tempdir().unwrap();
             let dir = temp_dir.path().to_str().unwrap();
             let write_errors = Arc::new(AtomicU64::new(0));
-            let channels: Vec<usize> = (0..ch_count).collect();
 
-            let mut record_state = WriterThreadState::new(
+            let mut record_state = bench_state(
                 dir,
                 sample_rate,
-                &channels,
+                ch_count,
                 OutputMode::Single,
-                0.0,
-                Arc::clone(&write_errors),
-                0,
-                Arc::new(AtomicBool::new(false)),
                 16,
-                zero_peaks(ch_count),
-                false,
-                0,
-            )
-            .unwrap();
-            record_state.total_device_channels =
-                u16::try_from(ch_count).expect("channel count fits in u16");
+                &write_errors,
+            );
 
             // Warm up
             record_state.write_samples(&warmup);
@@ -561,71 +579,29 @@ fn benchmark_monitor_pipeline() {
     let sample_rate: u32 = 48000;
     let duration_secs = 10;
 
-    println!("\n============================================================");
-    println!("  Benchmark: Full monitor pipeline");
-    println!("  (producer thread → rtrb → writer thread → peak tracking)");
-    println!("============================================================");
-    print_release_note();
-    println!(
-        "  {:>4} {:>12} {:>15} {:>12} {:>10} {:>8}",
-        "Ch", "Ring size", "Time (ms)", "Samples/s", "Realtime", "Drops"
-    );
-    println!(
-        "  {:-<4} {:-<12} {:-<15} {:-<12} {:-<10} {:-<8}",
-        "", "", "", "", "", ""
+    print_pipeline_header(
+        "Full monitor pipeline",
+        "producer thread → rtrb → writer thread → peak tracking",
     );
 
     temp_env::with_vars(test_env_no_silence(), || {
         for &ch_count in channel_counts {
-            let channels: Vec<usize> = (0..ch_count).collect();
             let write_errors = Arc::new(AtomicU64::new(0));
 
             let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
-            let mut state =
-                WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-            state.total_device_channels =
-                u16::try_from(ch_count).expect("channel count fits in u16");
+            let state = bench_monitor_state(sample_rate, ch_count, Arc::clone(&peak_levels));
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
-            let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
-
-            let rotation_needed = Arc::new(AtomicBool::new(false));
-            let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
-            let rotation_clone = Arc::clone(&rotation_needed);
-            let writer_handle = std::thread::Builder::new()
-                .name("bench-monitor".to_owned())
-                .spawn(move || {
-                    writer_thread_main(consumer, &rotation_clone, &command_rx, state);
-                })
-                .unwrap();
+            let mut pipeline = BenchPipeline::spawn("bench-monitor", state, ring_size);
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
             let chunk_samples = 512 * ch_count;
 
-            let write_errors_cb = Arc::clone(&write_errors);
             let start = Instant::now();
+            pipeline.push_all(&data, chunk_samples, &write_errors);
 
-            for chunk in data.chunks(chunk_samples) {
-                if let Ok(write_chunk) = producer.write_chunk_uninit(chunk.len()) {
-                    write_chunk.fill_from_iter(chunk.iter().copied());
-                } else {
-                    write_errors_cb.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-                    std::thread::yield_now();
-                }
-            }
-
-            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-            command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
-            reply_rx.recv().unwrap().unwrap();
-            let elapsed = start.elapsed();
-            writer_handle.join().unwrap();
-
-            let total_samples = frames * ch_count;
-            let samples_per_sec = len_to_f64(total_samples) / elapsed.as_secs_f64();
-            let realtime_rate = f64::from(sample_rate) * len_to_f64(ch_count);
-            let realtime_multiple = samples_per_sec / realtime_rate;
+            let elapsed = pipeline.shutdown().duration_since(start);
             let drops = write_errors.load(Ordering::Relaxed);
 
             // Verify peaks were actually tracked
@@ -636,13 +612,7 @@ fn benchmark_monitor_pipeline() {
                 any_peak,
                 "Peak levels should be non-zero after processing audio"
             );
-
-            println!(
-                "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
-                len_to_f64(ring_size * 4) / (1024.0 * 1024.0),
-                elapsed.as_secs_f64() * 1000.0,
-                format_rate(samples_per_sec),
-            );
+            print_pipeline_row(ch_count, ring_size, elapsed, frames, sample_rate, drops);
         }
     });
 
@@ -702,25 +672,15 @@ fn benchmark_write_samples_overhead() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
-        let channels: Vec<usize> = (0..ch_count).collect();
 
-        let mut record_state = WriterThreadState::new(
+        let mut record_state = bench_state(
             dir,
             sample_rate,
-            &channels,
+            ch_count,
             OutputMode::Single,
-            0.0,
-            Arc::clone(&write_errors),
-            0,
-            Arc::new(AtomicBool::new(false)),
             24,
-            zero_peaks(ch_count),
-            false,
-            0,
-        )
-        .unwrap();
-        record_state.total_device_channels =
-            u16::try_from(ch_count).expect("channel count fits in u16");
+            &write_errors,
+        );
 
         record_state.write_samples(&warmup);
 
@@ -782,40 +742,19 @@ fn benchmark_ring_buffer_latency() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
         let write_errors = Arc::new(AtomicU64::new(0));
-        let channels: Vec<usize> = (0..ch_count).collect();
 
-        let mut state = WriterThreadState::new(
+        let state = bench_state(
             dir,
             sample_rate,
-            &channels,
+            total_channels,
             OutputMode::Single,
-            0.0,
-            Arc::clone(&write_errors),
-            0,
-            Arc::new(AtomicBool::new(false)),
             16,
-            zero_peaks(ch_count),
-            false,
-            0,
-        )
-        .unwrap();
-        state.total_device_channels =
-            u16::try_from(total_channels).expect("channel count fits in u16");
+            &write_errors,
+        );
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
-        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
-
-        let rotation_needed = Arc::new(AtomicBool::new(false));
-        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
         let samples_consumed = Arc::clone(&state.samples_consumed_total);
-        let rotation_clone = Arc::clone(&rotation_needed);
-        let writer_handle = std::thread::Builder::new()
-            .name("bench-latency".to_owned())
-            .spawn(move || {
-                writer_thread_main(consumer, &rotation_clone, &command_rx, state);
-            })
-            .unwrap();
+        let mut pipeline = BenchPipeline::spawn("bench-latency", state, ring_size);
 
         let chunk_samples = 512 * total_channels;
         let num_chunks = 2000;
@@ -826,7 +765,7 @@ fn benchmark_ring_buffer_latency() {
         // Measurements assume the writer is already draining; prove it by
         // pushing one priming chunk and waiting for it to be consumed
         // rather than hoping a fixed nap covers thread start-up.
-        if let Ok(chunk) = producer.write_chunk_uninit(chunk_samples) {
+        if let Ok(chunk) = pipeline.producer.write_chunk_uninit(chunk_samples) {
             chunk.fill_from_iter(data.iter().copied());
         }
         crate::test_utils::wait_for_samples_consumed(
@@ -837,7 +776,7 @@ fn benchmark_ring_buffer_latency() {
 
         for _ in 0..num_chunks {
             // Measure occupancy before push (how many samples writer hasn't consumed yet)
-            let occupancy = ring_size - producer.slots();
+            let occupancy = ring_size - pipeline.producer.slots();
 
             // Calculate latency: occupancy / (sample_rate * channels) = seconds behind
             let latency_us = len_to_f64(occupancy)
@@ -846,7 +785,7 @@ fn benchmark_ring_buffer_latency() {
             latencies_us.push(latency_us);
 
             // Push chunk
-            if let Ok(chunk) = producer.write_chunk_uninit(chunk_samples) {
+            if let Ok(chunk) = pipeline.producer.write_chunk_uninit(chunk_samples) {
                 chunk.fill_from_iter(data.iter().copied());
             }
 
@@ -859,10 +798,7 @@ fn benchmark_ring_buffer_latency() {
         }
 
         // Shutdown
-        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-        command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
-        reply_rx.recv().unwrap().unwrap();
-        writer_handle.join().unwrap();
+        pipeline.shutdown();
 
         // Calculate percentiles
         latencies_us.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -913,27 +849,11 @@ fn benchmark_monitor_cpu_idle() {
     print_release_note();
 
     temp_env::with_vars(test_env_no_silence(), || {
-        let channels: Vec<usize> = (0..ch_count).collect();
-
         let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
-        let mut state =
-            WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-        state.total_device_channels =
-            u16::try_from(total_channels).expect("channel count fits in u16");
+        let state = bench_monitor_state(sample_rate, total_channels, Arc::clone(&peak_levels));
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
-        let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
-
-        let rotation_needed = Arc::new(AtomicBool::new(false));
-        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
-
-        let rotation_clone = Arc::clone(&rotation_needed);
-        let writer_handle = std::thread::Builder::new()
-            .name("bench-cpu-idle".to_owned())
-            .spawn(move || {
-                writer_thread_main(consumer, &rotation_clone, &command_rx, state);
-            })
-            .unwrap();
+        let mut pipeline = BenchPipeline::spawn("bench-cpu-idle", state, ring_size);
 
         // Simulate cpal callback at real-time pace
         let chunk_frames = 512;
@@ -950,7 +870,7 @@ fn benchmark_monitor_cpu_idle() {
             let cpu_start = Instant::now();
 
             // Push to ring buffer (same as cpal callback)
-            if let Ok(chunk) = producer.write_chunk_uninit(chunk_samples) {
+            if let Ok(chunk) = pipeline.producer.write_chunk_uninit(chunk_samples) {
                 chunk.fill_from_iter(data.iter().copied());
             }
 
@@ -966,10 +886,7 @@ fn benchmark_monitor_cpu_idle() {
         }
 
         // Shutdown
-        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-        command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
-        reply_rx.recv().unwrap().unwrap();
-        writer_handle.join().unwrap();
+        pipeline.shutdown();
 
         let wall_elapsed = wall_start.elapsed();
         let total_frames = chunks_sent * chunk_frames as u64;
@@ -1037,25 +954,15 @@ fn benchmark_sample_rate_scaling() {
                 let temp_dir = tempdir().unwrap();
                 let dir = temp_dir.path().to_str().unwrap();
                 let write_errors = Arc::new(AtomicU64::new(0));
-                let channels: Vec<usize> = (0..ch_count).collect();
 
-                let mut state = WriterThreadState::new(
+                let mut state = bench_state(
                     dir,
                     sample_rate,
-                    &channels,
+                    ch_count,
                     OutputMode::Single,
-                    0.0,
-                    Arc::clone(&write_errors),
-                    0,
-                    Arc::new(AtomicBool::new(false)),
                     bits_per_sample,
-                    zero_peaks(ch_count),
-                    false,
-                    0,
-                )
-                .unwrap();
-                state.total_device_channels =
-                    u16::try_from(ch_count).expect("channel count fits in u16");
+                    &write_errors,
+                );
 
                 let frames = sample_rate as usize * duration_secs;
                 let data = generate_bench_data(ch_count, frames);
@@ -1125,25 +1032,15 @@ fn benchmark_bit_depth_comparison() {
                 let temp_dir = tempdir().unwrap();
                 let dir = temp_dir.path().to_str().unwrap();
                 let write_errors = Arc::new(AtomicU64::new(0));
-                let channels: Vec<usize> = (0..ch_count).collect();
 
-                let mut state = WriterThreadState::new(
+                let mut state = bench_state(
                     dir,
                     sample_rate,
-                    &channels,
+                    ch_count,
                     OutputMode::Single,
-                    0.0,
-                    Arc::clone(&write_errors),
-                    0,
-                    Arc::new(AtomicBool::new(false)),
                     bits,
-                    zero_peaks(ch_count),
-                    false,
-                    0,
-                )
-                .unwrap();
-                state.total_device_channels =
-                    u16::try_from(ch_count).expect("channel count fits in u16");
+                    &write_errors,
+                );
 
                 let frames = sample_rate as usize * duration_secs;
                 let data = generate_bench_data(ch_count, frames);
