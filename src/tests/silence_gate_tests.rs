@@ -464,14 +464,14 @@ fn test_gate_recording_writes_onset_and_post_open_signal() {
         // The onset must be the trigger sine, not leaked zeros: spot-check an
         // early sample. sin(0.1)*0.5 → ~1636 at 16-bit, ±1 LSB TPDF dither
         // (DOLL-373).
-        let expected_onset = ((0.1_f32).sin() * 0.5 * 32767.0).round() as i32;
+        let expected_onset = 1_636; // sin(0.1) x 0.5 x 32767 = 1635.6, rounded
         assert!(
             (samples[1] - expected_onset).abs() <= 1,
             "onset sample must match the trigger batch, got {} want ~{expected_onset}",
             samples[1]
         );
         // The tail is the uniform post-open batch: 0.5 → ~16384, ±1 LSB.
-        let expected_post = (0.5_f32 * 32767.0).round() as i32;
+        let expected_post = 16_384;
         assert!(
             samples[trigger.len()..]
                 .iter()
@@ -513,7 +513,7 @@ fn test_gate_preroll_keeps_only_last_idle_batch() {
             trigger.len(),
             "file must contain exactly the triggering batch — no prior silence, no duplication"
         );
-        let expected = (0.4_f32 * 32767.0).round() as i32;
+        let expected = 13_107; // 0.4 x 32767 = 13106.8, rounded
         assert!(
             samples.iter().all(|&s| (s - expected).abs() <= 1),
             "retained onset must be the trigger batch's content"

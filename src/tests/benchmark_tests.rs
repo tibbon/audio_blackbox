@@ -108,7 +108,8 @@ fn benchmark_direct_write_throughput() {
                 0,
             )
             .unwrap();
-            state.total_device_channels = ch_count as u16;
+            state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -206,7 +207,8 @@ fn benchmark_split_mode_throughput() {
                 0,
             )
             .unwrap();
-            state.total_device_channels = ch_count as u16;
+            state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             let frames = sample_rate as usize * duration_secs;
             let data = generate_bench_data(ch_count, frames);
@@ -289,7 +291,8 @@ fn benchmark_ring_buffer_pipeline() {
                 0,
             )
             .unwrap();
-            state.total_device_channels = ch_count as u16;
+            state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
             let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -399,7 +402,8 @@ fn benchmark_rotation_overhead() {
                     0,
                 )
                 .unwrap();
-                state.total_device_channels = ch_count as u16;
+                state.total_device_channels =
+                    u16::try_from(ch_count).expect("channel count fits in u16");
 
                 // The rotated file's name comes from the timestamp source;
                 // a mock clock makes it distinct without waiting for a
@@ -476,7 +480,8 @@ fn benchmark_monitor_vs_recording() {
                 &(0..ch_count).collect::<Vec<_>>(),
                 peak_levels,
             );
-            monitor_state.total_device_channels = ch_count as u16;
+            monitor_state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             // Warm up
             let warmup = generate_bench_data(ch_count, 1000);
@@ -509,7 +514,8 @@ fn benchmark_monitor_vs_recording() {
                 0,
             )
             .unwrap();
-            record_state.total_device_channels = ch_count as u16;
+            record_state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             // Warm up
             record_state.write_samples(&warmup);
@@ -577,7 +583,8 @@ fn benchmark_monitor_pipeline() {
             let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
             let mut state =
                 WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-            state.total_device_channels = ch_count as u16;
+            state.total_device_channels =
+                u16::try_from(ch_count).expect("channel count fits in u16");
 
             let ring_size = sample_rate as usize * ch_count * RING_BUFFER_SECONDS;
             let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -679,7 +686,8 @@ fn benchmark_write_samples_overhead() {
             &(0..ch_count).collect::<Vec<_>>(),
             peak_levels,
         );
-        monitor_state.total_device_channels = ch_count as u16;
+        monitor_state.total_device_channels =
+            u16::try_from(ch_count).expect("channel count fits in u16");
 
         let warmup = generate_bench_data(ch_count, 1000);
         monitor_state.write_samples(&warmup);
@@ -711,7 +719,8 @@ fn benchmark_write_samples_overhead() {
             0,
         )
         .unwrap();
-        record_state.total_device_channels = ch_count as u16;
+        record_state.total_device_channels =
+            u16::try_from(ch_count).expect("channel count fits in u16");
 
         record_state.write_samples(&warmup);
 
@@ -790,7 +799,8 @@ fn benchmark_ring_buffer_latency() {
             0,
         )
         .unwrap();
-        state.total_device_channels = total_channels as u16;
+        state.total_device_channels =
+            u16::try_from(total_channels).expect("channel count fits in u16");
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -908,7 +918,8 @@ fn benchmark_monitor_cpu_idle() {
         let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
         let mut state =
             WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
-        state.total_device_channels = total_channels as u16;
+        state.total_device_channels =
+            u16::try_from(total_channels).expect("channel count fits in u16");
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
         let (mut producer, consumer) = rtrb::RingBuffer::new(ring_size);
@@ -1043,7 +1054,8 @@ fn benchmark_sample_rate_scaling() {
                     0,
                 )
                 .unwrap();
-                state.total_device_channels = ch_count as u16;
+                state.total_device_channels =
+                    u16::try_from(ch_count).expect("channel count fits in u16");
 
                 let frames = sample_rate as usize * duration_secs;
                 let data = generate_bench_data(ch_count, frames);
@@ -1130,7 +1142,8 @@ fn benchmark_bit_depth_comparison() {
                     0,
                 )
                 .unwrap();
-                state.total_device_channels = ch_count as u16;
+                state.total_device_channels =
+                    u16::try_from(ch_count).expect("channel count fits in u16");
 
                 let frames = sample_rate as usize * duration_secs;
                 let data = generate_bench_data(ch_count, frames);

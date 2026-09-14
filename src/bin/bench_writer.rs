@@ -47,7 +47,17 @@ fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
         // 2^31: `i32::MAX` has no exact f32 and rounds here; `as i32` saturates.
         _ => 32_768.0_f32 * 65_536.0,
     };
-    (sample.clamp(-1.0, 1.0) * scale).round() as i32
+    saturating_i32((sample.clamp(-1.0, 1.0) * scale).round())
+}
+
+/// Float-to-int `as`: truncates toward zero and saturates at the i32 bounds,
+/// so a 32-bit full-scale +1.0 (2^31 in f32) lands on `i32::MAX`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "float-to-int `as` saturates at the i32 bounds, which is the intended behavior"
+)]
+const fn saturating_i32(value: f32) -> i32 {
+    value as i32
 }
 
 /// A sample count as `f64` for the throughput report.
@@ -217,7 +227,7 @@ fn run_direct(
     } else {
         let path = format!("{dir}/bench.recording.wav");
         let spec = hound::WavSpec {
-            channels: num_channels as u16,
+            channels: u16::try_from(num_channels).expect("--channels fits in u16"),
             sample_rate,
             bits_per_sample: 24,
             sample_format: hound::SampleFormat::Int,

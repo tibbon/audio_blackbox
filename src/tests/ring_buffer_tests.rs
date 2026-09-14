@@ -435,7 +435,10 @@ fn test_check_and_delete_silent_files_deletes_silent() {
         let loud_path = dir.join("loud.wav");
         let mut loud_writer = hound::WavWriter::create(&loud_path, spec).unwrap();
         for i in 0_u16..1000 {
-            let sample = ((f32::from(i) / 10.0).sin() * 16000.0) as i16;
+            let sample = i16::try_from(crate::numeric::saturating_i32(
+                (f32::from(i) / 10.0).sin() * 16000.0,
+            ))
+            .expect("±16000 fits in i16");
             loud_writer.write_sample(sample).unwrap();
         }
         loud_writer.finalize().unwrap();

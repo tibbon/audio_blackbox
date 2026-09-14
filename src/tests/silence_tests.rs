@@ -1,4 +1,5 @@
 use crate::error::BlackboxError;
+use crate::numeric::saturating_i32_from_f64;
 use crate::utils::is_silent;
 use hound::WavSpec;
 use hound::WavWriter;
@@ -55,9 +56,9 @@ fn test_non_silent_file() {
     let mut writer = WavWriter::create(&file_path, spec).unwrap();
     for _ in 0..1000 {
         // Generate a sine wave with 90% of max amplitude
-        let sample = (f64::from(i32::MAX)
-            * 0.9
-            * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin()) as i32;
+        let sample = saturating_i32_from_f64(
+            f64::from(i32::MAX) * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin(),
+        );
         writer.write_sample(sample).unwrap();
     }
     writer.finalize().unwrap();
@@ -180,9 +181,9 @@ fn test_mixed_amplitude() {
             writer.write_sample(0).unwrap();
         } else {
             // Loud samples with 90% of max amplitude
-            let sample =
-                (f64::from(i32::MAX) * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin())
-                    as i32;
+            let sample = saturating_i32_from_f64(
+                f64::from(i32::MAX) * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin(),
+            );
             writer.write_sample(sample).unwrap();
         }
     }

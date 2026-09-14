@@ -172,6 +172,24 @@ impl Drop for SampleRateListener {
     }
 }
 
+/// `size_of::<T>()` as the `u32` byte count CoreAudio property calls take.
+///
+/// Call it in a `const` block: the assert then rejects, at compile time, a type
+/// too large for `u32`, which is what makes the cast below lossless.
+const fn property_size<T>() -> u32 {
+    let size = size_of::<T>();
+    assert!(
+        size <= u32::MAX as usize,
+        "property type larger than u32::MAX bytes"
+    );
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "asserted above to fit in u32"
+    )]
+    let size = size as u32;
+    size
+}
+
 fn rate_addr() -> PropAddr {
     PropAddr {
         selector: SEL_NOMINAL_RATE,
@@ -215,7 +233,7 @@ fn default_input_device() -> Option<AudioObjectID> {
         element: ELEMENT_MAIN,
     };
     let mut device_id: AudioObjectID = 0;
-    let mut size = size_of::<AudioObjectID>() as u32;
+    let mut size = const { property_size::<AudioObjectID>() };
 
     // SAFETY: `addr` and `size` outlive the call; the out pointer refers to
     // `device_id`, whose size matches the `size` we pass, so CoreAudio
@@ -288,7 +306,7 @@ fn device_name(device_id: AudioObjectID) -> Option<String> {
         element: ELEMENT_MAIN,
     };
     let mut name_ref: CFStringRef = std::ptr::null();
-    let mut size = size_of::<CFStringRef>() as u32;
+    let mut size = const { property_size::<CFStringRef>() };
 
     // SAFETY: the out pointer refers to `name_ref`, a pointer-sized slot
     // matching `size`; CoreAudio writes at most that many bytes.

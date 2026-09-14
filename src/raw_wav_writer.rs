@@ -34,9 +34,25 @@ const WAV_BUF_CAPACITY: usize = 65_536;
 impl RawWavWriter {
     /// Create a new WAV file at `path` with the given spec.
     pub(crate) fn create(path: &str, spec: WavSpec) -> io::Result<Self> {
+        // `write_sample` slices `byte_width` bytes out of an i32, so only whole
+        // bytes from 1 to 4 work. Reject anything else before creating the
+        // file: a wider spec used to panic on the first sample, one under 8
+        // bits wrote no sample bytes, and a depth that isn't a multiple of 8
+        // wrote a header that disagreed with the sample width.
+        let byte_width = match spec.bits_per_sample {
+            8 => 1_u8,
+            16 => 2,
+            24 => 3,
+            32 => 4,
+            other => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("unsupported bits_per_sample: {other}"),
+                ));
+            }
+        };
         let file = File::create(path)?;
         let mut writer = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
-        let byte_width = (spec.bits_per_sample / 8) as u8;
 
         // Write the 44-byte RIFF/WAV header with placeholder sizes.
         // Saturating arithmetic so an extreme spec (e.g. 384 kHz × 32-bit
@@ -157,7 +173,7 @@ impl RawWavWriter {
                 self.data_bytes_written
             );
         }
-        let data_size = self.data_bytes_written.min(u64::from(u32::MAX)) as u32;
+        let data_size = u32::try_from(self.data_bytes_written).unwrap_or(u32::MAX);
         // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
         // in release and panic in debug. The header value can't represent more
         // than u32::MAX anyway, so saturating is the most-honest answer.
@@ -179,6 +195,27 @@ impl RawWavWriter {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// A depth the writer can't emit is refused before any file exists: 0 and
+    /// 4 would write no sample bytes, 12 and 20 aren't whole bytes, and 40
+    /// would slice past the i32 in `write_sample`.
+    #[test]
+    fn create_rejects_unsupported_bit_depths() {
+        let dir = tempdir().unwrap();
+        for bits in [0_u16, 4, 12, 20, 40] {
+            let path = dir.path().join(format!("bits{bits}.wav"));
+            let spec = WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+                bits_per_sample: bits,
+            };
+            let err = RawWavWriter::create(path.to_str().unwrap(), spec)
+                .err()
+                .unwrap_or_else(|| panic!("{bits}-bit spec should be rejected"));
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{bits}-bit spec");
+            assert!(!path.exists(), "{bits}-bit spec must not create a file");
+        }
+    }
 
     /// Reads `byte_rate` (offset 28-31) and `block_align` (offset 32-33) from a WAV header.
     fn read_header_fields(path: &str) -> (u32, u16) {
@@ -244,7 +281,7 @@ mod tests {
         let mut w = RawWavWriter::create(&path, spec).unwrap();
         let n = 100_u32;
         for i in 0..n {
-            w.write_sample(i32::from(i as i16)).unwrap();
+            w.write_sample(i32::try_from(i).unwrap()).unwrap();
         }
         w.finalize().unwrap();
 
@@ -326,8 +363,8 @@ mod tests {
             bits_per_sample: 16, // 2-byte samples → always even
         };
         let mut w = RawWavWriter::create(&path, spec).unwrap();
-        for i in 0..5 {
-            w.write_sample(i32::from(i as i16)).unwrap();
+        for i in 0_i16..5 {
+            w.write_sample(i32::from(i)).unwrap();
         }
         w.finalize().unwrap();
 
