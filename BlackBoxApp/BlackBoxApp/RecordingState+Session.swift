@@ -167,24 +167,7 @@ extension RecordingState {
             // 30 s so the user gets confirmation of what just finished.
             // Captured here (before the durations resets to 0) and
             // displayed as a menu block with a Show in Finder button.
-            if sessionDuration > 0 {
-                lastRecordingDurationText = Self.formatRecordedDuration(sessionDuration)
-                let snapshot = lastRecordingDurationText
-                // DOLL-230: explicit @MainActor on the Task closure even
-                // though RecordingState is class-level @MainActor — under
-                // strict-concurrency the inherited isolation rules are
-                // subtle and this makes the mutation-after-await safe by
-                // construction regardless of how the surrounding class
-                // is later refactored.
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(30))
-                    guard let self,
-                        lastRecordingDurationText == snapshot,
-                        !isRecording
-                    else { return }
-                    lastRecordingDurationText = nil
-                }
-            }
+            showLastRecordingSummary(sessionDuration: sessionDuration)
             writeErrorsCount = 0
             isLowBatteryWarning = false
             batteryNotificationFired = false
@@ -349,6 +332,28 @@ extension RecordingState {
         return hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, secs)
             : String(format: "%d:%02d", minutes, secs)
+    }
+
+    /// Show the post-Stop summary for a session that ran, then clear it after
+    /// 30 s unless a newer summary or a new recording replaced it.
+    private func showLastRecordingSummary(sessionDuration: TimeInterval) {
+        guard sessionDuration > 0 else { return }
+        lastRecordingDurationText = Self.formatRecordedDuration(sessionDuration)
+        let snapshot = lastRecordingDurationText
+        // DOLL-230: explicit @MainActor on the Task closure even
+        // though RecordingState is class-level @MainActor — under
+        // strict-concurrency the inherited isolation rules are
+        // subtle and this makes the mutation-after-await safe by
+        // construction regardless of how the surrounding class
+        // is later refactored.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self,
+                lastRecordingDurationText == snapshot,
+                !isRecording
+            else { return }
+            lastRecordingDurationText = nil
+        }
     }
 
     /// Dismiss the post-Stop summary block early — called when the user

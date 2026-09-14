@@ -54,114 +54,147 @@ extension RecordingState {
 
         // Check status from Rust engine (lightweight C struct, no JSON)
         if let status = bridge.getStatusFlags() {
-            // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
-            if isRecording && !status.is_recording {
-                stopTimer()
-                markRecordingEnded()
-                let msg = bridge.lastError ?? String(localized: "Recording stopped unexpectedly")
-                setTransientError(msg)
-                Self.log.error("Recording stopped unexpectedly: \(msg)")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // DOLL-216: surface the silence-gate idle state as "Armed
-            // (waiting for signal)". Updated only on transitions (not
-            // every tick) so the menu doesn't re-render needlessly —
-            // the live elapsed time is now rendered by
-            // Text(date, style: .timer) in the menu directly.
-            if status.gate_idle != wasGateIdle {
-                wasGateIdle = status.gate_idle
-                statusText =
-                    status.gate_idle
-                    ? String(localized: "Armed (waiting for signal)")
-                    : String(localized: "Recording")
-            }
+            applyEngineStatus(status)
+        }
+    }
 
-            // Sample rate changed on the audio device — restart to pick up new rate
-            // so the WAV header matches the actual audio data.
-            if status.sample_rate_changed {
-                Self.log.warning("Sample rate changed on device — finalizing and restarting")
-                restartIfRecording(reason: "sample rate changed")
-                notifyUser(
-                    title: String(localized: "Sample Rate Changed"),
-                    message: String(
-                        localized: "Your audio device's sample rate changed. Recording was restarted automatically."
-                    ),
-                    identifier: "sample-rate-changed"
-                )
-                return
-            }
+    /// Act on one engine status poll. The checks run in priority order and
+    /// each terminal condition (unexpected stop, sample-rate change, stream
+    /// error, write failure, low disk, excessive drops) ends the tick.
+    private func applyEngineStatus(_ status: StatusFlags) {
+        // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
+        if isRecording && !status.is_recording {
+            handleUnexpectedEngineStop()
+            return
+        }
+        updateGateIdleStatus(status.gate_idle)
 
-            // Audio stream error — device disconnected or driver failure.
-            // Finalize current files, then try to restart on the next available device.
-            if status.stream_error {
-                recoverFromStreamError()
-                return
-            }
-            // DOLL-437: persistent write failure (disk full mid-write, or the
-            // output directory became unwritable). Checked before disk_space_low
-            // so the cause is reported accurately rather than as a pre-emptive
-            // low-space warning or as CPU "heavy load" from the shared counter.
-            if status.write_failed {
-                stop()
-                let msg = String(
-                    localized: """
-                        Recording stopped: unable to write to disk. \
-                        Free up space or check the output folder's permissions, then try again.
-                        """
-                )
-                setTransientError(msg)
-                Self.log.error("Write failure — stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // Disk space low — stop recording gracefully
-            if status.disk_space_low {
-                stop()
-                let msg = String(localized: "Your disk is almost full. Free up space and try again.")
-                setTransientError(msg)
-                Self.log.error("Disk space low, stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            // Write errors — cumulative counter from Rust engine
-            let writeErrors = Int(status.write_errors)
-            let newDrops = writeErrors - lastReportedWriteErrors
-            // DOLL-223: publish for UI even when below the threshold the
-            // existing logic warns at. Otherwise sub-500-sample drops
-            // happen invisibly.
-            writeErrorsCount = writeErrors
+        // Sample rate changed on the audio device — restart to pick up new rate
+        // so the WAV header matches the actual audio data.
+        if status.sample_rate_changed {
+            restartForSampleRateChange()
+            return
+        }
 
-            if writeErrors > 48_000 {
-                // Auto-stop if excessive (>48000 samples dropped across all channels)
-                stop()
-                let msg = String(
-                    localized: """
-                        Recording quality degraded \u{2014} your Mac may be under heavy load. \
-                        Try closing other applications.
-                        """
-                )
-                setTransientError(msg)
-                Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
-                notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                return
-            }
-            if newDrops > 0 {
-                // Only log/display when NEW drops occur (counter is cumulative)
-                lastReportedWriteErrors = writeErrors
-                Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
-                if writeErrors > 500 {
-                    errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
-                }
-            }
+        // Audio stream error — device disconnected or driver failure.
+        // Finalize current files, then try to restart on the next available device.
+        if status.stream_error {
+            recoverFromStreamError()
+            return
+        }
+        // DOLL-437: persistent write failure (disk full mid-write, or the
+        // output directory became unwritable). Checked before disk_space_low
+        // so the cause is reported accurately rather than as a pre-emptive
+        // low-space warning or as CPU "heavy load" from the shared counter.
+        if status.write_failed {
+            stopForWriteFailure()
+            return
+        }
+        // Disk space low — stop recording gracefully
+        if status.disk_space_low {
+            stopForLowDiskSpace()
+            return
+        }
+        // Write errors — cumulative counter from Rust engine
+        let writeErrors = Int(status.write_errors)
+        let newDrops = writeErrors - lastReportedWriteErrors
+        // DOLL-223: publish for UI even when below the threshold the
+        // existing logic warns at. Otherwise sub-500-sample drops
+        // happen invisibly.
+        writeErrorsCount = writeErrors
 
-            // Sample rate — update for file size estimates in settings
-            let rate = Int(status.sample_rate)
-            if rate > 0, rate != sampleRate {
-                sampleRate = rate
-                UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
+        if writeErrors > 48_000 {
+            stopForExcessiveWriteErrors(writeErrors)
+            return
+        }
+        if newDrops > 0 {
+            // Only log/display when NEW drops occur (counter is cumulative)
+            lastReportedWriteErrors = writeErrors
+            Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
+            if writeErrors > 500 {
+                errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
             }
         }
+
+        // Sample rate — update for file size estimates in settings
+        let rate = Int(status.sample_rate)
+        if rate > 0, rate != sampleRate {
+            sampleRate = rate
+            UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
+        }
+    }
+
+    /// The engine reports it is no longer recording while the UI thinks it
+    /// is (device disconnect, etc.): tear the session down and tell the user.
+    private func handleUnexpectedEngineStop() {
+        stopTimer()
+        markRecordingEnded()
+        let msg = bridge.lastError ?? String(localized: "Recording stopped unexpectedly")
+        setTransientError(msg)
+        Self.log.error("Recording stopped unexpectedly: \(msg)")
+        notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+    }
+
+    /// DOLL-216: surface the silence-gate idle state as "Armed
+    /// (waiting for signal)". Updated only on transitions (not
+    /// every tick) so the menu doesn't re-render needlessly —
+    /// the live elapsed time is now rendered by
+    /// Text(date, style: .timer) in the menu directly.
+    private func updateGateIdleStatus(_ gateIdle: Bool) {
+        if gateIdle != wasGateIdle {
+            wasGateIdle = gateIdle
+            statusText =
+                gateIdle
+                ? String(localized: "Armed (waiting for signal)")
+                : String(localized: "Recording")
+        }
+    }
+
+    private func restartForSampleRateChange() {
+        Self.log.warning("Sample rate changed on device — finalizing and restarting")
+        restartIfRecording(reason: "sample rate changed")
+        notifyUser(
+            title: String(localized: "Sample Rate Changed"),
+            message: String(
+                localized: "Your audio device's sample rate changed. Recording was restarted automatically."
+            ),
+            identifier: "sample-rate-changed"
+        )
+    }
+
+    private func stopForWriteFailure() {
+        stop()
+        let msg = String(
+            localized: """
+                Recording stopped: unable to write to disk. \
+                Free up space or check the output folder's permissions, then try again.
+                """
+        )
+        setTransientError(msg)
+        Self.log.error("Write failure — stopping recording")
+        notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+    }
+
+    private func stopForLowDiskSpace() {
+        stop()
+        let msg = String(localized: "Your disk is almost full. Free up space and try again.")
+        setTransientError(msg)
+        Self.log.error("Disk space low, stopping recording")
+        notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+    }
+
+    /// Auto-stop if excessive (>48000 samples dropped across all channels)
+    private func stopForExcessiveWriteErrors(_ writeErrors: Int) {
+        stop()
+        let msg = String(
+            localized: """
+                Recording quality degraded \u{2014} your Mac may be under heavy load. \
+                Try closing other applications.
+                """
+        )
+        setTransientError(msg)
+        Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
+        notifyUser(title: String(localized: "Recording Stopped"), message: msg)
     }
 
     /// Finalize the current files after an audio-stream error and restart on
@@ -196,21 +229,29 @@ extension RecordingState {
         lastStreamRestart = now
 
         if streamRestartCount > Self.maxConsecutiveStreamRestarts {
-            markRecordingEnded()
-            streamRestartCount = 0
-            lastStreamRestart = nil
-            let msg = String(
-                localized: """
-                    Your audio device keeps failing. \
-                    Recording stopped \u{2014} check the device and try again.
-                    """
-            )
-            setTransientError(msg)
-            Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
-            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+            stopAfterRepeatedStreamErrors()
             return
         }
+        restartOnNextAvailableDevice()
+    }
 
+    /// The DOLL-351 cap was hit: end the session instead of restarting again.
+    private func stopAfterRepeatedStreamErrors() {
+        markRecordingEnded()
+        streamRestartCount = 0
+        lastStreamRestart = nil
+        let msg = String(
+            localized: """
+                Your audio device keeps failing. \
+                Recording stopped \u{2014} check the device and try again.
+                """
+        )
+        setTransientError(msg)
+        Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
+        notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+    }
+
+    private func restartOnNextAvailableDevice() {
         if bridge.startRecording().isSuccess {
             // Restarted successfully (e.g., System Default fell back to built-in mic)
             recordingStartTime = Date()
