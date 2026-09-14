@@ -25,7 +25,7 @@ Runs when: the branch touches `.github/`, `scripts/`, `Makefile`, `Cargo.toml`, 
 - Lockfile: `Cargo.lock` changes match the manifest change; unrelated crate bumps in a feature
   branch are scope creep. Advisory-driven bumps name the RUSTSEC ID.
 - Xcode project: `project.yml` is the source; the committed `.xcodeproj` is regenerated with the
-  xcodegen version CI pins (2.45.3). Build keys for language mode, concurrency, and warnings live
+  xcodegen version CI pins (2.46.0). Build keys for language mode, concurrency, and warnings live
   in `Guardrails.xcconfig`; `project.yml` `settings` keeps identity and version keys.
 - Versions and release: `scripts/check-versions.sh` alignment across `Cargo.toml`, `project.yml`,
   and `Info.plist`; a tagged release needs a `CHANGELOG.md` heading (DOLL-462); release lanes in
