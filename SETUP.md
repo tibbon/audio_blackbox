@@ -27,6 +27,7 @@ There are two tiers of setup:
 | **cargo-deny, cargo-machete** | `cargo install cargo-deny cargo-machete --locked` — dependency advisories/licenses and unused-dep detection; CI runs both. |
 | **Rust MSRV toolchain** | `rustup toolchain install 1.95.0` — lets `scripts/check.sh` run the MSRV check CI runs. Keep `stable` current (`rustup update`): CI's clippy is stable, and lints move between releases. |
 | **GitHub CLI** | `brew install gh` — for PRs and release dispatch. |
+| **Node.js** | `brew install node` — `scripts/check.sh` parses the Claude workflow scripts and runs their mocked scenarios (`scripts/test-ship-ticket.mjs`). |
 
 macOS on Apple Silicon is the supported/shipped target (the app is arm64-only).
 The CLI binary also builds on Linux (`libasound2-dev` + `pkg-config`), but there
@@ -71,6 +72,39 @@ Run `make help` for the full list. Run `make check` before pushing —
 GitHub Actions runs the same gates and CI minutes are limited. The rules the
 gates enforce, and the ones a reviewer still has to judge, are in
 [docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md).
+
+### Claude Code workflow
+
+`/ship-ticket DOLL-N` takes a ticket from plan to merged PR, and
+`/ship-ticket review` reviews the current branch (see AGENTS.md "Workflow").
+It needs Claude Code with dynamic workflows enabled (`/config`), the Linear MCP
+server connected, and `gh` logged in. `scripts/check.sh tooling` parses the
+workflow script; it needs `node` (`brew install node`).
+
+A run launches dozens of agents and can take an hour, so permission prompts
+stall it. Allow the commands its agents run in `.claude/settings.local.json`
+(local, not committed), for example:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Workflow(ship-ticket)",
+      "Bash(./scripts/check.sh:*)",
+      "Bash(cargo fmt:*)", "Bash(cargo clippy:*)", "Bash(cargo test:*)", "Bash(cargo build:*)",
+      "Bash(swiftlint lint:*)", "Bash(swift format:*)", "Bash(make xcodegen)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
+      "Bash(git fetch:*)", "Bash(git merge-base:*)", "Bash(git switch:*)",
+      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git rebase:*)",
+      "Bash(gh pr view:*)", "Bash(gh pr checks:*)", "Bash(gh pr list:*)", "Bash(gh run view:*)"
+    ]
+  }
+}
+```
+
+Pushing, opening the PR and merging are left to the normal permission
+prompt or auto mode. Add `Bash(git push:*)`, `Bash(gh pr create:*)` and
+`Bash(gh pr merge:*)` only if you want those unattended too.
 
 ---
 
