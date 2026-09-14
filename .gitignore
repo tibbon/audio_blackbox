@@ -4,7 +4,9 @@
 *.wav
 /logs
 /recordings
-.claude
+# Claude Code: local settings and skills stay private at any depth; the root saved workflows are shared (DOLL-654).
+**/.claude/*
+!/.claude/workflows/
 CLAUDE.md
 *.app/
 profile.json.gz

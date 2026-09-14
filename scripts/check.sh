@@ -7,6 +7,7 @@
 #                                       attribution
 #         scripts/check.sh swift        Swift only: swift-format, swiftlint, xcodebuild test,
 #                                       swiftlint analyze, string-catalog sync
+#         scripts/check.sh tooling      Claude workflow scripts parse and pass their mocked scenarios (fast)
 #         scripts/check.sh sanitize     Swift tests under TSan, then ASan+UBSan (slow; local only)
 #         scripts/check.sh all          rust + swift + sanitize
 #
@@ -149,6 +150,32 @@ check_swift() {
   fi
 }
 
+# ---------------------------------------------------------------- Claude workflows (local only)
+# .claude/workflows/*.js run as /<name> commands (DOLL-654). The runtime only
+# reports a syntax error when someone launches the workflow, so parse them here.
+check_workflows() {
+  step "Claude workflow scripts parse, and /ship-ticket passes its mocked scenarios"
+  local files=() f tmp
+  for f in .claude/workflows/*.js; do [[ -e "$f" ]] && files+=("$f"); done
+  if ((${#files[@]} == 0)); then echo "   (no workflow scripts)"; return; fi
+  if ! have node; then skip "node not installed (brew install node)"; return; fi
+  mkdir -p target
+  for f in "${files[@]}"; do
+    if [[ "$(head -n 1 "$f")" != "export const meta = {" ]]; then
+      echo "$f: the first line must be 'export const meta = {' (a plain literal)"; exit 1
+    fi
+    # These throw inside the runtime (they would break resume), and imports fail before launch.
+    if grep -nE 'Date\.now\(|Math\.random\(|new Date\(\)|(^|[^.[:alnum:]_])import[[:space:]]*[({"'"'"']' "$f"; then
+      echo "$f: Date.now(), Math.random(), new Date() and import are not available in workflow scripts"; exit 1
+    fi
+    tmp="target/workflow-parse-$(basename "$f" .js).cjs"
+    { echo '(async () => {'; sed 's/^export const meta = {/const meta = {/' "$f"; echo '})'; } > "$tmp"
+    node --check "$tmp" || { echo "$f does not parse"; exit 1; }
+  done
+  # Every control-flow path of the workflow, driven by mocked agents (DOLL-654).
+  node scripts/test-ship-ticket.mjs
+}
+
 # ---------------------------------------------------------------- Sanitizers (local only)
 check_sanitize() {
   step "Rust static library for the app (release, ffi)"
@@ -165,13 +192,14 @@ check_sanitize() {
 }
 
 case "$section" in
-  default)  check_rust; check_swift ;;
-  all)      check_rust; check_swift; check_sanitize ;;
+  default)  check_workflows; check_rust; check_swift ;;
+  all)      check_workflows; check_rust; check_swift; check_sanitize ;;
   rust)     check_rust ;;
   swift)    check_swift ;;
   lint)     check_swift_lint ;;
+  tooling)  check_workflows ;;
   sanitize) check_sanitize ;;
-  *) echo "unknown section: $section (rust | swift | lint | sanitize | all)"; exit 2 ;;
+  *) echo "unknown section: $section (rust | swift | lint | tooling | sanitize | all)"; exit 2 ;;
 esac
 
 if ((${#missing[@]})); then

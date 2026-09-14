@@ -47,6 +47,9 @@ Tickets are listed by ID; add new entries as you reference them in code or docs.
 - **DOLL-160** — Pbxproj/project.yml drift CI check: live in the `swift-app` lane (pinned `xcodegen` regenerate + `git diff --exit-code`). Edit `project.yml` → run `make xcodegen` → commit the regenerated `.xcodeproj`. (Version drift was the original blocker; resolved separately by DOLL-259, so the full-structure check now ships.)
 - **DOLL-166** — Cargo cache keys consolidated across CI lanes (one shared `cargo-` key for all stable-toolchain jobs; MSRV stays separate).
 - **DOLL-180** — Cyberclaw-review aggregate fixes (a11y regression on shortcut Clear button + 12 minors).
+- **DOLL-652** — One guardrail loop: `make check` (`scripts/check.sh`) is the definition of done and mirrors every CI lane. `#[allow]` is a compile error; exceptions are `#[expect(..., reason)]`. Swift 6 strict concurrency lives in `Guardrails.xcconfig`.
+- **DOLL-653** — Backlog of lints parked as `allow` and SwiftLint size thresholds raised during DOLL-652. Shrink it one lint per PR; never grow it to get green.
+- **DOLL-654** — `/ship-ticket` workflow (`.claude/workflows/ship-ticket.js`) runs the ticket loop with a review loop built to converge: later rounds review only fixes, the skeptic rules out-of-scope requests into a follow-up, fixes stay small, and findings must halve each round. The first live run did not converge because the fixer built features for every gap reviewers found.
 
 ## Cleanup / drift fixes
 

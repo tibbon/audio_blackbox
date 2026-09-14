@@ -4,10 +4,19 @@ How to land a change. Read the README for what the project *is*; this file is th
 
 ## Workflow
 
+In Claude Code, `/ship-ticket DOLL-N` runs every step below the same way each time (DOLL-654, `.claude/workflows/ship-ticket.js`): intake, a read-only plan that stops with questions when the ticket needs a decision, branch, implement, `make check`, a review loop, PR, CI, merge, and Linear. The review loop runs reviewers from [docs/reviewers/](docs/reviewers/README.md) chosen by the files the branch touches. A skeptic agent confirms, refutes, or marks each finding out of scope for the ticket, and one fixer applies small confirmed fixes. Later rounds review only those fixes. The loop converges when a round confirms nothing to fix, and stops early when a round confirms more than half (rounded up) of the one before. Out-of-scope requests become a follow-up ticket instead of scope creep. Nothing is pushed unless review converged and the full `make check` is green. `scripts/test-ship-ticket.mjs` tests the workflow's control flow with mocked agents.
+
+- `/ship-ticket DOLL-N plan` stops after the plan; `implement`, `review` and `pr` stop after those stages. A stage word right after the ticket always stops there, and any words after it are guidance. `no-merge` leaves the green PR open. `rounds=N` and `bar=high` tune the review loop. Any other words go to the planner as guidance.
+- `/ship-ticket review` runs only the review loop on the current branch, committing fixes as `fixup!` commits.
+- `/ship-ticket` with no ticket lists the open candidates.
+- Rerunning `/ship-ticket DOLL-N` resumes an existing branch and PR. Confirmed pre-existing problems become Linear follow-up tickets instead of scope creep.
+
+By hand, the same steps:
+
 1. Pick or file a ticket in the Linear [Audio Blackbox project](https://linear.app/cyberdyne-systems/project/audio-blackbox-fdadb8f8be42). Title and description are the source of truth — paste any context the PR needs.
 2. Branch off `main` as `tibbon/doll-N-short-slug`. The Linear branch button generates this name verbatim.
-3. Open a PR. Mention the ticket in the body (`Closes DOLL-N.`).
-4. Run `make check` before opening the PR (DOLL-652). It is the same gate CI runs — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, `cargo deny`, `cargo machete`, MSRV, FFI header parity, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze — and Actions minutes are scarce, so green locally first. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
+3. Review the branch against [docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md), then open a PR. Mention the ticket in the body (`Closes DOLL-N.`) and list what checklist §6.4 asks for.
+4. Run `make check` before opening the PR (DOLL-652). It is the same gate CI runs — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, `cargo deny`, `cargo machete`, MSRV, FFI header parity, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze, plus the local-only Claude workflow tests (needs `node`) — and Actions minutes are scarce, so green locally first. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
 5. CI must be fully green before merge. Lanes: Format, Clippy (+ rustdoc, machete), MSRV (1.95), Test, FFI, Security audit (cargo deny), Benchmark smoke test, Swift app (+ swift-format, swiftlint, analyze).
 6. Merge via `gh pr merge <num> --rebase --admin` (linear history; keeps GitHub UI bright green for solo branches).
 7. Mark the Linear ticket Done with the PR URL attached.

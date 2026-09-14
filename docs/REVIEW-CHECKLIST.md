@@ -305,7 +305,8 @@ Applies to Swift and Rust code reachable from the cpal/CoreAudio input callback.
 1. `make check` is green: fmt, clippy with `-D warnings` on all three feature sets, rustdoc,
    tests, deny, machete, MSRV, FFI header parity, attribution, swift-format, swiftlint
    `--strict`, xcodebuild test with warnings as errors under Swift 6 strict concurrency,
-   swiftlint analyze, String Catalog sync, project.yml/pbxproj parity.
+   swiftlint analyze, String Catalog sync, project.yml/pbxproj parity, and the local-only
+   `/ship-ticket` workflow tests.
 2. New unsafe, FFI, real-time, or concurrency code has the SAFETY, ownership, and
    thread-contract comments listed above; new Swift concurrency code has a TSan-clean
    `scripts/check.sh sanitize` run.
