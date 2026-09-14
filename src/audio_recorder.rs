@@ -67,6 +67,12 @@ impl<P: AudioProcessor> AudioRecorder<P> {
     /// 1. Environment variables
     /// 2. Configuration file
     /// 3. Default values
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BlackboxError::ChannelParse`] if the configured channel list is
+    /// invalid, and otherwise any error from the processor's
+    /// [`process_audio`](AudioProcessor::process_audio).
     pub fn start_recording(&mut self) -> Result<String, BlackboxError> {
         let debug = self.config.get_debug();
 
@@ -103,11 +109,20 @@ impl<P: AudioProcessor> AudioRecorder<P> {
     }
 
     /// Start monitoring audio levels without recording to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error from the processor's
+    /// [`start_monitoring`](AudioProcessor::start_monitoring).
     pub fn start_monitoring(&mut self) -> Result<(), BlackboxError> {
         self.processor.start_monitoring(&self.config)
     }
 
     /// Create a default config file if one doesn't exist
+    ///
+    /// # Errors
+    ///
+    /// Fails like [`AppConfig::create_config_file`].
     pub fn create_default_config(&self, path: &str) -> Result<(), BlackboxError> {
         self.config.create_config_file(path)
     }
