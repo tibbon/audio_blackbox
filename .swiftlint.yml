@@ -131,6 +131,8 @@ opt_in_rules:
   # Accessibility
   - accessibility_label_for_image
   - accessibility_trait_for_button
+  # Size (thresholds below)
+  - closure_body_length
 
 # ---- Severity upgrades: these are crashes or UB, not style ----
 force_cast: error
@@ -155,26 +157,31 @@ line_length:
   ignores_urls: true
   ignores_comments: true
   ignores_interpolated_strings: true
-# Size thresholds are set just above today's largest offenders (RecordingState,
-# SettingsView, OnboardingView) so the gate is green and nothing can grow. The
-# kit's values (file 400/600, type 250/400, function 50/80, complexity 10/15)
-# are the target; tightening them is tracked in DOLL-653.
+# Size thresholds are the kit's values: file 400/600, type 250/400, function
+# 50/80, complexity 10/15, closure 30/60. DOLL-652 had raised them to fit
+# RecordingState, SettingsView and OnboardingView; DOLL-653 split that code and
+# restored them, so no Swift size limit is parked any more. When code outgrows
+# a limit, split it (a RecordingState+*.swift extension by concern, a subview
+# for a SwiftUI section) rather than raising the number.
+closure_body_length:
+  warning: 30
+  error: 60
 file_length:
-  warning: 1150
-  error: 1400
+  warning: 400
+  error: 600
   ignore_comment_only_lines: true
 function_body_length:
-  warning: 120
-  error: 160
+  warning: 50
+  error: 80
 function_parameter_count:
   warning: 5
   error: 7
 type_body_length:
-  warning: 1100
-  error: 1300
+  warning: 250
+  error: 400
 cyclomatic_complexity:
-  warning: 20
-  error: 30
+  warning: 10
+  error: 15
   ignores_case_statements: true
 nesting:
   type_level: 2
