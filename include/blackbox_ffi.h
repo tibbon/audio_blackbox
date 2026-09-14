@@ -18,6 +18,10 @@ extern "C" {
 /* Error codes returned by blackbox_* functions.
  * Success is 0; all errors are negative. Retrieve the human-readable
  * message for any non-zero code with blackbox_get_last_error().
+ *
+ * BLACKBOX_ERR_INVALID_HANDLE is guaranteed for NULL. For a destroyed handle
+ * it is best effort only: the handle points at freed memory, so using it at
+ * all is undefined behavior.
  */
 #define BLACKBOX_OK                  0
 #define BLACKBOX_ERR_INVALID_HANDLE -1
@@ -67,6 +71,8 @@ BlackboxHandle *blackbox_create(const char *config_json);
 /*
  * Destroy a handle, freeing all resources.
  * Stops recording if active. Passing NULL is a safe no-op.
+ * Destroying a handle twice, or passing it to any blackbox_* function after
+ * this call, is undefined behavior.
  */
 void blackbox_destroy(BlackboxHandle *handle);
 
@@ -91,7 +97,7 @@ bool blackbox_is_recording(const BlackboxHandle *handle);
  * Fill a StatusFlags struct with current engine status.
  * Zero-allocation, no JSON — designed for the 1 Hz polling loop.
  * Returns BLACKBOX_OK on success, or one of:
- *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or not a live handle
  *   BLACKBOX_ERR_INVALID_ARG     — out null
  *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
  */
@@ -125,7 +131,7 @@ int32_t blackbox_get_device_channel_count(const char *device_name);
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
  * Returns BLACKBOX_OK on success, or one of:
- *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or not a live handle
  *   BLACKBOX_ERR_INVALID_ARG     — json null (DOLL-103)
  *   BLACKBOX_ERR_CONFIG          — invalid UTF-8 or json failed to parse
  *                                  as an AppConfig patch
@@ -137,7 +143,7 @@ int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
  * Write current peak levels into a caller-provided float buffer.
  * out must point to an array of at least max_channels floats.
  * Returns the number of channels written (>= 0), or one of:
- *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or freed
+ *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or not a live handle
  *   BLACKBOX_ERR_INVALID_ARG     — out null or max_channels <= 0
  *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
  * Lightweight zero-allocation read for meter UIs.
