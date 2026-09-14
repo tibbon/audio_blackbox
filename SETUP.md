@@ -20,12 +20,12 @@ There are two tiers of setup:
 | Tool | Notes |
 | --- | --- |
 | **Xcode** (full) + Command Line Tools | Required to build the SwiftUI app. `xcode-select -p` should point into `Xcode.app`. |
-| **Rust** via [rustup](https://rustup.rs) | Edition 2024; MSRV **1.95** (`rust-version` in `Cargo.toml`). Stable works for day-to-day; releases pin 1.95. |
+| **Rust** via [rustup](https://rustup.rs) | Edition 2024; MSRV **1.98** (`rust-version` in `Cargo.toml`). Stable works for day-to-day; releases pin 1.98. |
 | **Homebrew** | For the tools below. |
 | **XcodeGen** | `brew install xcodegen` — regenerates `BlackBoxApp.xcodeproj` from `project.yml` (the `.xcodeproj` is committed and CI checks it matches; CI pins 2.46.0). |
 | **SwiftLint** | `brew install swiftlint` — `scripts/check.sh` and CI run it with `--strict`. `swift format` ships with Xcode. |
 | **cargo-deny, cargo-machete** | `cargo install cargo-deny cargo-machete --locked` — dependency advisories/licenses and unused-dep detection; CI runs both. |
-| **Rust MSRV toolchain** | `rustup toolchain install 1.95.0` — lets `scripts/check.sh` run the MSRV check CI runs. Keep `stable` current (`rustup update`): CI's clippy is stable, and lints move between releases. |
+| **Rust MSRV toolchain** | `rustup toolchain install 1.98.1` — lets `scripts/check.sh` run the MSRV check CI runs. Keep `stable` current (`rustup update`): CI's clippy is stable, and lints move between releases. |
 | **GitHub CLI** | `brew install gh` — for PRs and release dispatch. |
 | **Node.js** | `brew install node` — `scripts/check.sh` parses the Claude workflow scripts and runs their mocked scenarios (`scripts/test-ship-ticket.mjs`). |
 

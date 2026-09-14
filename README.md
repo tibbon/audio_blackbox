@@ -163,7 +163,7 @@ CI runs on every push to `main` and on pull requests:
 |-----|---------------|
 | **Format** | `cargo fmt --all -- --check` |
 | **Clippy** | `cargo clippy --all-targets --no-default-features -- -D warnings` |
-| **MSRV (1.95)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
+| **MSRV (1.98)** | `cargo check --all-targets --no-default-features` on the pinned MSRV toolchain |
 | **Test (macOS)** | `cargo test` — full lib + integration suite (benchmarks `#[ignore]`'d) |
 | **Security audit** | `cargo audit --deny warnings` against RUSTSEC advisory database |
 | **Benchmark smoke test** | Builds release binary, asserts each write mode stays above its real-time throughput floor |

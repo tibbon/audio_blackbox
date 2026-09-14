@@ -8,7 +8,7 @@
 # Verify a ban fires by writing one deliberate violation the first time you
 # add it; path resolution through std re-exports changes between clippy releases.
 
-msrv = "1.95"                       # match rust-version in Cargo.toml and the CI MSRV lane
+msrv = "1.98"                       # match rust-version in Cargo.toml and the CI MSRV lane
 
 # Test code gets the shortcuts production code does not.
 allow-unwrap-in-tests = true

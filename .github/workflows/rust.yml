@@ -89,21 +89,21 @@ jobs:
       run: cargo machete
 
   # ── MSRV verification ─────────────────────────────────────────────
-  # Cargo.toml claims `rust-version = "1.95"`. Without this job an
-  # MSRV regression (someone adopting a 1.96-only feature) ships
+  # Cargo.toml claims `rust-version = "1.98"`. Without this job an
+  # MSRV regression (someone adopting a 1.99-only feature) ships
   # silently because every other job uses `@stable`. Pin to the MSRV
   # toolchain and `cargo check`. Bump the toolchain ref in lockstep
   # with `Cargo.toml`'s `rust-version` field. (DOLL-150)
   msrv:
-    name: MSRV (1.95)
+    name: MSRV (1.98)
     runs-on: macos-latest
     permissions:
       contents: read
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-    - name: Install Rust 1.95
-      uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697  # 1.95
+    - name: Install Rust 1.98
+      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
 
     - name: Cache Rust dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -112,9 +112,9 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-msrv-1.95-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-msrv-1.98-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-msrv-1.95-
+          ${{ runner.os }}-msrv-1.98-
 
     - name: cargo check (MSRV)
       run: cargo check --all-targets --no-default-features
