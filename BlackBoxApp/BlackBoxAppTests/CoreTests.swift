@@ -1,11 +1,16 @@
+import BlackBoxFFI
+import Synchronization
 import XCTest
 
 @testable import BlackBox_Audio_Recorder
 
+// Test cases opt out of the module's MainActor default: XCTest's inherited
+// initializers and setUp/tearDown are nonisolated, and an isolated subclass
+// can't override them. Tests that touch main-actor types are marked @MainActor.
+
 // MARK: - Channel Spec Conversion Tests
 
-final class ChannelSpecTests: XCTestCase {
-
+nonisolated final class ChannelSpecTests: XCTestCase {
     // MARK: - channelSpecToZeroBased
 
     func testSingleChannelToZeroBased() {
@@ -133,8 +138,7 @@ final class ChannelSpecTests: XCTestCase {
 
 // MARK: - BlackBoxError Tests
 
-final class BlackBoxErrorTests: XCTestCase {
-
+nonisolated final class BlackBoxErrorTests: XCTestCase {
     func testKnownErrorCodes() {
         XCTAssertEqual(BlackBoxError(code: 0), .ok)
         XCTAssertEqual(BlackBoxError(code: -1), .invalidHandle)
@@ -165,8 +169,7 @@ final class BlackBoxErrorTests: XCTestCase {
 
 // MARK: - RustBridge Tests
 
-final class RustBridgeTests: XCTestCase {
-
+nonisolated final class RustBridgeTests: XCTestCase {
     func testCreateWithDefaultConfig() {
         let bridge = RustBridge()
         XCTAssertFalse(bridge.isRecording)
@@ -222,30 +225,33 @@ final class RustBridgeTests: XCTestCase {
         switch result {
         case .success(let count):
             XCTAssertEqual(count, 0)
+
         case .failure(let err):
             XCTFail("expected success(0) when not recording, got error \(err)")
         }
     }
 
-    func testListInputDevices() throws {
+    func testListInputDevices() async throws {
         // CoreAudio device enumeration hangs indefinitely on machines with
-        // no audio hardware (CI runners). Use a timeout instead of env var
-        // detection — xcodebuild test host doesn't inherit shell env vars.
-        let semaphore = DispatchSemaphore(value: 0)
-        var devices: [String]?
-
-        DispatchQueue.global().async {
-            devices = RustBridge.listInputDevices()
-            semaphore.signal()
+        // no audio hardware (CI runners). Race it against a timeout instead
+        // of env var detection — xcodebuild test host doesn't inherit shell
+        // env vars. The enumeration runs in an unstructured Task off the main
+        // actor so a hung CoreAudio call can't pin the test.
+        let enumerated = expectation(description: "CoreAudio device enumeration")
+        // swiftlint:disable:next discouraged_optional_collection - nil means enumeration has not completed yet
+        let devices = Mutex<[String]?>(nil)
+        Task { @concurrent in
+            let list = RustBridge.listInputDevices()
+            devices.withLock { $0 = list }
+            enumerated.fulfill()
         }
 
-        let result = semaphore.wait(timeout: .now() + 5)
-        if result == .timedOut {
+        if await XCTWaiter().fulfillment(of: [enumerated], timeout: 5) == .timedOut {
             throw XCTSkip("CoreAudio device enumeration timed out — no audio hardware")
         }
 
-        XCTAssertNotNil(devices)
-        XCTAssertTrue(type(of: devices!) == [String].self)
+        let list = try XCTUnwrap(devices.withLock { $0 })
+        XCTAssertTrue(type(of: list) == [String].self)
     }
 
     func testGetStatusFlagsWhenIdle() {
@@ -271,19 +277,20 @@ final class RustBridgeTests: XCTestCase {
 
 // MARK: - AppDelegate Tests
 
-@MainActor
-final class AppDelegateTests: XCTestCase {
-
+nonisolated final class AppDelegateTests: XCTestCase {
+    @MainActor
     func testExplicitQuitDefaultsFalse() {
         let delegate = AppDelegate()
         XCTAssertFalse(delegate.explicitQuit)
     }
 
+    @MainActor
     func testShouldNotTerminateAfterLastWindowClosed() {
         let delegate = AppDelegate()
         XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared))
     }
 
+    @MainActor
     func testTerminateCancelledWithoutExplicitQuit() {
         let delegate = AppDelegate()
         delegate.explicitQuit = false
@@ -291,6 +298,7 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(reply, .terminateCancel)
     }
 
+    @MainActor
     func testTerminateAllowedWithExplicitQuit() {
         let delegate = AppDelegate()
         delegate.explicitQuit = true
@@ -301,8 +309,7 @@ final class AppDelegateTests: XCTestCase {
 
 // MARK: - Settings Keys Completeness Tests
 
-final class SettingsKeysTests: XCTestCase {
-
+nonisolated final class SettingsKeysTests: XCTestCase {
     /// Verify all known settings keys have the expected string values.
     /// Catches accidental renames that would orphan stored UserDefaults.
     func testAllKeyValues() {

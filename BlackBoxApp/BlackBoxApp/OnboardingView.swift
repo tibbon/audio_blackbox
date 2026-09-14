@@ -29,7 +29,7 @@ struct OnboardingView: View {
     // suggested ⌘⇧R only gets auto-registered once per onboarding run
     // — if the user clears it and navigates Back→Continue, we won't
     // silently re-register the default they just rejected.
-    @State private var shortcutLabel: String = String(localized: "None")
+    @State private var shortcutLabel = String(localized: "None")
     @State private var isRecordingShortcut: Bool = false
     @State private var shortcutError: String?
     @State private var didOfferDefaultShortcut = false
@@ -72,14 +72,19 @@ struct OnboardingView: View {
                 switch step {
                 case 0:
                     welcomeStep
+
                 case 1:
                     microphoneStep
+
                 case 2:
                     recordingModeStep
+
                 case 3:
                     directoryStep
+
                 case 4:
                     keyboardShortcutStep
+
                 default:
                     menuBarDiscoveryStep
                 }
@@ -108,28 +113,33 @@ struct OnboardingView: View {
                         animateStep { step = 1 }
                     }
                     .keyboardShortcut(.defaultAction)
+
                 case 1:
                     Button("Continue") {
                         animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!micGranted && !micDenied)
+
                 case 2:
                     Button("Continue") {
                         animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
+
                 case 3:
                     Button("Continue") {
                         animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(chosenURL == nil)
+
                 case 4:
                     Button("Continue") {
                         animateStep { step += 1 }
                     }
                     .keyboardShortcut(.defaultAction)
+
                 default:
                     Button("Start Using BlackBox") {
                         completeOnboarding()
@@ -167,8 +177,9 @@ struct OnboardingView: View {
             if step == 1 { checkMicStatus() }
         }
         .task {
-            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
-                if step == 1 { checkMicStatus() }
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification)
+            where step == 1 {
+                checkMicStatus()
             }
         }
     }
@@ -186,10 +197,15 @@ struct OnboardingView: View {
                 .font(.title)
                 .fontWeight(.semibold)
 
-            Text("BlackBox records audio from your Mac and saves it as WAV files. It runs quietly in your menu bar, always ready to capture.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 360)
+            Text(
+                """
+                BlackBox records audio from your Mac and saves it as WAV files. \
+                It runs quietly in your menu bar, always ready to capture.
+                """
+            )
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 360)
         }
         .padding(.horizontal, 32)
     }
@@ -205,10 +221,15 @@ struct OnboardingView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("BlackBox needs access to your microphone to record audio. Your recordings stay on your Mac and are never sent anywhere.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 360)
+            Text(
+                """
+                BlackBox needs access to your microphone to record audio. \
+                Your recordings stay on your Mac and are never sent anywhere.
+                """
+            )
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 360)
 
             if micGranted {
                 Label("Microphone access granted", systemImage: "checkmark.circle.fill")
@@ -218,7 +239,9 @@ struct OnboardingView: View {
                     Label("Microphone access denied", systemImage: "xmark.circle.fill")
                         .foregroundStyle(Color(nsColor: .systemRed))
                     Button("Open System Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                        if let url = URL(
+                            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                        ) {
                             NSWorkspace.shared.open(url)
                         }
                     }
@@ -245,13 +268,20 @@ struct OnboardingView: View {
                 // and competed with the folder task. Pair it with the same
                 // "Open System Settings" action the mic step offers.
                 VStack(spacing: 8) {
-                    Label("Microphone access denied \u{2014} recording won't work until you allow access in System Settings.",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color(nsColor: .systemOrange))
-                        .font(.caption)
-                        .frame(maxWidth: 360)
+                    Label(
+                        """
+                        Microphone access denied \u{2014} recording won't work until you allow access \
+                        in System Settings.
+                        """,
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .font(.caption)
+                    .frame(maxWidth: 360)
                     Button("Open System Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                        if let url = URL(
+                            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                        ) {
                             NSWorkspace.shared.open(url)
                         }
                     }
@@ -333,7 +363,10 @@ struct OnboardingView: View {
             VStack(spacing: 12) {
                 recordingModeOption(
                     title: String(localized: "Continuous Recording (Recommended)"),
-                    description: String(localized: "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly."),
+                    description: String(
+                        localized:
+                            "Saves your audio every hour so nothing is lost if the app or Mac shuts down unexpectedly."
+                    ),
                     isSelected: continuousMode
                 ) {
                     continuousMode = true
@@ -341,7 +374,10 @@ struct OnboardingView: View {
 
                 recordingModeOption(
                     title: String(localized: "Manual Saves Only"),
-                    description: String(localized: "Records into one file until you stop. Simpler, but unsaved audio is lost if the app quits."),
+                    description: String(
+                        localized:
+                            "Records into one file until you stop. Simpler, but unsaved audio is lost if the app quits."
+                    ),
                     isSelected: !continuousMode
                 ) {
                     continuousMode = false
@@ -365,10 +401,15 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 // DOLL-224: see SettingsView for the rationale on this wording.
                 Toggle("Auto-split on silence", isOn: $silenceGateEnabled)
-                Text("When enabled, BlackBox waits for audio before creating files. Saves disk space when no one is speaking.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    """
+                    When enabled, BlackBox waits for audio before creating files. \
+                    Saves disk space when no one is speaking.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: 380, alignment: .leading)
 
@@ -404,10 +445,12 @@ struct OnboardingView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Toggle recording from any app with a key combination. Optional — you can skip this and set one later.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 360)
+            Text(
+                "Toggle recording from any app with a key combination. Optional — you can skip this and set one later."
+            )
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 360)
 
             HStack {
                 Text("Toggle Recording:")
@@ -421,10 +464,14 @@ struct OnboardingView: View {
             .frame(maxWidth: 360)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Global keyboard shortcut for toggling recording")
-            .accessibilityValue(shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel)
-            .accessibilityHint(isRecordingShortcut
-                ? String(localized: "Press a key combination, or Escape to cancel")
-                : String(localized: "Click to record a new shortcut"))
+            .accessibilityValue(
+                shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel
+            )
+            .accessibilityHint(
+                isRecordingShortcut
+                    ? String(localized: "Press a key combination, or Escape to cancel")
+                    : String(localized: "Click to record a new shortcut")
+            )
 
             if shortcutLabel != String(localized: "None") {
                 Button("Clear shortcut") {
@@ -478,7 +525,10 @@ struct OnboardingView: View {
             GlobalHotkeyManager.shared.save(suggested)
             shortcutLabel = suggested.displayString
         } else {
-            shortcutError = String(localized: "\u{2318}\u{21E7}R is already in use \u{2014} click the button to choose a different combination.")
+            shortcutError = String(
+                localized:
+                    "\u{2318}\u{21E7}R is already in use \u{2014} click the button to choose a different combination."
+            )
         }
     }
 
@@ -592,8 +642,10 @@ struct OnboardingView: View {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             micGranted = true
+
         case .denied, .restricted:
             micDenied = true
+
         default:
             break
         }
@@ -693,8 +745,10 @@ struct OnboardingView: View {
 /// Disables minimize and zoom buttons on the Onboarding window per Apple HIG.
 /// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct OnboardingWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { OnboardingConfiguratorView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context _: Context) -> NSView { OnboardingConfiguratorView() }
+    func updateNSView(_: NSView, context _: Context) {
+        // The window buttons are configured once in viewDidMoveToWindow; nothing varies per render.
+    }
 }
 
 private final class OnboardingConfiguratorView: NSView {

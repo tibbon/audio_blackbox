@@ -10,7 +10,8 @@ import SwiftUI
 struct AboutView: View {
     private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-    private let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
+    private let copyright =
+        Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
         ?? "\u{00A9} 2026 David Fisher"
 
     var body: some View {
@@ -55,8 +56,10 @@ struct AboutView: View {
 /// Disables minimize and zoom buttons on the About window per Apple HIG.
 /// Uses viewDidMoveToWindow to configure once, not on every SwiftUI render.
 private struct AboutWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { AboutConfiguratorView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context _: Context) -> NSView { AboutConfiguratorView() }
+    func updateNSView(_: NSView, context _: Context) {
+        // The window buttons are configured once in viewDidMoveToWindow; nothing varies per render.
+    }
 }
 
 private final class AboutConfiguratorView: NSView {

@@ -1,0 +1,434 @@
+# .swiftlint.yml (DOLL-652)
+#
+# Run:   swiftlint lint --strict            (warnings fail; scripts/check.sh runs this)
+# Also:  swiftlint analyze --strict --compiler-log-path target/xcodebuild.log
+#
+# swift-format (.swift-format) handles whitespace; this file handles correctness
+# and API hygiene. Where both have an opinion they are configured to agree.
+# `swiftlint --fix` autocorrects the mechanical rules.
+
+included:
+  - BlackBoxApp/BlackBoxApp
+  - BlackBoxApp/BlackBoxAppTests
+excluded:
+  - .build
+  - DerivedData
+  - "**/Generated"
+  - "**/*.generated.swift"
+  - "**/uniffi"
+
+strict: true
+reporter: xcode
+allow_zero_lintable_files: true
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+  - capture_variable
+  # explicit_self is deliberately NOT enabled: it contradicts redundant_self
+  # below, and the app uses idiomatic implicit self (918 sites would need `self.`).
+  - typesafe_array_init
+
+opt_in_rules:
+  # Crash sources
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - fatal_error_message
+  - discouraged_optional_boolean
+  - discouraged_optional_collection
+  # Concurrency and lifecycle
+  - unhandled_throwing_task
+  - discarded_notification_center_observer
+  - unowned_variable_capture
+  - weak_delegate
+  - private_subject
+  - async_without_await
+  # Correctness
+  - identical_operands
+  - yoda_condition
+  - untyped_error_in_catch
+  - overridden_super_call
+  - prohibited_super_call
+  - return_value_from_void_function
+  - legacy_objc_type
+  - legacy_multiple
+  - nslocalizedstring_key
+  - raw_value_for_camel_cased_codable_enum
+  - optional_enum_case_matching
+  - toggle_bool
+  - self_binding
+  - shorthand_optional_binding
+  - pattern_matching_keywords
+  - unavailable_function
+  - local_doc_comment
+  # Performance
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - first_where
+  - last_where
+  - flatmap_over_map_reduce
+  - reduce_into
+  - sorted_first_last
+  - array_init
+  - prefer_key_path
+  # API hygiene
+  - lower_acl_than_parent
+  - no_extension_access_modifier
+  - private_action
+  - private_outlet
+  - private_swiftui_state
+  - strict_fileprivate
+  - explicit_init
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - redundant_self
+  - unneeded_parentheses_in_closure_argument
+  - unused_parameter
+  - modifier_order
+  - convenience_type
+  - static_operator
+  - prefer_self_in_static_references
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - enum_case_associated_values_count
+  - function_default_parameter_at_end
+  - joined_default_parameter
+  - superfluous_else
+  - direct_return
+  - no_empty_block
+  - non_overridable_class_declaration
+  - period_spacing
+  - number_separator
+  # Formatting that keeps diffs readable (agree with swift-format)
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - literal_expression_end_indentation
+  - multiline_arguments
+  - multiline_function_chains
+  - multiline_literal_brackets
+  - multiline_parameters
+  - multiline_parameters_brackets
+  - operator_usage_whitespace
+  - sorted_imports
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_between_cases
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - attributes
+  - trailing_closure
+  - file_name
+  - file_name_no_space
+  # Testing
+  - balanced_xctest_lifecycle
+  - test_case_accessibility
+  - xct_specific_matcher
+  # Accessibility
+  - accessibility_label_for_image
+  - accessibility_trait_for_button
+
+# ---- Severity upgrades: these are crashes or UB, not style ----
+force_cast: error
+force_try: error
+force_unwrapping: error
+implicitly_unwrapped_optional:
+  mode: all_except_iboutlets
+  severity: error
+fatal_error_message: error
+unhandled_throwing_task: error
+discarded_notification_center_observer: error
+private_swiftui_state: error
+legacy_objc_type: error
+blanket_disable_command: error
+superfluous_disable_command: error
+todo: warning
+
+# ---- Thresholds ----
+line_length:
+  warning: 120
+  error: 160
+  ignores_urls: true
+  ignores_comments: true
+  ignores_interpolated_strings: true
+# Size thresholds are set just above today's largest offenders (RecordingState,
+# SettingsView, OnboardingView) so the gate is green and nothing can grow. The
+# kit's values (file 400/600, type 250/400, function 50/80, complexity 10/15)
+# are the target; tightening them is tracked in DOLL-653.
+file_length:
+  warning: 1150
+  error: 1400
+  ignore_comment_only_lines: true
+function_body_length:
+  warning: 120
+  error: 160
+function_parameter_count:
+  warning: 5
+  error: 7
+type_body_length:
+  warning: 1100
+  error: 1300
+cyclomatic_complexity:
+  warning: 20
+  error: 30
+  ignores_case_statements: true
+nesting:
+  type_level: 2
+  function_level: 3
+large_tuple:
+  warning: 2
+  error: 3
+identifier_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 50
+  excluded:
+    - i
+    - j
+    - k
+    - x
+    - y
+    - z
+    - w
+    - h
+    - r
+    - g
+    - b
+    - a
+    - t
+    - id
+    - db
+    - hz
+    - fs
+  validates_start_with_lowercase: warning
+type_name:
+  min_length: 3
+  max_length: 50
+attributes:
+  always_on_line_above:
+    - "@MainActor"
+    - "@Observable"
+    - "@Model"
+    - "@available"
+  always_on_same_line:
+    - "@IBAction"
+    - "@objc"
+    - "@escaping"
+    - "@Sendable"
+  # SwiftUI property wrappers (@AppStorage(key), @Environment(\.x)) stay inline.
+  attributes_with_arguments_always_on_line_above: false
+trailing_closure:
+  only_single_muted_parameter: true
+# swift-format writes trailing commas in multi-line literals; agree with it.
+trailing_comma:
+  mandatory_comma: true
+# swift-format breaks long signatures before each argument; the brace then
+# lands on its own line after the return type.
+opening_brace:
+  ignore_multiline_function_signatures: true
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_type_headers: true
+# XCTest files here group the related cases for one feature per file.
+file_name:
+  excluded:
+    - CoreTests.swift
+    - SleepWakeTests.swift
+trailing_whitespace:
+  ignores_empty_lines: false
+vertical_whitespace:
+  max_empty_lines: 1
+multiline_arguments:
+  first_argument_location: next_line
+  only_enforce_after_first_closure_on_first_line: true
+number_separator:
+  minimum_length: 5
+
+# ---- Custom rules: the things LLM agents get wrong that no built-in rule catches ----
+custom_rules:
+
+  no_uikit_on_macos:
+    name: "UIKit in a macOS target"
+    regex: '^\s*import\s+UIKit\b'
+    message: "This is a macOS app: use AppKit and SwiftUI, not UIKit."
+    severity: error
+
+  no_print:
+    name: "print() in production code"
+    regex: '(?<![\w.])print\('
+    excluded: ".*Tests?/.*"
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Use os.Logger with privacy annotations. print() is invisible in a signed, sandboxed app."
+    severity: error
+
+  no_dispatch_main_async:
+    name: "GCD main-queue hop"
+    regex: 'DispatchQueue\.main\.(async|sync)\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Use @MainActor isolation or `await MainActor.run`. GCD hops do not participate in structured concurrency or cancellation."
+    severity: warning
+
+  no_task_detached:
+    name: "Task.detached"
+    regex: 'Task\.detached'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Task.detached drops actor context, priority, and cancellation. Use Task {} owned by something that cancels it, or a TaskGroup. If detached is required, put a `// SAFETY:` comment on the line above."
+    severity: warning
+
+  unchecked_sendable_needs_reason:
+    name: "@unchecked Sendable without justification"
+    regex: '@unchecked\s+Sendable'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Every @unchecked Sendable needs a `// SAFETY:` comment stating the invariant (usually: the Rust handle is Send+Sync and all mutation is serialized on the Rust side)."
+    severity: warning
+
+  nonisolated_unsafe_needs_reason:
+    name: "nonisolated(unsafe) without justification"
+    regex: 'nonisolated\(unsafe\)'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "nonisolated(unsafe) opts out of data-race checking. Add a `// SAFETY:` comment or use an actor / Mutex."
+    severity: warning
+
+  assume_isolated:
+    name: "MainActor.assumeIsolated"
+    regex: 'assumeIsolated'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "assumeIsolated crashes at runtime if wrong. Prefer restructuring so the compiler proves isolation; otherwise justify with a `// SAFETY:` comment."
+    severity: warning
+
+  escaping_pointer_from_with_closure:
+    name: "pointer escapes withUnsafe closure"
+    regex: 'with(Unsafe\w*(Pointer|Bytes)|CString)\s*(\([^)]*\))?\s*\{\s*(\$0|\w+\s+in\s+\w+)(\.baseAddress)?\s*\}'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "The pointer is only valid inside the closure. Returning $0 or baseAddress is undefined behavior. Make the FFI call inside the closure, or copy into memory you own."
+    severity: error
+
+  string_format_percent_s:
+    name: "%s with Swift String"
+    regex: 'String\(format:[^)]*%s'
+    message: "%s expects a C string; passing a Swift String is UB. Use %@ or interpolation."
+    severity: error
+
+  memorylayout_size_for_stride:
+    name: "MemoryLayout.size in buffer math"
+    regex: 'MemoryLayout<[^>]+>\.size\s*\*'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Element math uses .stride, not .size. simd_float3 has size 12 and stride 16."
+    severity: error
+
+  secrets_in_userdefaults:
+    name: "secret stored in UserDefaults"
+    regex: 'UserDefaults[^\n]*\.set\([^)]*(token|password|secret|apiKey|api_key|credential)'
+    message: "Secrets go in the Keychain, not UserDefaults."
+    severity: error
+
+  security_scoped_balance:
+    name: "security-scoped access must be balanced"
+    regex: 'startAccessingSecurityScopedResource\(\)'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Check the Bool result and pair with `defer { url.stopAccessingSecurityScopedResource() }` on the next line."
+    severity: warning
+
+  deprecated_navigationview:
+    name: "NavigationView"
+    regex: '\bNavigationView\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "NavigationView is deprecated. Use NavigationStack or NavigationSplitView."
+    severity: error
+
+  deprecated_foregroundcolor:
+    name: ".foregroundColor"
+    regex: '\.foregroundColor\('
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Deprecated. Use .foregroundStyle()."
+    severity: warning
+
+  deprecated_onchange_single_param:
+    name: "single-parameter onChange"
+    regex: '\.onChange\(of:[^)]*\)\s*\{\s*[A-Za-z_]\w*\s+in\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Single-parameter onChange(of:) is deprecated on macOS 14+. Use the two-parameter (old, new) or zero-parameter form."
+    severity: warning
+
+  observableobject_in_new_code:
+    name: "ObservableObject"
+    regex: '\bObservableObject\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "New models use @Observable (macOS 14+). ObservableObject only at a documented interop boundary."
+    severity: warning
+
+  task_in_onappear:
+    name: "Task inside onAppear"
+    regex: '\.onAppear\s*\{[^}]*\bTask\s*\{'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Use .task {} instead of Task inside onAppear; it is cancelled automatically when the view disappears."
+    severity: warning
+
+  scheduled_timer:
+    name: "Timer.scheduledTimer"
+    regex: 'Timer\.scheduledTimer'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Timers in SwiftUI leak and never cancel. Use .task with a Task.sleep loop, AsyncTimerSequence, or TimelineView."
+    severity: warning
+
+  any_view:
+    name: "AnyView"
+    regex: '\bAnyView\('
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "AnyView defeats SwiftUI diffing. Use @ViewBuilder, Group, or generics."
+    severity: warning
+
+  blocking_sleep:
+    name: "blocking sleep"
+    regex: '(?<![\w.])(usleep|sleep|Thread\.sleep)\('
+    excluded: ".*Tests?/.*"
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Blocking sleeps stall the calling thread. Use Task.sleep or real synchronization."
+    severity: error
+
+  nslock_in_new_code:
+    name: "NSLock"
+    regex: '\bNS(Recursive)?Lock\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Use Mutex from Synchronization (macOS 15+) or OSAllocatedUnfairLock; never hold a lock across an await."
+    severity: warning
+
+  managed_storage_mode:
+    name: ".managed storage mode"
+    regex: '\.storageMode(Managed)?\b[^\n]*managed|MTLResourceOptions[^\n]*storageModeManaged|\.storageModeManaged'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: ".managed is Intel-only. On Apple Silicon use .shared or .private; gate any .managed path on device capability."
+    severity: warning
+
+  pipeline_state_in_draw:
+    name: "pipeline state created in draw/render path"
+    regex: 'func\s+(draw|render|update)\w*\([^)]*\)[^{]*\{[^}]*make(Render|Compute)PipelineState'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Pipeline states are created once and cached, never inside a draw or render path."
+    severity: error
+
+  metal_literal_buffer_index:
+    name: "literal Metal buffer/texture index"
+    regex: 'set(Vertex|Fragment|Compute)?(Buffer|Texture|Bytes|SamplerState)\([^)]*index:\s*\d'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Buffer and texture indices come from the shared ShaderTypes.h enum, not literals."
+    severity: warning
+
+  wait_until_completed:
+    name: "waitUntilCompleted"
+    regex: 'waitUntilCompleted\(\)'
+    excluded: ".*Tests?/.*"
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Stalls the CPU on the GPU. Use addCompletedHandler or async completion; allowed only in one-shot export paths, with a comment."
+    severity: warning
+
+  passunretained_stored:
+    name: "Unmanaged.passUnretained"
+    regex: 'passUnretained\('
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "passUnretained is only safe when the callee cannot outlive the call. For FFI context pointers that Rust keeps, use passRetained and release in teardown."
+    severity: warning

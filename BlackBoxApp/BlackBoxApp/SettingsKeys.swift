@@ -1,5 +1,3 @@
-import Foundation
-
 /// Centralized `UserDefaults` keys for all persisted settings.
 ///
 /// Referenced from `RecordingState`, `BlackBoxApp`, `OnboardingView`,
@@ -11,7 +9,10 @@ import Foundation
 /// at the call site. Don't introduce string literals elsewhere —
 /// `CoreTests.testAllKeyValues` is the regression guard against
 /// accidental renames that would orphan stored UserDefaults values.
-enum SettingsKeys {
+///
+/// `nonisolated`: plain constants, read from nonisolated XCTest lifecycle hooks
+/// as well as from main-actor code.
+nonisolated enum SettingsKeys {
     static let inputDevice = "inputDevice"
     static let audioChannels = "audioChannels"
     static let outputMode = "outputMode"

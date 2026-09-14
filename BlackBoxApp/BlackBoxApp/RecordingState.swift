@@ -1,10 +1,16 @@
-import Foundation
 import AppKit
-import AVFoundation
+import BlackBoxFFI
+import Foundation
 import IOKit.ps
 import Observation
-import os.log
 import UserNotifications
+
+// Declaration imports (their own swift-format group) for the two modules whose
+// plain `import` can't satisfy both linters: swift-format orders imports by ASCII
+// (`AVFoundation` before `AppKit`, lowercase `os.log` last) while swiftlint's
+// sorted_imports is case-insensitive.
+import class AVFoundation.AVCaptureDevice
+import struct os.Logger
 
 /// Pure decision logic for sleep/wake handling, extracted from
 /// `RecordingState` for testability (the live `@MainActor` methods
@@ -18,7 +24,10 @@ import UserNotifications
 ///   `wasSleepInterrupted = true` so the next wake / session-active
 ///   restarts it.
 /// - `.stop` → stop the current recording without marking for resume.
-enum SleepWakePolicy {
+///
+/// `nonisolated`: pure functions with no shared state, so the unit tests can
+/// call them without hopping to the main actor.
+nonisolated enum SleepWakePolicy {
     /// The action a sleep / session-resign event should trigger.
     enum SleepAction: Equatable {
         /// Stop now and mark the session as interrupted so it can
@@ -91,20 +100,21 @@ enum SleepWakePolicy {
 /// these via `@Observable` change tracking; updates land on the main thread
 /// (the class is `@MainActor`-isolated) so binding reads are race-free.
 @MainActor
-@Observable final class RecordingState {
+@Observable
+final class RecordingState {
     /// `true` while a recording session is active. Flips on a successful
     /// `start()` and clears on `stop()` or any FFI-reported failure.
     /// Drives the menu bar icon, the Start/Stop button, and the menu's
     /// "currently recording" caption.
     var isRecording = false {
-        didSet { syncMeterTimer() } // DOLL-374: gate the meter poll on activity
+        didSet { syncMeterTimer() }  // DOLL-374: gate the meter poll on activity
     }
 
     /// `true` while the level meter is actively pulling peak levels from
     /// the audio engine without persisting to disk. Mutually exclusive
     /// with `isRecording` in practice — starting recording stops monitoring.
     var isMonitoring = false {
-        didSet { syncMeterTimer() } // DOLL-374: gate the meter poll on activity
+        didSet { syncMeterTimer() }  // DOLL-374: gate the meter poll on activity
     }
 
     /// `true` from the moment `start()` passes its guard until the start
@@ -266,10 +276,11 @@ enum SleepWakePolicy {
     /// writes fixes the menu-highlight-resets-every-second bug.
     var nextRotationDate: Date? {
         guard isRecording,
-              let start = recordingStartTime,
-              let snapshot = configSnapshot,
-              snapshot.continuousMode,
-              snapshot.recordingCadence > 0 else { return nil }
+            let start = recordingStartTime,
+            let snapshot = configSnapshot,
+            snapshot.continuousMode,
+            snapshot.recordingCadence > 0
+        else { return nil }
         let cadence = TimeInterval(snapshot.recordingCadence)
         let elapsed = Date().timeIntervalSince(start)
         let cyclesCompleted = floor(elapsed / cadence)
@@ -334,7 +345,12 @@ enum SleepWakePolicy {
     private var bookmarkRestoreTask: Task<Void, Never>?
 
     private static let bookmarkKey = SettingsKeys.outputDirBookmark
-    private static let log = Logger(subsystem: "com.dollhousemediatech.blackbox", category: "RecordingState")
+    /// `nonisolated` so completion handlers that run off the main actor (e.g. the
+    /// UNUserNotificationCenter authorization callback) can log; Logger is Sendable.
+    nonisolated private static let log = Logger(
+        subsystem: "com.dollhousemediatech.blackbox",
+        category: "RecordingState"
+    )
 
     /// The out-of-the-box default recordings directory, inside the app's
     /// sandbox container (`~/Library/Containers/<bundle-id>/Data/Documents/
@@ -345,10 +361,14 @@ enum SleepWakePolicy {
     /// broken out of the box. The container is always writable with no
     /// entitlement and no security scope, so this is the safe default.
     static var defaultOutputDir: URL {
-        let docs = (try? FileManager.default.url(
-            for: .documentDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: false
-        )) ?? FileManager.default.homeDirectoryForCurrentUser
+        let docs =
+            (try? FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            ))
+            ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents", isDirectory: true)
         return docs.appendingPathComponent("BlackBox Recordings", isDirectory: true)
     }
@@ -375,7 +395,7 @@ enum SleepWakePolicy {
         // enough to guarantee the bookmark Task had completed first, and
         // a slow restore would auto-record into the sandbox default dir.
         bookmarkRestoreTask = Task { [weak self] in
-            await self?.restoreOutputDirBookmark()
+            self?.restoreOutputDirBookmark()
         }
         restoreSavedSettings()
         restoreGlobalHotkey()
@@ -408,10 +428,12 @@ enum SleepWakePolicy {
                 guard let self else { return }
                 // DOLL-443: await the outcome — reading isRecording right
                 // after a fire-and-forget start() races the permission await.
-                if await self.startAndWait() {
-                    self.postNotification(title: String(localized: "Recording Started"),
-                                          body: String(localized: "BlackBox started recording automatically."),
-                                          identifier: "auto-record-started")
+                if await startAndWait() {
+                    postNotification(
+                        title: String(localized: "Recording Started"),
+                        body: String(localized: "BlackBox started recording automatically."),
+                        identifier: "auto-record-started"
+                    )
                 }
             }
         }
@@ -470,15 +492,21 @@ enum SleepWakePolicy {
         switch action {
         case .ignore:
             return
+
         case .pauseForResume:
             wasSleepInterrupted = true
-            postNotification(title: String(localized: "Recording Paused"),
-                             body: String(localized: "Your Mac is going to sleep. Recording will resume on wake."),
-                             identifier: "sleep-paused")
+            postNotification(
+                title: String(localized: "Recording Paused"),
+                body: String(localized: "Your Mac is going to sleep. Recording will resume on wake."),
+                identifier: "sleep-paused"
+            )
+
         case .stop:
-            postNotification(title: String(localized: "Recording Stopped"),
-                             body: String(localized: "Your Mac is going to sleep."),
-                             identifier: "recording-stopped")
+            postNotification(
+                title: String(localized: "Recording Stopped"),
+                body: String(localized: "Your Mac is going to sleep."),
+                identifier: "recording-stopped"
+            )
         }
         // .pauseForResume just set wasSleepInterrupted; stop() must not
         // clear it or handleDidWake never resumes (DOLL-442).
@@ -492,18 +520,22 @@ enum SleepWakePolicy {
         Self.log.info("Wake: attempting to resume recording")
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
-            guard let self, !self.isRecording else { return }
+            guard let self, !isRecording else { return }
             // DOLL-443: await the outcome — the old fire-and-forget start()
             // + isRecording read always took the failure branch, posting
             // "Resume Failed" even for successful resumes.
-            if await self.startAndWait() {
-                self.postNotification(title: String(localized: "Recording Resumed"),
-                                      body: String(localized: "Recording resumed after wake."),
-                                      identifier: "wake-resumed")
+            if await startAndWait() {
+                postNotification(
+                    title: String(localized: "Recording Resumed"),
+                    body: String(localized: "Recording resumed after wake."),
+                    identifier: "wake-resumed"
+                )
             } else {
-                self.postNotification(title: String(localized: "Resume Failed"),
-                                      body: String(localized: "Could not restart recording after wake. Check your audio device."),
-                                      identifier: "wake-failed")
+                postNotification(
+                    title: String(localized: "Resume Failed"),
+                    body: String(localized: "Could not restart recording after wake. Check your audio device."),
+                    identifier: "wake-failed"
+                )
             }
         }
     }
@@ -514,9 +546,11 @@ enum SleepWakePolicy {
         wasSleepInterrupted = true
         stop(reason: .sleepInterruption)
         Self.log.info("Fast User Switch: stopped recording for resume on return")
-        postNotification(title: String(localized: "Recording Paused"),
-                         body: String(localized: "User session switched. Recording will resume when you return."),
-                         identifier: "session-paused")
+        postNotification(
+            title: String(localized: "Recording Paused"),
+            body: String(localized: "User session switched. Recording will resume when you return."),
+            identifier: "session-paused"
+        )
     }
 
     func handleSessionDidBecomeActive() {
@@ -525,16 +559,20 @@ enum SleepWakePolicy {
         Self.log.info("Fast User Switch: attempting to resume recording")
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
-            guard let self, !self.isRecording else { return }
+            guard let self, !isRecording else { return }
             // DOLL-443: await the outcome (see handleDidWake).
-            if await self.startAndWait() {
-                self.postNotification(title: String(localized: "Recording Resumed"),
-                                      body: String(localized: "Recording resumed after session switch."),
-                                      identifier: "session-resumed")
+            if await startAndWait() {
+                postNotification(
+                    title: String(localized: "Recording Resumed"),
+                    body: String(localized: "Recording resumed after session switch."),
+                    identifier: "session-resumed"
+                )
             } else {
-                self.postNotification(title: String(localized: "Resume Failed"),
-                                      body: String(localized: "Could not restart recording after session switch."),
-                                      identifier: "session-failed")
+                postNotification(
+                    title: String(localized: "Resume Failed"),
+                    body: String(localized: "Could not restart recording after session switch."),
+                    identifier: "session-failed"
+                )
             }
         }
     }
@@ -556,7 +594,10 @@ enum SleepWakePolicy {
             // this; the transient timer clears it after a while so the
             // user isn't permanently nagged.
             setTransientError(
-                String(localized: "Shortcut \(shortcut.displayString) couldn't be registered — another app may be using it. Pick a new shortcut in Settings.")
+                String(
+                    localized:
+                        "Shortcut \(shortcut.displayString) couldn't be registered — another app may be using it. Pick a new shortcut in Settings."
+                )
             )
         }
     }
@@ -672,8 +713,11 @@ enum SleepWakePolicy {
             startTimer()
             beginPreventingSleep()
             Self.log.info("Recording started")
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                 userInfo: [.announcement: String(localized: "Recording started")])
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [.announcement: String(localized: "Recording started")]
+            )
         } else {
             // DOLL-448: release sleep prevention if this start was a
             // restart of a live session (restartIfRecording) — the token
@@ -687,11 +731,14 @@ enum SleepWakePolicy {
             switch result {
             case .audioDevice:
                 err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
+
             case .config:
                 let reason = detail ?? String(localized: "invalid settings")
                 err = String(localized: "Configuration error: \(reason)")
+
             case .io:
                 err = String(localized: "Recording failed: disk error")
+
             default:
                 err = detail ?? String(localized: "Failed to start recording")
             }
@@ -715,7 +762,9 @@ enum SleepWakePolicy {
                 self.isMonitoring = true
                 Self.log.info("Audio monitoring started")
             } else {
-                Self.log.error("Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")")
+                Self.log.error(
+                    "Failed to start monitoring (code \(result.rawValue)): \(self.bridge.lastError ?? "unknown")"
+                )
             }
         }
     }
@@ -742,11 +791,14 @@ enum SleepWakePolicy {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             return true
+
         case .notDetermined:
             return await AVCaptureDevice.requestAccess(for: .audio)
+
         case .denied, .restricted:
             showMicrophonePermissionAlert()
             return false
+
         @unknown default:
             return false
         }
@@ -757,7 +809,12 @@ enum SleepWakePolicy {
         // DOLL-438: AppKit takes plain String (not LocalizedStringKey), so these
         // are wrapped in String(localized:) to enter the String Catalog.
         alert.messageText = String(localized: "Microphone Access Required")
-        alert.informativeText = String(localized: "BlackBox needs microphone access to record audio. You can allow access in System Settings > Privacy & Security > Microphone.")
+        alert.informativeText = String(
+            localized: """
+                BlackBox needs microphone access to record audio. \
+                You can allow access in System Settings > Privacy & Security > Microphone.
+                """
+        )
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "Open System Settings"))
         alert.addButton(withTitle: String(localized: "Cancel"))
@@ -803,11 +860,13 @@ enum SleepWakePolicy {
         // Register "Restart Recording" action on recording-stopped notifications
         let restartAction = UNNotificationAction(
             identifier: "restart-recording",
-            title: String(localized: "Restart Recording"))
+            title: String(localized: "Restart Recording")
+        )
         let category = UNNotificationCategory(
             identifier: "recording-stopped",
             actions: [restartAction],
-            intentIdentifiers: [])
+            intentIdentifiers: []
+        )
         center.setNotificationCategories([category])
         center.delegate = notificationDelegate
     }
@@ -816,18 +875,22 @@ enum SleepWakePolicy {
     /// so a user who grants permission in System Settings has the app
     /// pick that up without a relaunch (DOLL-185).
     func refreshNotificationAuthorization() {
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            let granted = settings.authorizationStatus == .authorized
-                || settings.authorizationStatus == .provisional
-            Task { @MainActor in
-                self?.notificationsAuthorized = granted
+        UNUserNotificationCenter.current()
+            .getNotificationSettings { [weak self] settings in
+                let granted =
+                    settings.authorizationStatus == .authorized
+                    || settings.authorizationStatus == .provisional
+                Task { @MainActor in
+                    self?.notificationsAuthorized = granted
+                }
             }
-        }
     }
 
+    // swiftlint:disable weak_delegate - UNUserNotificationCenter.delegate is weak, so this must be the owning reference
     /// Delegate that handles notification action responses (e.g. "Restart Recording").
     /// Stored as an instance property to keep the delegate alive.
     private let notificationDelegate = NotificationDelegate()
+    // swiftlint:enable weak_delegate
 
     /// Post a notification to Notification Center for events that occur while the app is in the background.
     /// Uses a fixed identifier so new notifications of the same type replace old ones instead of stacking.
@@ -861,9 +924,9 @@ enum SleepWakePolicy {
         statusText = String(localized: "Error")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
-            guard let self, self.errorMessage == message else { return }
-            self.errorMessage = nil
-            if !self.isRecording { self.statusText = String(localized: "Ready") }
+            guard let self, errorMessage == message else { return }
+            errorMessage = nil
+            if !isRecording { statusText = String(localized: "Ready") }
         }
     }
 
@@ -908,9 +971,10 @@ enum SleepWakePolicy {
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .seconds(30))
                     guard let self,
-                          self.lastRecordingDurationText == snapshot,
-                          !self.isRecording else { return }
-                    self.lastRecordingDurationText = nil
+                        lastRecordingDurationText == snapshot,
+                        !isRecording
+                    else { return }
+                    lastRecordingDurationText = nil
                 }
             }
             writeErrorsCount = 0
@@ -932,8 +996,11 @@ enum SleepWakePolicy {
                 wasSleepInterrupted = false
             }
             Self.log.info("Recording stopped")
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                 userInfo: [.announcement: String(localized: "Recording stopped")])
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [.announcement: String(localized: "Recording stopped")]
+            )
 
             // Track successful sessions >5 min for App Store review prompt
             if sessionDuration > 300 {
@@ -966,10 +1033,14 @@ enum SleepWakePolicy {
 
         // DOLL-114: defer the FileManager + NSWorkspace I/O off the main
         // actor. Both calls hit disk / Launch Services and were
-        // synchronously blocking the UI on this user action.
-        Task.detached {
+        // synchronously blocking the UI on this user action. `@concurrent`
+        // runs the body on the global executor while keeping the caller's
+        // priority (unlike Task.detached).
+        Task { @concurrent in
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            await MainActor.run { NSWorkspace.shared.open(url) }
+            // open(_:) reports whether Launch Services accepted the URL; there is no
+            // recovery path here beyond the Finder window simply not appearing.
+            await MainActor.run { _ = NSWorkspace.shared.open(url) }
         }
     }
 
@@ -1110,12 +1181,12 @@ enum SleepWakePolicy {
     /// "Recording 12:34" status format the user just saw counting up.
     private static func formatRecordedDuration(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        return h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+            : String(format: "%d:%02d", minutes, secs)
     }
 
     /// Dismiss the post-Stop summary block early — called when the user
@@ -1168,7 +1239,7 @@ enum SleepWakePolicy {
     /// WAV header `data` chunk is `u32`, so a single file maxes out at
     /// 4 GiB - 1. DOLL-204 catches this on finalize and logs / clamps;
     /// DOLL-220 catches it before we burn through hours of recording.
-    private static let wavMaxFileBytes: Int64 = Int64(UInt32.max)
+    private static let wavMaxFileBytes = Int64(UInt32.max)
 
     /// Inspect the current configuration and set `preflightSizeWarning`
     /// (plus a notification + log line) when the projected per-file
@@ -1199,7 +1270,8 @@ enum SleepWakePolicy {
         // actually have.
         let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
 
-        let bytesPerFile = Int64(channelsPerFile)
+        let bytesPerFile =
+            Int64(channelsPerFile)
             * Int64(bytesPerSample)
             * Int64(estSampleRate)
             * Int64(cadence)
@@ -1211,7 +1283,10 @@ enum SleepWakePolicy {
         // pre-formatted so the String Catalog key carries a %@, not a "."-only %.1f).
         let rateNote = sampleRate > 0 ? "" : String(localized: " (estimated at 48 kHz)")
         let gbText = gigabytes.formatted(.number.precision(.fractionLength(1)))
-        let msg = String(localized: "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth.")
+        let msg = String(
+            localized:
+                "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth."
+        )
         preflightSizeWarning = msg
         Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
         notifyUser(
@@ -1250,7 +1325,10 @@ enum SleepWakePolicy {
                 batteryNotificationFired = true
                 notifyUser(
                     title: String(localized: "Battery Low"),
-                    message: String(localized: "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop."),
+                    message: String(
+                        localized:
+                            "BlackBox is recording on battery (\(state.percent)%). Plug in soon to avoid an unexpected stop."
+                    ),
                     identifier: "battery-low"
                 )
                 Self.log.warning("Battery low while recording: \(state.percent)% on battery")
@@ -1277,8 +1355,10 @@ enum SleepWakePolicy {
         }
         let sources = sourcesRef as [CFTypeRef]
         for source in sources {
-            guard let desc = IOPSGetPowerSourceDescription(infoRef, source)?
-                .takeUnretainedValue() as? [String: Any] else {
+            guard
+                let desc = IOPSGetPowerSourceDescription(infoRef, source)?
+                    .takeUnretainedValue() as? [String: Any]
+            else {
                 continue
             }
             // Skip non-internal sources (e.g. UPS) — we only care about
@@ -1345,8 +1425,9 @@ enum SleepWakePolicy {
         // to 0 channels every tick).
         let count: Int
         switch bridge.fillPeakLevels(into: &peakBuffer) {
-        case .success(let n):
-            count = n
+        case .success(let channelCount):
+            count = channelCount
+
         case .failure(let err):
             Self.log.error("fillPeakLevels failed: \(String(describing: err))")
             return
@@ -1358,11 +1439,9 @@ enum SleepWakePolicy {
             needsUpdate = true
         } else {
             var changed = false
-            for i in 0..<count {
-                if abs(peakBuffer[i] - peakLevels[i]) > 0.001 {
-                    changed = true
-                    break
-                }
+            for i in 0..<count where abs(peakBuffer[i] - peakLevels[i]) > 0.001 {
+                changed = true
+                break
             }
             needsUpdate = changed
         }
@@ -1441,7 +1520,8 @@ enum SleepWakePolicy {
             // Text(date, style: .timer) in the menu directly.
             if status.gate_idle != wasGateIdle {
                 wasGateIdle = status.gate_idle
-                statusText = status.gate_idle
+                statusText =
+                    status.gate_idle
                     ? String(localized: "Armed (waiting for signal)")
                     : String(localized: "Recording")
             }
@@ -1451,68 +1531,20 @@ enum SleepWakePolicy {
             if status.sample_rate_changed {
                 Self.log.warning("Sample rate changed on device — finalizing and restarting")
                 restartIfRecording(reason: "sample rate changed")
-                notifyUser(title: String(localized: "Sample Rate Changed"),
-                          message: String(localized: "Your audio device's sample rate changed. Recording was restarted automatically."),
-                          identifier: "sample-rate-changed")
+                notifyUser(
+                    title: String(localized: "Sample Rate Changed"),
+                    message: String(
+                        localized: "Your audio device's sample rate changed. Recording was restarted automatically."
+                    ),
+                    identifier: "sample-rate-changed"
+                )
                 return
             }
 
             // Audio stream error — device disconnected or driver failure.
             // Finalize current files, then try to restart on the next available device.
             if status.stream_error {
-                Self.log.error("Stream error detected — finalizing files and attempting restart")
-                stopTimer()
-                _ = bridge.stopRecording()
-                peakLevels = []
-                lastReportedWriteErrors = 0
-                writeErrorsCount = 0
-                isLowBatteryWarning = false
-                batteryNotificationFired = false
-                batteryCheckTick = 0
-                // preflightSizeWarning intentionally preserved: the config
-                // hasn't changed on stream-error recovery, so the warning
-                // is still valid for the restarted file.
-
-                // DOLL-351: flapping-device guard. Count restarts that happen
-                // close together; a restart after a stable run resets the
-                // counter. Once the cap is hit, stop for real instead of
-                // looping. The 1 Hz status poll naturally spaces attempts ~1s
-                // apart, which is the effective backoff.
-                let now = Date()
-                if let last = lastStreamRestart, now.timeIntervalSince(last) < Self.streamRestartWindow {
-                    streamRestartCount += 1
-                } else {
-                    streamRestartCount = 1
-                }
-                lastStreamRestart = now
-
-                if streamRestartCount > Self.maxConsecutiveStreamRestarts {
-                    markRecordingEnded()
-                    streamRestartCount = 0
-                    lastStreamRestart = nil
-                    let msg = String(localized: "Your audio device keeps failing. Recording stopped \u{2014} check the device and try again.")
-                    setTransientError(msg)
-                    Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
-                    notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                    return
-                }
-
-                if bridge.startRecording().isSuccess {
-                    // Restarted successfully (e.g., System Default fell back to built-in mic)
-                    recordingStartTime = Date()
-                    statusText = String(localized: "Recording")
-                    startTimer()
-                    Self.log.info("Recording restarted on available device")
-                    notifyUser(title: String(localized: "Device Changed"),
-                              message: String(localized: "Your audio device changed. Recording continued on the next available device."),
-                              identifier: "device-changed")
-                } else {
-                    // No device available — stop for real
-                    markRecordingEnded()
-                    let msg = String(localized: "Your audio device was disconnected and no alternative is available. Check your connections and try again.")
-                    setTransientError(msg)
-                    notifyUser(title: String(localized: "Recording Stopped"), message: msg)
-                }
+                recoverFromStreamError()
                 return
             }
             // DOLL-437: persistent write failure (disk full mid-write, or the
@@ -1521,7 +1553,12 @@ enum SleepWakePolicy {
             // low-space warning or as CPU "heavy load" from the shared counter.
             if status.write_failed {
                 stop()
-                let msg = String(localized: "Recording stopped: unable to write to disk. Free up space or check the output folder's permissions, then try again.")
+                let msg = String(
+                    localized: """
+                        Recording stopped: unable to write to disk. \
+                        Free up space or check the output folder's permissions, then try again.
+                        """
+                )
                 setTransientError(msg)
                 Self.log.error("Write failure — stopping recording")
                 notifyUser(title: String(localized: "Recording Stopped"), message: msg)
@@ -1547,12 +1584,18 @@ enum SleepWakePolicy {
             if writeErrors > 48_000 {
                 // Auto-stop if excessive (>48000 samples dropped across all channels)
                 stop()
-                let msg = String(localized: "Recording quality degraded \u{2014} your Mac may be under heavy load. Try closing other applications.")
+                let msg = String(
+                    localized: """
+                        Recording quality degraded \u{2014} your Mac may be under heavy load. \
+                        Try closing other applications.
+                        """
+                )
                 setTransientError(msg)
                 Self.log.error("Excessive write errors (\(writeErrors)), stopping recording")
                 notifyUser(title: String(localized: "Recording Stopped"), message: msg)
                 return
-            } else if newDrops > 0 {
+            }
+            if newDrops > 0 {
                 // Only log/display when NEW drops occur (counter is cumulative)
                 lastReportedWriteErrors = writeErrors
                 Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
@@ -1567,6 +1610,80 @@ enum SleepWakePolicy {
                 sampleRate = rate
                 UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
             }
+        }
+    }
+
+    /// Finalize the current files after an audio-stream error and restart on
+    /// the next available device — or stop for good once the DOLL-351
+    /// flapping cap is hit. Split out of `updateDuration` so the 1 Hz status
+    /// poll stays readable.
+    private func recoverFromStreamError() {
+        Self.log.error("Stream error detected — finalizing files and attempting restart")
+        stopTimer()
+        _ = bridge.stopRecording()
+        peakLevels = []
+        lastReportedWriteErrors = 0
+        writeErrorsCount = 0
+        isLowBatteryWarning = false
+        batteryNotificationFired = false
+        batteryCheckTick = 0
+        // preflightSizeWarning intentionally preserved: the config
+        // hasn't changed on stream-error recovery, so the warning
+        // is still valid for the restarted file.
+
+        // DOLL-351: flapping-device guard. Count restarts that happen
+        // close together; a restart after a stable run resets the
+        // counter. Once the cap is hit, stop for real instead of
+        // looping. The 1 Hz status poll naturally spaces attempts ~1s
+        // apart, which is the effective backoff.
+        let now = Date()
+        if let last = lastStreamRestart, now.timeIntervalSince(last) < Self.streamRestartWindow {
+            streamRestartCount += 1
+        } else {
+            streamRestartCount = 1
+        }
+        lastStreamRestart = now
+
+        if streamRestartCount > Self.maxConsecutiveStreamRestarts {
+            markRecordingEnded()
+            streamRestartCount = 0
+            lastStreamRestart = nil
+            let msg = String(
+                localized: """
+                    Your audio device keeps failing. \
+                    Recording stopped \u{2014} check the device and try again.
+                    """
+            )
+            setTransientError(msg)
+            Self.log.error("Stream-error restart cap reached — stopping instead of restarting again")
+            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+            return
+        }
+
+        if bridge.startRecording().isSuccess {
+            // Restarted successfully (e.g., System Default fell back to built-in mic)
+            recordingStartTime = Date()
+            statusText = String(localized: "Recording")
+            startTimer()
+            Self.log.info("Recording restarted on available device")
+            notifyUser(
+                title: String(localized: "Device Changed"),
+                message: String(
+                    localized: "Your audio device changed. Recording continued on the next available device."
+                ),
+                identifier: "device-changed"
+            )
+        } else {
+            // No device available — stop for real
+            markRecordingEnded()
+            let msg = String(
+                localized: """
+                    Your audio device was disconnected and no alternative is available. \
+                    Check your connections and try again.
+                    """
+            )
+            setTransientError(msg)
+            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
         }
     }
 
@@ -1624,10 +1741,10 @@ enum SleepWakePolicy {
 
     /// Restore the security-scoped bookmark on launch.
     ///
-    /// DOLL-114: declared `async` so the bookmark resolution + security
-    /// scope acquisition + bridge.setConfig (each of which can hit disk
-    /// or IPC) run off the main actor's launch path.
-    private func restoreOutputDirBookmark() async {
+    /// DOLL-114: called from a deferred Task (see `init`) so the bookmark
+    /// resolution + security scope acquisition + bridge.setConfig (each of
+    /// which can hit disk or IPC) run after the launch path, not on it.
+    private func restoreOutputDirBookmark() {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
             // No bookmark means either a first run or the user is on the
             // in-container default (which never stores one). Ensure that
@@ -1647,6 +1764,11 @@ enum SleepWakePolicy {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
+            // Access is deliberately held, not scoped with `defer`: the engine writes
+            // into this directory for the rest of the session. It is released by
+            // releaseOutputDirAccess() (quit / switch to the default dir) or replaced
+            // by saveOutputDirBookmark(for:), which stops the previous URL first.
+            // swiftlint:disable:next security_scoped_balance - held for the session; stopped in releaseOutputDirAccess() / saveOutputDirBookmark(for:)
             if url.startAccessingSecurityScopedResource() {
                 securityScopedURL = url
                 bridge.setConfig(["output_dir": url.path])
@@ -1671,7 +1793,9 @@ enum SleepWakePolicy {
         } catch {
             Self.log.error("Failed to restore bookmark: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-            let failedPath = UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath) ?? String(localized: "the configured directory")
+            let failedPath =
+                UserDefaults.standard.string(forKey: SettingsKeys.lastOutputDirPath)
+                ?? String(localized: "the configured directory")
             promptToReselectOutputDir(failedPath: failedPath)
         }
     }
@@ -1685,7 +1809,8 @@ enum SleepWakePolicy {
             let alert = NSAlert()
             alert.messageText = String(localized: "Output Directory Unavailable")
             alert.informativeText = String(
-                localized: "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
+                localized:
+                    "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
             )
             alert.alertStyle = .warning
             alert.addButton(withTitle: String(localized: "Choose Directory\u{2026}"))
@@ -1699,12 +1824,12 @@ enum SleepWakePolicy {
                 panel.prompt = String(localized: "Select")
                 panel.message = String(localized: "Select output directory for recordings")
                 if panel.runModal() == .OK, let url = panel.url {
-                    self.saveOutputDirBookmark(for: url)
+                    saveOutputDirBookmark(for: url)
                 }
             } else {
                 // Use the in-container default (no security scope needed). The
                 // old ~/Music default is unwritable under the sandbox. (DOLL-344)
-                self.useDefaultOutputDir()
+                useDefaultOutputDir()
             }
         }
     }
@@ -1722,7 +1847,7 @@ enum SleepWakePolicy {
 /// Separate class because UNUserNotificationCenterDelegate requires NSObject conformance.
 private class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
+        _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler handler: @escaping () -> Void
     ) {
@@ -1740,8 +1865,8 @@ private class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     /// Show notifications even when the app is in the foreground (needed for
     /// notification actions to be accessible).
     func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
         withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         handler([.banner])

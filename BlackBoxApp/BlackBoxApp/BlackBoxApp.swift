@@ -6,9 +6,10 @@ import SwiftUI
 /// Also prevents SwiftUI from terminating the app when the last Window scene closes,
 /// which is a known issue with MenuBarExtra + Window combinations.
 ///
-/// Main-actor-isolated: NSWorkspace observers below pass `queue: .main`, so the
-/// closures already deliver on the main thread. The annotation makes the
-/// isolation explicit for Swift 6 strict concurrency.
+/// Main-actor-isolated: each notification below is consumed by a main-actor
+/// Task (`for await` over `NotificationCenter.notifications(named:)`), so the
+/// handlers are compiler-proven main-actor code rather than relying on a
+/// `queue: .main` delivery convention the type checker can't see.
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recorder: RecordingState?
@@ -17,7 +18,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Prevents SwiftUI's spurious terminate-on-last-window-close from killing the app.
     var explicitQuit = false
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    /// One Task per observed notification, cancelled in `applicationWillTerminate`
+    /// so the observations end with the app instead of outliving the delegate.
+    private var notificationTasks: [Task<Void, Never>] = []
+
+    func applicationDidFinishLaunching(_: Notification) {
         // Ensure we start as an accessory app (menu bar only, no Dock icon).
         NSApp.setActivationPolicy(.accessory)
 
@@ -25,11 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Mark it as explicit so we cooperate with the system instead of blocking.
         let wsnc = NSWorkspace.shared.notificationCenter
 
-        wsnc.addObserver(
-            forName: NSWorkspace.willPowerOffNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSWorkspace.willPowerOffNotification, on: wsnc) { [weak self] in
             // DOLL-183: drain the recording directly here, not in the later
             // applicationShouldTerminate dispatch. macOS gives ~5s for
             // shutdown; if SwiftUI is slow to deliver
@@ -44,35 +45,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        wsnc.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSWorkspace.willSleepNotification, on: wsnc) { [weak self] in
             self?.recorder?.handleWillSleep()
         }
 
-        wsnc.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSWorkspace.didWakeNotification, on: wsnc) { [weak self] in
             self?.recorder?.handleDidWake()
         }
 
-        wsnc.addObserver(
-            forName: NSWorkspace.sessionDidResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSWorkspace.sessionDidResignActiveNotification, on: wsnc) { [weak self] in
             self?.recorder?.handleSessionDidResignActive()
         }
 
-        wsnc.addObserver(
-            forName: NSWorkspace.sessionDidBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSWorkspace.sessionDidBecomeActiveNotification, on: wsnc) { [weak self] in
             self?.recorder?.handleSessionDidBecomeActive()
         }
 
@@ -81,20 +66,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // fires when the user clicks back into the app after granting
         // permission in System Settings, so the recorder picks up the
         // new state without a relaunch.
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
+        observe(NSApplication.didBecomeActiveNotification, on: NotificationCenter.default) { [weak self] in
             self?.recorder?.refreshNotificationAuthorization()
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    func applicationWillTerminate(_: Notification) {
+        for task in notificationTasks {
+            task.cancel()
+        }
+        notificationTasks.removeAll()
+    }
+
+    /// Run `handler` on the main actor each time `name` is posted to `center`.
+    private func observe(
+        _ name: Notification.Name,
+        on center: NotificationCenter,
+        handler: @escaping @MainActor () -> Void
+    ) {
+        notificationTasks.append(
+            Task {
+                for await _ in center.notifications(named: name) {
+                    handler()
+                }
+            }
+        )
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         false
     }
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         // SwiftUI triggers NSApp.terminate() when the last Window scene closes.
         // Block that — we're a menu bar app and should stay alive.
         guard explicitQuit else {
@@ -135,9 +138,14 @@ struct BlackBoxApp: App {
     @State private var shouldShowDiscoveryNudge = false
 
     var body: some Scene {
+        // Side effects in a result builder must be `let _ =` declarations: a bare
+        // `_ = f()` is an assignment expression that SceneBuilder feeds to
+        // buildExpression, which then fails because `()` is not a Scene.
         // Wire up delegate so applicationShouldTerminate can finalize recordings
+        // swiftlint:disable:next redundant_discardable_let - `_ = f()` is a builder component in a Scene body; only `let _` runs a side effect
         let _ = { appDelegate.recorder = recorder }()
         // Auto-open onboarding on first launch
+        // swiftlint:disable:next redundant_discardable_let - `_ = f()` is a builder component in a Scene body; only `let _` runs a side effect
         let _ = autoOpenOnboardingIfNeeded()
         MenuBarExtra {
             if !hasCompletedOnboarding {
@@ -210,8 +218,7 @@ struct BlackBoxApp: App {
         .windowResizability(.contentSize)
     }
 
-    @ViewBuilder
-    private var normalMenu: some View {
+    @ViewBuilder private var normalMenu: some View {
         // Menu-flicker fix v2: the live elapsed-time `Text(_, style: .timer)`
         // still caused menu reflow because the digit count changes at the
         // minute / hour boundaries — even `.monospacedDigit()` can't hide
@@ -229,7 +236,8 @@ struct BlackBoxApp: App {
             // show the resolved system default name (e.g. "MacBook Pro
             // Microphone") instead of the literal "System Default" so the
             // user knows what's actually recording.
-            let device = selectedDevice.isEmpty
+            let device =
+                selectedDevice.isEmpty
                 ? (recorder.systemDefaultDeviceName ?? "System Default")
                 : selectedDevice
             let chCount = countChannels(channelSpec)
@@ -264,11 +272,13 @@ struct BlackBoxApp: App {
             // also fires once on threshold crossing in case the user
             // doesn't have the menu open.
             if recorder.isLowBatteryWarning {
-                Label("Battery low — plug in to avoid an unexpected stop",
-                      systemImage: "battery.25percent")
-                    .font(.caption)
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-                    .accessibilityLabel("Warning: battery low, plug in to avoid an unexpected stop")
+                Label(
+                    "Battery low — plug in to avoid an unexpected stop",
+                    systemImage: "battery.25percent"
+                )
+                .font(.caption)
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .accessibilityLabel("Warning: battery low, plug in to avoid an unexpected stop")
             }
 
             // DOLL-220: pre-emptive 4 GiB cap warning. Set at recording
@@ -329,7 +339,8 @@ struct BlackBoxApp: App {
         // (and changing settings while recording isn't a flow we want
         // to encourage here).
         if !recorder.isRecording {
-            let device = selectedDevice.isEmpty
+            let device =
+                selectedDevice.isEmpty
                 ? (recorder.systemDefaultDeviceName ?? "System Default")
                 : selectedDevice
             let chCount = countChannels(channelSpec)
@@ -362,24 +373,31 @@ struct BlackBoxApp: App {
             Menu("Input Device") {
                 // DOLL-215: surface the resolved device name so users know
                 // what "System Default" maps to right now.
-                let defaultLabel: String = recorder.systemDefaultDeviceName
+                let defaultLabel: String =
+                    recorder.systemDefaultDeviceName
                     .map { "System Default (\($0))" } ?? "System Default"
-                Toggle(defaultLabel, isOn: Binding(
-                    get: { selectedDevice.isEmpty },
-                    set: { newValue in
-                        if newValue { recorder.selectDevice("") }
-                    }
-                ))
+                Toggle(
+                    defaultLabel,
+                    isOn: Binding(
+                        get: { selectedDevice.isEmpty },
+                        set: { newValue in
+                            if newValue { recorder.selectDevice("") }
+                        }
+                    )
+                )
 
                 Divider()
 
                 ForEach(recorder.availableDevices, id: \.self) { device in
-                    Toggle(device, isOn: Binding(
-                        get: { selectedDevice == device },
-                        set: { newValue in
-                            if newValue { recorder.selectDevice(device) }
-                        }
-                    ))
+                    Toggle(
+                        device,
+                        isOn: Binding(
+                            get: { selectedDevice == device },
+                            set: { newValue in
+                                if newValue { recorder.selectDevice(device) }
+                            }
+                        )
+                    )
                 }
             }
 
@@ -502,8 +520,7 @@ struct BlackBoxApp: App {
         return path
     }
 
-    @ViewBuilder
-    private var menuBarLabel: some View {
+    @ViewBuilder private var menuBarLabel: some View {
         if !hasCompletedOnboarding {
             Image(systemName: "questionmark.circle")
         } else if recorder.errorMessage != nil {
@@ -554,7 +571,9 @@ struct BlackBoxApp: App {
             let alert = NSAlert()
             // DOLL-438: AppKit strings wrapped in String(localized:) for the catalog.
             alert.messageText = String(localized: "Recording in Progress")
-            alert.informativeText = String(localized: "BlackBox is currently recording. Do you want to stop recording and quit?")
+            alert.informativeText = String(
+                localized: "BlackBox is currently recording. Do you want to stop recording and quit?"
+            )
             alert.alertStyle = .warning
             alert.addButton(withTitle: String(localized: "Cancel"))
             alert.addButton(withTitle: String(localized: "Stop & Quit"))
@@ -595,17 +614,17 @@ enum AppURL {
 private struct StatusItemTooltip: NSViewRepresentable {
     let tooltip: String
 
-    func makeNSView(context: Context) -> NSView { NSView() }
+    func makeNSView(context _: Context) -> NSView { NSView() }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: NSView, context _: Context) {
         Task { @MainActor in
             var view = nsView.superview
-            while let v = view {
-                if let button = v as? NSStatusBarButton {
+            while let current = view {
+                if let button = current as? NSStatusBarButton {
                     button.toolTip = tooltip
                     return
                 }
-                view = v.superview
+                view = current.superview
             }
         }
     }
