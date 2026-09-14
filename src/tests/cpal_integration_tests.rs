@@ -137,7 +137,7 @@ fn test_standard_mode_data_accuracy() {
         // 0.5 * 32767.0 = 16383.5 → rounded to 16384
         // 16-bit output is TPDF-dithered (DOLL-373), so each sample is within
         // ±1 LSB of the undithered value.
-        let expected = (0.5_f32 * 32767.0).round() as i32;
+        let expected = 16_384; // 0.5 x 32767 = 16383.5, rounded half away from zero
         for (i, &s) in samples.iter().enumerate() {
             assert!(
                 (s - expected).abs() <= 1,
@@ -285,9 +285,9 @@ fn test_multichannel_mode_interleaving() {
         assert_eq!(spec.channels, 3);
 
         // Verify interleaving: samples should alternate ch0, ch1, ch2
-        let expected_ch0 = (0.25_f32 * 32767.0).round() as i32;
-        let expected_ch1 = (0.50_f32 * 32767.0).round() as i32;
-        let expected_ch2 = (0.75_f32 * 32767.0).round() as i32;
+        let expected_ch0 = 8_192; // 0.25 x 32767 = 8191.75
+        let expected_ch1 = 16_384; // 0.50 x 32767 = 16383.5
+        let expected_ch2 = 24_575; // 0.75 x 32767 = 24575.25
 
         // ±1 LSB tolerance: 16-bit output is TPDF-dithered (DOLL-373). Still
         // tight enough to catch any wrong-channel/wrong-value interleaving bug.
@@ -603,7 +603,7 @@ fn test_24bit_recording() {
         assert_eq!(samples.len(), 100);
 
         // 0.5 * 8_388_607.0 = 4_194_303.5 → rounded to 4_194_304
-        let expected = (0.5_f32 * 8_388_607.0).round() as i32;
+        let expected = 4_194_304;
         for (i, &s) in samples.iter().enumerate() {
             assert_eq!(
                 s, expected,
@@ -665,7 +665,7 @@ fn test_16bit_backward_compat() {
         assert_eq!(samples.len(), 100);
 
         // 16-bit output is TPDF-dithered (DOLL-373) → within ±1 LSB.
-        let expected = (0.5_f32 * 32767.0).round() as i32;
+        let expected = 16_384; // 0.5 x 32767 = 16383.5, rounded half away from zero
         for &s in &samples {
             assert!((s - expected).abs() <= 1);
         }
@@ -679,10 +679,7 @@ fn test_f32_to_wav_sample_conversion() {
     assert_eq!(f32_to_wav_sample(1.0, 16), 32767);
     assert_eq!(f32_to_wav_sample(-1.0, 16), -32767);
     // 0.5 * 32767.0 = 16383.5; round-half-away-from-zero → 16384
-    assert_eq!(
-        f32_to_wav_sample(0.5, 16),
-        (0.5_f32 * 32767.0).round() as i32
-    );
+    assert_eq!(f32_to_wav_sample(0.5, 16), 16_384);
 
     // 24-bit
     assert_eq!(f32_to_wav_sample(0.0, 24), 0);

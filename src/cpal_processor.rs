@@ -451,7 +451,9 @@ impl CpalAudioProcessor {
 
         debug!("Default input stream config: {config:?}");
 
-        let total_channels = config.channels() as usize;
+        // Keep cpal's u16 for the writer state; index math uses usize.
+        let device_channels = config.channels();
+        let total_channels = usize::from(device_channels);
         let sample_rate = config.sample_rate();
         self.sample_rate = sample_rate;
         self.sample_rate_atomic
@@ -512,7 +514,7 @@ impl CpalAudioProcessor {
             gate_timeout_secs,
         )?;
         self.gate_idle = Arc::clone(&state.gate_idle);
-        state.total_device_channels = total_channels as u16;
+        state.total_device_channels = device_channels;
         // DOLL-437: wire the shared write-failure flag into the writer state so
         // a persistent-write-failure stop is visible to the FFI status poll.
         state.write_failed = Arc::clone(&self.write_failed);
@@ -845,7 +847,8 @@ impl AudioProcessor for CpalAudioProcessor {
                     source: Box::new(e),
                 })?;
 
-        let total_channels = stream_config.channels() as usize;
+        let device_channels = stream_config.channels();
+        let total_channels = usize::from(device_channels);
         let sample_rate = stream_config.sample_rate();
         self.sample_rate = sample_rate;
         self.sample_rate_atomic
@@ -875,7 +878,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         // Create monitor-only writer thread state (no file I/O)
         let mut state = WriterThreadState::new_monitor(sample_rate, &actual_channels, peak_levels);
-        state.total_device_channels = total_channels as u16;
+        state.total_device_channels = device_channels;
 
         // Create ring buffer
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
@@ -1125,9 +1128,14 @@ impl CpalAudioProcessor {
     }
 
     /// Feed interleaved f32 audio data as if it came from a cpal callback.
+    ///
+    /// # Panics
+    ///
+    /// If `total_device_channels` exceeds `u16::MAX`, which no device reports.
     pub fn feed_test_data(&mut self, data: &[f32], total_device_channels: usize) {
         if let Some(ref mut state) = self.direct_state {
-            state.total_device_channels = total_device_channels as u16;
+            state.total_device_channels =
+                u16::try_from(total_device_channels).expect("test channel count fits in u16");
             state.write_samples(data);
         }
     }

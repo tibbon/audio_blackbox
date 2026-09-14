@@ -41,3 +41,31 @@ pub(crate) const fn len_to_f64(len: usize) -> f64 {
 pub(crate) const fn len_to_f32(len: usize) -> f32 {
     len as f32
 }
+
+/// `value` as `i32`, truncating toward zero and saturating at the `i32`
+/// bounds (NaN becomes 0).
+///
+/// That is Rust's float-to-int `as`, which PCM conversion relies on: callers
+/// round and clamp first, and a 32-bit full-scale +1.0 (2^31 in `f32`) must
+/// land on `i32::MAX` rather than wrap.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "float-to-int `as` saturates at the i32 bounds, which is the intended behavior"
+)]
+#[must_use]
+#[inline]
+pub(crate) const fn saturating_i32(value: f32) -> i32 {
+    value as i32
+}
+
+/// `f64` counterpart of [`saturating_i32`], for tests that synthesize
+/// 32-bit PCM in double precision.
+#[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "float-to-int `as` saturates at the i32 bounds, which is the intended behavior"
+)]
+#[must_use]
+pub(crate) const fn saturating_i32_from_f64(value: f64) -> i32 {
+    value as i32
+}

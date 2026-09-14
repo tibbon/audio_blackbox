@@ -9,6 +9,7 @@ use log::{error, info, warn};
 
 use crate::constants::{CacheAlignedPeak, MAX_CHANNELS, OutputMode, WRITER_THREAD_READ_CHUNK};
 use crate::error::BlackboxError;
+use crate::numeric::saturating_i32;
 use crate::raw_wav_writer::RawWavWriter;
 use crate::silence_check_worker::SilenceCheckWorker;
 use crate::utils::{available_disk_space_mb, is_silent};
@@ -269,7 +270,27 @@ pub(crate) struct WriterThreadState {
 /// not part of the public API (DOLL-129).
 #[cfg(test)]
 pub(crate) fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
-    (sample.clamp(-1.0, 1.0) * pcm_full_scale(bits_per_sample)).round() as i32
+    saturating_i32((sample.clamp(-1.0, 1.0) * pcm_full_scale(bits_per_sample)).round())
+}
+
+/// Pack up to `MAX_CHANNELS` channel indices into the inline array the hot
+/// path reads, returning the array and how many entries are set.
+///
+/// An index that doesn't fit a `u8` is skipped. None are expected:
+/// `parse_channel_string` rejects indices >= `MAX_CHANNELS`, and the
+/// all-device-channels fallback starts at 0, so its first 255 entries fit.
+/// Before DOLL-653 such an index would have wrapped to a different channel.
+fn pack_channels(channels: &[usize]) -> ([u8; MAX_CHANNELS], u8) {
+    let mut packed = [0_u8; MAX_CHANNELS];
+    let mut count = 0_u8;
+    for (slot, ch) in packed
+        .iter_mut()
+        .zip(channels.iter().filter_map(|&ch| u8::try_from(ch).ok()))
+    {
+        *slot = ch;
+        count += 1;
+    }
+    (packed, count)
 }
 
 /// Multiplier that maps a sample in [-1, 1] to integer PCM at `bits_per_sample`.
@@ -316,9 +337,9 @@ fn convert_sample(s: f32, scale: f32, dither: bool, rng: &mut u32) -> i32 {
     let v = s.clamp(-1.0, 1.0) * scale;
     if dither {
         let d = (xorshift32_unit(rng) - 0.5) + (xorshift32_unit(rng) - 0.5);
-        (v + d).round().clamp(-(scale + 1.0), scale) as i32
+        saturating_i32((v + d).round().clamp(-(scale + 1.0), scale))
     } else {
-        v.round() as i32
+        saturating_i32(v.round())
     }
 }
 
@@ -361,12 +382,7 @@ impl WriterThreadState {
 
         let sample_scale = pcm_full_scale(bits_per_sample);
 
-        // Pack channel indices into a fixed inline array (u8 fits MAX_CHANNELS=255)
-        let mut ch_arr = [0_u8; MAX_CHANNELS];
-        let channel_count = channels.len().min(MAX_CHANNELS);
-        for (i, &ch) in channels.iter().take(MAX_CHANNELS).enumerate() {
-            ch_arr[i] = ch as u8;
-        }
+        let (ch_arr, channel_count) = pack_channels(channels);
 
         let gate_idle = Arc::new(AtomicBool::new(gate_enabled));
         let initial_gate_state = if gate_enabled {
@@ -382,7 +398,7 @@ impl WriterThreadState {
             gate_enabled,
             gate_state: initial_gate_state,
             output_mode,
-            channel_count: channel_count as u8,
+            channel_count,
             total_device_channels: 0, // set by caller or process_audio
             disk_check_counter: 0,
             flush_frame_counter: 0,
@@ -453,12 +469,7 @@ impl WriterThreadState {
     ) -> Self {
         let sample_scale = 8_388_607.0_f32; // 24-bit max (monitor mode is always 24-bit)
 
-        // Pack channel indices into inline array
-        let mut ch_arr = [0_u8; MAX_CHANNELS];
-        let channel_count = channels.len().min(MAX_CHANNELS);
-        for (i, &ch) in channels.iter().take(MAX_CHANNELS).enumerate() {
-            ch_arr[i] = ch as u8;
-        }
+        let (ch_arr, channel_count) = pack_channels(channels);
 
         Self {
             sample_scale,
@@ -467,7 +478,7 @@ impl WriterThreadState {
             gate_enabled: false,
             gate_state: GateState::Recording,
             output_mode: OutputMode::Single, // unused in monitor mode
-            channel_count: channel_count as u8,
+            channel_count,
             total_device_channels: 0,
             disk_check_counter: 0,
             flush_frame_counter: 0,
@@ -765,9 +776,11 @@ impl WriterThreadState {
         // and re-scanning every channel on every `write_samples` call.
         if self.active_cache_frame_size != frame_size {
             let mut count = 0_usize;
-            for (idx, &channel) in ch_slice.iter().enumerate() {
+            // `ch_slice` holds at most MAX_CHANNELS (255) entries, so every
+            // position fits a u8 index.
+            for (idx, &channel) in (0_u8..=u8::MAX).zip(ch_slice) {
                 if (channel as usize) < frame_size {
-                    self.active_indices[count] = idx as u8;
+                    self.active_indices[count] = idx;
                     count += 1;
                 }
             }
@@ -1432,7 +1445,7 @@ pub fn bench_real_pipeline(
         0,     // gate_timeout_secs
     )
     .expect("failed to build writer state");
-    state.total_device_channels = channels as u16;
+    state.total_device_channels = u16::try_from(channels).expect("channel count fits in u16");
 
     // Ring buffer sized exactly as production (see process_audio_impl).
     let ring_size = sample_rate as usize * channels * crate::RING_BUFFER_SECONDS;

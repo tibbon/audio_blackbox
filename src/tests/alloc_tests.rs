@@ -43,7 +43,7 @@ fn test_write_samples_zero_alloc_monitor() {
         let channels: Vec<usize> = (0..ch_count).collect();
         let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
         let mut state = WriterThreadState::new_monitor(sample_rate, &channels, peak_levels);
-        state.total_device_channels = ch_count as u16;
+        state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
 
         let data = generate_data(ch_count, 512);
 
@@ -107,7 +107,7 @@ fn test_write_samples_zero_alloc_recording() {
             0,
         )
         .unwrap();
-        state.total_device_channels = ch_count as u16;
+        state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
 
         let data = generate_data(ch_count, 512);
 
@@ -175,7 +175,7 @@ fn test_write_samples_zero_alloc_partial_frames() {
             0,
         )
         .unwrap();
-        state.total_device_channels = ch_count as u16;
+        state.total_device_channels = u16::try_from(ch_count).expect("channel count fits in u16");
 
         // Data that doesn't divide evenly by frame_size (2 channels):
         // 1023 samples = 511 full frames + 1 leftover sample in frame_remainder
