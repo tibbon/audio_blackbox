@@ -271,15 +271,10 @@ fn test_recorder_split_mode_wav_files_valid() {
             for path in &recorder.get_processor().created_files {
                 assert!(
                     Path::new(path).exists(),
-                    "Created file should exist: {}",
-                    path
+                    "Created file should exist: {path}"
                 );
                 let reader = hound::WavReader::open(path);
-                assert!(
-                    reader.is_ok(),
-                    "Split WAV file should be readable: {}",
-                    path
-                );
+                assert!(reader.is_ok(), "Split WAV file should be readable: {path}");
                 let reader = reader.unwrap();
                 assert_eq!(reader.spec().channels, 1, "Split files should be mono");
                 assert!(reader.len() > 0, "Split file should contain samples");

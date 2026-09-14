@@ -1,10 +1,9 @@
-// DOLL-346: this suite is now linted under the same pedantic/nursery config
-// as the rest of the crate. Two test-idiomatic patterns are allowed here:
-//   - similar_names: the `*_ptr` / `*_str` pairs (raw pointer vs decoded
-//     String) are deliberately parallel and clearer than contrived renames.
-//   - float_cmp: assertions compare against exact sentinel values the FFI
-//     writes/leaves (e.g. an untouched 99.0 fill), where exactness is the point.
-#![allow(clippy::similar_names, clippy::float_cmp)]
+// DOLL-346: this suite is linted under the same pedantic/nursery config as
+// the rest of the crate.
+#![expect(
+    clippy::float_cmp,
+    reason = "assertions compare against exact sentinel values the FFI writes or leaves untouched (e.g. a 99.0 fill), where exactness is the point"
+)]
 
 use std::ffi::{CStr, CString};
 
@@ -19,10 +18,13 @@ unsafe fn read_and_free(ptr: *mut std::os::raw::c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
+    // SAFETY: `ptr` is non-null (checked above) and, per this helper's
+    // contract, was returned by the FFI as a NUL-terminated string that
+    // stays valid until `blackbox_free_string` below.
     let s = unsafe { CStr::from_ptr(ptr) }
         .to_str()
         .ok()
-        .map(str::to_string);
+        .map(str::to_owned);
     blackbox_free_string(ptr);
     s
 }
@@ -54,11 +56,13 @@ fn test_create_with_valid_json() {
 
     // Verify config was applied by reading it back
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config should be readable");
     assert!(
         config_str.contains("/tmp/blackbox_ffi_test"),
-        "config should contain our output_dir: {}",
-        config_str
+        "config should contain our output_dir: {config_str}"
     );
 
     // A clean parse must not leave a creation error behind (DOLL-456).
@@ -82,6 +86,9 @@ fn test_create_with_invalid_json() {
     // strongly-typed AppConfig (not JSON) to avoid f32/f64 round-trip
     // precision artifacts.
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config readable");
     let parsed: crate::AppConfig =
         serde_json::from_str(&config_str).expect("config parseable as AppConfig");
@@ -95,6 +102,9 @@ fn test_create_with_invalid_json() {
     // DOLL-456: the swallowed parse must now be detectable — last_error
     // carries the serde message instead of leaving the caller blind.
     let err_ptr = blackbox_get_last_error(handle);
+    // SAFETY: `err_ptr` was just returned by `blackbox_get_last_error`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let err = unsafe { read_and_free(err_ptr) }.expect("last_error must be set");
     assert!(
         err.contains("Invalid config JSON"),
@@ -115,6 +125,9 @@ fn test_create_type_mismatch_sets_last_error_and_keeps_defaults() {
     assert!(!handle.is_null(), "creation must still succeed");
 
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config readable");
     let parsed: crate::AppConfig =
         serde_json::from_str(&config_str).expect("config parseable as AppConfig");
@@ -126,6 +139,9 @@ fn test_create_type_mismatch_sets_last_error_and_keeps_defaults() {
     );
 
     let err_ptr = blackbox_get_last_error(handle);
+    // SAFETY: `err_ptr` was just returned by `blackbox_get_last_error`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let err = unsafe { read_and_free(err_ptr) }.expect("last_error must be set");
     assert!(
         err.contains("Invalid config JSON"),
@@ -185,6 +201,9 @@ fn test_get_config_json_roundtrip() {
     let handle = blackbox_create(json.as_ptr());
 
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config should be readable");
 
     let parsed: serde_json::Value =
@@ -205,6 +224,9 @@ fn test_set_config_json() {
 
     // Verify the update
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config should be readable");
     let parsed: serde_json::Value =
         serde_json::from_str(&config_str).expect("should be valid JSON");
@@ -232,6 +254,9 @@ fn test_set_config_json_invalid() {
 
     // Should have an error message
     let err_ptr = blackbox_get_last_error(handle);
+    // SAFETY: `err_ptr` was just returned by `blackbox_get_last_error`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let err = unsafe { read_and_free(err_ptr) };
     assert!(err.is_some(), "should have error message");
     assert!(
@@ -254,6 +279,9 @@ fn test_get_last_error_initially_null() {
 fn test_list_input_devices() {
     let devices_ptr = blackbox_list_input_devices();
     // Should always return something (at least "[]" on systems with no devices)
+    // SAFETY: `devices_ptr` was just returned by `blackbox_list_input_devices`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let devices_str =
         unsafe { read_and_free(devices_ptr) }.expect("device list should be readable");
 
@@ -273,6 +301,9 @@ fn test_config_with_input_device() {
     let handle = blackbox_create(json.as_ptr());
 
     let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: `config_ptr` was just returned by `blackbox_get_config_json`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
     let config_str = unsafe { read_and_free(config_ptr) }.expect("config should be readable");
     assert!(
         config_str.contains("Nonexistent Device"),
@@ -359,6 +390,9 @@ fn test_status_flags_concurrent_reads() {
 
     // Snapshot the status atomics bundle so a parallel writer can
     // mutate the SAME atomics that `blackbox_get_status_flags` reads.
+    // SAFETY: `handle` came from `blackbox_create`, is non-null (asserted
+    // above), and is not destroyed until every thread spawned below has
+    // been joined.
     let bundle_w = unsafe { (*handle).test_status_bundle() };
 
     // Writer 1: flips config (acquires handle.config + handle.last_error
@@ -540,6 +574,8 @@ fn test_stop_monitoring_preserves_live_recording_status() {
 
         // Clear the synthetic recording flag (via the shared bundle) so the
         // recorder drops down the not-recording path, then destroy.
+        // SAFETY: `handle` came from `blackbox_create` and is destroyed only
+        // on the next line, after this access.
         unsafe { &*handle }
             .test_status_bundle()
             .recording_active

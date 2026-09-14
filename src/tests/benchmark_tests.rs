@@ -34,6 +34,14 @@ fn generate_bench_data(total_channels: usize, frames: usize) -> Vec<f32> {
     data
 }
 
+/// One zeroed peak slot per channel. `CacheAlignedPeak` holds an atomic and
+/// is not `Clone`, so this is the `vec![x; n]` equivalent for it.
+fn zero_peaks(ch_count: usize) -> Arc<[CacheAlignedPeak]> {
+    std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+        .take(ch_count)
+        .collect()
+}
+
 /// Format a sample rate as a human-readable string.
 fn format_rate(samples_per_sec: f64) -> String {
     if samples_per_sec >= 1_000_000.0 {
@@ -41,7 +49,7 @@ fn format_rate(samples_per_sec: f64) -> String {
     } else if samples_per_sec >= 1_000.0 {
         format!("{:.1}K samples/s", samples_per_sec / 1_000.0)
     } else {
-        format!("{:.0} samples/s", samples_per_sec)
+        format!("{samples_per_sec:.0} samples/s")
     }
 }
 
@@ -94,7 +102,7 @@ fn benchmark_direct_write_throughput() {
                 0,
                 Arc::new(AtomicBool::new(false)),
                 16,
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                zero_peaks(ch_count),
                 false,
                 0,
             )
@@ -120,27 +128,26 @@ fn benchmark_direct_write_throughput() {
             let total_samples = frames * ch_count;
             let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
             // Real-time rate = sample_rate * ch_count samples/sec
-            let realtime_rate = sample_rate as f64 * ch_count as f64;
+            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
             let realtime_multiple = samples_per_sec / realtime_rate;
 
             let errors = write_errors.load(Ordering::Relaxed);
 
             println!(
-                "  {:>4} {:>10} {:>12.1} ms {:>12} {:>8.1}x{}",
-                ch_count,
-                frames,
+                "  {ch_count:>4} {frames:>10} {:>12.1} ms {:>12} {realtime_multiple:>8.1}x{}",
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
-                realtime_multiple,
                 if errors > 0 {
-                    format!("  ({} errors)", errors)
+                    format!("  ({errors} errors)")
                 } else {
                     String::new()
                 }
             );
 
             // Finalize to close files properly
-            let _ = state.finalize_all();
+            state
+                .finalize_all()
+                .expect("benchmark output files should finalize cleanly");
         }
     });
 
@@ -193,7 +200,7 @@ fn benchmark_split_mode_throughput() {
                 0,
                 Arc::new(AtomicBool::new(false)),
                 16,
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                zero_peaks(ch_count),
                 false,
                 0,
             )
@@ -212,19 +219,18 @@ fn benchmark_split_mode_throughput() {
 
             let total_samples = frames * ch_count;
             let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = sample_rate as f64 * ch_count as f64;
+            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
             let realtime_multiple = samples_per_sec / realtime_rate;
 
             println!(
-                "  {:>4} {:>6} {:>12.1} ms {:>12} {:>8.1}x",
-                ch_count,
-                ch_count,
+                "  {ch_count:>4} {ch_count:>6} {:>12.1} ms {:>12} {realtime_multiple:>8.1}x",
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
-                realtime_multiple,
             );
 
-            let _ = state.finalize_all();
+            state
+                .finalize_all()
+                .expect("benchmark output files should finalize cleanly");
         }
     });
 
@@ -277,7 +283,7 @@ fn benchmark_ring_buffer_pipeline() {
                 0,
                 Arc::new(AtomicBool::new(false)),
                 16,
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                zero_peaks(ch_count),
                 false,
                 0,
             )
@@ -292,9 +298,9 @@ fn benchmark_ring_buffer_pipeline() {
 
             let rotation_clone = Arc::clone(&rotation_needed);
             let writer_handle = std::thread::Builder::new()
-                .name("bench-writer".to_string())
+                .name("bench-writer".to_owned())
                 .spawn(move || {
-                    writer_thread_main(consumer, rotation_clone, command_rx, state);
+                    writer_thread_main(consumer, &rotation_clone, &command_rx, state);
                 })
                 .unwrap();
 
@@ -327,18 +333,15 @@ fn benchmark_ring_buffer_pipeline() {
 
             let total_samples = frames * ch_count;
             let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = sample_rate as f64 * ch_count as f64;
+            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
             let realtime_multiple = samples_per_sec / realtime_rate;
             let drops = write_errors.load(Ordering::Relaxed);
 
             println!(
-                "  {:>4} {:>9.1}MB {:>12.1} ms {:>12} {:>8.1}x {:>8}",
-                ch_count,
+                "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
                 (ring_size * 4) as f64 / (1024.0 * 1024.0),
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
-                realtime_multiple,
-                drops,
             );
         }
     });
@@ -390,19 +393,23 @@ fn benchmark_rotation_overhead() {
                     0,
                     Arc::new(AtomicBool::new(false)),
                     16,
-                    Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    zero_peaks(ch_count),
                     false,
                     0,
                 )
                 .unwrap();
                 state.total_device_channels = ch_count as u16;
 
+                // The rotated file's name comes from the timestamp source;
+                // a mock clock makes it distinct without waiting for a
+                // wall-clock second to tick over.
+                let clock = crate::test_utils::MockClock::new();
+                state.set_timestamp_fn(clock.as_timestamp_fn());
+
                 // Write some data first so the files have content
                 let data = generate_bench_data(ch_count, sample_rate as usize * 5);
                 state.write_samples(&data);
-
-                // Need to sleep 1s so the new file gets a different timestamp
-                std::thread::sleep(std::time::Duration::from_millis(1100));
+                clock.advance();
 
                 // Benchmark rotation
                 let start = Instant::now();
@@ -413,14 +420,13 @@ fn benchmark_rotation_overhead() {
                     (RING_BUFFER_SECONDS as f64).mul_add(1000.0, -elapsed.as_secs_f64() * 1000.0);
 
                 println!(
-                    "  {:>4} {:>8} {:>12.2} ms {:>14.0} ms left",
-                    ch_count,
-                    mode,
+                    "  {ch_count:>4} {mode:>8} {:>12.2} ms {ring_buffer_ms:>14.0} ms left",
                     elapsed.as_secs_f64() * 1000.0,
-                    ring_buffer_ms,
                 );
 
-                let _ = state.finalize_all();
+                state
+                    .finalize_all()
+                    .expect("benchmark output files should finalize cleanly");
             }
         }
     });
@@ -463,8 +469,7 @@ fn benchmark_monitor_vs_recording() {
             let chunk_samples = 512 * ch_count;
 
             // --- Monitor mode (peak tracking only, no disk) ---
-            let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
+            let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
             let mut monitor_state = WriterThreadState::new_monitor(
                 sample_rate,
                 &(0..ch_count).collect::<Vec<_>>(),
@@ -476,11 +481,11 @@ fn benchmark_monitor_vs_recording() {
             let warmup = generate_bench_data(ch_count, 1000);
             monitor_state.write_samples(&warmup);
 
-            let start = Instant::now();
+            let monitor_start = Instant::now();
             for chunk in data.chunks(chunk_samples) {
                 monitor_state.write_samples(chunk);
             }
-            let monitor_elapsed = start.elapsed();
+            let monitor_elapsed = monitor_start.elapsed();
 
             // --- Recording mode (full WAV writes) ---
             let temp_dir = tempdir().unwrap();
@@ -498,7 +503,7 @@ fn benchmark_monitor_vs_recording() {
                 0,
                 Arc::new(AtomicBool::new(false)),
                 16,
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                zero_peaks(ch_count),
                 false,
                 0,
             )
@@ -508,12 +513,14 @@ fn benchmark_monitor_vs_recording() {
             // Warm up
             record_state.write_samples(&warmup);
 
-            let start = Instant::now();
+            let record_start = Instant::now();
             for chunk in data.chunks(chunk_samples) {
                 record_state.write_samples(chunk);
             }
-            let record_elapsed = start.elapsed();
-            let _ = record_state.finalize_all();
+            let record_elapsed = record_start.elapsed();
+            record_state
+                .finalize_all()
+                .expect("benchmark output files should finalize cleanly");
 
             let total_samples = (frames * ch_count) as f64;
             let monitor_rate = total_samples / monitor_elapsed.as_secs_f64();
@@ -521,13 +528,11 @@ fn benchmark_monitor_vs_recording() {
             let speedup = monitor_rate / record_rate;
 
             println!(
-                "  {:>4} {:>9.1} ms {:>9.1} ms {:>12} {:>12} {:>8.1}x",
-                ch_count,
+                "  {ch_count:>4} {:>9.1} ms {:>9.1} ms {:>12} {:>12} {speedup:>8.1}x",
                 monitor_elapsed.as_secs_f64() * 1000.0,
                 record_elapsed.as_secs_f64() * 1000.0,
                 format_rate(monitor_rate),
                 format_rate(record_rate),
-                speedup,
             );
         }
     });
@@ -568,8 +573,7 @@ fn benchmark_monitor_pipeline() {
             let channels: Vec<usize> = (0..ch_count).collect();
             let write_errors = Arc::new(AtomicU64::new(0));
 
-            let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-                Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
+            let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
             let mut state =
                 WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
             state.total_device_channels = ch_count as u16;
@@ -582,9 +586,9 @@ fn benchmark_monitor_pipeline() {
 
             let rotation_clone = Arc::clone(&rotation_needed);
             let writer_handle = std::thread::Builder::new()
-                .name("bench-monitor".to_string())
+                .name("bench-monitor".to_owned())
                 .spawn(move || {
-                    writer_thread_main(consumer, rotation_clone, command_rx, state);
+                    writer_thread_main(consumer, &rotation_clone, &command_rx, state);
                 })
                 .unwrap();
 
@@ -612,7 +616,7 @@ fn benchmark_monitor_pipeline() {
 
             let total_samples = frames * ch_count;
             let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-            let realtime_rate = sample_rate as f64 * ch_count as f64;
+            let realtime_rate = f64::from(sample_rate) * ch_count as f64;
             let realtime_multiple = samples_per_sec / realtime_rate;
             let drops = write_errors.load(Ordering::Relaxed);
 
@@ -626,13 +630,10 @@ fn benchmark_monitor_pipeline() {
             );
 
             println!(
-                "  {:>4} {:>9.1}MB {:>12.1} ms {:>12} {:>8.1}x {:>8}",
-                ch_count,
+                "  {ch_count:>4} {:>9.1}MB {:>12.1} ms {:>12} {realtime_multiple:>8.1}x {drops:>8}",
                 (ring_size * 4) as f64 / (1024.0 * 1024.0),
                 elapsed.as_secs_f64() * 1000.0,
                 format_rate(samples_per_sec),
-                realtime_multiple,
-                drops,
             );
         }
     });
@@ -671,8 +672,7 @@ fn benchmark_write_samples_overhead() {
 
     temp_env::with_vars(test_env_no_silence(), || {
         // --- Monitor mode: peak tracking only ---
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
+        let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
         let mut monitor_state = WriterThreadState::new_monitor(
             sample_rate,
             &(0..ch_count).collect::<Vec<_>>(),
@@ -683,11 +683,11 @@ fn benchmark_write_samples_overhead() {
         let warmup = generate_bench_data(ch_count, 1000);
         monitor_state.write_samples(&warmup);
 
-        let start = Instant::now();
+        let monitor_start = Instant::now();
         for chunk in data.chunks(chunk_samples) {
             monitor_state.write_samples(chunk);
         }
-        let monitor_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let monitor_ms = monitor_start.elapsed().as_secs_f64() * 1000.0;
 
         // --- Recording mode: peak + scale + hound write ---
         let temp_dir = tempdir().unwrap();
@@ -705,7 +705,7 @@ fn benchmark_write_samples_overhead() {
             0,
             Arc::new(AtomicBool::new(false)),
             24,
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            zero_peaks(ch_count),
             false,
             0,
         )
@@ -714,12 +714,14 @@ fn benchmark_write_samples_overhead() {
 
         record_state.write_samples(&warmup);
 
-        let start = Instant::now();
+        let record_start = Instant::now();
         for chunk in data.chunks(chunk_samples) {
             record_state.write_samples(chunk);
         }
-        let record_ms = start.elapsed().as_secs_f64() * 1000.0;
-        let _ = record_state.finalize_all();
+        let record_ms = record_start.elapsed().as_secs_f64() * 1000.0;
+        record_state
+            .finalize_all()
+            .expect("benchmark output files should finalize cleanly");
 
         let total_samples = (frames * ch_count) as f64;
         let monitor_rate = total_samples / (monitor_ms / 1000.0);
@@ -727,22 +729,18 @@ fn benchmark_write_samples_overhead() {
         let disk_overhead_ms = record_ms - monitor_ms;
 
         println!(
-            "  {:>14} {:>9.1} ms {:>16} {:>12}",
+            "  {:>14} {monitor_ms:>9.1} ms {:>16} {:>12}",
             "Peak only",
-            monitor_ms,
             format_rate(monitor_rate),
             "(baseline)",
         );
         println!(
-            "  {:>14} {:>9.1} ms {:>16} {:>9.1} ms",
+            "  {:>14} {record_ms:>9.1} ms {:>16} {disk_overhead_ms:>9.1} ms",
             "Peak + WAV",
-            record_ms,
             format_rate(record_rate),
-            disk_overhead_ms,
         );
         println!(
-            "\n  Disk I/O adds {:.1} ms ({:.1}x slower) at 2ch/48kHz/24-bit",
-            disk_overhead_ms,
+            "\n  Disk I/O adds {disk_overhead_ms:.1} ms ({:.1}x slower) at 2ch/48kHz/24-bit",
             record_ms / monitor_ms,
         );
     });
@@ -786,7 +784,7 @@ fn benchmark_ring_buffer_latency() {
             0,
             Arc::new(AtomicBool::new(false)),
             16,
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            zero_peaks(ch_count),
             false,
             0,
         )
@@ -799,11 +797,12 @@ fn benchmark_ring_buffer_latency() {
         let rotation_needed = Arc::new(AtomicBool::new(false));
         let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
+        let samples_consumed = Arc::clone(&state.samples_consumed_total);
         let rotation_clone = Arc::clone(&rotation_needed);
         let writer_handle = std::thread::Builder::new()
-            .name("bench-latency".to_string())
+            .name("bench-latency".to_owned())
             .spawn(move || {
-                writer_thread_main(consumer, rotation_clone, command_rx, state);
+                writer_thread_main(consumer, &rotation_clone, &command_rx, state);
             })
             .unwrap();
 
@@ -813,8 +812,17 @@ fn benchmark_ring_buffer_latency() {
 
         let mut latencies_us: Vec<f64> = Vec::with_capacity(num_chunks);
 
-        // Let writer thread start
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Measurements assume the writer is already draining; prove it by
+        // pushing one priming chunk and waiting for it to be consumed
+        // rather than hoping a fixed nap covers thread start-up.
+        if let Ok(chunk) = producer.write_chunk_uninit(chunk_samples) {
+            chunk.fill_from_iter(data.iter().copied());
+        }
+        crate::test_utils::wait_for_samples_consumed(
+            &samples_consumed,
+            chunk_samples as u64,
+            std::time::Duration::from_secs(5),
+        );
 
         for _ in 0..num_chunks {
             // Measure occupancy before push (how many samples writer hasn't consumed yet)
@@ -822,7 +830,7 @@ fn benchmark_ring_buffer_latency() {
 
             // Calculate latency: occupancy / (sample_rate * channels) = seconds behind
             let latency_us =
-                occupancy as f64 / (sample_rate as f64 * total_channels as f64) * 1_000_000.0;
+                occupancy as f64 / (f64::from(sample_rate) * total_channels as f64) * 1_000_000.0;
             latencies_us.push(latency_us);
 
             // Push chunk
@@ -831,6 +839,10 @@ fn benchmark_ring_buffer_latency() {
             }
 
             // Simulate real-time pace: 512 frames at 48kHz = ~10.67ms
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "paces the producer at the real cpal callback cadence so ring occupancy reflects real-time latency, not burst throughput"
+            )]
             std::thread::sleep(std::time::Duration::from_micros(10_667));
         }
 
@@ -843,21 +855,19 @@ fn benchmark_ring_buffer_latency() {
         // Calculate percentiles
         latencies_us.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let p50 = latencies_us[latencies_us.len() / 2];
-        let p99 = latencies_us[(latencies_us.len() as f64 * 0.99) as usize];
+        let p99 = latencies_us[latencies_us.len() * 99 / 100];
         let max = latencies_us.last().copied().unwrap_or(0.0);
         let ring_buffer_capacity_us = RING_BUFFER_SECONDS as f64 * 1_000_000.0;
 
         println!(
-            "  Chunks sent:     {:>6} ({:.1}s at real-time pace)",
-            num_chunks,
-            num_chunks as f64 * 512.0 / sample_rate as f64,
+            "  Chunks sent:     {num_chunks:>6} ({:.1}s at real-time pace)",
+            num_chunks as f64 * 512.0 / f64::from(sample_rate),
         );
-        println!("  Latency p50:     {:>9.0} us", p50);
-        println!("  Latency p99:     {:>9.0} us", p99);
-        println!("  Latency max:     {:>9.0} us", max);
+        println!("  Latency p50:     {p50:>9.0} us");
+        println!("  Latency p99:     {p99:>9.0} us");
+        println!("  Latency max:     {max:>9.0} us");
         println!(
-            "  Ring buffer cap: {:>9.0} us ({} seconds)",
-            ring_buffer_capacity_us, RING_BUFFER_SECONDS,
+            "  Ring buffer cap: {ring_buffer_capacity_us:>9.0} us ({RING_BUFFER_SECONDS} seconds)",
         );
         println!(
             "  Headroom:        {:>8.1}x (max latency vs ring buffer capacity)",
@@ -886,18 +896,14 @@ fn benchmark_monitor_cpu_idle() {
 
     println!("\n============================================================");
     println!("  Benchmark: Monitor mode CPU at real-time pace");
-    println!(
-        "  (2ch/48kHz, {}s — measures actual CPU cost of level metering)",
-        test_duration_secs
-    );
+    println!("  (2ch/48kHz, {test_duration_secs}s — measures actual CPU cost of level metering)");
     println!("============================================================");
     print_release_note();
 
     temp_env::with_vars(test_env_no_silence(), || {
         let channels: Vec<usize> = (0..ch_count).collect();
 
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
+        let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
         let mut state =
             WriterThreadState::new_monitor(sample_rate, &channels, Arc::clone(&peak_levels));
         state.total_device_channels = total_channels as u16;
@@ -910,9 +916,9 @@ fn benchmark_monitor_cpu_idle() {
 
         let rotation_clone = Arc::clone(&rotation_needed);
         let writer_handle = std::thread::Builder::new()
-            .name("bench-cpu-idle".to_string())
+            .name("bench-cpu-idle".to_owned())
             .spawn(move || {
-                writer_thread_main(consumer, rotation_clone, command_rx, state);
+                writer_thread_main(consumer, &rotation_clone, &command_rx, state);
             })
             .unwrap();
 
@@ -920,7 +926,7 @@ fn benchmark_monitor_cpu_idle() {
         let chunk_frames = 512;
         let chunk_samples = chunk_frames * total_channels;
         let chunk_duration =
-            std::time::Duration::from_secs_f64(chunk_frames as f64 / sample_rate as f64);
+            std::time::Duration::from_secs_f64(chunk_frames as f64 / f64::from(sample_rate));
         let data = generate_bench_data(total_channels, chunk_frames);
 
         let wall_start = Instant::now();
@@ -939,6 +945,10 @@ fn benchmark_monitor_cpu_idle() {
             chunks_sent += 1;
 
             // Sleep to match real-time pace
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "paces the producer at the real cpal callback cadence so the measured CPU cost is per-callback overhead at real-time rate"
+            )]
             std::thread::sleep(chunk_duration);
         }
 
@@ -958,10 +968,8 @@ fn benchmark_monitor_cpu_idle() {
         assert!(any_peak, "Peak levels should be non-zero");
 
         println!(
-            "  Wall time:       {:>6.1}s ({} chunks of {} frames)",
+            "  Wall time:       {:>6.1}s ({chunks_sent} chunks of {chunk_frames} frames)",
             wall_elapsed.as_secs_f64(),
-            chunks_sent,
-            chunk_frames,
         );
         println!(
             "  Producer CPU:    {:>6.1} ms ({:.3}% of wall time)",
@@ -969,10 +977,8 @@ fn benchmark_monitor_cpu_idle() {
             cpu_time.as_secs_f64() / wall_elapsed.as_secs_f64() * 100.0,
         );
         println!(
-            "  Audio processed: {:>6.1}s ({} frames at {}Hz)",
-            total_frames as f64 / sample_rate as f64,
-            total_frames,
-            sample_rate,
+            "  Audio processed: {:>6.1}s ({total_frames} frames at {sample_rate}Hz)",
+            total_frames as f64 / f64::from(sample_rate),
         );
         println!(
             "  CPU per chunk:   {:>6.0} ns",
@@ -1030,7 +1036,7 @@ fn benchmark_sample_rate_scaling() {
                     0,
                     Arc::new(AtomicBool::new(false)),
                     bits_per_sample,
-                    Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    zero_peaks(ch_count),
                     false,
                     0,
                 )
@@ -1049,20 +1055,20 @@ fn benchmark_sample_rate_scaling() {
                     state.write_samples(chunk);
                 }
                 let elapsed = start.elapsed();
-                let _ = state.finalize_all();
+                state
+                    .finalize_all()
+                    .expect("benchmark output files should finalize cleanly");
 
                 let total_samples = frames * ch_count;
                 let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-                let realtime_rate = sample_rate as f64 * ch_count as f64;
+                let realtime_rate = f64::from(sample_rate) * ch_count as f64;
                 let realtime_multiple = samples_per_sec / realtime_rate;
 
                 println!(
-                    "  {:>5}k {:>4} {:>12.1} ms {:>12} {:>8.1}x",
+                    "  {:>5}k {ch_count:>4} {:>12.1} ms {:>12} {realtime_multiple:>8.1}x",
                     sample_rate / 1000,
-                    ch_count,
                     elapsed.as_secs_f64() * 1000.0,
                     format_rate(samples_per_sec),
-                    realtime_multiple,
                 );
             }
         }
@@ -1117,7 +1123,7 @@ fn benchmark_bit_depth_comparison() {
                     0,
                     Arc::new(AtomicBool::new(false)),
                     bits,
-                    Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+                    zero_peaks(ch_count),
                     false,
                     0,
                 )
@@ -1136,21 +1142,20 @@ fn benchmark_bit_depth_comparison() {
                     state.write_samples(chunk);
                 }
                 let elapsed = start.elapsed();
-                let _ = state.finalize_all();
+                state
+                    .finalize_all()
+                    .expect("benchmark output files should finalize cleanly");
 
                 let total_samples = frames * ch_count;
                 let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-                let realtime_rate = sample_rate as f64 * ch_count as f64;
+                let realtime_rate = f64::from(sample_rate) * ch_count as f64;
                 let realtime_multiple = samples_per_sec / realtime_rate;
 
                 println!(
-                    "  {:>4} {:>5}k {:>5} {:>12.1} ms {:>12} {:>8.1}x",
-                    bits,
+                    "  {bits:>4} {:>5}k {ch_count:>5} {:>12.1} ms {:>12} {realtime_multiple:>8.1}x",
                     sample_rate / 1000,
-                    ch_count,
                     elapsed.as_secs_f64() * 1000.0,
                     format_rate(samples_per_sec),
-                    realtime_multiple,
                 );
             }
             println!();

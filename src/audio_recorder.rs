@@ -4,6 +4,8 @@
 //! type and drives `CpalAudioProcessor` directly — `AudioRecorder` is
 //! a CLI-oriented convenience.
 
+use std::fmt;
+
 use log::info;
 
 use crate::audio_processor::AudioProcessor;
@@ -20,10 +22,20 @@ pub struct AudioRecorder<P: AudioProcessor> {
     config: AppConfig,
 }
 
+// `P` is not required to be `Debug` (e.g. `CpalAudioProcessor` owns a live
+// stream), so only the config is printed.
+impl<P: AudioProcessor> fmt::Debug for AudioRecorder<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AudioRecorder")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<P: AudioProcessor> AudioRecorder<P> {
     /// Create a new AudioRecorder with the given processor.
     pub fn new(processor: P) -> Self {
-        AudioRecorder {
+        Self {
             processor,
             config: AppConfig::load(),
         }
@@ -31,7 +43,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
 
     /// Create a new AudioRecorder with the given processor and configuration.
     pub fn with_config(processor: P, config: AppConfig) -> Self {
-        AudioRecorder { processor, config }
+        Self { processor, config }
     }
 
     /// Get a reference to the processor.
@@ -67,21 +79,18 @@ impl<P: AudioProcessor> AudioRecorder<P> {
 
         // Log audio configuration
         info!("Starting recording:");
-        info!("  Channels: {:?}", channels);
-        info!("  Debug: {}", debug);
+        info!("  Channels: {channels:?}");
+        info!("  Debug: {debug}");
 
         let duration = self.config.get_duration();
-        info!("  Duration: {} seconds", duration);
+        info!("  Duration: {duration} seconds");
 
-        info!("  Output Mode: {}", output_mode);
+        info!("  Output Mode: {output_mode}");
 
         let silence_threshold = self.config.get_silence_threshold();
 
         if silence_threshold > 0.0 {
-            info!(
-                "  Silence Detection: Enabled (threshold: {})",
-                silence_threshold
-            );
+            info!("  Silence Detection: Enabled (threshold: {silence_threshold})");
         } else {
             info!("  Silence Detection: Disabled");
         }
@@ -90,7 +99,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         self.processor
             .process_audio(&channels, output_mode, debug, &self.config)?;
 
-        Ok(format!("Recording started with channels {:?}", channels))
+        Ok(format!("Recording started with channels {channels:?}"))
     }
 
     /// Start monitoring audio levels without recording to disk.

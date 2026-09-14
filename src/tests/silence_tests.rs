@@ -44,7 +44,7 @@ fn test_non_silent_file() {
     let file_path = temp_dir.path().join("non_silent.wav");
 
     // Create a WAV file with high amplitude samples
-    let spec = hound::WavSpec {
+    let spec = WavSpec {
         channels: 1,
         sample_rate: 44100,
         bits_per_sample: 32,
@@ -52,11 +52,12 @@ fn test_non_silent_file() {
     };
 
     // Generate a non-silent file with high RMS amplitude
-    let mut writer = hound::WavWriter::create(&file_path, spec).unwrap();
+    let mut writer = WavWriter::create(&file_path, spec).unwrap();
     for _ in 0..1000 {
         // Generate a sine wave with 90% of max amplitude
-        let sample =
-            (i32::MAX as f64 * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin()) as i32;
+        let sample = (f64::from(i32::MAX)
+            * 0.9
+            * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin()) as i32;
         writer.write_sample(sample).unwrap();
     }
     writer.finalize().unwrap();
@@ -164,7 +165,7 @@ fn test_mixed_amplitude() {
     let file_path = temp_dir.path().join("mixed.wav");
 
     // Create a WAV file with mixed amplitude samples
-    let spec = hound::WavSpec {
+    let spec = WavSpec {
         channels: 1,
         sample_rate: 44100,
         bits_per_sample: 32,
@@ -172,7 +173,7 @@ fn test_mixed_amplitude() {
     };
 
     // Generate a file with mixed amplitudes
-    let mut writer = hound::WavWriter::create(&file_path, spec).unwrap();
+    let mut writer = WavWriter::create(&file_path, spec).unwrap();
     for i in 0..1000 {
         if i % 2 == 0 {
             // Silent samples
@@ -180,7 +181,7 @@ fn test_mixed_amplitude() {
         } else {
             // Loud samples with 90% of max amplitude
             let sample =
-                (i32::MAX as f64 * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin())
+                (f64::from(i32::MAX) * 0.9 * (2.0 * std::f64::consts::PI * 440.0 / 44100.0).sin())
                     as i32;
             writer.write_sample(sample).unwrap();
         }

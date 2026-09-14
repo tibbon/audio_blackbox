@@ -26,7 +26,10 @@
 // FFI functions inherently receive raw pointers from C callers. Every function
 // performs a null check before dereferencing, so marking each function `unsafe`
 // would just push the unsafety annotation outward without adding clarity.
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![expect(
+    clippy::not_unsafe_ptr_arg_deref,
+    reason = "every extern fn null-checks before dereferencing; marking them unsafe would push the annotation into Swift without adding clarity"
+)]
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -40,11 +43,17 @@ use crate::cpal_processor::{CpalAudioProcessor, ProcessorStatus};
 use crate::error::BlackboxError;
 
 // ── FFI error codes (mirrored as #defines in blackbox_ffi.h) ─────────────
+/// Success.
 pub const BLACKBOX_OK: i32 = 0;
+/// `handle` is null, did not come from `blackbox_create`, or was already destroyed.
 pub const BLACKBOX_ERR_INVALID_HANDLE: i32 = -1;
+/// The audio device could not be opened or its stream failed to start.
 pub const BLACKBOX_ERR_AUDIO_DEVICE: i32 = -2;
+/// The configuration (JSON or a single field) was rejected.
 pub const BLACKBOX_ERR_CONFIG: i32 = -3;
+/// A file or directory operation failed.
 pub const BLACKBOX_ERR_IO: i32 = -4;
+/// An internal mutex was poisoned by a panic on another thread.
 pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
 /// Reserved (DOLL-128).
 ///
@@ -52,8 +61,8 @@ pub const BLACKBOX_ERR_LOCK_POISONED: i32 = -5;
 /// FFI function currently returns -6. Kept in the surface so a future error
 /// doesn't silently reuse the slot the Swift bridge already maps to
 /// `BlackBoxError.internal`.
-#[allow(dead_code)]
 pub const BLACKBOX_ERR_INTERNAL: i32 = -6;
+/// Recording was refused or stopped because free space fell below `min_disk_space_mb`.
 pub const BLACKBOX_ERR_DISK_SPACE_LOW: i32 = -7;
 /// Caller passed a null or otherwise invalid argument that isn't the handle
 /// itself (e.g. a null OUT pointer, a null JSON string).
@@ -62,13 +71,21 @@ pub const BLACKBOX_ERR_INVALID_ARG: i32 = -8;
 /// Lightweight C struct for status polling — no JSON, no string allocation.
 /// Fields match what the Swift `updateDuration()` loop actually reads.
 #[repr(C)]
+#[derive(Debug)]
 pub struct StatusFlags {
+    /// Cumulative `write_sample` failures plus ring-buffer overflow drops.
     pub write_errors: u64,
+    /// Sample rate of the open stream in Hz; 0 when no stream is open.
     pub sample_rate: u32,
+    /// True between a successful start and the corresponding stop/finalize.
     pub is_recording: bool,
+    /// True while the silence gate holds no files open.
     pub gate_idle: bool,
+    /// Set by the writer thread when free space drops below the configured minimum.
     pub disk_space_low: bool,
+    /// Set by the cpal error callback when the stream reports an error.
     pub stream_error: bool,
+    /// Set by the CoreAudio listener when the device sample rate changes mid-recording.
     pub sample_rate_changed: bool,
     /// Set when recording self-stopped because `write_sample` kept failing
     /// (disk full or output dir unwritable) — distinct from `disk_space_low`,
@@ -78,7 +95,10 @@ pub struct StatusFlags {
 
 // Compile-time check that Rust and C agree on StatusFlags layout.
 // If this fails, update the C header (blackbox_ffi.h) to match.
-const _: () = assert!(std::mem::size_of::<StatusFlags>() == 24);
+const _: () = assert!(
+    size_of::<StatusFlags>() == 24,
+    "StatusFlags size changed; update blackbox_ffi.h in lockstep"
+);
 
 // DOLL-354: the size assert alone can't catch a size-preserving field
 // reorder/retype (e.g. swapping two trailing bools, or moving sample_rate
@@ -86,14 +106,38 @@ const _: () = assert!(std::mem::size_of::<StatusFlags>() == 24);
 // C header (blackbox_ffi.h) interpret the bytes differently, so Swift would
 // read transposed/garbage status. Pin every field offset so any such change
 // is a compile error that forces the header to be updated in lockstep.
-const _: () = assert!(std::mem::offset_of!(StatusFlags, write_errors) == 0);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, sample_rate) == 8);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, is_recording) == 12);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, gate_idle) == 13);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, disk_space_low) == 14);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, stream_error) == 15);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, sample_rate_changed) == 16);
-const _: () = assert!(std::mem::offset_of!(StatusFlags, write_failed) == 17);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, write_errors) == 0,
+    "StatusFlags.write_errors moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, sample_rate) == 8,
+    "StatusFlags.sample_rate moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, is_recording) == 12,
+    "StatusFlags.is_recording moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, gate_idle) == 13,
+    "StatusFlags.gate_idle moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, disk_space_low) == 14,
+    "StatusFlags.disk_space_low moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, stream_error) == 15,
+    "StatusFlags.stream_error moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, sample_rate_changed) == 16,
+    "StatusFlags.sample_rate_changed moved; update blackbox_ffi.h in lockstep"
+);
+const _: () = assert!(
+    std::mem::offset_of!(StatusFlags, write_failed) == 17,
+    "StatusFlags.write_failed moved; update blackbox_ffi.h in lockstep"
+);
 
 // ---------------------------------------------------------------------------
 // BlackboxHandle — opaque type exposed as `*mut BlackboxHandle` over FFI
@@ -124,7 +168,7 @@ pub struct BlackboxHandle {
     /// Per-channel peak levels — shared with the writer thread.
     /// Stored here so the 30 Hz meter poll can read atomics without
     /// locking the recorder mutex.
-    peak_levels: Mutex<Arc<Vec<crate::constants::CacheAlignedPeak>>>,
+    peak_levels: Mutex<Arc<[crate::constants::CacheAlignedPeak]>>,
     /// Bundle of `Arc<Atomic*>` status flags from the active processor.
     ///
     /// The mutex is held only briefly during start/stop to swap in the
@@ -133,6 +177,17 @@ pub struct BlackboxHandle {
     /// atomic loads. This keeps the 1 Hz polling loop from blocking on the
     /// multi-second device probe that runs under `recorder.lock()`.
     status: Mutex<ProcessorStatus>,
+}
+
+impl std::fmt::Debug for BlackboxHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never take the inner locks here: Debug may be called while one is
+        // held (e.g. from a panic message), and the lock order is documented
+        // above as recorder-outermost.
+        f.debug_struct("BlackboxHandle")
+            .field("magic", &self.magic.load(Ordering::Relaxed))
+            .finish_non_exhaustive()
+    }
 }
 
 impl BlackboxHandle {
@@ -147,7 +202,7 @@ impl BlackboxHandle {
     /// (which already grabs a clone under the lock internally) or live
     /// inside the `ffi` module and access `self.status` directly.
     #[cfg(test)]
-    pub(crate) fn test_status_bundle(&self) -> crate::cpal_processor::ProcessorStatus {
+    pub(crate) fn test_status_bundle(&self) -> ProcessorStatus {
         self.status
             .lock()
             .expect("status mutex poisoned in test")
@@ -304,14 +359,10 @@ fn validate_handle<'a>(handle: *const BlackboxHandle) -> Option<HandleRef<'a>> {
     // `blackbox_create` (Box::leak) and is not concurrently freed. The magic
     // word check is a UAF mitigation, not a soundness argument.
     let h: &'a BlackboxHandle = unsafe { &*handle };
-    if h.is_valid() {
-        Some(HandleRef {
-            handle: h,
-            _invariant: std::marker::PhantomData,
-        })
-    } else {
-        None
-    }
+    h.is_valid().then_some(HandleRef {
+        handle: h,
+        _invariant: std::marker::PhantomData,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +385,9 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
     let config = if config_json.is_null() {
         AppConfig::default()
     } else {
+        // SAFETY: `config_json` is non-null (checked above) and the FFI
+        // contract requires a NUL-terminated string that outlives this call;
+        // the borrowed `&str` does not escape the match.
         match unsafe { cstr_to_str(config_json) } {
             None => {
                 create_error =
@@ -358,7 +412,7 @@ pub extern "C" fn blackbox_create(config_json: *const c_char) -> *mut BlackboxHa
         config: Mutex::new(config),
         recorder: Mutex::new(None),
         last_error: Mutex::new(create_error),
-        peak_levels: Mutex::new(Arc::new(Vec::new())),
+        peak_levels: Mutex::new(Arc::from(Vec::new())),
         status: Mutex::new(ProcessorStatus::idle()),
     });
 
@@ -495,7 +549,7 @@ pub extern "C" fn blackbox_stop_recording(handle: *mut BlackboxHandle) -> i32 {
             // FFI status path always sees a state consistent with the
             // installed recorder.
             if let Ok(mut pl) = handle.peak_levels.lock() {
-                *pl = Arc::new(Vec::new());
+                *pl = Arc::from(Vec::new());
             }
             if let Ok(mut s) = handle.status.lock() {
                 *s = ProcessorStatus::idle();
@@ -559,7 +613,7 @@ pub extern "C" fn blackbox_get_status_flags(
     // doing any atomic loads.
     let status = match handle.status.lock() {
         Ok(s) => (*s).clone(),
-        Err(_) => return handle.lock_poisoned("Status lock poisoned".to_string()),
+        Err(_) => return handle.lock_poisoned("Status lock poisoned".to_owned()),
     };
 
     // Load `recording_active` first with Acquire — this synchronizes-with
@@ -597,7 +651,7 @@ pub extern "C" fn blackbox_get_status_flags(
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_list_input_devices() -> *mut c_char {
     let devices = CpalAudioProcessor::list_input_devices().unwrap_or_default();
-    let json = serde_json::to_string(&devices).unwrap_or_else(|_| "[]".to_string());
+    let json = serde_json::to_string(&devices).unwrap_or_else(|_| "[]".to_owned());
     to_c_string(&json)
 }
 
@@ -641,6 +695,9 @@ pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) 
     let name: &str = if device_name.is_null() {
         ""
     } else {
+        // SAFETY: `device_name` is non-null (checked above) and the FFI
+        // contract requires a NUL-terminated string that outlives this call;
+        // the borrowed `&str` is copied before the function returns.
         match unsafe { cstr_to_str(device_name) } {
             Some(s) => s,
             None => return BLACKBOX_ERR_INVALID_ARG,
@@ -668,8 +725,11 @@ pub extern "C" fn blackbox_set_config_json(
     }
     handle.clear_error();
 
+    // SAFETY: `json` is non-null (checked above) and the FFI contract
+    // requires a NUL-terminated string that outlives this call; `json_str`
+    // is only used within this function body.
     let Some(json_str) = (unsafe { cstr_to_str(json) }) else {
-        handle.set_error("Invalid UTF-8 in config JSON".to_string());
+        handle.set_error("Invalid UTF-8 in config JSON".to_owned());
         return BLACKBOX_ERR_CONFIG;
     };
 
@@ -746,20 +806,26 @@ pub extern "C" fn blackbox_get_peak_levels(
         return BLACKBOX_ERR_INVALID_ARG;
     }
 
+    let Ok(capacity) = usize::try_from(max_channels) else {
+        return BLACKBOX_ERR_INVALID_ARG;
+    };
+
     // SAFETY: `out` was just null-checked and `max_channels > 0` was
     // verified. Caller contract (documented on the fn) guarantees `out`
     // points to at least `max_channels` properly-aligned `f32` slots
     // valid for writes for the duration of this call, and is not aliased.
-    let buf = unsafe { std::slice::from_raw_parts_mut(out, max_channels as usize) };
+    let buf = unsafe { std::slice::from_raw_parts_mut(out, capacity) };
 
-    // Read from the cached Arc — no recorder mutex needed.
-    let peaks = match handle.peak_levels.lock() {
-        Ok(pl) => Arc::clone(&pl),
-        Err(_) => return handle.lock_poisoned("peak_levels lock poisoned".to_string()),
+    // Read from the cached Arc — no recorder mutex needed, and the guard is
+    // released before the copy loop so the writer thread never waits on it.
+    let Ok(guard) = handle.peak_levels.lock() else {
+        return handle.lock_poisoned("peak_levels lock poisoned".to_owned());
     };
+    let peaks = Arc::clone(&guard);
+    drop(guard);
     let count = peaks.len().min(buf.len());
     for (dst, src) in buf[..count].iter_mut().zip(peaks.iter()) {
-        *dst = f32::from_bits(src.value.load(std::sync::atomic::Ordering::Relaxed));
+        *dst = f32::from_bits(src.value.load(Ordering::Relaxed));
     }
     // count <= buf.len() (a C-supplied i32 capacity), so this never saturates
     // in practice; try_from keeps it sound without an unchecked wrapping cast.
@@ -780,10 +846,12 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
     };
     handle.clear_error();
 
-    let config = match handle.config.lock() {
-        Ok(c) => c.clone(),
+    let config_guard = match handle.config.lock() {
+        Ok(c) => c,
         Err(e) => return handle.lock_poisoned(format!("Config lock poisoned: {e}")),
     };
+    let config = config_guard.clone();
+    drop(config_guard);
 
     // Create a processor if we don't already have a recorder
     let mut guard = match handle.recorder.lock() {
@@ -837,6 +905,7 @@ pub extern "C" fn blackbox_start_monitoring(handle: *mut BlackboxHandle) -> i32 
             *s = recorder.get_processor().status_arcs();
         }
     }
+    drop(guard);
 
     BLACKBOX_OK
 }
@@ -879,7 +948,7 @@ pub extern "C" fn blackbox_stop_monitoring(handle: *mut BlackboxHandle) -> i32 {
             // FFI poll path stays consistent with the (now absent or
             // idle) recorder.
             if let Ok(mut pl) = handle.peak_levels.lock() {
-                *pl = Arc::new(Vec::new());
+                *pl = Arc::from(Vec::new());
             }
             if let Ok(mut s) = handle.status.lock() {
                 *s = ProcessorStatus::idle();
@@ -919,7 +988,7 @@ pub extern "C" fn blackbox_get_config_json(handle: *const BlackboxHandle) -> *mu
         return std::ptr::null_mut();
     };
     handle.config.lock().map_or(std::ptr::null_mut(), |guard| {
-        let json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".to_string());
+        let json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".to_owned());
         to_c_string(&json)
     })
 }

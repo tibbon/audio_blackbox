@@ -38,7 +38,7 @@ fn make_gate_state(
     gate_timeout_secs: u64,
     silence_threshold: f32,
 ) -> WriterThreadState {
-    let peak_levels = Arc::new(vec![CacheAlignedPeak::new(0)]);
+    let peak_levels = Arc::from([CacheAlignedPeak::new(0)]);
     let mut state = WriterThreadState::new(
         dir,
         48000,
@@ -82,8 +82,7 @@ fn test_gate_idle_no_files_on_silence() {
         let files = all_wav_like_files(temp_dir.path());
         assert!(
             files.is_empty(),
-            "No files should be created while gate is idle, found: {:?}",
-            files
+            "No files should be created while gate is idle, found: {files:?}"
         );
     });
 }
@@ -223,8 +222,7 @@ fn test_gate_reopens_produces_separate_files() {
         let all_files = wav_files_in(temp_dir.path());
         assert!(
             all_files.len() > first_count,
-            "Second signal should produce additional files: first={}, total={}",
-            first_count,
+            "Second signal should produce additional files: first={first_count}, total={}",
             all_files.len()
         );
     });
@@ -328,8 +326,7 @@ fn test_peaks_tracked_while_gate_idle() {
         let peak = f32::from_bits(peak_bits);
         assert!(
             peak > 0.4,
-            "Peak should be tracked even in idle state, got {}",
-            peak
+            "Peak should be tracked even in idle state, got {peak}"
         );
     });
 }
@@ -339,7 +336,10 @@ fn test_peaks_tracked_while_gate_idle() {
 // ===========================================================================
 
 #[test]
-#[allow(clippy::float_cmp)] // exact 0.0 expected when all input samples are filtered
+#[expect(
+    clippy::float_cmp,
+    reason = "exact 0.0 expected when all input samples are filtered"
+)]
 fn test_nan_sample_does_not_poison_peak_meter() {
     temp_env::with_vars(test_env_no_silence(), || {
         let temp_dir = tempdir().unwrap();
@@ -355,8 +355,7 @@ fn test_nan_sample_does_not_poison_peak_meter() {
         let peak = f32::from_bits(peak_bits);
         assert!(
             peak.is_finite(),
-            "Peak meter must never publish NaN; got bits {:#x}",
-            peak_bits
+            "Peak meter must never publish NaN; got bits {peak_bits:#x}"
         );
         assert_eq!(peak, 0.0, "All-NaN input should leave peak at 0.0");
     });
@@ -388,7 +387,10 @@ fn test_nan_does_not_block_silence_gate_open() {
 }
 
 #[test]
-#[allow(clippy::float_cmp)] // exact 0.0 expected when all input samples are filtered
+#[expect(
+    clippy::float_cmp,
+    reason = "exact 0.0 expected when all input samples are filtered"
+)]
 fn test_inf_sample_clamps_peak_meter_to_one() {
     temp_env::with_vars(test_env_no_silence(), || {
         let temp_dir = tempdir().unwrap();

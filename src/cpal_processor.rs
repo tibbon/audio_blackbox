@@ -32,9 +32,6 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 /// a no-op for downstream consumers.
 #[cfg(feature = "ffi")]
 #[derive(Clone, Default)]
-// pub(crate) is intentional: this bundle is deliberately NOT public API
-// (DOLL-120), so the redundant-in-a-private-module hint doesn't apply.
-#[allow(clippy::redundant_pub_crate)]
 pub(crate) struct ProcessorStatus {
     /// True between the end of `process_audio_impl` and the start of `finalize`.
     pub(crate) recording_active: Arc<AtomicBool>,
@@ -92,7 +89,7 @@ pub struct CpalAudioProcessor {
     /// Set by the CoreAudio listener when the device's sample rate changes mid-recording.
     sample_rate_changed: Arc<AtomicBool>,
     /// Per-channel peak levels (f32 as u32 bits). Shared with writer thread.
-    peak_levels: Arc<Vec<CacheAlignedPeak>>,
+    peak_levels: Arc<[CacheAlignedPeak]>,
     /// Shared flag: true when silence gate is idle (no files open).
     gate_idle: Arc<AtomicBool>,
     /// Mirrors `is_recording()` so external readers can check recording state via a
@@ -115,7 +112,7 @@ pub struct CpalAudioProcessor {
 /// suffix in `write_errors`. Used by the cpal audio callback (real-time)
 /// and by tests that need to verify the overflow-counting contract — both
 /// call this single helper so the test can't drift from production.
-pub fn push_samples_with_overflow_count(
+pub(crate) fn push_samples_with_overflow_count(
     producer: &mut rtrb::Producer<f32>,
     data: &[f32],
     write_errors: &AtomicU64,
@@ -158,6 +155,22 @@ fn advance_rotation_counter(counter: &mut u64, batch_len: usize, threshold: u64)
     }
 }
 
+impl std::fmt::Debug for CpalAudioProcessor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `stream` is a trait object without Debug; report presence only.
+        f.debug_struct("CpalAudioProcessor")
+            .field("sample_rate", &self.sample_rate)
+            .field("stream_open", &self.stream.is_some())
+            .field("continuous_mode", &self.continuous_mode)
+            .field("recording_cadence", &self.recording_cadence)
+            .field("output_dir", &self.output_dir)
+            .field("channels", &self.channels)
+            .field("output_mode", &self.output_mode)
+            .field("debug", &self.debug)
+            .finish_non_exhaustive()
+    }
+}
+
 impl CpalAudioProcessor {
     /// Create a new CpalAudioProcessor instance, loading config from env/TOML.
     ///
@@ -182,7 +195,7 @@ impl CpalAudioProcessor {
             fs::create_dir_all(&output_dir)?;
         }
 
-        Ok(CpalAudioProcessor {
+        Ok(Self {
             sample_rate: 0, // Set when recording/monitoring starts
             stream: None,
             continuous_mode,
@@ -198,7 +211,7 @@ impl CpalAudioProcessor {
             #[cfg(target_os = "macos")]
             rate_listener: None,
             sample_rate_changed: Arc::new(AtomicBool::new(false)),
-            peak_levels: Arc::new(Vec::new()),
+            peak_levels: Arc::from(Vec::new()),
             gate_idle: Arc::new(AtomicBool::new(false)),
             recording_active: Arc::new(AtomicBool::new(false)),
             monitoring_active: Arc::new(AtomicBool::new(false)),
@@ -213,7 +226,8 @@ impl CpalAudioProcessor {
     /// Return a clone of the `Arc` holding per-channel peak levels.
     ///
     /// Used by the FFI layer to read peaks without locking the recorder mutex.
-    pub fn peak_levels_arc(&self) -> Arc<Vec<CacheAlignedPeak>> {
+    #[cfg(feature = "ffi")]
+    pub(crate) fn peak_levels_arc(&self) -> Arc<[CacheAlignedPeak]> {
         Arc::clone(&self.peak_levels)
     }
 
@@ -224,7 +238,7 @@ impl CpalAudioProcessor {
     pub(crate) fn build_stream_err_callback(&self) -> impl FnMut(cpal::Error) + Send + 'static {
         let stream_error = Arc::clone(&self.stream_error);
         move |err| {
-            error!("an error occurred on stream: {}", err);
+            error!("an error occurred on stream: {err}");
             // status flag only; reader at stream_error() loads Relaxed.
             stream_error.store(true, Ordering::Relaxed);
         }
@@ -272,7 +286,7 @@ impl CpalAudioProcessor {
             let devices = host
                 .input_devices()
                 .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to enumerate input devices".to_string(),
+                    context: "Failed to enumerate input devices".to_owned(),
                     source: Box::new(e),
                 })?;
             for device in devices {
@@ -282,10 +296,10 @@ impl CpalAudioProcessor {
                     return Ok(device);
                 }
             }
-            warn!("Input device '{}' not found, falling back to default", name);
+            warn!("Input device '{name}' not found, falling back to default");
         }
         host.default_input_device()
-            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_string()))
+            .ok_or_else(|| BlackboxError::AudioDevice("No input device available".to_owned()))
     }
 
     /// Return the name of the system default input device.
@@ -310,10 +324,7 @@ impl CpalAudioProcessor {
     pub(crate) fn default_input_device_name() -> Option<String> {
         let host = cpal::default_host();
         let device = host.default_input_device()?;
-        device
-            .description()
-            .ok()
-            .map(|desc| desc.name().to_string())
+        device.description().ok().map(|desc| desc.name().to_owned())
     }
 
     /// List all available input device names.
@@ -322,13 +333,13 @@ impl CpalAudioProcessor {
         let devices = host
             .input_devices()
             .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to enumerate input devices".to_string(),
+                context: "Failed to enumerate input devices".to_owned(),
                 source: Box::new(e),
             })?;
         let mut names = Vec::new();
         for device in devices {
             if let Ok(desc) = device.description() {
-                names.push(desc.name().to_string());
+                names.push(desc.name().to_owned());
             }
         }
         Ok(names)
@@ -342,12 +353,12 @@ impl CpalAudioProcessor {
         // Empty name means system default device
         let device = if device_name.is_empty() {
             host.default_input_device()
-                .ok_or_else(|| BlackboxError::AudioDevice("No default input device".to_string()))?
+                .ok_or_else(|| BlackboxError::AudioDevice("No default input device".to_owned()))?
         } else {
             let devices = host
                 .input_devices()
                 .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to enumerate devices".to_string(),
+                    context: "Failed to enumerate devices".to_owned(),
                     source: Box::new(e),
                 })?;
             let mut found = None;
@@ -402,7 +413,7 @@ impl CpalAudioProcessor {
             "Using audio device: {}",
             device
                 .description()
-                .map_or_else(|_| "unknown".to_string(), |d| d.name().to_string())
+                .map_or_else(|_| "unknown".to_owned(), |d| d.name().to_owned())
         );
 
         // Use the device's current default config (sample rate, channels, format).
@@ -412,11 +423,11 @@ impl CpalAudioProcessor {
             device
                 .default_input_config()
                 .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to get default input stream config".to_string(),
+                    context: "Failed to get default input stream config".to_owned(),
                     source: Box::new(e),
                 })?;
 
-        debug!("Default input stream config: {:?}", config);
+        debug!("Default input stream config: {config:?}");
 
         let total_channels = config.channels() as usize;
         let sample_rate = config.sample_rate();
@@ -431,8 +442,7 @@ impl CpalAudioProcessor {
                 actual_channels.push(channel);
             } else {
                 warn!(
-                    "Channel {} not available on device. Device only has {} channels.",
-                    channel, total_channels
+                    "Channel {channel} not available on device. Device only has {total_channels} channels."
                 );
             }
         }
@@ -445,7 +455,7 @@ impl CpalAudioProcessor {
             actual_channels = (0..total_channels).collect();
         }
 
-        info!("Using channels: {:?}", actual_channels);
+        info!("Using channels: {actual_channels:?}");
 
         // Output mode is now an enum — invalid values are impossible by construction.
 
@@ -455,11 +465,10 @@ impl CpalAudioProcessor {
         let bits_per_sample = app_config.get_bits_per_sample();
 
         // Create per-channel peak levels for metering
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
-            (0..actual_channels.len())
-                .map(|_| CacheAlignedPeak::new(0))
-                .collect(),
-        );
+        let peak_levels: Arc<[CacheAlignedPeak]> =
+            std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+                .take(actual_channels.len())
+                .collect();
         self.peak_levels = Arc::clone(&peak_levels);
 
         let gate_enabled = app_config.get_silence_gate_enabled();
@@ -499,7 +508,7 @@ impl CpalAudioProcessor {
 
         // Spawn writer thread with elevated priority to avoid ring buffer overflow
         let join_handle = std::thread::Builder::new()
-            .name("blackbox-writer".to_string())
+            .name("blackbox-writer".to_owned())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
                 // SAFETY: macOS-only libc call. No pointer args; affects
@@ -513,10 +522,10 @@ impl CpalAudioProcessor {
                         0,
                     );
                 }
-                writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
+                writer_thread_main(consumer, &rotation_needed_writer, &command_rx, state);
             })
             .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to spawn writer thread".to_string(),
+                context: "Failed to spawn writer thread".to_owned(),
                 source: Box::new(e),
             })?;
 
@@ -545,6 +554,10 @@ impl CpalAudioProcessor {
         let mut rotation_sample_counter: u64 = 0;
 
         // Build the input stream
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "cpal adds sample formats between releases; anything not listed is rejected at runtime by name"
+        )]
         let stream = match config.sample_format() {
             SampleFormat::F32 => {
                 device
@@ -580,7 +593,7 @@ impl CpalAudioProcessor {
                         None,
                     )
                     .map_err(|e| BlackboxError::AudioDeviceSource {
-                        context: "Failed to build input stream".to_string(),
+                        context: "Failed to build input stream".to_owned(),
                         source: Box::new(e),
                     })?
             }
@@ -596,7 +609,7 @@ impl CpalAudioProcessor {
         stream
             .play()
             .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to play stream".to_string(),
+                context: "Failed to play stream".to_owned(),
                 source: Box::new(e),
             })?;
 
@@ -651,10 +664,7 @@ impl AudioProcessor for CpalAudioProcessor {
 
         let errors = self.write_errors.load(Ordering::Relaxed);
         if errors > 0 {
-            warn!(
-                "{} sample write/overflow errors occurred during recording",
-                errors
-            );
+            warn!("{errors} sample write/overflow errors occurred during recording");
         }
 
         // Remove sample rate listener before tearing down the stream
@@ -702,8 +712,10 @@ impl AudioProcessor for CpalAudioProcessor {
             // (so the thread can't wedge indefinitely) or refuse to spawn a new
             // writer while a prior detached one is still in flight.
             if got_reply {
-                if let Some(jh) = handle.join_handle.take() {
-                    let _ = jh.join();
+                if let Some(jh) = handle.join_handle.take()
+                    && jh.join().is_err()
+                {
+                    warn!("writer thread panicked before join");
                 }
             } else {
                 warn!(
@@ -807,7 +819,7 @@ impl AudioProcessor for CpalAudioProcessor {
             device
                 .default_input_config()
                 .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to get default input stream config".to_string(),
+                    context: "Failed to get default input stream config".to_owned(),
                     source: Box::new(e),
                 })?;
 
@@ -830,17 +842,13 @@ impl AudioProcessor for CpalAudioProcessor {
             actual_channels = (0..total_channels).collect();
         }
 
-        info!(
-            "Starting audio monitoring on channels: {:?}",
-            actual_channels
-        );
+        info!("Starting audio monitoring on channels: {actual_channels:?}");
 
         // Create per-channel peak levels for metering
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
-            (0..actual_channels.len())
-                .map(|_| CacheAlignedPeak::new(0))
-                .collect(),
-        );
+        let peak_levels: Arc<[CacheAlignedPeak]> =
+            std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+                .take(actual_channels.len())
+                .collect();
         self.peak_levels = Arc::clone(&peak_levels);
 
         // Create monitor-only writer thread state (no file I/O)
@@ -858,7 +866,7 @@ impl AudioProcessor for CpalAudioProcessor {
         let rotation_needed_writer = Arc::clone(&rotation_needed);
 
         let join_handle = std::thread::Builder::new()
-            .name("blackbox-monitor".to_string())
+            .name("blackbox-monitor".to_owned())
             .spawn(move || {
                 #[cfg(target_os = "macos")]
                 // SAFETY: same as the recording-writer site above —
@@ -870,10 +878,10 @@ impl AudioProcessor for CpalAudioProcessor {
                         0,
                     );
                 }
-                writer_thread_main(consumer, rotation_needed_writer, command_rx, state);
+                writer_thread_main(consumer, &rotation_needed_writer, &command_rx, state);
             })
             .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to spawn monitor thread".to_string(),
+                context: "Failed to spawn monitor thread".to_owned(),
                 source: Box::new(e),
             })?;
 
@@ -888,6 +896,10 @@ impl AudioProcessor for CpalAudioProcessor {
         // Error callback — same shared method as the recording path.
         let err_fn = self.build_stream_err_callback();
 
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "cpal adds sample formats between releases; anything not listed is rejected at runtime by name"
+        )]
         let stream = match stream_config.sample_format() {
             SampleFormat::F32 => device
                 .build_input_stream(
@@ -903,7 +915,7 @@ impl AudioProcessor for CpalAudioProcessor {
                     None,
                 )
                 .map_err(|e| BlackboxError::AudioDeviceSource {
-                    context: "Failed to build input stream".to_string(),
+                    context: "Failed to build input stream".to_owned(),
                     source: Box::new(e),
                 })?,
             _ => {
@@ -917,7 +929,7 @@ impl AudioProcessor for CpalAudioProcessor {
         stream
             .play()
             .map_err(|e| BlackboxError::AudioDeviceSource {
-                context: "Failed to play stream".to_string(),
+                context: "Failed to play stream".to_owned(),
                 source: Box::new(e),
             })?;
 
@@ -952,8 +964,9 @@ impl AudioProcessor for CpalAudioProcessor {
                 // Wait for writer thread shutdown (5s timeout; silently skipped on timeout)
                 if let Ok(_result) = reply_rx.recv_timeout(Duration::from_secs(5))
                     && let Some(jh) = handle.join_handle.take()
+                    && jh.join().is_err()
                 {
-                    let _ = jh.join();
+                    warn!("writer thread panicked before join");
                 }
             }
         }
@@ -967,7 +980,7 @@ impl AudioProcessor for CpalAudioProcessor {
         // finalize / start-side reset.
         self.sample_rate_changed.store(false, Ordering::Relaxed);
         self.monitoring_active.store(false, Ordering::Release);
-        self.peak_levels = Arc::new(Vec::new());
+        self.peak_levels = Arc::from(Vec::new());
 
         Ok(())
     }
@@ -985,12 +998,12 @@ impl Drop for CpalAudioProcessor {
     fn drop(&mut self) {
         if self.monitoring {
             if let Err(e) = self.stop_monitoring() {
-                error!("Error stopping monitoring during cleanup: {}", e);
+                error!("Error stopping monitoring during cleanup: {e}");
             }
         } else if self.is_recording()
             && let Err(e) = self.finalize()
         {
-            error!("Error during cleanup: {}", e);
+            error!("Error during cleanup: {e}");
         }
     }
 }
@@ -1025,11 +1038,10 @@ impl CpalAudioProcessor {
 
         let disk_space_low = Arc::new(AtomicBool::new(false));
 
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(
-            (0..channels.len())
-                .map(|_| CacheAlignedPeak::new(0))
-                .collect(),
-        );
+        let peak_levels: Arc<[CacheAlignedPeak]> =
+            std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+                .take(channels.len())
+                .collect();
 
         let mut state = WriterThreadState::new(
             output_dir,
@@ -1048,12 +1060,12 @@ impl CpalAudioProcessor {
         // For tests, total_device_channels is set per feed_test_data call
         state.total_device_channels = 0;
 
-        Ok(CpalAudioProcessor {
+        Ok(Self {
             sample_rate,
             stream: None,
             continuous_mode: false,
             recording_cadence: 0,
-            output_dir: output_dir.to_string(),
+            output_dir: output_dir.to_owned(),
             channels: channels.to_vec(),
             output_mode,
             debug: false,
@@ -1089,6 +1101,7 @@ impl CpalAudioProcessor {
     }
 
     /// Return the current write-error count.
+    #[must_use]
     pub fn test_write_error_count(&self) -> u64 {
         self.write_errors.load(Ordering::Relaxed)
     }

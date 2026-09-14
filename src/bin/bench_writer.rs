@@ -15,7 +15,7 @@
 //!
 //! Usage:
 //!   cargo build --release --bin bench-writer --features benchmarking
-//!   samply record target/release/bench-writer [OPTIONS]
+//!   samply record target/release/bench-writer \[OPTIONS\]
 //!
 //! Options:
 //!   --channels N     Number of channels (default: 64)
@@ -23,18 +23,14 @@
 //!   --mode MODE      "single", "split", or "pipeline" (default: single)
 //!   --sample-rate N  Sample rate in Hz (default: 48000)
 
-// Benchmark binary — suppress pedantic lints that don't matter here.
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_lossless)]
-#![allow(clippy::uninlined_format_args)]
-#![allow(clippy::doc_markdown)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::cognitive_complexity)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::missing_panics_doc)]
-#![allow(clippy::tuple_array_conversions)]
+// Benchmark binary: stderr is its UI and exit codes are its contract with
+// scripts/bench-assert.sh, so the GUI-oriented process rules do not apply.
+#![expect(
+    clippy::print_stderr,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "standalone bench binary: stderr is the UI, a bad argument or a failed setup aborts with a message, and the exit code is the contract with scripts/bench-assert.sh"
+)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -58,7 +54,7 @@ fn main() {
 
     let mut channels: usize = 64;
     let mut seconds: usize = 30;
-    let mut mode = "single".to_string();
+    let mut mode = "single".to_owned();
     let mut sample_rate: u32 = 48000;
 
     let mut i = 1;
@@ -100,19 +96,18 @@ fn main() {
     let total_samples = frames * channels;
 
     eprintln!(
-        "Benchmark: {} mode, {} channels, {} seconds ({} frames, {} total samples)",
-        mode, channels, seconds, frames, total_samples
+        "Benchmark: {mode} mode, {channels} channels, {seconds} seconds ({frames} frames, {total_samples} total samples)"
     );
-    eprintln!("Output dir: {}", dir);
-    eprintln!("Sample rate: {} Hz", sample_rate);
+    eprintln!("Output dir: {dir}");
+    eprintln!("Sample rate: {sample_rate} Hz");
     eprintln!();
 
     // Generate test data — interleaved f32, 512-frame chunks (typical cpal callback)
     let chunk_frames = 512;
     let chunk_samples = chunk_frames * channels;
     let mut chunk_data = vec![0.0_f32; chunk_samples];
-    for (i, sample) in chunk_data.iter_mut().enumerate() {
-        *sample = ((i as f32) * 0.01).sin() * 0.5;
+    for (idx, sample) in chunk_data.iter_mut().enumerate() {
+        *sample = ((idx as f32) * 0.01).sin() * 0.5;
     }
 
     match mode.as_str() {
@@ -147,7 +142,7 @@ fn run_direct(
     if mode == "split" {
         let mut writers: Vec<Option<hound::WavWriter<BufWriter<std::fs::File>>>> = Vec::new();
         for ch in 0..num_channels {
-            let path = format!("{}/bench-ch{}.recording.wav", dir, ch);
+            let path = format!("{dir}/bench-ch{ch}.recording.wav");
             let spec = hound::WavSpec {
                 channels: 1,
                 sample_rate,
@@ -157,10 +152,7 @@ fn run_direct(
             writers.push(Some(hound::WavWriter::create(&path, spec).unwrap()));
         }
 
-        eprintln!(
-            "Writing {} frames in split mode ({} files)...",
-            total_frames, num_channels
-        );
+        eprintln!("Writing {total_frames} frames in split mode ({num_channels} files)...");
         let start = Instant::now();
 
         let mut frames_written = 0;
@@ -197,11 +189,11 @@ fn run_direct(
 
         for w in &mut writers {
             if let Some(writer) = w.take() {
-                let _ = writer.finalize();
+                writer.finalize().expect("finalize split wav");
             }
         }
     } else {
-        let path = format!("{}/bench.recording.wav", dir);
+        let path = format!("{dir}/bench.recording.wav");
         let spec = hound::WavSpec {
             channels: num_channels as u16,
             sample_rate,
@@ -210,10 +202,7 @@ fn run_direct(
         };
         let mut writer = hound::WavWriter::create(&path, spec).unwrap();
 
-        eprintln!(
-            "Writing {} frames in single/multichannel mode...",
-            total_frames
-        );
+        eprintln!("Writing {total_frames} frames in single/multichannel mode...");
         let start = Instant::now();
 
         let mut frames_written = 0;
@@ -246,7 +235,7 @@ fn run_direct(
             sample_rate,
         );
 
-        let _ = writer.finalize();
+        writer.finalize().expect("finalize wav");
     }
 }
 

@@ -23,7 +23,7 @@ use std::process::Command;
 /// The input string can include individual channels (e.g., "0,1,5")
 /// and ranges of channels (e.g., "1-24"). The resulting vector is sorted
 /// and contains no duplicates.
-pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
+pub(crate) fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
     let mut channels = BTreeSet::new();
 
     for part in input.split(',') {
@@ -32,29 +32,32 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
             let range_parts: Vec<&str> = part.split('-').collect();
             if range_parts.len() != 2 {
                 return Err(BlackboxError::ChannelParse(format!(
-                    "Invalid range format: {}",
-                    part
+                    "Invalid range format: {part}"
                 )));
             }
 
-            let start = range_parts[0].trim().parse::<usize>().map_err(|_| {
-                BlackboxError::ChannelParse(format!("Invalid start of range: {}", range_parts[0]))
+            let start = range_parts[0].trim().parse::<usize>().map_err(|e| {
+                BlackboxError::ChannelParse(format!(
+                    "Invalid start of range: {}: {e}",
+                    range_parts[0]
+                ))
             })?;
-            let end = range_parts[1].trim().parse::<usize>().map_err(|_| {
-                BlackboxError::ChannelParse(format!("Invalid end of range: {}", range_parts[1]))
+            let end = range_parts[1].trim().parse::<usize>().map_err(|e| {
+                BlackboxError::ChannelParse(format!(
+                    "Invalid end of range: {}: {e}",
+                    range_parts[1]
+                ))
             })?;
 
             if start > end {
                 return Err(BlackboxError::ChannelParse(format!(
-                    "Invalid range: start {} greater than end {}",
-                    start, end
+                    "Invalid range: start {start} greater than end {end}"
                 )));
             }
 
             if end >= MAX_CHANNELS {
                 return Err(BlackboxError::ChannelParse(format!(
-                    "Channel number {} exceeds maximum of {}",
-                    end,
+                    "Channel number {end} exceeds maximum of {}",
                     MAX_CHANNELS - 1
                 )));
             }
@@ -62,14 +65,13 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
             channels.extend(start..=end);
         } else {
             // Handle individual channel
-            let channel = part.trim().parse::<usize>().map_err(|_| {
-                BlackboxError::ChannelParse(format!("Invalid channel number: {}", part))
+            let channel = part.trim().parse::<usize>().map_err(|e| {
+                BlackboxError::ChannelParse(format!("Invalid channel number: {part}: {e}"))
             })?;
 
             if channel >= MAX_CHANNELS {
                 return Err(BlackboxError::ChannelParse(format!(
-                    "Channel number {} exceeds maximum of {}",
-                    channel,
+                    "Channel number {channel} exceeds maximum of {}",
                     MAX_CHANNELS - 1
                 )));
             }
@@ -80,7 +82,7 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
 
     if channels.is_empty() {
         return Err(BlackboxError::ChannelParse(
-            "No valid channels specified".to_string(),
+            "No valid channels specified".to_owned(),
         ));
     }
 
@@ -92,7 +94,10 @@ pub fn parse_channel_string(input: &str) -> Result<Vec<usize>, BlackboxError> {
 /// Returns a warning message if ALSA is not available, but does not
 /// prevent execution as CPAL might fall back to another backend.
 #[cfg(target_os = "linux")]
-#[allow(clippy::unnecessary_wraps)] // signature must match the non-Linux variant
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature must match the non-Linux variant"
+)]
 pub fn check_alsa_availability() -> Result<(), BlackboxError> {
     // Check if alsa is available using pkg-config
     let output = Command::new("pkg-config")
@@ -112,8 +117,11 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
 
 /// No-op implementation for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
-#[allow(clippy::unnecessary_wraps)] // signature must match the Linux variant
-pub fn check_alsa_availability() -> Result<(), BlackboxError> {
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature must match the Linux variant"
+)]
+pub(crate) fn check_alsa_availability() -> Result<(), BlackboxError> {
     Ok(())
 }
 
@@ -121,16 +129,25 @@ pub fn check_alsa_availability() -> Result<(), BlackboxError> {
 ///
 /// Returns `None` if the query fails (e.g., path doesn't exist or unsupported platform).
 #[cfg(unix)]
-pub fn available_disk_space_mb(path: &str) -> Option<u64> {
+pub(crate) fn available_disk_space_mb(path: &str) -> Option<u64> {
     use std::ffi::CString;
     let c_path = CString::new(path).ok()?;
     available_disk_space_mb_cstr(&c_path)
 }
 
+/// Identity-or-widening conversion to `u64` for libc struct fields whose
+/// width differs per target. Going through a generic keeps both platforms
+/// free of `unnecessary_cast` / `useless_conversion` diagnostics without
+/// a per-target `#[expect]`.
+#[cfg(unix)]
+fn widen_to_u64(v: impl Into<u64>) -> u64 {
+    v.into()
+}
+
 /// Like `available_disk_space_mb` but takes a pre-allocated `CStr`, avoiding a
 /// heap allocation per call. Used by the writer thread's periodic check.
 #[cfg(unix)]
-pub fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
+pub(crate) fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
     // SAFETY: `libc::statvfs` is a POSIX POD struct with no padding-
     // significance; the all-zero bit pattern is a valid representation
     // and the libc call overwrites the entire struct on success.
@@ -140,18 +157,14 @@ pub fn available_disk_space_mb_cstr(c_path: &std::ffi::CStr) -> Option<u64> {
     // local `stat` which lives long enough. libc's `statvfs(3)`
     // contract is satisfied.
     let result = unsafe { libc::statvfs(c_path.as_ptr(), &raw mut stat) };
-    if result == 0 {
+    (result == 0).then(|| {
         // Both fields can be u32 on some platforms (Linux) and u64 on others
         // (macOS); promote each to u64 explicitly before multiplying so a large
         // filesystem (>4 TiB free, 4 KiB block) doesn't wrap before the divide.
-        #[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
-        let blocks = stat.f_bavail as u64;
-        #[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
-        let frsize = stat.f_frsize as u64;
-        Some(blocks.saturating_mul(frsize) / (1024 * 1024))
-    } else {
-        None
-    }
+        let blocks = widen_to_u64(stat.f_bavail);
+        let frsize = widen_to_u64(stat.f_frsize);
+        blocks.saturating_mul(frsize) / (1024 * 1024)
+    })
 }
 
 #[cfg(not(unix))]
@@ -188,8 +201,8 @@ pub fn available_disk_space_mb(_path: &str) -> Option<u64> {
 ///
 /// Doc/code drift fix: the previous doc described only the RMS path
 /// (DOLL-144).
-pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError> {
-    let threshold_f64 = threshold as f64;
+pub(crate) fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError> {
+    let threshold_f64 = f64::from(threshold);
 
     if threshold_f64 <= 0.0 {
         return Ok(false);
@@ -204,7 +217,7 @@ pub fn is_silent(file_path: &str, threshold: f32) -> Result<bool, BlackboxError>
     // A 16-bit WAV yields values in [-32768, 32767], so we must divide by i16::MAX, not i32::MAX.
     let norm: f64 = match reader.spec().bits_per_sample {
         16 => f64::from(i16::MAX),
-        24 => f64::from(0x7F_FFFFi32), // 2^23 - 1
+        24 => f64::from(0x7F_FFFF_i32), // 2^23 - 1
         _ => f64::from(i32::MAX),
     };
 

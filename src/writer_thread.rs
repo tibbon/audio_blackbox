@@ -21,7 +21,7 @@ use chrono::prelude::*;
 
 /// Returns a timestamp string like "2024-01-15-14-30-05" from the current local time.
 /// Includes seconds so that file rotations within the same minute produce distinct names.
-pub fn timestamp_now() -> String {
+pub(crate) fn timestamp_now() -> String {
     Local::now().format("%Y-%m-%d-%H-%M-%S").to_string()
 }
 
@@ -55,7 +55,7 @@ fn tmp_wav_path(final_path: &str) -> String {
 /// (DOLL-268).
 fn disambiguate_path(final_path: &str) -> String {
     if !Path::new(final_path).exists() {
-        return final_path.to_string();
+        return final_path.to_owned();
     }
     // Match `.wav` only as the literal lowercase suffix our writer
     // emits — the clippy `case_sensitive_file_extension_comparisons`
@@ -80,9 +80,7 @@ fn disambiguate_path(final_path: &str) -> String {
         .map_or(0, |d| d.as_nanos());
     let candidate = format!("{stem}-{nanos}{ext}");
     log::warn!(
-        "Path disambiguation exhausted (>1000 collisions) for {}; using {}",
-        final_path,
-        candidate
+        "Path disambiguation exhausted (>1000 collisions) for {final_path}; using {candidate}"
     );
     candidate
 }
@@ -104,7 +102,7 @@ fn create_wav_writer(
 
 /// Whether the silence gate is currently idle (no files open) or recording.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GateState {
+pub(crate) enum GateState {
     /// No audio signal — WAV files are closed, only tracking peaks.
     Idle,
     /// Audio signal present — WAV files are open and writing.
@@ -115,7 +113,7 @@ pub enum GateState {
 // WriterCommand — sent from the processor to the writer thread
 // ---------------------------------------------------------------------------
 
-pub enum WriterCommand {
+pub(crate) enum WriterCommand {
     /// Drain remaining samples and finalize all files.
     Shutdown(std::sync::mpsc::Sender<Result<(), BlackboxError>>),
 }
@@ -124,7 +122,7 @@ pub enum WriterCommand {
 // WriterThreadHandle — held by CpalAudioProcessor
 // ---------------------------------------------------------------------------
 
-pub struct WriterThreadHandle {
+pub(crate) struct WriterThreadHandle {
     pub command_tx: std::sync::mpsc::SyncSender<WriterCommand>,
     pub join_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -133,8 +131,15 @@ pub struct WriterThreadHandle {
 // WriterThreadState — lives entirely on the writer thread
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::struct_excessive_bools)]
-pub struct WriterThreadState {
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "hot-path state flags read every write_samples() call; a state enum would add a match per call"
+)]
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "the private fields are caches derived from the pub configuration fields and must not be set independently"
+)]
+pub(crate) struct WriterThreadState {
     // --- Hot fields: accessed every write_samples() call, grouped for cache locality ---
     /// Cached scale factor for f32-to-WAV conversion.
     sample_scale: f32,
@@ -189,7 +194,7 @@ pub struct WriterThreadState {
     pub write_errors: Arc<AtomicU64>,
     /// Per-channel peak levels (f32 stored as u32 bits via `to_bits()`). Shared with FFI.
     /// Each element is cache-line-aligned to prevent false sharing with the UI reader thread.
-    pub peak_levels: Arc<Vec<CacheAlignedPeak>>,
+    pub peak_levels: Arc<[CacheAlignedPeak]>,
     /// Partial frames carried over between ring buffer reads.
     frame_remainder: Vec<f32>,
     /// Pre-allocated buffer for combining frame_remainder + new data (avoids heap alloc).
@@ -263,7 +268,7 @@ pub struct WriterThreadState {
 /// `bench-writer` binary keeps an inline copy because the lib helper is
 /// not part of the public API (DOLL-129).
 #[cfg(test)]
-pub fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
+pub(crate) fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     let scale = match bits_per_sample {
         16 => f32::from(i16::MAX), // 32767.0
         24 => 8_388_607.0_f32,     // 2^23 - 1
@@ -282,7 +287,7 @@ fn xorshift32_unit(state: &mut u32) -> f32 {
     x ^= x << 5;
     *state = x;
     // Top 24 bits → [0, 1); ample resolution for a 1-LSB dither.
-    (x >> 8) as f32 / (1u32 << 24) as f32
+    (x >> 8) as f32 / (1_u32 << 24) as f32
 }
 
 /// Convert an f32 sample in [-1, 1] to an integer PCM sample scaled by `scale`.
@@ -306,8 +311,11 @@ fn convert_sample(s: f32, scale: f32, dither: bool, rng: &mut u32) -> i32 {
 
 impl WriterThreadState {
     /// Create a new `WriterThreadState` with initial WAV writers set up.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor mirrors the config fields one-to-one; a builder would add a heap round-trip per recording start"
+    )]
+    pub(crate) fn new(
         output_dir: &str,
         sample_rate: u32,
         channels: &[usize],
@@ -317,7 +325,7 @@ impl WriterThreadState {
         min_disk_space_mb: u64,
         disk_space_low: Arc<AtomicBool>,
         bits_per_sample: u16,
-        peak_levels: Arc<Vec<CacheAlignedPeak>>,
+        peak_levels: Arc<[CacheAlignedPeak]>,
         gate_enabled: bool,
         gate_timeout_secs: u64,
     ) -> Result<Self, BlackboxError> {
@@ -358,7 +366,7 @@ impl WriterThreadState {
             GateState::Recording
         };
 
-        let mut state = WriterThreadState {
+        let mut state = Self {
             sample_scale,
             monitor_only: false,
             disk_stopped: false,
@@ -388,7 +396,7 @@ impl WriterThreadState {
             gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
             gate_idle,
             gate_preroll: Vec::new(),
-            output_dir: output_dir.to_string(),
+            output_dir: output_dir.to_owned(),
             #[cfg(unix)]
             output_dir_cstr: CString::new(output_dir).ok(),
             sample_rate,
@@ -429,10 +437,10 @@ impl WriterThreadState {
     }
 
     /// Create a monitor-only `WriterThreadState` that tracks peak levels without writing files.
-    pub fn new_monitor(
+    pub(crate) fn new_monitor(
         sample_rate: u32,
         channels: &[usize],
-        peak_levels: Arc<Vec<CacheAlignedPeak>>,
+        peak_levels: Arc<[CacheAlignedPeak]>,
     ) -> Self {
         let sample_scale = 8_388_607.0_f32; // 24-bit max (monitor mode is always 24-bit)
 
@@ -443,7 +451,7 @@ impl WriterThreadState {
             ch_arr[i] = ch as u8;
         }
 
-        WriterThreadState {
+        Self {
             sample_scale,
             monitor_only: true,
             disk_stopped: false,
@@ -507,7 +515,7 @@ impl WriterThreadState {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
-        info!("Setting up split mode with {} channels", ch_count);
+        info!("Setting up split mode with {ch_count} channels");
 
         self.multichannel_writers.clear();
         for _ in 0..ch_count {
@@ -515,10 +523,8 @@ impl WriterThreadState {
         }
 
         for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
-            let final_path = disambiguate_path(&format!(
-                "{}/{}-ch{}.wav",
-                self.output_dir, date_str, channel
-            ));
+            let final_path =
+                disambiguate_path(&format!("{}/{date_str}-ch{channel}.wav", self.output_dir));
             let tmp_path = tmp_wav_path(&final_path);
 
             let spec = crate::raw_wav_writer::WavSpec {
@@ -531,7 +537,7 @@ impl WriterThreadState {
 
             self.multichannel_writers[idx] = Some(writer);
             self.pending_files.push((tmp_path, final_path.clone()));
-            info!("Created channel WAV file: {}", final_path);
+            info!("Created channel WAV file: {final_path}");
         }
 
         self.current_spec = crate::raw_wav_writer::WavSpec {
@@ -547,16 +553,14 @@ impl WriterThreadState {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
-        let final_path = disambiguate_path(&format!(
-            "{}/{}-multichannel.wav",
-            self.output_dir, date_str
-        ));
+        let final_path =
+            disambiguate_path(&format!("{}/{date_str}-multichannel.wav", self.output_dir));
         let tmp_path = tmp_wav_path(&final_path);
 
-        info!("Setting up multichannel mode with {} channels", ch_count);
+        info!("Setting up multichannel mode with {ch_count} channels");
 
         let spec = crate::raw_wav_writer::WavSpec {
-            channels: self.channel_count as u16,
+            channels: u16::from(self.channel_count),
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
         };
@@ -567,7 +571,7 @@ impl WriterThreadState {
         self.current_spec = spec;
         self.pending_files.push((tmp_path, final_path.clone()));
 
-        info!("Created multichannel WAV file: {}", final_path);
+        info!("Created multichannel WAV file: {final_path}");
         Ok(())
     }
 
@@ -575,15 +579,15 @@ impl WriterThreadState {
         let date_str = (self.timestamp_fn)();
         let ch_count = self.channel_count as usize;
 
-        info!("Setting up standard mode with {} channels", ch_count);
+        info!("Setting up standard mode with {ch_count} channels");
 
-        let num_channels = if ch_count == 1 { 1 } else { 2 };
+        let num_channels: u16 = if ch_count == 1 { 1 } else { 2 };
 
-        let final_path = disambiguate_path(&format!("{}/{}.wav", self.output_dir, date_str));
+        let final_path = disambiguate_path(&format!("{}/{date_str}.wav", self.output_dir));
         let tmp_path = tmp_wav_path(&final_path);
 
         let spec = crate::raw_wav_writer::WavSpec {
-            channels: num_channels as u16,
+            channels: num_channels,
             sample_rate: self.sample_rate,
             bits_per_sample: self.bits_per_sample,
         };
@@ -594,7 +598,7 @@ impl WriterThreadState {
         self.current_spec = spec;
         self.pending_files.push((tmp_path, final_path.clone()));
 
-        info!("Created WAV file: {}", final_path);
+        info!("Created WAV file: {final_path}");
         Ok(())
     }
 
@@ -604,7 +608,7 @@ impl WriterThreadState {
     /// Uses an iteration counter to amortize the cost: only performs the actual
     /// `statvfs` syscall every 10,000 calls (~4 seconds at typical throughput),
     /// avoiding a `clock_gettime` syscall on every writer thread loop iteration.
-    pub fn check_disk_space(&mut self) -> bool {
+    pub(crate) fn check_disk_space(&mut self) -> bool {
         if self.monitor_only || self.min_disk_space_mb == 0 || self.disk_stopped {
             return !self.disk_stopped;
         }
@@ -630,15 +634,15 @@ impl WriterThreadState {
             && available_mb < self.min_disk_space_mb
         {
             warn!(
-                "Disk space low: {}MB available, threshold is {}MB — stopping recording",
-                available_mb, self.min_disk_space_mb
+                "Disk space low: {available_mb}MB available, threshold is {}MB — stopping recording",
+                self.min_disk_space_mb
             );
             // status flag only; reader at disk_space_low() loads Relaxed.
             self.disk_space_low.store(true, Ordering::Relaxed);
             self.disk_stopped = true;
             // Finalize current files so data written so far is safe
             if let Err(e) = self.finalize_all() {
-                error!("Error finalizing files after disk space warning: {}", e);
+                error!("Error finalizing files after disk space warning: {e}");
             }
             return false;
         }
@@ -652,7 +656,7 @@ impl WriterThreadState {
     /// file is a valid WAV playable up to that point — even after a force-quit or
     /// SIGKILL. Counts audio frames (~10 seconds worth) for predictable timing
     /// regardless of channel count or loop speed.
-    pub fn flush_writers(&mut self, samples_consumed: usize) {
+    pub(crate) fn flush_writers(&mut self, samples_consumed: usize) {
         if self.monitor_only || self.disk_stopped || samples_consumed == 0 {
             return;
         }
@@ -671,11 +675,11 @@ impl WriterThreadState {
         if let Some(w) = &mut self.writer
             && let Err(e) = w.flush()
         {
-            error!("Error flushing WAV writer: {}", e);
+            error!("Error flushing WAV writer: {e}");
         }
         for w in self.multichannel_writers.iter_mut().flatten() {
             if let Err(e) = w.flush() {
-                error!("Error flushing channel WAV writer: {}", e);
+                error!("Error flushing channel WAV writer: {e}");
             }
         }
     }
@@ -685,7 +689,7 @@ impl WriterThreadState {
     /// Handles partial frames: if `data` doesn't divide evenly by `total_device_channels`,
     /// leftover samples are stored in `frame_remainder` and prepended to the next call.
     /// Also tracks per-channel peak levels for metering.
-    pub fn write_samples(&mut self, data: &[f32]) {
+    pub(crate) fn write_samples(&mut self, data: &[f32]) {
         // If total_device_channels is 0 or disk stopped, skip writing
         if self.total_device_channels == 0 || self.disk_stopped {
             return;
@@ -809,6 +813,10 @@ impl WriterThreadState {
                         }
                     }
                 }
+                #[expect(
+                    clippy::excessive_nesting,
+                    reason = "hot-path sample loop (DOLL-653): splitting it costs a call per frame; revisit with the too_many_lines backlog"
+                )]
                 OutputMode::Single => {
                     if let Some(w) = &mut self.writer {
                         for frame in frame_data.chunks_exact(frame_size) {
@@ -911,14 +919,14 @@ impl WriterThreadState {
 
     /// Process a pending gate open: create WAV files and transition to Recording.
     /// Called from the main loop (or tests) after `write_samples` sets `gate_pending_open`.
-    pub fn process_gate_open(&mut self) {
+    pub(crate) fn process_gate_open(&mut self) {
         if !self.gate_pending_open {
             return;
         }
         self.gate_pending_open = false;
         info!("Silence gate: signal detected, opening writers");
         if let Err(e) = self.open_writers_for_gate() {
-            error!("Silence gate: failed to open writers: {}", e);
+            error!("Silence gate: failed to open writers: {e}");
         } else {
             self.gate_state = GateState::Recording;
             // Status flag only; no synchronizes-with relationship.
@@ -940,7 +948,7 @@ impl WriterThreadState {
 
     /// Process a pending gate close: finalize WAV files and transition to Idle.
     /// Called from the main loop (or tests) after `write_samples` sets `gate_pending_close`.
-    pub fn process_gate_close(&mut self) {
+    pub(crate) fn process_gate_close(&mut self) {
         if !self.gate_pending_close {
             return;
         }
@@ -950,7 +958,7 @@ impl WriterThreadState {
             self.gate_silence_frames
         );
         if let Err(e) = self.finalize_all() {
-            error!("Silence gate: finalize error: {}", e);
+            error!("Silence gate: finalize error: {e}");
         }
         self.gate_state = GateState::Idle;
         // Status flag only; no synchronizes-with relationship.
@@ -984,7 +992,7 @@ impl WriterThreadState {
         self.write_failed.store(true, Ordering::Relaxed);
         self.disk_stopped = true;
         if let Err(e) = self.finalize_all() {
-            error!("Error finalizing after write failure: {}", e);
+            error!("Error finalizing after write failure: {e}");
         }
     }
 
@@ -995,7 +1003,7 @@ impl WriterThreadState {
     /// writer — `write_samples` skips absent writers without even
     /// bumping `write_errors`, so the old behavior silently discarded
     /// every subsequent sample while the UI kept showing "recording".
-    pub fn rotate_files(&mut self) {
+    pub(crate) fn rotate_files(&mut self) {
         // DOLL-350: once a disk-low self-stop has fired, the writer thread keeps
         // looping to receive Shutdown. In continuous mode the RT callback still
         // sets rotation_needed, so without this guard each rotation would call
@@ -1018,7 +1026,7 @@ impl WriterThreadState {
         if let Some(writer) = self.writer.take()
             && let Err(e) = writer.finalize()
         {
-            error!("Error finalizing WAV file during rotation: {}", e);
+            error!("Error finalizing WAV file during rotation: {e}");
         }
 
         // Finalize any multichannel writers
@@ -1026,7 +1034,7 @@ impl WriterThreadState {
             if let Some(writer) = writer_opt.take()
                 && let Err(e) = writer.finalize()
             {
-                error!("Error finalizing channel WAV file during rotation: {}", e);
+                error!("Error finalizing channel WAV file during rotation: {e}");
             }
         }
 
@@ -1035,9 +1043,9 @@ impl WriterThreadState {
         for (tmp_path, final_path) in &old_pending {
             if Path::new(tmp_path).exists() {
                 if let Err(e) = fs::rename(tmp_path, final_path) {
-                    error!("Error renaming {} to {}: {}", tmp_path, final_path, e);
+                    error!("Error renaming {tmp_path} to {final_path}: {e}");
                 } else {
-                    info!("Finalized recording to {}", final_path);
+                    info!("Finalized recording to {final_path}");
                     final_files.push(final_path.clone());
                 }
             }
@@ -1061,8 +1069,8 @@ impl WriterThreadState {
             OutputMode::Split => {
                 for (idx, &channel) in self.channels[..ch_count].iter().enumerate() {
                     let final_path = disambiguate_path(&format!(
-                        "{}/{}-ch{}.wav",
-                        self.output_dir, date_str, channel
+                        "{}/{date_str}-ch{channel}.wav",
+                        self.output_dir
                     ));
                     let tmp = tmp_wav_path(&final_path);
                     let spec = crate::raw_wav_writer::WavSpec {
@@ -1074,23 +1082,21 @@ impl WriterThreadState {
                         Ok(w) => {
                             self.multichannel_writers[idx] = Some(w);
                             self.pending_files.push((tmp, final_path.clone()));
-                            info!("Created channel WAV file: {}", final_path);
+                            info!("Created channel WAV file: {final_path}");
                         }
                         Err(e) => {
-                            error!("Failed to create channel WAV file: {}", e);
+                            error!("Failed to create channel WAV file: {e}");
                             create_failed = true;
                         }
                     }
                 }
             }
             OutputMode::Single if ch_count > 2 => {
-                let final_path = disambiguate_path(&format!(
-                    "{}/{}-multichannel.wav",
-                    self.output_dir, date_str
-                ));
+                let final_path =
+                    disambiguate_path(&format!("{}/{date_str}-multichannel.wav", self.output_dir));
                 let tmp = tmp_wav_path(&final_path);
                 let spec = crate::raw_wav_writer::WavSpec {
-                    channels: self.channel_count as u16,
+                    channels: u16::from(self.channel_count),
                     sample_rate: self.sample_rate,
                     bits_per_sample: self.bits_per_sample,
                 };
@@ -1098,26 +1104,25 @@ impl WriterThreadState {
                     Ok(w) => {
                         self.writer = Some(w);
                         self.pending_files.push((tmp, final_path.clone()));
-                        info!("Created multichannel WAV file: {}", final_path);
+                        info!("Created multichannel WAV file: {final_path}");
                     }
                     Err(e) => {
-                        error!("Failed to create multichannel WAV file: {}", e);
+                        error!("Failed to create multichannel WAV file: {e}");
                         create_failed = true;
                     }
                 }
             }
             OutputMode::Single => {
-                let final_path =
-                    disambiguate_path(&format!("{}/{}.wav", self.output_dir, date_str));
+                let final_path = disambiguate_path(&format!("{}/{date_str}.wav", self.output_dir));
                 let tmp = tmp_wav_path(&final_path);
                 match create_wav_writer(&tmp, self.current_spec) {
                     Ok(w) => {
                         self.writer = Some(w);
                         self.pending_files.push((tmp, final_path.clone()));
-                        info!("Created new recording file: {}", final_path);
+                        info!("Created new recording file: {final_path}");
                     }
                     Err(e) => {
-                        error!("Failed to create new WAV file: {}", e);
+                        error!("Failed to create new WAV file: {e}");
                         create_failed = true;
                     }
                 }
@@ -1142,15 +1147,15 @@ impl WriterThreadState {
     /// with their audio stranded under `.recording.wav` temp names. We still
     /// surface a failure (the first error) so callers know something went
     /// wrong, but only after giving every file its best chance to land.
-    pub fn finalize_all(&mut self) -> Result<(), BlackboxError> {
+    pub(crate) fn finalize_all(&mut self) -> Result<(), BlackboxError> {
         let mut first_err: Option<BlackboxError> = None;
 
         // Finalize the main WAV file
         if let Some(writer) = self.writer.take()
             && let Err(e) = writer.finalize()
         {
-            let err = BlackboxError::Wav(format!("Error finalizing WAV file: {}", e));
-            error!("{}", err);
+            let err = BlackboxError::Wav(format!("Error finalizing WAV file: {e}"));
+            error!("{err}");
             first_err.get_or_insert(err);
         }
 
@@ -1159,8 +1164,8 @@ impl WriterThreadState {
             if let Some(writer) = writer_opt.take()
                 && let Err(e) = writer.finalize()
             {
-                let err = BlackboxError::Wav(format!("Error finalizing channel WAV file: {}", e));
-                error!("{}", err);
+                let err = BlackboxError::Wav(format!("Error finalizing channel WAV file: {e}"));
+                error!("{err}");
                 first_err.get_or_insert(err);
             }
         }
@@ -1173,11 +1178,11 @@ impl WriterThreadState {
             if Path::new(tmp_path).exists() {
                 match fs::rename(tmp_path, final_path) {
                     Ok(()) => {
-                        info!("Finalized recording to {}", final_path);
+                        info!("Finalized recording to {final_path}");
                         final_files.push(final_path.clone());
                     }
                     Err(e) => {
-                        error!("Error renaming {} to {}: {}", tmp_path, final_path, e);
+                        error!("Error renaming {tmp_path} to {final_path}: {e}");
                         first_err.get_or_insert_with(|| BlackboxError::from(e));
                     }
                 }
@@ -1207,7 +1212,10 @@ impl WriterThreadState {
 ///
 /// Exposed (crate-internal; this module is private) so tests can drive a
 /// controlled ring-buffer wraparound (DOLL-355).
-pub fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) -> usize {
+pub(crate) fn read_available(
+    consumer: &mut rtrb::Consumer<f32>,
+    state: &mut WriterThreadState,
+) -> usize {
     let available = consumer.slots();
     if available == 0 {
         return 0;
@@ -1235,26 +1243,24 @@ pub fn read_available(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThre
 /// Check each file for silence and delete silent ones. Used by both the
 /// background silence-check thread (during rotation) and the synchronous
 /// finalize path (during shutdown).
-pub fn check_and_delete_silent_files(files: &[String], threshold: f32) {
+pub(crate) fn check_and_delete_silent_files(files: &[String], threshold: f32) {
     for file_path in files {
         match is_silent(file_path, threshold) {
             Ok(true) => {
                 info!(
-                    "Recording is silent (below threshold {}), deleting file: {}",
-                    threshold, file_path
+                    "Recording is silent (below threshold {threshold}), deleting file: {file_path}"
                 );
                 if let Err(e) = fs::remove_file(file_path) {
-                    error!("Error deleting silent file: {}", e);
+                    error!("Error deleting silent file: {e}");
                 }
             }
             Ok(false) => {
                 info!(
-                    "Recording is not silent (above threshold {}), keeping file: {}",
-                    threshold, file_path
+                    "Recording is not silent (above threshold {threshold}), keeping file: {file_path}"
                 );
             }
             Err(e) => {
-                error!("Error checking for silence: {}", e);
+                error!("Error checking for silence: {e}");
             }
         }
     }
@@ -1268,10 +1274,10 @@ fn drain_remaining(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadS
     }
 }
 
-pub fn writer_thread_main(
+pub(crate) fn writer_thread_main(
     mut consumer: rtrb::Consumer<f32>,
-    rotation_needed: Arc<std::sync::atomic::AtomicBool>,
-    command_rx: std::sync::mpsc::Receiver<WriterCommand>,
+    rotation_needed: &AtomicBool,
+    command_rx: &std::sync::mpsc::Receiver<WriterCommand>,
     mut state: WriterThreadState,
 ) {
     // Why poll-sleep instead of blocking on a condvar/channel (DOLL-270):
@@ -1305,7 +1311,9 @@ pub fn writer_thread_main(
                 // Drain remaining samples from ring buffer
                 drain_remaining(&mut consumer, &mut state);
                 let result = state.finalize_all();
-                let _ = reply_tx.send(result);
+                if reply_tx.send(result).is_err() {
+                    warn!("finalize requester hung up before the reply was sent");
+                }
                 return;
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -1315,7 +1323,7 @@ pub fn writer_thread_main(
                 );
                 drain_remaining(&mut consumer, &mut state);
                 if let Err(e) = state.finalize_all() {
-                    error!("Error finalizing after command channel disconnect: {}", e);
+                    error!("Error finalizing after command channel disconnect: {e}");
                 }
                 return;
             }
@@ -1345,6 +1353,10 @@ pub fn writer_thread_main(
             // Ring buffer empty — back off gradually to reduce idle wakeups.
             // 1ms → 2ms → 3ms → 4ms → 5ms (cap). Resets on data arrival.
             consecutive_empty = consecutive_empty.saturating_add(1).min(5);
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "bounded 1-5 ms idle backoff, not a rendezvous: the RT producer must stay lock- and syscall-free (DOLL-270), so there is nothing to block on"
+            )]
             std::thread::sleep(Duration::from_millis(u64::from(consecutive_empty)));
         } else {
             consecutive_empty = 0;
@@ -1356,8 +1368,8 @@ pub fn writer_thread_main(
 ///
 /// Unlike the `single`/`split` bench modes (which use `hound::WavWriter` for
 /// relative comparison only), this routes samples through the exact shipped
-/// path — an `rtrb` ring buffer feeding a spawned [`writer_thread_main`],
-/// which uses [`WriterThreadState`] + [`RawWavWriter`], the adaptive-sleep
+/// path — an `rtrb` ring buffer feeding a spawned `writer_thread_main`,
+/// which uses `WriterThreadState` + `RawWavWriter`, the adaptive-sleep
 /// drain loop, and `WRITER_THREAD_READ_CHUNK` sizing — set up identically to
 /// `CpalAudioProcessor::process_audio_impl`. This is what the CI throughput
 /// floor asserts on, so a regression in any of those guards shipped code
@@ -1371,7 +1383,17 @@ pub fn writer_thread_main(
 /// Uses the default recording configuration: 24-bit, single-file output,
 /// silence detection and the silence gate off. Returns the wall-clock elapsed
 /// from first push to writer-thread join, plus the total write-error count.
+///
+/// # Panics
+///
+/// If the writer state or thread cannot be created. This is a benchmark
+/// harness, so a failed setup is a harness bug rather than a runtime condition.
 #[cfg(feature = "benchmarking")]
+#[must_use]
+#[expect(
+    clippy::expect_used,
+    reason = "benchmark harness: a failed setup is a harness bug, not a runtime condition"
+)]
 pub fn bench_real_pipeline(
     output_dir: &str,
     sample_rate: u32,
@@ -1382,8 +1404,9 @@ pub fn bench_real_pipeline(
     let channel_indices: Vec<usize> = (0..channels).collect();
     let write_errors = Arc::new(AtomicU64::new(0));
     let disk_space_low = Arc::new(AtomicBool::new(false));
-    let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-        Arc::new((0..channels).map(|_| CacheAlignedPeak::new(0)).collect());
+    let peak_levels: Arc<[CacheAlignedPeak]> = std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+        .take(channels)
+        .collect();
 
     let mut state = WriterThreadState::new(
         output_dir,
@@ -1409,8 +1432,8 @@ pub fn bench_real_pipeline(
     let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
 
     let writer_handle = std::thread::Builder::new()
-        .name("bench-real-writer".to_string())
-        .spawn(move || writer_thread_main(consumer, rotation_needed, command_rx, state))
+        .name("bench-real-writer".to_owned())
+        .spawn(move || writer_thread_main(consumer, &rotation_needed, &command_rx, state))
         .expect("failed to spawn writer thread");
 
     let chunk_frames = chunk_data.len() / channels;
@@ -1431,9 +1454,15 @@ pub fn bench_real_pipeline(
 
     // Drain + finalize through the real shutdown path, then join.
     let (reply_tx, reply_rx) = std::sync::mpsc::channel();
-    let _ = command_tx.send(WriterCommand::Shutdown(reply_tx));
-    let _ = reply_rx.recv();
-    let _ = writer_handle.join();
+    if command_tx.send(WriterCommand::Shutdown(reply_tx)).is_err() {
+        warn!("bench writer exited before the shutdown command was sent");
+    }
+    if reply_rx.recv().is_err() {
+        warn!("bench writer exited without a shutdown reply");
+    }
+    if writer_handle.join().is_err() {
+        warn!("bench writer thread panicked");
+    }
     let elapsed = start.elapsed();
 
     (elapsed, write_errors.load(Ordering::Relaxed))
@@ -1448,14 +1477,14 @@ mod disambiguate_tests {
     #[test]
     fn returns_same_path_when_no_collision() {
         let dir = tempdir().unwrap();
-        let p = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        let p = dir.path().join("rec.wav").to_str().unwrap().to_owned();
         assert_eq!(disambiguate_path(&p), p);
     }
 
     #[test]
     fn appends_suffix_when_path_exists() {
         let dir = tempdir().unwrap();
-        let p = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        let p = dir.path().join("rec.wav").to_str().unwrap().to_owned();
         fs::write(&p, b"x").unwrap();
 
         let got = disambiguate_path(&p);
@@ -1470,7 +1499,7 @@ mod disambiguate_tests {
     #[test]
     fn skips_already_taken_suffixes() {
         let dir = tempdir().unwrap();
-        let base = dir.path().join("rec.wav").to_str().unwrap().to_string();
+        let base = dir.path().join("rec.wav").to_str().unwrap().to_owned();
         fs::write(&base, b"x").unwrap();
         fs::write(dir.path().join("rec-1.wav"), b"x").unwrap();
 
@@ -1505,7 +1534,7 @@ mod disk_space_tests {
 
         let disk_low = Arc::new(AtomicBool::new(false));
         let write_errors = Arc::new(AtomicU64::new(0));
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(vec![CacheAlignedPeak::new(0)]);
+        let peak_levels: Arc<[CacheAlignedPeak]> = Arc::from(vec![CacheAlignedPeak::new(0)]);
 
         let mut state = WriterThreadState::new(
             out,
@@ -1565,7 +1594,7 @@ mod disk_space_tests {
 
         let disk_low = Arc::new(AtomicBool::new(false));
         let write_errors = Arc::new(AtomicU64::new(0));
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> = Arc::new(vec![CacheAlignedPeak::new(0)]);
+        let peak_levels: Arc<[CacheAlignedPeak]> = Arc::from(vec![CacheAlignedPeak::new(0)]);
 
         let mut state = WriterThreadState::new(
             out,

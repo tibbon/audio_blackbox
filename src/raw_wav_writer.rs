@@ -10,7 +10,7 @@ use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 
 /// WAV spec — mirrors the subset of `hound::WavSpec` we actually use.
 #[derive(Debug, Clone, Copy)]
-pub struct WavSpec {
+pub(crate) struct WavSpec {
     pub channels: u16,
     pub sample_rate: u32,
     pub bits_per_sample: u16,
@@ -20,7 +20,7 @@ pub struct WavSpec {
 ///
 /// Unlike `hound::WavWriter`, the per-sample write compiles down to a single
 /// `to_le_bytes()` slice + `write_all` — no match, no range check.
-pub struct RawWavWriter {
+pub(crate) struct RawWavWriter {
     writer: BufWriter<File>,
     /// Total PCM data bytes written so far.
     data_bytes_written: u64,
@@ -33,7 +33,7 @@ const WAV_BUF_CAPACITY: usize = 65_536;
 
 impl RawWavWriter {
     /// Create a new WAV file at `path` with the given spec.
-    pub fn create(path: &str, spec: WavSpec) -> io::Result<Self> {
+    pub(crate) fn create(path: &str, spec: WavSpec) -> io::Result<Self> {
         let file = File::create(path)?;
         let mut writer = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
         let byte_width = (spec.bits_per_sample / 8) as u8;
@@ -101,7 +101,7 @@ impl RawWavWriter {
     /// For 32-bit: all 4 bytes.  No match — the slice length is constant
     /// per writer instance and the compiler optimises accordingly.
     #[inline]
-    pub fn write_sample(&mut self, sample: i32) -> io::Result<()> {
+    pub(crate) fn write_sample(&mut self, sample: i32) -> io::Result<()> {
         let bytes = sample.to_le_bytes();
         self.writer.write_all(&bytes[..self.byte_width as usize])?;
         self.data_bytes_written += u64::from(self.byte_width);
@@ -110,7 +110,7 @@ impl RawWavWriter {
 
     /// Flush buffered data and update the WAV header so the file is valid
     /// up to this point (crash-safe recovery).
-    pub fn flush(&mut self) -> io::Result<()> {
+    pub(crate) fn flush(&mut self) -> io::Result<()> {
         // Flush the BufWriter first so all data reaches the file.
         self.writer.flush()?;
         // No pad byte mid-recording: more samples will follow, and a pad here
@@ -122,7 +122,7 @@ impl RawWavWriter {
 
     /// Finalize the WAV file: update the header with final sizes.
     /// Consumes self, closing the file.
-    pub fn finalize(mut self) -> io::Result<()> {
+    pub(crate) fn finalize(mut self) -> io::Result<()> {
         self.writer.flush()?;
         // DOLL-372: RIFF requires each chunk's data be padded to an even byte
         // count. A 24-bit-mono recording with an odd sample count ends the data
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn test_header_byte_rate_normal_spec() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("normal.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("normal.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 2,
             sample_rate: 44100,
@@ -209,7 +209,7 @@ mod tests {
         // verify the saturating chain doesn't accidentally break the
         // straightforward case (DOLL-111).
         let dir = tempdir().unwrap();
-        let path = dir.path().join("extreme.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("extreme.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 255,
             sample_rate: 384_000,
@@ -235,14 +235,14 @@ mod tests {
     #[test]
     fn test_header_sizes_after_writes() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("sized.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("sized.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 1,
             sample_rate: 48_000,
             bits_per_sample: 16,
         };
         let mut w = RawWavWriter::create(&path, spec).unwrap();
-        let n = 100u32;
+        let n = 100_u32;
         for i in 0..n {
             w.write_sample(i32::from(i as i16)).unwrap();
         }
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_header_caps_at_4gib_instead_of_wrapping() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("huge.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("huge.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 1,
             sample_rate: 48_000,
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn test_odd_length_data_chunk_gets_word_align_pad() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("odd.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("odd.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 1,
             sample_rate: 48_000,
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_even_length_data_chunk_has_no_pad() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("even.wav").to_str().unwrap().to_string();
+        let path = dir.path().join("even.wav").to_str().unwrap().to_owned();
         let spec = WavSpec {
             channels: 1,
             sample_rate: 48_000,

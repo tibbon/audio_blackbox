@@ -20,6 +20,14 @@ fn generate_data(total_channels: usize, frames: usize) -> Vec<f32> {
     data
 }
 
+/// One zeroed peak slot per channel. `CacheAlignedPeak` holds an atomic and
+/// is not `Clone`, so this is the `vec![x; n]` equivalent for it.
+fn zero_peaks(ch_count: usize) -> Arc<[CacheAlignedPeak]> {
+    std::iter::repeat_with(|| CacheAlignedPeak::new(0))
+        .take(ch_count)
+        .collect()
+}
+
 // ===========================================================================
 // Allocation counting: monitor mode (peak tracking only, no disk I/O)
 // ===========================================================================
@@ -32,8 +40,7 @@ fn test_write_samples_zero_alloc_monitor() {
 
     temp_env::with_vars(test_env_no_silence(), || {
         let channels: Vec<usize> = (0..ch_count).collect();
-        let peak_levels: Arc<Vec<CacheAlignedPeak>> =
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect());
+        let peak_levels: Arc<[CacheAlignedPeak]> = zero_peaks(ch_count);
         let mut state = WriterThreadState::new_monitor(sample_rate, &channels, peak_levels);
         state.total_device_channels = ch_count as u16;
 
@@ -54,12 +61,11 @@ fn test_write_samples_zero_alloc_monitor() {
         let allocs = after - before;
 
         println!(
-            "\n  Monitor mode (2ch/48kHz): {} allocations across {} write_samples() calls",
-            allocs, iterations
+            "\n  Monitor mode (2ch/48kHz): {allocs} allocations across {iterations} write_samples() calls"
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / iterations as f64
+            allocs as f64 / f64::from(iterations)
         );
 
         assert_eq!(
@@ -95,7 +101,7 @@ fn test_write_samples_zero_alloc_recording() {
             0,
             Arc::new(AtomicBool::new(false)),
             24,
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            zero_peaks(ch_count),
             false,
             0,
         )
@@ -119,15 +125,16 @@ fn test_write_samples_zero_alloc_recording() {
         let allocs = after - before;
 
         println!(
-            "\n  Recording mode (2ch/48kHz/24-bit): {} allocations across {} write_samples() calls",
-            allocs, iterations
+            "\n  Recording mode (2ch/48kHz/24-bit): {allocs} allocations across {iterations} write_samples() calls"
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / iterations as f64
+            allocs as f64 / f64::from(iterations)
         );
 
-        let _ = state.finalize_all();
+        state
+            .finalize_all()
+            .expect("recording files should finalize cleanly");
 
         assert_eq!(
             allocs, 0,
@@ -162,7 +169,7 @@ fn test_write_samples_zero_alloc_partial_frames() {
             0,
             Arc::new(AtomicBool::new(false)),
             24,
-            Arc::new((0..ch_count).map(|_| CacheAlignedPeak::new(0)).collect()),
+            zero_peaks(ch_count),
             false,
             0,
         )
@@ -188,15 +195,16 @@ fn test_write_samples_zero_alloc_partial_frames() {
         let allocs = after - before;
 
         println!(
-            "\n  Partial frame path (2ch, 1023-sample chunks): {} allocations across {} calls",
-            allocs, iterations
+            "\n  Partial frame path (2ch, 1023-sample chunks): {allocs} allocations across {iterations} calls"
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / iterations as f64
+            allocs as f64 / f64::from(iterations)
         );
 
-        let _ = state.finalize_all();
+        state
+            .finalize_all()
+            .expect("recording files should finalize cleanly");
 
         assert_eq!(
             allocs, 0,
@@ -211,12 +219,12 @@ fn test_write_samples_zero_alloc_partial_frames() {
 
 #[test]
 fn test_struct_sizes() {
-    let wts_size = std::mem::size_of::<WriterThreadState>();
-    let peak_size = std::mem::size_of::<CacheAlignedPeak>();
+    let wts_size = size_of::<WriterThreadState>();
+    let peak_size = size_of::<CacheAlignedPeak>();
 
     println!("\n  Struct sizes:");
-    println!("    WriterThreadState: {} bytes", wts_size);
-    println!("    CacheAlignedPeak:  {} bytes", peak_size);
+    println!("    WriterThreadState: {wts_size} bytes");
+    println!("    CacheAlignedPeak:  {peak_size} bytes");
 
     assert_eq!(
         peak_size, 64,

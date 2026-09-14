@@ -1,0 +1,64 @@
+# clippy.toml (DOLL-652)
+#
+# Clippy uses the first clippy.toml it finds walking up from the crate's
+# manifest directory, with no merging. This crate is a single package, so this
+# file is the whole config. The lint *levels* live in Cargo.toml [lints.*];
+# this file holds thresholds, per-test relief, and the hard bans.
+#
+# Verify a ban fires by writing one deliberate violation the first time you
+# add it; path resolution through std re-exports changes between clippy releases.
+
+msrv = "1.95"                       # match rust-version in Cargo.toml and the CI MSRV lane
+
+# Test code gets the shortcuts production code does not.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-useless-vec-in-tests = true
+
+# Complexity budgets. Agents pad functions and thread booleans through signatures.
+too-many-arguments-threshold = 6
+too-many-lines-threshold = 80
+cognitive-complexity-threshold = 20
+type-complexity-threshold = 200
+excessive-nesting-threshold = 7
+max-fn-params-bools = 2
+max-struct-bools = 3
+enum-variant-size-threshold = 200
+large-error-threshold = 128
+struct-field-name-threshold = 3
+
+# Audio callback and writer thread run on small stacks; keep frames small.
+stack-size-threshold = 65536
+array-size-threshold = 8192
+
+# A SAFETY: comment may sit above the statement or attribute, not only the block.
+accept-comment-above-statement = true
+accept-comment-above-attributes = true
+
+# Float literal readability: 0.123456 does not need separators, 1234567.0 does.
+unreadable-literal-lint-fractions = false
+
+# Make uninlined_format_args strict: no mix of inline and positional args.
+allow-mixed-uninlined-format-args = false
+
+# Keep clippy's default identifier list and add Apple / project vocabulary so
+# doc_markdown stops demanding backticks around ordinary words.
+doc-valid-idents = [
+  "..",
+  "macOS", "iOS", "SwiftUI", "AppKit", "CoreAudio", "AudioUnit", "AudioToolbox",
+  "TestFlight", "GitHub", "OpenAPI",
+]
+
+# Hard bans. Each carries a reason so the diagnostic teaches the agent.
+# Deliberate exceptions use #[expect(clippy::disallowed_methods, reason = "...")]
+# at the call site (e.g. the writer thread's bounded drain backoff, DOLL-251).
+disallowed-methods = [
+  { path = "std::thread::sleep", reason = "sleeping is not synchronization; use channels, condvars, atomics, or the host clock (test_utils has wait helpers)" },
+  { path = "std::env::home_dir", reason = "the sandboxed app gets paths from Swift via security-scoped bookmarks; the CLI takes an explicit output_dir" },
+  { path = "f32::partial_cmp", reason = "use total_cmp; partial_cmp().unwrap() panics on NaN" },
+  { path = "f64::partial_cmp", reason = "use total_cmp; partial_cmp().unwrap() panics on NaN" },
+]

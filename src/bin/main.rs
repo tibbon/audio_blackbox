@@ -1,7 +1,3 @@
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::use_self)]
-#![allow(clippy::cast_precision_loss)]
-
 //! `blackbox` — CLI entry point.
 //!
 //! Distinct from the `SwiftUI` app (which calls Rust via FFI). The CLI:
@@ -59,19 +55,17 @@ fn main() {
 
     // Set up performance monitoring using the real PerformanceTracker
     #[cfg(feature = "benchmarking")]
-    let perf_tracker = if config.get_performance_logging() {
+    let perf_tracker = config.get_performance_logging().then(|| {
         info!("Performance monitoring enabled");
         let log_path = format!("{output_dir}/performance.log");
         let tracker = PerformanceTracker::new(true, &log_path, 60, 5);
         tracker.start();
-        Some(tracker)
-    } else {
-        None
-    };
+        tracker
+    });
 
     // Set up signal handling for clean shutdown
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let r = Arc::clone(&running);
     let s = Arc::new(AtomicBool::new(false));
     if let Err(e) = ::ctrlc::set_handler(move || {
         // Status flags only — single-bit signal, no synchronizes-with payload.
@@ -129,6 +123,10 @@ fn main() {
 
     let mut elapsed: u64 = 0;
     while running.load(Ordering::Relaxed) {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "CLI status loop ticks once per second; there is nothing to wait on but the clock"
+        )]
         thread::sleep(Duration::from_secs(1));
         elapsed += 1;
 

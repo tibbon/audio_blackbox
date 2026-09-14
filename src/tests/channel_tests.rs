@@ -52,17 +52,17 @@ fn test_invalid_channels() {
     let cases = [
         // Channel number exceeding maximum
         MAX_CHANNELS.to_string(),
-        "255".to_string(),
+        "255".to_owned(),
         // Invalid range
-        "2-1".to_string(),
-        "3-0".to_string(),
+        "2-1".to_owned(),
+        "3-0".to_owned(),
         // Invalid format
         String::new(),
-        ",".to_string(),
-        "1-".to_string(),
-        "-1".to_string(),
-        "1--2".to_string(),
-        "abc".to_string(),
+        ",".to_owned(),
+        "1-".to_owned(),
+        "-1".to_owned(),
+        "1--2".to_owned(),
+        "abc".to_owned(),
     ];
     for s in &cases {
         let err = parse_channel_string(s)

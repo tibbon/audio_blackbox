@@ -11,7 +11,7 @@
 //! covered by `ring_buffer_tests::test_writer_thread_shutdown_drains`.)
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
@@ -44,7 +44,7 @@ fn writer_state(dir: &str, gate_enabled: bool) -> WriterThreadState {
         0, // min_disk_space_mb: disabled
         Arc::new(AtomicBool::new(false)),
         16,
-        Arc::new(vec![CacheAlignedPeak::new(0)]),
+        Arc::from([CacheAlignedPeak::new(0)]),
         gate_enabled,
         1,
     )
@@ -53,27 +53,53 @@ fn writer_state(dir: &str, gate_enabled: bool) -> WriterThreadState {
     state
 }
 
-/// Spawn `writer_thread_main` exactly as `process_audio_impl` does, returning
-/// the producer, the command sender, and the join handle.
-fn spawn_writer(
-    state: WriterThreadState,
-) -> (
-    rtrb::Producer<f32>,
-    std::sync::mpsc::SyncSender<WriterCommand>,
-    std::thread::JoinHandle<()>,
-) {
+/// Clears a flag when dropped — including during a panic unwind — so a test
+/// waiting on "the writer thread exited" wakes either way.
+struct ClearOnExit(Arc<AtomicBool>);
+
+impl Drop for ClearOnExit {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// A running writer thread plus the handles a test drives it through.
+struct SpawnedWriter {
+    producer: rtrb::Producer<f32>,
+    command_tx: std::sync::mpsc::SyncSender<WriterCommand>,
+    handle: std::thread::JoinHandle<()>,
+    /// Cleared by the thread on exit, so a test can bound its wait for
+    /// termination with `wait_for_flag_cleared`; a bare `join()` would hang
+    /// forever if the thread leaked.
+    running: Arc<AtomicBool>,
+}
+
+/// Spawn `writer_thread_main` exactly as `process_audio_impl` does.
+fn spawn_writer(state: WriterThreadState) -> SpawnedWriter {
     let ring_size = 44_100 * RING_BUFFER_SECONDS;
     let (producer, consumer) = rtrb::RingBuffer::new(ring_size);
     let rotation_needed = Arc::new(AtomicBool::new(false));
     let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+    let running = Arc::new(AtomicBool::new(true));
+    let guard = ClearOnExit(Arc::clone(&running));
     let handle = std::thread::spawn(move || {
-        writer_thread_main(consumer, rotation_needed, command_rx, state);
+        let _guard = guard;
+        writer_thread_main(consumer, &rotation_needed, &command_rx, state);
     });
-    (producer, command_tx, handle)
+    SpawnedWriter {
+        producer,
+        command_tx,
+        handle,
+        running,
+    }
 }
 
 /// Send `Shutdown` and return the writer thread's finalize result after
 /// joining it — the exact rendezvous the FFI stop path performs.
+#[expect(
+    clippy::unwrap_in_result,
+    reason = "the returned Result is the finalize outcome under test; a dead channel or panicked thread is a harness failure that must abort rather than be mapped into a BlackboxError the error-path test would mistake for the real thing"
+)]
 fn shutdown(
     command_tx: &std::sync::mpsc::SyncSender<WriterCommand>,
     handle: std::thread::JoinHandle<()>,
@@ -98,7 +124,9 @@ fn shutdown_with_no_samples_finalizes_valid_empty_wav() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
 
-        let (_producer, command_tx, handle) = spawn_writer(writer_state(dir, false));
+        let SpawnedWriter {
+            command_tx, handle, ..
+        } = spawn_writer(writer_state(dir, false));
 
         shutdown(&command_tx, handle).expect("clean shutdown must reply Ok");
 
@@ -131,7 +159,12 @@ fn shutdown_while_gate_idle_leaves_no_files() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
 
-        let (mut producer, command_tx, handle) = spawn_writer(writer_state(dir, true));
+        let SpawnedWriter {
+            mut producer,
+            command_tx,
+            handle,
+            ..
+        } = spawn_writer(writer_state(dir, true));
 
         // Pure silence: peaks never exceed the threshold, gate stays Idle.
         let silence = vec![0.0_f32; 4_410];
@@ -162,7 +195,12 @@ fn shutdown_reply_surfaces_finalize_error() {
         // Sabotage the rename destination (ENOENT) so finalize_all errors.
         state.pending_files[0].1 = format!("{dir}/does_not_exist/out.wav");
 
-        let (mut producer, command_tx, handle) = spawn_writer(state);
+        let SpawnedWriter {
+            mut producer,
+            command_tx,
+            handle,
+            ..
+        } = spawn_writer(state);
 
         let data = vec![0.25_f32; 1_000];
         if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
@@ -191,7 +229,12 @@ fn dropped_command_channel_terminates_and_finalizes_writer() {
         let temp_dir = tempdir().unwrap();
         let dir = temp_dir.path().to_str().unwrap();
 
-        let (mut producer, command_tx, handle) = spawn_writer(writer_state(dir, false));
+        let SpawnedWriter {
+            mut producer,
+            command_tx,
+            handle,
+            running,
+        } = spawn_writer(writer_state(dir, false));
 
         // Land some audio, then sever the channel without a Shutdown.
         let chunk = vec![0.25_f32; 4_410];
@@ -201,13 +244,11 @@ fn dropped_command_channel_terminates_and_finalizes_writer() {
 
         // The writer notices the disconnect within one adaptive-sleep
         // interval (≤5 ms); give it a generous deadline before declaring
-        // the leak regressed.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !handle.is_finished() && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        // the leak regressed. The bounded wait is what catches a regression:
+        // a thread that never exits would make a bare `join()` hang forever.
+        crate::test_utils::wait_for_flag_cleared(&running, std::time::Duration::from_secs(5));
         assert!(
-            handle.is_finished(),
+            !running.load(Ordering::Acquire),
             "writer thread must exit when its command channel disconnects"
         );
         handle.join().expect("writer thread must not panic");

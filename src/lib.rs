@@ -24,26 +24,6 @@
 //!
 //! See `README.md` for the architecture diagram and benchmark numbers.
 
-// Lint configuration: keep pedantic/nursery suppressions that match codebase patterns.
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_lossless)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::missing_panics_doc)]
-#![allow(clippy::must_use_candidate)]
-#![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::doc_markdown)]
-#![allow(clippy::uninlined_format_args)]
-#![allow(clippy::cognitive_complexity)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::significant_drop_tightening)]
-#![allow(clippy::significant_drop_in_scrutinee)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::use_self)]
-#![allow(clippy::redundant_else)]
-
 mod audio_processor;
 mod audio_recorder;
 #[cfg(feature = "benchmarking")]
@@ -75,7 +55,7 @@ pub mod test_utils;
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
 #[cfg(feature = "benchmarking")]
-pub use benchmarking::PerformanceTracker;
+pub use benchmarking::{PerformanceMetrics, PerformanceTracker};
 pub use config::AppConfig;
 pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
@@ -84,27 +64,16 @@ pub use error::BlackboxError;
 pub use writer_thread::bench_real_pipeline;
 
 // ----------------------------------------------------------------------------
-// Crate-internal re-exports
+// Test-only re-exports
 // ----------------------------------------------------------------------------
-// Used inside this crate (tests bring them in via `use super::*`; submodules
-// reference them through the lib root). Demoted from pub to pub(crate) — pub
-// is a SemVer contract, and these are impl details no external caller had a
-// reason to touch.
-#[cfg(feature = "benchmarking")]
-#[allow(unused_imports)]
-pub(crate) use benchmarking::{PerformanceMetrics, measure_execution_time};
-#[allow(unused_imports)]
-pub(crate) use constants::{
-    CacheAlignedPeak, DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE,
-    DEFAULT_DEBUG, DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR,
-    DEFAULT_OUTPUT_MODE, DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE,
-    DEFAULT_SILENCE_GATE_ENABLED, DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD,
-    MAX_CHANNELS, WRITER_THREAD_READ_CHUNK,
-};
-#[allow(unused_imports)]
-pub(crate) use utils::{
-    available_disk_space_mb, check_alsa_availability, is_silent, parse_channel_string,
-};
+// The inline smoke tests below reach these through `use super::*`. Nothing in
+// the non-test crate goes through the lib root for them (modules use
+// `crate::constants::*` / `crate::utils::*` directly), so they are gated to
+// avoid an unused-import warning in every non-test build.
+#[cfg(test)]
+pub(crate) use constants::DEFAULT_DURATION;
+#[cfg(test)]
+pub(crate) use utils::parse_channel_string;
 
 // Expose test utilities
 #[cfg(test)]
@@ -121,7 +90,7 @@ mod alloc_counter {
 
     static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
 
-    pub struct CountingAllocator;
+    pub(crate) struct CountingAllocator;
 
     // SAFETY: `CountingAllocator` is a transparent wrapper around `System`.
     // Each method delegates directly with the same `Layout`/`ptr`
@@ -153,7 +122,7 @@ mod alloc_counter {
     }
 
     /// Snapshot the current global allocation count.
-    pub fn snapshot() -> u64 {
+    pub(crate) fn snapshot() -> u64 {
         ALLOC_COUNT.load(Ordering::SeqCst)
     }
 }
@@ -228,7 +197,7 @@ mod tests {
             let temp_dir = tempdir().unwrap();
             let temp_path = temp_dir.path().to_str().unwrap();
 
-            let file_name = format!("{}/silent-test.wav", temp_path);
+            let file_name = format!("{temp_path}/silent-test.wav");
             let mut processor = MockAudioProcessor::new(&file_name);
             processor.create_silent_file = true;
 
@@ -239,7 +208,10 @@ mod tests {
             let path = Path::new(&file_name);
             assert!(path.exists(), "Test file should have been created");
 
-            let _ = recorder.processor_mut().finalize();
+            recorder
+                .processor_mut()
+                .finalize()
+                .expect("finalize should succeed");
             assert!(!path.exists(), "Silent file should have been deleted");
         });
     }
@@ -258,7 +230,7 @@ mod tests {
             let temp_dir = tempdir().unwrap();
             let temp_path = temp_dir.path().to_str().unwrap();
 
-            let file_name = format!("{}/normal-test.wav", temp_path);
+            let file_name = format!("{temp_path}/normal-test.wav");
             let mut processor = MockAudioProcessor::new(&file_name);
             processor.create_silent_file = false;
 
@@ -269,7 +241,10 @@ mod tests {
             let path = Path::new(&file_name);
             assert!(path.exists(), "File should have been created");
 
-            let _ = recorder.processor_mut().finalize();
+            recorder
+                .processor_mut()
+                .finalize()
+                .expect("finalize should succeed");
             assert!(
                 path.exists(),
                 "Non-silent file should not have been deleted"
