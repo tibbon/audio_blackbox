@@ -143,15 +143,17 @@ protocol.
 - Ownership is stated per function in the doc comment: who allocates, who frees, whether the
   pointer is valid after return.
 - Handles are opaque on the C side and `Box<BlackboxHandle>` on the Rust side;
-  `blackbox_create` / `blackbox_destroy` are paired; destroy of null is a no-op; a magic word
-  turns double-destroy into an error code instead of a UAF.
-- Strings: Rust returns `*mut c_char` with a matching `*_string_free`; Swift copies immediately
-  with `String(cString:)` then frees. `CString::new(x)?.as_ptr()` as one expression is a
+  `blackbox_create` / `blackbox_destroy` are paired; destroy of null is a no-op. The magic word
+  is a best-effort guard, not a safety mechanism: destroying a handle twice, concurrently or
+  one after the other, can read freed memory. Never rely on it.
+- Strings: Rust returns `*mut c_char`, freed only through `blackbox_free_string`; Swift copies
+  immediately with `String(cString:)` then frees. `CString::new(x)?.as_ptr()` as one expression is a
   dangling pointer (`dangling_pointers_from_temporaries` is deny).
 - Buffers: `(ptr, len)` pairs; `len` is in elements unless the name says bytes; both sides
   check `len` before touching memory.
 - Thread contract per function, written in the header comment: "main thread only",
-  "any thread, not reentrant", or "realtime safe".
+  "any thread, not reentrant", or "realtime safe". Existing exports predate this rule and
+  have none yet; every new or changed export states one.
 - Errors: integer codes (`BLACKBOX_ERR_*`) plus `blackbox_get_last_error`. Swift maps codes to
   one typed `Error` enum in one place (`RustBridge.swift`).
 - `#[repr(C)]` on every crossing type; `StatusFlags` has compile-time size and per-field offset

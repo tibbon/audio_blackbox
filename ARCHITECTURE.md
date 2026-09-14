@@ -39,10 +39,10 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 
 ### Writer thread
 
-`writer_thread::run` is spawned in `process_audio` and joined when `finalize()` is called. Responsibilities:
+`writer_thread::writer_thread_main` is spawned in `process_audio` and joined when `finalize()` is called. Responsibilities:
 
 - Drain the ring buffer, convert f32 to the configured bit depth, write WAV via `RawWavWriter` (a hand-rolled writer; we don't drag `hound` into the hot path).
-- Maintain per-channel peak levels in cache-aligned `AtomicI32` slots — read by the FFI 30 Hz meter poll.
+- Maintain per-channel peak levels in cache-aligned `AtomicU32` slots — read by the FFI 30 Hz meter poll.
 - Rotate files when the RT thread sets the `rotation_needed` flag (a Relaxed status flag — DOLL-391; the samples it implies are already synchronized through the rtrb ring, so no Acquire/Release pairing is needed). See `CpalAudioProcessor::process_audio_impl` (the store) and `writer_thread_main` (the `swap`).
 - Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. In practice unreachable under normal rotation cadence (rotation is ≥ 60 s; silence checks complete in milliseconds for normal-size files, so 8-deep buffering is ample).
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
@@ -55,9 +55,9 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 
 `macos_sample_rate_listener::SampleRateListener` registers a CoreAudio property listener for sample-rate changes on the active device. The `client_data` is `Arc::into_raw(Arc::clone(&flag))` — the listener owns one strong refcount of an `Arc<AtomicBool>`.
 
-`Drop` **deliberately leaks** the strong reference (skips `Arc::from_raw`) rather than reclaiming it. Apple's docs do not guarantee that `AudioObjectRemovePropertyListener` blocks until in-flight callbacks on other threads have returned — only that no *new* callbacks will start. Leaking eliminates the race entirely; the cost is one `AtomicBool` (1 byte) per recording session for the process lifetime, bounded.
+`Drop` **deliberately leaks** the strong reference rather than reclaiming it: it rebuilds the `Arc` with `Arc::from_raw` inside a `ManuallyDrop`, so the refcount is never decremented. Apple's docs do not guarantee that `AudioObjectRemovePropertyListener` blocks until in-flight callbacks on other threads have returned — only that no *new* callbacks will start. Leaking eliminates the race entirely; the cost is one `AtomicBool` (1 byte) per recording session for the process lifetime, bounded.
 
-If you "fix" this by adding `Arc::from_raw` to Drop, you reintroduce a use-after-free that only fires under sample-rate-change-during-listener-removal — extremely rare, hard to reproduce, exactly the kind of bug we're refusing to ship.
+If you "fix" this by letting that `Arc` drop, you reintroduce a use-after-free that only fires under sample-rate-change-during-listener-removal — extremely rare, hard to reproduce, exactly the kind of bug we're refusing to ship.
 
 ## Lock acquisition order (FFI)
 
