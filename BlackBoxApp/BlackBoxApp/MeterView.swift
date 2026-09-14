@@ -85,111 +85,9 @@ struct MeterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // DOLL-219: persistent header so the user always sees which
-            // device the meter is reading from, at what rate, and at what
-            // bit depth. Centre-truncates the device because USB / aggregate
-            // device names can be very long.
-            HStack(spacing: 6) {
-                Text(deviceDisplayName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("\u{00B7}")
-                    .foregroundStyle(.tertiary)
-                Text(sampleRateDisplay)
-                    .monospacedDigit()
-                Text("\u{00B7}")
-                    .foregroundStyle(.tertiary)
-                Text("\(bitDepth)-bit")
-                    .monospacedDigit()
-                // DOLL-217 v2: estimated current-file size relocated here
-                // from the menu, where its per-second updates were
-                // causing menu re-renders that reset hover/highlight.
-                // A window-class view doesn't have that problem.
-                if let size = recorder.currentFileSizeText {
-                    Text("\u{00B7}")
-                        .foregroundStyle(.tertiary)
-                    Text(size)
-                        .monospacedDigit()
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(stateVerb) \(deviceDisplayName) at \(sampleRateSpoken), \(bitDepth) bits per sample")
-
-            // DOLL-214 / DOLL-217 v3: live elapsed time + rotation
-            // countdown relocated from the menu (where each tick
-            // re-laid out the dropdown and reset hover selection) into
-            // the meter window header. Window-class views can reflow
-            // freely without disrupting menu-style selection. Both
-            // use Text(_, style: .timer) so SwiftUI ticks the text
-            // internally without per-frame @Observable writes.
-            if let start = recorder.recordingStartTime {
-                HStack(spacing: 6) {
-                    (Text("Elapsed ") + Text(start, style: .timer))
-                        .monospacedDigit()
-                    if let next = recorder.nextRotationDate {
-                        Text("\u{00B7}")
-                            .foregroundStyle(.tertiary)
-                        (Text("Rotates in ") + Text(next, style: .timer))
-                            .monospacedDigit()
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 8)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Live recording timer in meter header")
-            }
-
-            // Snapshot peak levels so the ForEach closure captures stable values.
-            // Without this, peakLevels can be cleared (monitoring stopped) between
-            // ForEach range creation and closure execution, causing an index-out-of-bounds crash.
-            let levels = recorder.peakLevels
-            if (recorder.isRecording || recorder.isMonitoring) && !levels.isEmpty {
-                let layout = columnLayout(for: levels.count)
-                if layout.columns <= 1 {
-                    ForEach(levels.indices, id: \.self) { index in
-                        MeterBar(channel: index + 1, peak: levels[index])
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 16) {
-                        ForEach(0..<layout.columns, id: \.self) { col in
-                            let start = col * layout.rowsPerColumn
-                            let end = min(start + layout.rowsPerColumn, levels.count)
-                            VStack(alignment: .leading, spacing: 0) {
-                                ForEach(start..<end, id: \.self) { index in
-                                    MeterBar(channel: index + 1, peak: levels[index])
-                                }
-                            }
-                            .frame(minWidth: 280)
-                        }
-                    }
-                }
-            } else {
-                Spacer()
-                HStack {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "waveform")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
-                        // DOLL-218: "No audio input" read like a hardware
-                        // error; in practice this state shows briefly while
-                        // monitoring spins up (or persistently if no input
-                        // device is configured). "Listening for signal"
-                        // matches the DOLL-216 "Armed" framing and works
-                        // for both cases without alarming the user.
-                        Text("Listening for signal\u{2026}")
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Level meter: Listening for signal")
-                    Spacer()
-                }
-                Spacer()
-            }
+            header
+            recordingTimers
+            levelsOrPlaceholder
         }
         .padding(12)
         // minHeight bumped progressively as header rows were added:
@@ -214,6 +112,118 @@ struct MeterView: View {
                 AccessibilityNotification.Announcement(String(localized: "Audio clipping, reduce input gain")).post()
             }
             wasClipping = clipping
+        }
+    }
+
+    // DOLL-219: persistent header so the user always sees which
+    // device the meter is reading from, at what rate, and at what
+    // bit depth. Centre-truncates the device because USB / aggregate
+    // device names can be very long.
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text(deviceDisplayName)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("\u{00B7}")
+                .foregroundStyle(.tertiary)
+            Text(sampleRateDisplay)
+                .monospacedDigit()
+            Text("\u{00B7}")
+                .foregroundStyle(.tertiary)
+            Text("\(bitDepth)-bit")
+                .monospacedDigit()
+            // DOLL-217 v2: estimated current-file size relocated here
+            // from the menu, where its per-second updates were
+            // causing menu re-renders that reset hover/highlight.
+            // A window-class view doesn't have that problem.
+            if let size = recorder.currentFileSizeText {
+                Text("\u{00B7}")
+                    .foregroundStyle(.tertiary)
+                Text(size)
+                    .monospacedDigit()
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(stateVerb) \(deviceDisplayName) at \(sampleRateSpoken), \(bitDepth) bits per sample")
+    }
+
+    // DOLL-214 / DOLL-217 v3: live elapsed time + rotation
+    // countdown relocated from the menu (where each tick
+    // re-laid out the dropdown and reset hover selection) into
+    // the meter window header. Window-class views can reflow
+    // freely without disrupting menu-style selection. Both
+    // use Text(_, style: .timer) so SwiftUI ticks the text
+    // internally without per-frame @Observable writes.
+    @ViewBuilder private var recordingTimers: some View {
+        if let start = recorder.recordingStartTime {
+            HStack(spacing: 6) {
+                (Text("Elapsed ") + Text(start, style: .timer))
+                    .monospacedDigit()
+                if let next = recorder.nextRotationDate {
+                    Text("\u{00B7}")
+                        .foregroundStyle(.tertiary)
+                    (Text("Rotates in ") + Text(next, style: .timer))
+                        .monospacedDigit()
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Live recording timer in meter header")
+        }
+    }
+
+    @ViewBuilder private var levelsOrPlaceholder: some View {
+        // Snapshot peak levels so the ForEach closure captures stable values.
+        // Without this, peakLevels can be cleared (monitoring stopped) between
+        // ForEach range creation and closure execution, causing an index-out-of-bounds crash.
+        let levels = recorder.peakLevels
+        if (recorder.isRecording || recorder.isMonitoring) && !levels.isEmpty {
+            let layout = columnLayout(for: levels.count)
+            if layout.columns <= 1 {
+                ForEach(levels.indices, id: \.self) { index in
+                    MeterBar(channel: index + 1, peak: levels[index])
+                }
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(0..<layout.columns, id: \.self) { col in
+                        let start = col * layout.rowsPerColumn
+                        let end = min(start + layout.rowsPerColumn, levels.count)
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(start..<end, id: \.self) { index in
+                                MeterBar(channel: index + 1, peak: levels[index])
+                            }
+                        }
+                        .frame(minWidth: 280)
+                    }
+                }
+            }
+        } else {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    // DOLL-218: "No audio input" read like a hardware
+                    // error; in practice this state shows briefly while
+                    // monitoring spins up (or persistently if no input
+                    // device is configured). "Listening for signal"
+                    // matches the DOLL-216 "Armed" framing and works
+                    // for both cases without alarming the user.
+                    Text("Listening for signal\u{2026}")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Level meter: Listening for signal")
+                Spacer()
+            }
+            Spacer()
         }
     }
 }
@@ -307,52 +317,7 @@ private struct MeterBar: View {
                 .monospacedDigit()
                 .frame(width: channelLabelWidth, alignment: .trailing)
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    // Background track
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.08))
-                        .frame(height: barHeight)
-                        .clipShape(.rect(cornerRadius: 3))
-
-                    // dB scale tick marks
-                    ForEach(Self.tickPositions, id: \.dB) { tick in
-                        let fraction = CGFloat((tick.dB + 60) / 60)
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.15))
-                            .frame(width: 1, height: barHeight)
-                            .position(x: geo.size.width * fraction, y: barHeight / 2)
-                    }
-
-                    // Gradient-filled level bar
-                    Self.meterGradient
-                        .frame(width: max(0, geo.size.width * barFraction), height: barHeight)
-                        .clipShape(.rect(cornerRadius: 3))
-                        .animation(reduceMotion ? nil : .linear(duration: 0.05), value: barFraction)
-
-                    // Peak hold indicator. DOLL-392: the decay is driven by a
-                    // TimelineView clock, not by `peak` changes — otherwise a
-                    // perfectly static peak (e.g. a steady tone) never fires
-                    // onChange(of: peak) and the marker freezes past its 2 s
-                    // hold. The timeline is paused whenever the held peak isn't
-                    // above the live signal, so it idles at silence/steady state.
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: peakHold <= dBFS)) { context in
-                        Group {
-                            if peakHold > -60 {
-                                Rectangle()
-                                    .fill(peakHold > -3 ? Color(nsColor: .systemRed) : Color.primary.opacity(0.6))
-                                    .frame(width: 2, height: barHeight)
-                                    .position(
-                                        x: min(geo.size.width * peakHoldFraction, geo.size.width - 1),
-                                        y: barHeight / 2
-                                    )
-                            }
-                        }
-                        .onChange(of: context.date) { decayPeakHold() }
-                    }
-                }
-            }
-            .frame(height: barHeight)
+            levelTrack
 
             Text(dBLabel)
                 .font(.system(.caption, design: .monospaced))
@@ -370,6 +335,59 @@ private struct MeterBar: View {
         .accessibilityAddTraits(.updatesFrequently)
         .onChange(of: peak) {
             updatePeakHold()
+        }
+    }
+
+    private var levelTrack: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                // Background track
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: barHeight)
+                    .clipShape(.rect(cornerRadius: 3))
+
+                // dB scale tick marks
+                ForEach(Self.tickPositions, id: \.dB) { tick in
+                    let fraction = CGFloat((tick.dB + 60) / 60)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: 1, height: barHeight)
+                        .position(x: geo.size.width * fraction, y: barHeight / 2)
+                }
+
+                // Gradient-filled level bar
+                Self.meterGradient
+                    .frame(width: max(0, geo.size.width * barFraction), height: barHeight)
+                    .clipShape(.rect(cornerRadius: 3))
+                    .animation(reduceMotion ? nil : .linear(duration: 0.05), value: barFraction)
+
+                peakHoldMarker(trackWidth: geo.size.width)
+            }
+        }
+        .frame(height: barHeight)
+    }
+
+    // Peak hold indicator. DOLL-392: the decay is driven by a
+    // TimelineView clock, not by `peak` changes — otherwise a
+    // perfectly static peak (e.g. a steady tone) never fires
+    // onChange(of: peak) and the marker freezes past its 2 s
+    // hold. The timeline is paused whenever the held peak isn't
+    // above the live signal, so it idles at silence/steady state.
+    private func peakHoldMarker(trackWidth: CGFloat) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: peakHold <= dBFS)) { context in
+            Group {
+                if peakHold > -60 {
+                    Rectangle()
+                        .fill(peakHold > -3 ? Color(nsColor: .systemRed) : Color.primary.opacity(0.6))
+                        .frame(width: 2, height: barHeight)
+                        .position(
+                            x: min(trackWidth * peakHoldFraction, trackWidth - 1),
+                            y: barHeight / 2
+                        )
+                }
+            }
+            .onChange(of: context.date) { decayPeakHold() }
         }
     }
 
