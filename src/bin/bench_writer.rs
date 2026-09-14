@@ -42,11 +42,33 @@ use std::time::Instant;
 /// in the lib, this copy needs to track it.
 fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
     let scale = match bits_per_sample {
-        16 => f32::from(i16::MAX),
-        24 => 8_388_607.0_f32,
-        _ => i32::MAX as f32,
+        16 => 32_767.0,
+        24 => 8_388_607.0,
+        // 2^31: `i32::MAX` has no exact f32 and rounds here; `as i32` saturates.
+        _ => 32_768.0_f32 * 65_536.0,
     };
     (sample.clamp(-1.0, 1.0) * scale).round() as i32
+}
+
+/// A sample count as `f64` for the throughput report.
+/// Exact below 2^53; this binary's counts are at most a few hundred million.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "exact below 2^53, far above any count this benchmark produces"
+)]
+const fn count_to_f64(count: usize) -> f64 {
+    count as f64
+}
+
+/// A sample index as the phase of the synthetic waveform. Exact below 2^24,
+/// which one 512-frame chunk only passes above 32,768 channels; past that the
+/// rounding just nudges the generated samples.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "exact below 2^24; beyond it the rounding only nudges synthetic samples"
+)]
+const fn index_to_f32(index: usize) -> f32 {
+    index as f32
 }
 
 fn main() {
@@ -107,7 +129,7 @@ fn main() {
     let chunk_samples = chunk_frames * channels;
     let mut chunk_data = vec![0.0_f32; chunk_samples];
     for (idx, sample) in chunk_data.iter_mut().enumerate() {
-        *sample = ((idx as f32) * 0.01).sin() * 0.5;
+        *sample = (index_to_f32(idx) * 0.01).sin() * 0.5;
     }
 
     match mode.as_str() {
@@ -271,8 +293,8 @@ fn report_results(
     sample_rate: u32,
 ) {
     let total_samples = frames * channels;
-    let samples_per_sec = total_samples as f64 / elapsed.as_secs_f64();
-    let realtime_rate = f64::from(sample_rate) * channels as f64;
+    let samples_per_sec = count_to_f64(total_samples) / elapsed.as_secs_f64();
+    let realtime_rate = f64::from(sample_rate) * count_to_f64(channels);
     let realtime_multiple = samples_per_sec / realtime_rate;
 
     eprintln!();

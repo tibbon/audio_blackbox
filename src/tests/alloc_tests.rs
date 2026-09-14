@@ -8,6 +8,7 @@ use crate::constants::{CacheAlignedPeak, OutputMode};
 use crate::writer_thread::WriterThreadState;
 
 // Test helper consolidated to `crate::test_utils` (DOLL-118).
+use crate::numeric::{count_to_f64, len_to_f32};
 use crate::test_utils::test_env_no_silence;
 
 /// Generate interleaved f32 test data.
@@ -15,7 +16,7 @@ fn generate_data(total_channels: usize, frames: usize) -> Vec<f32> {
     let total = total_channels * frames;
     let mut data = vec![0.0_f32; total];
     for (i, sample) in data.iter_mut().enumerate() {
-        *sample = ((i as f32) * 0.01).sin() * 0.5;
+        *sample = (len_to_f32(i) * 0.01).sin() * 0.5;
     }
     data
 }
@@ -65,7 +66,7 @@ fn test_write_samples_zero_alloc_monitor() {
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / f64::from(iterations)
+            count_to_f64(allocs) / f64::from(iterations)
         );
 
         assert_eq!(
@@ -129,7 +130,7 @@ fn test_write_samples_zero_alloc_recording() {
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / f64::from(iterations)
+            count_to_f64(allocs) / f64::from(iterations)
         );
 
         state
@@ -199,7 +200,7 @@ fn test_write_samples_zero_alloc_partial_frames() {
         );
         println!(
             "  ({:.3} allocations per call)",
-            allocs as f64 / f64::from(iterations)
+            count_to_f64(allocs) / f64::from(iterations)
         );
 
         state

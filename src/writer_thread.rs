@@ -269,12 +269,23 @@ pub(crate) struct WriterThreadState {
 /// not part of the public API (DOLL-129).
 #[cfg(test)]
 pub(crate) fn f32_to_wav_sample(sample: f32, bits_per_sample: u16) -> i32 {
-    let scale = match bits_per_sample {
-        16 => f32::from(i16::MAX), // 32767.0
-        24 => 8_388_607.0_f32,     // 2^23 - 1
-        _ => i32::MAX as f32,      // 2^31 - 1
-    };
-    (sample.clamp(-1.0, 1.0) * scale).round() as i32
+    (sample.clamp(-1.0, 1.0) * pcm_full_scale(bits_per_sample)).round() as i32
+}
+
+/// Multiplier that maps a sample in [-1, 1] to integer PCM at `bits_per_sample`.
+///
+/// 16 and 24 bits use the positive maximum (2^15 - 1, 2^23 - 1). Anything else
+/// is treated as 32-bit, whose maximum 2^31 - 1 has no exact `f32`: it rounds
+/// to 2^31, which is what `i32::MAX as f32` always produced. The saturating
+/// `as i32` in the conversion maps +1.0 back to `i32::MAX`.
+pub(crate) const fn pcm_full_scale(bits_per_sample: u16) -> f32 {
+    match bits_per_sample {
+        16 => 32_767.0,
+        24 => 8_388_607.0,
+        // 2^31, spelled as a product: clippy::lossy_float_literal misreads the
+        // exact literal 2_147_483_648.0 as lossy.
+        _ => 32_768.0 * 65_536.0,
+    }
 }
 
 /// xorshift32 PRNG step → uniform f32 in [0, 1). Cheap and alloc/lock-free, so
@@ -286,8 +297,10 @@ fn xorshift32_unit(state: &mut u32) -> f32 {
     x ^= x >> 17;
     x ^= x << 5;
     *state = x;
-    // Top 24 bits → [0, 1); ample resolution for a 1-LSB dither.
-    (x >> 8) as f32 / (1_u32 << 24) as f32
+    // Top 24 bits → [0, 1); ample resolution for a 1-LSB dither. Built from
+    // a u16 and a u8 so each conversion to f32 is exact (DOLL-653).
+    let [b0, b1, b2, _] = x.to_be_bytes();
+    f32::from(u16::from_be_bytes([b0, b1])).mul_add(256.0, f32::from(b2)) / 16_777_216.0
 }
 
 /// Convert an f32 sample in [-1, 1] to an integer PCM sample scaled by `scale`.
@@ -346,11 +359,7 @@ impl WriterThreadState {
             });
         }
 
-        let sample_scale = match bits_per_sample {
-            16 => f32::from(i16::MAX),
-            24 => 8_388_607.0_f32,
-            _ => i32::MAX as f32,
-        };
+        let sample_scale = pcm_full_scale(bits_per_sample);
 
         // Pack channel indices into a fixed inline array (u8 fits MAX_CHANNELS=255)
         let mut ch_arr = [0_u8; MAX_CHANNELS];

@@ -253,8 +253,8 @@ fn flush_writers_makes_unfinalized_recording_readable() {
         let mut state = single_state(dir);
         let tmp = state.pending_files[0].0.clone();
 
-        let n = 1_000;
-        let data: Vec<f32> = (0..n).map(|i| ((i as f32) * 0.01).sin() * 0.5).collect();
+        let n: u16 = 1_000;
+        let data: Vec<f32> = (0..n).map(|i| (f32::from(i) * 0.01).sin() * 0.5).collect();
         state.write_samples(&data);
 
         // Cross the sample_rate*10 frame threshold so the flush actually fires.
@@ -269,7 +269,7 @@ fn flush_writers_makes_unfinalized_recording_readable() {
         assert_eq!(spec.bits_per_sample, 24);
         assert_eq!(
             reader.len(),
-            u32::try_from(n).expect("sample count fits in u32"),
+            u32::from(n),
             "flushed header must report every written sample"
         );
     });

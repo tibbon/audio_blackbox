@@ -245,6 +245,6 @@ pub(crate) fn is_silent(file_path: &str, threshold: f32) -> Result<bool, Blackbo
         return Ok(true); // Empty file is silent
     }
 
-    let rms = (sum_of_squares / count as f64).sqrt();
+    let rms = (sum_of_squares / crate::numeric::count_to_f64(count)).sqrt();
     Ok(rms < threshold_f64)
 }
