@@ -40,11 +40,37 @@ release-build:
 test:
 	$(CARGO_BIN) test
 
-# Run linting (matches CI)
+# Fast Rust lint (the no-features clippy lane + fmt). `make check-rust` runs
+# all three feature sets, rustdoc, deny, machete and the MSRV check.
 .PHONY: lint
 lint:
 	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) fmt --all -- --check
+
+# Swift lint only (seconds): swift-format + swiftlint --strict.
+.PHONY: lint-swift
+lint-swift:
+	./scripts/check.sh lint
+
+# Autoformat everything the linters can fix mechanically.
+.PHONY: fmt
+fmt:
+	$(CARGO_BIN) fmt --all
+	swift format --in-place --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+	@command -v swiftlint >/dev/null 2>&1 && swiftlint --fix --quiet || true
+	swift format --in-place --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+
+# The guardrail loop (DOLL-652): everything CI gates on, run locally. Green
+# means done. Sections: check-rust | check-swift | check-sanitize (local only).
+.PHONY: check check-rust check-swift check-sanitize
+check:
+	./scripts/check.sh
+check-rust:
+	./scripts/check.sh rust
+check-swift:
+	./scripts/check.sh swift
+check-sanitize:
+	./scripts/check.sh sanitize
 
 # Run the CLI directly
 .PHONY: run
@@ -56,38 +82,12 @@ run:
 clean:
 	$(CARGO_BIN) clean
 
-# Verify: fmt + clippy + test + build + Swift tests (run before committing)
+# Verify: the full guardrail loop plus the App Store metadata lint. Run before
+# pushing. The Rust/Swift steps live in scripts/check.sh so this target, the
+# pre-commit hook (SKIP_TESTS=0) and CI all run the same commands (DOLL-652).
 .PHONY: verify
-verify: check-app-store check-ffi-header
-	$(CARGO_BIN) fmt --all -- --check
-	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
-	$(CARGO_BIN) test -- --test-threads=1
-	$(CARGO_BIN) build
-	: "DOLL-346: lint + test the FFI surface the app links. Cargo features are"
-	: "not additive for tests, so this is a separate pass from the lines above;"
-	: "mirrors CI's ffi lane so make verify and CI don't diverge."
-	$(CARGO_BIN) clippy --all-targets --features ffi -- -D warnings
-	$(CARGO_BIN) test --features ffi -- --test-threads=1
-	: "DOLL-369: third-party license attribution is generated from cargo"
-	: "metadata; fail if committed ACKNOWLEDGMENTS.md drifted from the shipped deps."
-	python3 scripts/gen-acknowledgments.py --check
-	@if command -v xcodebuild >/dev/null 2>&1; then \
-		echo "Running Swift tests..."; \
-		: "DOLL-188: match CI's swift-app lane (cargo build --release --features ffi)."; \
-		: "Without this, make verify and CI would diverge silently if any default"; \
-		: "feature ever reappears. CI runs with default features ON."; \
-		$(CARGO_BIN) build --release --features ffi && \
-		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
-			-destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" -quiet; \
-		echo "Swift tests passed."; \
-		: "DOLL-449: sync the String Catalog from the .stringsdata the build"; \
-		: "just emitted and fail on drift — mirrors CI's swift-app lane."; \
-		python3 scripts/sync-string-catalog.py && \
-		git diff --exit-code BlackBoxApp/BlackBoxApp/Localizable.xcstrings || { \
-			echo "Localizable.xcstrings was out of sync; it has been updated — commit it."; \
-			exit 1; \
-		}; \
-	fi
+verify: check-app-store
+	./scripts/check.sh
 
 # Coverage (DOLL-272): non-gating line-coverage summary to surface untested
 # code. Informational only — deliberately NOT part of `verify`. Rust via
@@ -337,8 +337,14 @@ help:
 	@echo "  build           - Build debug version"
 	@echo "  release-build   - Build release version"
 	@echo "  test            - Run tests"
-	@echo "  lint            - Run linting checks (matches CI)"
-	@echo "  verify          - Run fmt + clippy + test + build"
+	@echo "  lint            - Fast Rust lint (fmt + clippy, no features)"
+	@echo "  lint-swift      - swift-format + swiftlint --strict (seconds)"
+	@echo "  fmt             - Autoformat Rust and Swift"
+	@echo "  check           - Full guardrail loop (scripts/check.sh): green means done"
+	@echo "  check-rust      - Rust half of check (clippy x3, rustdoc, tests, deny, machete, MSRV)"
+	@echo "  check-swift     - Swift half of check (format, swiftlint, xcodebuild test, analyze)"
+	@echo "  check-sanitize  - Swift tests under TSan then ASan+UBSan (slow, local only)"
+	@echo "  verify          - check + App Store metadata lint"
 	@echo "  coverage        - Line-coverage summary (Rust llvm-cov + Swift xccov)"
 	@echo "  run             - Run the CLI directly"
 	@echo "  clean           - Clean build files"

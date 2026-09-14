@@ -7,9 +7,20 @@ How to land a change. Read the README for what the project *is*; this file is th
 1. Pick or file a ticket in the Linear [Audio Blackbox project](https://linear.app/cyberdyne-systems/project/audio-blackbox-fdadb8f8be42). Title and description are the source of truth — paste any context the PR needs.
 2. Branch off `main` as `tibbon/doll-N-short-slug`. The Linear branch button generates this name verbatim.
 3. Open a PR. Mention the ticket in the body (`Closes DOLL-N.`).
-4. CI must be fully green before merge. Lanes: Format, Clippy, MSRV (1.95), Test, Security audit, Benchmark smoke test, Swift app.
-5. Merge via `gh pr merge <num> --rebase --admin` (linear history; keeps GitHub UI bright green for solo branches).
-6. Mark the Linear ticket Done with the PR URL attached.
+4. Run `make check` before opening the PR (DOLL-652). It is the same gate CI runs — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, `cargo deny`, `cargo machete`, MSRV, FFI header parity, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze — and Actions minutes are scarce, so green locally first. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
+5. CI must be fully green before merge. Lanes: Format, Clippy (+ rustdoc, machete), MSRV (1.95), Test, FFI, Security audit (cargo deny), Benchmark smoke test, Swift app (+ swift-format, swiftlint, analyze).
+6. Merge via `gh pr merge <num> --rebase --admin` (linear history; keeps GitHub UI bright green for solo branches).
+7. Mark the Linear ticket Done with the PR URL attached.
+
+## Guardrails (DOLL-652)
+
+[docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md) is the review standard and the rules of engagement for agents: what the lints enforce, what a reviewer still has to judge, and the definition of done. Read section 0 before your first change. The short version:
+
+- **Never silence a lint.** Rust: `#[expect(lint, reason = "...")]`, never `#[allow]` (it is a compile error). Package-wide policy lives in `Cargo.toml [lints]` with a comment; the parked lints and their site counts are tracked in DOLL-653. Swift: `// swiftlint:disable:next rule - reason`, never `disable all`.
+- **Never weaken a test** to make a change pass; fix the test in its own commit and say so.
+- **`unsafe`, FFI, `@unchecked Sendable`, `assumeIsolated`, `Task.detached`** each carry a `// SAFETY:` comment stating the invariant. If you cannot state it, the code is not ready.
+- **Hard bans with reasons** are in `clippy.toml` (`thread::sleep`, `home_dir`, `partial_cmp`) and `.swiftlint.yml` custom rules (`print`, GCD hops, deprecated SwiftUI API). The diagnostic tells you the alternative.
+- **Swift 6 strict concurrency with `MainActor` default isolation** is on (`BlackBoxApp/Guardrails.xcconfig`, applied through `project.yml`). Types that run off the main actor say so explicitly.
 
 ## Invariants
 
@@ -20,6 +31,8 @@ These are non-obvious and have bitten past releases. Read before changing relate
 - **`panic = "abort"` is a release-build invariant (DOLL-90).** Any panic in production is a bug we want to surface via crash report — *not* unwind across the FFI boundary. Do not add `catch_unwind` wrappers; do not flip `panic = "unwind"` for release.
 - **`make check-app-store` is the OpenAPI lint that catches schema drift before `fastlane mac metadata`.** It validates the metadata directory against the App Store Connect schema fastlane targets. `make verify` runs it; `make fl-metadata` does NOT (you must run `check-app-store` yourself, or run `make verify` first). If it fails, fix the metadata; don't bypass it — Apple's web upload will reject the same payload.
 - **`project.yml` is the source of truth for the Xcode project**, but the generated `.xcodeproj` is committed too. The `swift-app` CI lane enforces they match: it installs a pinned `xcodegen`, regenerates, and fails on any diff (DOLL-160). If you edit `project.yml`, run `make xcodegen` and commit the regenerated `.xcodeproj` in the same change, or CI will reject the PR.
+- **Lint policy is in `Cargo.toml`, thresholds and bans in `clippy.toml`, and every `allow` there has a reason.** Clippy does not merge configs, and `-D warnings` in CI makes every `warn` an error at the gate. If a new lint fires on code you did not touch, fix it or park it in the DOLL-653 backlog block with a count — do not `#[expect]` your way through unrelated files.
+- **`project.yml` `settings` override `Guardrails.xcconfig`.** xcodegen writes `settings` as build settings, which beat the xcconfig. Language mode, concurrency, warnings-as-errors and hardening keys belong in the xcconfig; `settings` keeps only identity/version keys `scripts/check-versions.sh` reads.
 - **`include/blackbox_ffi.h` is hand-maintained** (no cbindgen). When you add or remove a `pub extern "C" fn` in `src/ffi.rs`, edit the header by hand and confirm with `make check-ffi-header`. The swift-app CI lane runs the same check before building, so missing-header drift fails fast there too (DOLL-190).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the threading model, lock-acquisition order, and the deeper invariants behind the audio path / FFI boundary.

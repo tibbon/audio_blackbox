@@ -22,7 +22,10 @@ There are two tiers of setup:
 | **Xcode** (full) + Command Line Tools | Required to build the SwiftUI app. `xcode-select -p` should point into `Xcode.app`. |
 | **Rust** via [rustup](https://rustup.rs) | Edition 2024; MSRV **1.95** (`rust-version` in `Cargo.toml`). Stable works for day-to-day; releases pin 1.95. |
 | **Homebrew** | For the tools below. |
-| **XcodeGen** | `brew install xcodegen` — regenerates `BlackBoxApp.xcodeproj` from `project.yml` (the `.xcodeproj` is committed and CI checks it matches). |
+| **XcodeGen** | `brew install xcodegen` — regenerates `BlackBoxApp.xcodeproj` from `project.yml` (the `.xcodeproj` is committed and CI checks it matches; CI pins 2.45.3). |
+| **SwiftLint** | `brew install swiftlint` — `scripts/check.sh` and CI run it with `--strict`. `swift format` ships with Xcode. |
+| **cargo-deny, cargo-machete** | `cargo install cargo-deny cargo-machete --locked` — dependency advisories/licenses and unused-dep detection; CI runs both. |
+| **Rust MSRV toolchain** | `rustup toolchain install 1.95.0` — lets `scripts/check.sh` run the MSRV check CI runs. Keep `stable` current (`rustup update`): CI's clippy is stable, and lints move between releases. |
 | **GitHub CLI** | `brew install gh` — for PRs and release dispatch. |
 
 macOS on Apple Silicon is the supported/shipped target (the app is arm64-only).
@@ -47,10 +50,16 @@ make setup   # installs the pre-commit hook and runs `make verify`
 ### Everyday commands
 
 ```bash
-make build          # debug build of the Rust workspace
+make build          # debug build of the Rust crate
 make test           # cargo test
-make lint           # fmt + clippy, matching CI
-make verify         # fmt + clippy + test + build + FFI/App-Store checks
+make lint           # fast Rust lint: fmt + clippy (no features)
+make lint-swift     # swift-format + swiftlint --strict (seconds)
+make fmt            # autoformat Rust and Swift
+make check          # the full guardrail loop (scripts/check.sh) — green means done
+make check-rust     # Rust half: clippy x3 feature sets, rustdoc, tests, deny, machete, MSRV
+make check-swift    # Swift half: format, swiftlint, xcodebuild test, analyze, catalog sync
+make check-sanitize # Swift tests under TSan then ASan+UBSan (slow; local only)
+make verify         # check + App Store metadata lint
 make run            # run the CLI directly
 
 make app            # build the SwiftUI app bundle (rust-lib + xcodebuild)
@@ -58,8 +67,10 @@ make run-app        # build and launch the app
 make xcodegen       # regenerate the .xcodeproj from project.yml
 ```
 
-Run `make help` for the full list. Run `make verify` before pushing —
-GitHub Actions runs the same gates and CI minutes are limited.
+Run `make help` for the full list. Run `make check` before pushing —
+GitHub Actions runs the same gates and CI minutes are limited. The rules the
+gates enforce, and the ones a reviewer still has to judge, are in
+[docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md).
 
 ---
 
