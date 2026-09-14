@@ -227,13 +227,15 @@ fn record_metric(
     }
 }
 
-/// `part` as a percentage of `whole`, to 0.01%, clamped to [0, 100].
+/// `part` as a percentage of `whole`, rounded to the nearest 0.01% and
+/// clamped to [0, 100].
 ///
-/// Integer math first, so no `u64` is cast to a float (DOLL-653). A `whole`
-/// of 0 reports 0% rather than the NaN the old float division produced.
+/// Integer math in `u128` first, so it is exact for every `u64` and no
+/// integer is cast to a float (DOLL-653). A `whole` of 0 reports 0% rather
+/// than the NaN the old float division produced.
 fn percent_of(part: u64, whole: u64) -> f32 {
-    let basis_points = part
-        .saturating_mul(10_000)
+    let whole = u128::from(whole);
+    let basis_points = (u128::from(part) * 10_000 + whole / 2)
         .checked_div(whole)
         .unwrap_or(0)
         .min(10_000);
@@ -283,6 +285,22 @@ mod tests {
     use std::thread;
     use std::time::Duration;
     use tempfile::tempdir;
+
+    #[test]
+    fn percent_of_rounds_to_basis_points_and_clamps() {
+        let close = |actual: f32, expected: f32| (actual - expected).abs() < 1e-4;
+        assert!(close(percent_of(1, 3), 33.33), "1/3 rounds down to 33.33%");
+        assert!(close(percent_of(2, 3), 66.67), "2/3 rounds up to 66.67%");
+        assert!(
+            close(percent_of(5, 0), 0.0),
+            "a zero whole reports 0%, not NaN"
+        );
+        assert!(close(percent_of(10, 5), 100.0), "over 100% clamps to 100%");
+        assert!(
+            close(percent_of(u64::MAX, u64::MAX), 100.0),
+            "exact for the largest u64 values"
+        );
+    }
 
     #[test]
     fn test_measure_execution_time() {
