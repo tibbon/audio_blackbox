@@ -18,120 +18,11 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Startup") {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) {
-                        updateLoginItem()
-                    }
-                    .accessibilityHint("Start BlackBox when you log in")
-                Toggle("Start recording on launch", isOn: $autoRecord)
-                    .accessibilityHint("Begin recording immediately when BlackBox starts")
-                Text("When auto-record is enabled, recording begins with your saved settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Sleep Behavior") {
-                Toggle("Prevent idle sleep while recording", isOn: $preventSleep)
-                    .accessibilityHint("Keep your Mac awake during recording")
-                Text(
-                    """
-                    When enabled, your Mac won't sleep from inactivity while recording. \
-                    Lid close and manual sleep are unaffected.
-                    """
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                Picker("When Mac sleeps during recording:", selection: $sleepBehavior) {
-                    Text("Pause and resume on wake").tag("resume")
-                    Text("Stop recording").tag("stop")
-                }
-                .pickerStyle(.radioGroup)
-                .accessibilityLabel("Sleep behavior")
-
-                Text("Controls what happens if your Mac is forced to sleep (lid close, low battery, etc.).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Global Shortcut") {
-                HStack {
-                    // Combine just the label + recorder into one a11y element
-                    // so VoiceOver gets one announcement with label, value,
-                    // and hint. Clear stays as a sibling so VO can still
-                    // focus and activate it.
-                    HStack {
-                        Text("Toggle Recording:")
-                        Spacer()
-                        ShortcutRecorderButton(
-                            shortcutLabel: $shortcutLabel,
-                            isRecording: $isRecordingShortcut,
-                            error: $shortcutError
-                        )
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Global keyboard shortcut for toggling recording")
-                    .accessibilityValue(
-                        shortcutLabel == String(localized: "None")
-                            ? String(localized: "No shortcut set") : shortcutLabel
-                    )
-                    .accessibilityHint(
-                        isRecordingShortcut
-                            ? String(localized: "Press a key combination, or Escape to cancel")
-                            : String(localized: "Click to record a new shortcut")
-                    )
-
-                    if shortcutLabel != String(localized: "None") {
-                        Button("Clear") {
-                            clearShortcut()
-                        }
-                        .font(.caption)
-                    }
-                }
-
-                if let shortcutError {
-                    Label {
-                        Text(shortcutError)
-                    } icon: {
-                        Image(systemName: "xmark.circle.fill")
-                            .accessibilityHidden(true)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Color(nsColor: .systemRed))
-                } else {
-                    Text("Works from any app. Click the button and press your desired key combination.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Diagnostics") {
-                Toggle("Enable debug logging", isOn: $debugLogging)
-                    .accessibilityHint("Log detailed info to macOS Console")
-                Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Setup") {
-                Button("Run Setup Again\u{2026}") {
-                    hasCompletedOnboarding = false
-                    NSApp.activate()
-                    openWindow(id: "onboarding")
-                }
-                .accessibilityHint("Re-run the initial setup wizard")
-                Text("Re-run the setup wizard to change your output directory or recording mode.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button("Reset All Settings\u{2026}") {
-                    confirmResetAllSettings()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityHint("Restore all settings to their defaults")
-            }
+            startupSection
+            sleepBehaviorSection
+            globalShortcutSection
+            diagnosticsSection
+            setupSection
         }
         .formStyle(.grouped)
         .onAppear {
@@ -143,6 +34,139 @@ struct GeneralSettingsTab: View {
             if sleepBehavior != "resume" && sleepBehavior != "stop" {
                 sleepBehavior = "resume"
             }
+        }
+    }
+
+    private var startupSection: some View {
+        Section("Startup") {
+            Toggle("Launch at login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) {
+                    updateLoginItem()
+                }
+                .accessibilityHint("Start BlackBox when you log in")
+            Toggle("Start recording on launch", isOn: $autoRecord)
+                .accessibilityHint("Begin recording immediately when BlackBox starts")
+            Text("When auto-record is enabled, recording begins with your saved settings.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var sleepBehaviorSection: some View {
+        Section("Sleep Behavior") {
+            Toggle("Prevent idle sleep while recording", isOn: $preventSleep)
+                .accessibilityHint("Keep your Mac awake during recording")
+            Text(
+                """
+                When enabled, your Mac won't sleep from inactivity while recording. \
+                Lid close and manual sleep are unaffected.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Picker("When Mac sleeps during recording:", selection: $sleepBehavior) {
+                Text("Pause and resume on wake").tag("resume")
+                Text("Stop recording").tag("stop")
+            }
+            .pickerStyle(.radioGroup)
+            .accessibilityLabel("Sleep behavior")
+
+            Text("Controls what happens if your Mac is forced to sleep (lid close, low battery, etc.).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var globalShortcutSection: some View {
+        Section("Global Shortcut") {
+            HStack {
+                shortcutRecorderRow
+
+                if shortcutLabel != String(localized: "None") {
+                    Button("Clear") {
+                        clearShortcut()
+                    }
+                    .font(.caption)
+                }
+            }
+
+            shortcutCaption
+        }
+    }
+
+    // Combine just the label + recorder into one a11y element
+    // so VoiceOver gets one announcement with label, value,
+    // and hint. Clear stays as a sibling so VO can still
+    // focus and activate it.
+    private var shortcutRecorderRow: some View {
+        HStack {
+            Text("Toggle Recording:")
+            Spacer()
+            ShortcutRecorderButton(
+                shortcutLabel: $shortcutLabel,
+                isRecording: $isRecordingShortcut,
+                error: $shortcutError
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Global keyboard shortcut for toggling recording")
+        .accessibilityValue(
+            shortcutLabel == String(localized: "None")
+                ? String(localized: "No shortcut set") : shortcutLabel
+        )
+        .accessibilityHint(
+            isRecordingShortcut
+                ? String(localized: "Press a key combination, or Escape to cancel")
+                : String(localized: "Click to record a new shortcut")
+        )
+    }
+
+    @ViewBuilder private var shortcutCaption: some View {
+        if let shortcutError {
+            Label {
+                Text(shortcutError)
+            } icon: {
+                Image(systemName: "xmark.circle.fill")
+                    .accessibilityHidden(true)
+            }
+            .font(.caption)
+            .foregroundStyle(Color(nsColor: .systemRed))
+        } else {
+            Text("Works from any app. Click the button and press your desired key combination.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var diagnosticsSection: some View {
+        Section("Diagnostics") {
+            Toggle("Enable debug logging", isOn: $debugLogging)
+                .accessibilityHint("Log detailed info to macOS Console")
+            Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var setupSection: some View {
+        Section("Setup") {
+            Button("Run Setup Again\u{2026}") {
+                hasCompletedOnboarding = false
+                NSApp.activate()
+                openWindow(id: "onboarding")
+            }
+            .accessibilityHint("Re-run the initial setup wizard")
+            Text("Re-run the setup wizard to change your output directory or recording mode.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Reset All Settings\u{2026}") {
+                confirmResetAllSettings()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityHint("Restore all settings to their defaults")
         }
     }
 
