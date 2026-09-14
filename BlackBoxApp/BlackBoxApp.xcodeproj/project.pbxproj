@@ -11,6 +11,7 @@
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
 		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
 		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
+		5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0674B223253655522C4B25 /* SleepWakePolicy.swift */; };
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */; };
@@ -44,6 +45,7 @@
 		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0674B223253655522C4B25 /* SleepWakePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakePolicy.swift; sourceTree = "<group>"; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
 		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
 				BE10D00516431CD06B0874FE /* SettingsKeys.swift */,
 				FD293BB00932B1C1871E349D /* SettingsView.swift */,
+				AB0674B223253655522C4B25 /* SleepWakePolicy.swift */,
 			);
 			path = BlackBoxApp;
 			sourceTree = "<group>";
@@ -221,6 +224,7 @@
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
 				427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */,
 				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
+				5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
