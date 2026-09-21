@@ -1,0 +1,65 @@
+name: Ignored tests
+
+# Long-running benchmark / performance / allocation tests are marked
+# `#[ignore]` so they don't run on the per-PR `cargo test` lane (DOLL-131).
+# They still exercise real code paths; this lane runs them on a cadence
+# so they don't silently rot as production evolves.
+#
+# Triggers:
+#   - weekly schedule (Monday 08:00 UTC)
+#   - manual workflow_dispatch (anyone with write access can kick off)
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+# Cancel an in-progress run if a new one starts on the same ref —
+# a manual workflow_dispatch overlapping the weekly cron would
+# otherwise pile two long ignored-tests runs on top of each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  ignored:
+    name: "Run ignored tests"
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # --test-threads=1 matches the per-PR `test` lane and avoids
+      # contention between benchmarks that allocate / measure throughput.
+      #
+      # --features benchmarking (DOLL-450): the 7 #[ignore]d
+      # PerformanceTracker tests in src/tests/performance_tests.rs are
+      # additionally gated behind the `benchmarking` feature — without
+      # the flag they never even compiled here, so the lane created to
+      # stop ignored tests from "silently passing without executing"
+      # (DOLL-83) was itself silently skipping them. The feature is
+      # additive: the alloc + benchmark ignored tests run exactly as
+      # before. (Profile stays dev — these 7 are functional tracker
+      # tests, not perf floors; the bench smoke lane owns release-mode
+      # throughput assertions.)
+      - name: Run ignored tests
+        run: cargo test --no-default-features --features benchmarking -- --ignored --test-threads=1

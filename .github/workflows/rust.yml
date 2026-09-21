@@ -3,7 +3,6 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
-    tags: ["v*"]
   pull_request:
     branches: [ "main" ]
 
@@ -11,171 +10,397 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable]
-
+  # ── Formatting ─────────────────────────────────────────────────────
+  # Fast check — fails early before burning CI minutes on builds.
+  fmt:
+    name: Format
+    runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust ${{ matrix.rust }}
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: ${{ matrix.rust }}
-        override: true
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-          ${{ runner.os }}-
-    
-    - name: Cache system packages (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/cache@v3
-      with:
-        path: |
-          /var/lib/apt/lists/*
-          /var/cache/apt/archives/*
-          /var/cache/apt/archives/partial/*
-        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
-    
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
-        # Verify alsa is installed and pkg-config can find it
-        pkg-config --list-all | grep alsa || echo "ALSA not found in pkg-config"
-        ls -la /usr/lib/pkgconfig/alsa.pc || echo "alsa.pc not found"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-    - name: Build
-      run: cargo build --verbose
-    
-    - name: Run tests
-      run: cargo test --verbose
-      env:
-        # Set explicit environment variables to ensure test consistency
-        AUDIO_CHANNELS: "0,1"
-        DEBUG: "false" 
-        RECORD_DURATION: "1"
-        OUTPUT_MODE: "single"
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
-        profile: minimal
-        toolchain: stable
-        override: true
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-          ${{ runner.os }}-
-    
-    - name: Cache system packages
-      uses: actions/cache@v3
-      with:
-        path: |
-          /var/lib/apt/lists/*
-          /var/cache/apt/archives/*
-          /var/cache/apt/archives/partial/*
-        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
-    
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
-    
+        components: rustfmt
+
     - name: Check formatting
       run: cargo fmt --all -- --check
-    
-    - name: Run clippy
-      run: cargo clippy -- -D warnings
 
-  release:
-    name: Release
-    needs: [test, lint]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+  # ── Lint ───────────────────────────────────────────────────────────
+  # Clippy on all targets (lib, bins, tests, benchmarks).
+  lint:
+    name: Clippy
+    runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v4
-    
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
-        profile: minimal
-        toolchain: stable
-        override: true
-    
+        components: clippy
+
     - name: Cache Rust dependencies
-      uses: actions/cache@v3
+      # Per-feature cache keys (DOLL-271). The stable-toolchain lanes compile
+      # divergent feature sets — clippy/test build no features, bench builds
+      # `--features benchmarking`, swift-app builds `--features ffi`. A single
+      # shared key (the prior DOLL-166 design) meant only the first job to
+      # finish saved its target/, and actions/cache won't overwrite an existing
+      # key, so feature artifacts built only by later jobs were dropped and
+      # rebuilt every run. Distinct keys per feature bucket let each persist
+      # its own target/. MSRV keeps its own key (different toolchain).
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-nofeat-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
-          ${{ runner.os }}-
-    
-    - name: Cache system packages
-      uses: actions/cache@v3
+          ${{ runner.os }}-cargo-nofeat-
+
+    - name: Run clippy (all targets)
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
+
+    - name: Check Cargo.lock is up-to-date
+      run: cargo update --locked --dry-run
+
+    # DOLL-652: rustdoc with warnings as errors (broken intra-doc links,
+    # unescaped backticks) and unused-dependency detection. Both are cheap
+    # on the warm cache above; they ride in this lane rather than a new one
+    # because Actions minutes are scarce.
+    - name: Rustdoc (warnings are errors)
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
+
+    - name: Install cargo-machete
+      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      with:
+        tool: cargo-machete
+
+    - name: Unused dependencies (cargo machete)
+      run: cargo machete
+
+  # ── MSRV verification ─────────────────────────────────────────────
+  # Cargo.toml claims `rust-version = "1.98"`. Without this job an
+  # MSRV regression (someone adopting a 1.99-only feature) ships
+  # silently because every other job uses `@stable`. Pin to the MSRV
+  # toolchain and `cargo check`. Bump the toolchain ref in lockstep
+  # with `Cargo.toml`'s `rust-version` field. (DOLL-150)
+  msrv:
+    name: MSRV (1.98)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install Rust 1.98
+      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: |
-          /var/lib/apt/lists/*
-          /var/cache/apt/archives/*
-          /var/cache/apt/archives/partial/*
-        key: ${{ runner.os }}-apt-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-msrv-1.98-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-apt-
-    
-    - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libasound2-dev pkg-config alsa-utils
-    
-    - name: Build release
-      run: cargo build --release
-    
-    - name: Create release
-      uses: softprops/action-gh-release@v1
+          ${{ runner.os }}-msrv-1.98-
+
+    - name: cargo check (MSRV)
+      run: cargo check --all-targets --no-default-features
+
+  # ── Tests ──────────────────────────────────────────────────────────
+  # macOS-only — the shipped product is Mac App Store; Ubuntu added cost
+  # without adding signal for the SwiftUI / CoreAudio surface (DOLL-153).
+  test:
+    name: Test (macos-latest)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
-        files: |
-          target/release/blackbox
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-nofeat-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-nofeat-
+
+    - name: Run tests
+      run: cargo test --verbose -- --test-threads=1
+
+  # ── FFI lint + tests ───────────────────────────────────────────────
+  # src/ffi.rs is the C-ABI surface the App Store binary actually links,
+  # gated behind `--features ffi`. Every other lane runs --no-default-features,
+  # so without this job ffi.rs was never under `-D warnings` and the 26 tests
+  # in src/tests/ffi_tests.rs never ran in CI (DOLL-346). Cargo features are
+  # not additive for the test binary, so this is a distinct pass from the
+  # no-features `test` lane above.
+  ffi:
+    name: FFI (lint + test)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+      with:
+        components: clippy
+
+    # Distinct key from swift-app's cargo-ffi (which caches the *release* ffi
+    # build): this lane builds dev-profile clippy + test artifacts, and two
+    # jobs sharing one key race to save it (only the first wins — DOLL-271).
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-ffitest-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-ffitest-
+
+    - name: Run clippy (FFI, all targets)
+      run: cargo clippy --all-targets --features ffi -- -D warnings
+
+    - name: Run tests (FFI)
+      # DOLL-461: scoped to the ffi_tests module — `default = []`, so every
+      # non-FFI test in this binary is byte-identical to the no-features
+      # Test lane already running on another macOS runner; re-running the
+      # full suite here doubled the spend. Clippy above still type-checks
+      # the whole crate with the feature enabled, and the release gate now
+      # runs this same scoped pass.
+      run: cargo test --features ffi ffi_tests -- --test-threads=1
+
+    # DOLL-369: ACKNOWLEDGMENTS.md is generated from cargo metadata over the
+    # shipped (--features ffi) dependency set. Fail if it drifted — i.e. a dep
+    # was added/removed/relicensed without regenerating the attribution.
+    - name: Check third-party license attribution
+      run: python3 scripts/gen-acknowledgments.py --check
+
+  # ── Security audit ─────────────────────────────────────────────────
+  # cargo-deny (DOLL-652) replaces cargo-audit: the same RUSTSEC advisory
+  # DB (unmaintained/yanked advisories fail the lane, as `--deny warnings`
+  # did before) plus license allow-list, duplicate/wildcard bans and
+  # registry sources, all configured in deny.toml. A temporary advisory
+  # exemption goes in deny.toml `[advisories] ignore` with a rationale and
+  # an expiry note, never by loosening the lane. The job keeps its name
+  # because branch protection requires the "Security audit" context.
+  audit:
+    name: Security audit
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      with:
+        tool: cargo-deny
+
+    - name: cargo deny check
+      run: cargo deny check
+
+  # ── Benchmark smoke test ───────────────────────────────────────────
+  # Builds the bench binary in release mode and runs a quick smoke test
+  # to catch regressions. Not for perf numbers (CI runners are noisy).
+  bench:
+    name: Benchmark smoke test
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+      with:
+        components: clippy
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-bench-
+
+    # DOLL-450: nothing else compiles the `benchmarking`-gated test code
+    # (`src/tests/performance_tests.rs`, the `performance` module) — the
+    # clippy/test/msrv lanes run --no-default-features, the ffi lane runs
+    # --features ffi, and the release build below only builds the
+    # bench-writer BINARY. A breakage in that gated code shipped silently
+    # until someone ran the benchmarks locally. Same pattern as the ffi
+    # lane: clippy type-checks every target with the feature enabled.
+    - name: Run clippy (benchmarking, all targets)
+      run: cargo clippy --all-targets --features benchmarking -- -D warnings
+
+    - name: Build bench binary (release)
+      run: cargo build --release --bin bench-writer --features benchmarking
+
+    # single/split (hound direct-write): 10x is well below the documented
+    # worst case (19x) so noisy GH runners don't flap, but enough to catch a
+    # ~50% regression.
+    - name: Smoke test — single mode (64ch, 2s)
+      run: scripts/bench-assert.sh 10 -- target/release/bench-writer --channels 64 --seconds 2 --mode single
+
+    - name: Smoke test — split mode (16ch, 2s)
+      run: scripts/bench-assert.sh 10 -- target/release/bench-writer --channels 16 --seconds 2 --mode split
+
+    # pipeline drives the REAL production writer (DOLL-251): WriterThreadState
+    # + writer_thread_main + RawWavWriter through the rtrb ring and the
+    # adaptive-sleep drain loop. It is inherently ~3x slower than the hound
+    # direct-write modes (thread handoff + 1-5ms drain sleeps), so the floor is
+    # set proportionally lower (~4x) to keep the same headroom the 10x modes
+    # have — still enough to catch a major regression in shipped code.
+    - name: Smoke test — pipeline mode (64ch, 2s)
+      run: scripts/bench-assert.sh 4 -- target/release/bench-writer --channels 64 --seconds 2 --mode pipeline
+
+  # ── Swift app build (macOS) ────────────────────────────────────────
+  # Builds the Rust static library with FFI exports and the SwiftUI
+  # menu bar app via xcodebuild.
+  swift-app:
+    name: Swift app
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    # DOLL-160: the committed project.pbxproj is the generated output of
+    # `xcodegen generate` against project.yml. Regenerate with a PINNED
+    # xcodegen and fail if the result differs from what's committed — this
+    # catches a project.yml edit (new framework, build setting, source dir)
+    # that wasn't followed by `make xcodegen`. Runs first so drift fails fast
+    # before the multi-minute Rust/Swift build. xcodegen is pinned (by version
+    # AND sha256) because its pbxproj output format varies across versions —
+    # an unpinned install would diff against the committed baseline spuriously.
+    - name: Check pbxproj matches project.yml
+      run: |
+        set -euo pipefail
+        XCODEGEN_VERSION="2.46.0"
+        XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+        TOOLDIR="$RUNNER_TEMP/xcodegen"
+        mkdir -p "$TOOLDIR"
+        # DOLL-430: retry on transient GitHub CDN errors (a 504 here once failed
+        # the whole required job). The sha256 check below guards integrity, so
+        # retrying the download is safe.
+        curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$TOOLDIR/xcodegen.zip" \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+        echo "${XCODEGEN_SHA256}  $TOOLDIR/xcodegen.zip" | shasum -a 256 -c -
+        unzip -q "$TOOLDIR/xcodegen.zip" -d "$TOOLDIR"
+        # `share/` must stay a sibling of `bin/` so the binary finds its SettingPresets.
+        (cd BlackBoxApp && "$TOOLDIR/xcodegen/bin/xcodegen" generate)
+        if ! git diff --exit-code -- BlackBoxApp/BlackBoxApp.xcodeproj; then
+          echo "::error::project.pbxproj is out of sync with project.yml. Run 'make xcodegen' and commit the result."
+          exit 1
+        fi
+
+    # DOLL-652: Swift lint runs before the multi-minute Rust + Xcode builds
+    # so a style or API-hygiene failure costs seconds, not minutes.
+    # swift-format ships in the Xcode toolchain; SwiftLint is preinstalled on
+    # the macOS runner images (brew fallback in case an image drops it).
+    - name: Swift lint (swift-format + swiftlint --strict)
+      run: |
+        set -euo pipefail
+        swift format lint --strict --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+        command -v swiftlint >/dev/null 2>&1 || brew install swiftlint
+        swiftlint version
+        swiftlint lint --strict --quiet
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-ffi-
+
+    # DOLL-271: cache Xcode DerivedData — the cold-cache xcodebuild is the
+    # dominant cost of this job. Keyed on the Swift sources + the generated
+    # project so a source change busts it; restore-keys allows a warm partial
+    # restore for incremental rebuilds. (NOT applied to the CodeQL Swift job:
+    # CodeQL traces every swiftc invocation, and a fully-cached build would
+    # skip compilation and starve the extractor.)
+    - name: Cache Xcode DerivedData
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ~/Library/Developer/Xcode/DerivedData
+        key: ${{ runner.os }}-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
+        restore-keys: |
+          ${{ runner.os }}-deriveddata-
+
+    # DOLL-190: hand-maintained include/blackbox_ffi.h drift check.
+    # Runs *before* the Rust build so a header mismatch fails fast
+    # (the actual build / Swift tests would also catch most cases,
+    # but only after a multi-minute rebuild).
+    - name: Check FFI header parity
+      run: ./scripts/check-ffi-header.sh
+
+    - name: Build Rust static library (FFI)
+      run: cargo build --release --features ffi
+
+    - name: Run Swift tests
+      # SWIFT_EMIT_LOC_STRINGS=YES makes the compiler emit .stringsdata as a
+      # side effect of the build the tests need anyway — feeds the catalog
+      # drift check below at no extra build cost (DOLL-449).
+      # The full log is kept for `swiftlint analyze` (DOLL-652), which needs
+      # the swiftc invocations; the console gets the readable subset.
+      run: |
+        set -euo pipefail
+        mkdir -p target
+        xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" 2>&1 \
+          | tee target/xcodebuild.log \
+          | grep -E 'error:|warning:|Test Suite|Test Case.*(passed|failed)|Executed|\*\* ' || true
+        grep -q '\*\* TEST SUCCEEDED \*\*' target/xcodebuild.log
+
+    - name: Swift analyzer rules (unused declarations, imports, captures)
+      run: swiftlint analyze --strict --quiet --compiler-log-path target/xcodebuild.log
+
+    # DOLL-449: xcodebuild never writes back to the String Catalog (only the
+    # Xcode IDE does), so in a CLI-only workflow the committed catalog can
+    # silently drift from the code. Re-run the deterministic sync against the
+    # .stringsdata the test build just emitted and fail on any diff.
+    - name: Check String Catalog is in sync
+      run: |
+        python3 scripts/sync-string-catalog.py
+        git diff --exit-code BlackBoxApp/BlackBoxApp/Localizable.xcstrings || {
+          echo "::error::Localizable.xcstrings is out of sync — run scripts/sync-string-catalog.py after a SWIFT_EMIT_LOC_STRINGS=YES build and commit the result."
+          exit 1
+        }
+
+    - name: Build SwiftUI app
+      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
+

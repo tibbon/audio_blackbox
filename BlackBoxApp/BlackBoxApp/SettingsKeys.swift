@@ -1,0 +1,45 @@
+/// Centralized `UserDefaults` keys for all persisted settings.
+///
+/// Referenced from `RecordingState`, `BlackBoxApp`, `OnboardingView`,
+/// `SettingsView`, and tests. Extracted to its own file (DOLL-203)
+/// because the cross-file usage made finding-by-filename impossible
+/// when it lived inline at the bottom of `SettingsView.swift`.
+///
+/// **Adding a key**: declare it here, then bind via `@AppStorage(SettingsKeys.foo)`
+/// at the call site. Don't introduce string literals elsewhere —
+/// `CoreTests.testAllKeyValues` is the regression guard against
+/// accidental renames that would orphan stored UserDefaults values.
+///
+/// `nonisolated`: plain constants, read from nonisolated XCTest lifecycle hooks
+/// as well as from main-actor code.
+nonisolated enum SettingsKeys {
+    static let inputDevice = "inputDevice"
+    static let audioChannels = "audioChannels"
+    static let outputMode = "outputMode"
+    static let silenceEnabled = "silenceEnabled"
+    static let silenceThreshold = "silenceThreshold"
+    static let continuousMode = "continuousMode"
+    static let recordingCadence = "recordingCadence"
+    static let launchAtLogin = "launchAtLogin"
+    static let autoRecord = "autoRecord"
+    static let minDiskSpaceMB = "minDiskSpaceMB"
+    static let hasCompletedOnboarding = "hasCompletedOnboarding"
+    static let bitDepth = "bitDepth"
+    static let lastOutputDirPath = "lastOutputDirPath"
+    static let silenceGateEnabled = "silenceGateEnabled"
+    static let silenceGateTimeout = "silenceGateTimeout"
+    static let sleepBehavior = "sleepBehavior"
+    static let preventSleep = "preventSleep"
+
+    // DOLL-266: keys that previously lived as bare string literals at their
+    // call sites, centralized here so a rename can't orphan stored values.
+    static let lastSampleRate = "lastSampleRate"
+    static let debugLogging = "debugLogging"
+    static let successfulRecordingSessions = "successfulRecordingSessions"
+    static let hasPromptedForReview = "hasPromptedForReview"
+    static let outputDirBookmark = "outputDirBookmark"
+
+    // DOLL-378: the global-hotkey shortcut persisted under a bare literal in
+    // GlobalHotkeyManager, escaping this registry and its rename guard.
+    static let globalShortcut = "globalShortcut"
+}

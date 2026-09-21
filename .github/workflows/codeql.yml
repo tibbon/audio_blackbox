@@ -1,0 +1,117 @@
+name: "CodeQL"
+
+# Manual / advanced CodeQL setup. The repo previously used GitHub's
+# Default setup which auto-detected every language in the tree —
+# Python (one stdlib script), Ruby (Fastfile + Gemfile), etc. — and
+# burned analysis time on languages where there's nothing meaningful
+# to scan. After this lands, disable Default setup at:
+#   https://github.com/tibbon/audio_blackbox/settings/security_analysis
+# under "Code scanning > Default setup > Disable".
+#
+# Languages scanned:
+#   - swift   (the SwiftUI app — highest-signal target)
+#   - rust    (the audio engine + FFI; CodeQL Rust support GA'd in 2025)
+#   - actions (lints workflow YAML for things like injection-via-${{}})
+#
+# All third-party action references are pinned to commit SHAs per
+# DOLL-138's supply-chain policy.
+
+# Triggers: weekly schedule + manual dispatch only.
+#
+# The Swift CodeQL run takes ~25–45 minutes (cold-cache xcodebuild +
+# CodeQL extractor tracing every swiftc invocation), which is too slow
+# to gate normal PR / merge work. Security scanning isn't a per-PR
+# blocker the way tests are; running it weekly + on-demand catches
+# advisories with the same fidelity as on-push without burning runner
+# minutes on every change.
+#
+# To run a scan on demand: GitHub Actions → CodeQL → "Run workflow".
+on:
+  schedule:
+    # Weekly Sunday 02:18 UTC.
+    - cron: "18 2 * * 0"
+  workflow_dispatch:
+
+# Cancel an in-progress run if a new one starts on the same ref. A
+# manual workflow_dispatch overlapping the cron run would otherwise
+# kick off a second 25–45-minute Swift CodeQL trace on top of the
+# first.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # Swift autobuild needs xcodebuild → macOS runner. Rust + Actions
+    # run fine on Linux runners (and Linux is cheaper).
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: swift
+            # Manual build: the Xcode project links against the Rust
+            # static library produced by `cargo build --features ffi`,
+            # which `autobuild` can't infer. Run an explicit build
+            # step below before CodeQL traces.
+            build-mode: manual
+          - language: rust
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust (Swift only)
+        if: matrix.language == 'swift'
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+
+      - name: Cache Rust dependencies (Swift only)
+        # Without this, every CodeQL Swift run rebuilds the Rust FFI
+        # static lib from a cold target/ — that was most of the 21
+        # minutes the first failing run took. Cache key matches the
+        # `swift-app` job's so they share warm artifacts.
+        if: matrix.language == 'swift'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63  # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build Swift app for CodeQL trace
+        if: matrix.language == 'swift'
+        run: |
+          # CodeQL traces the swiftc invocations during this build, so
+          # everything that ends up in the .app must be compiled here.
+          cargo build --release --features ffi
+          xcodebuild \
+            -project BlackBoxApp/BlackBoxApp.xcodeproj \
+            -scheme BlackBoxApp \
+            -configuration Release \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="-" \
+            build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63  # v4
+        with:
+          category: "/language:${{ matrix.language }}"

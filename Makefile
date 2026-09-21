@@ -2,40 +2,37 @@
 
 # Configuration
 APP_NAME = BlackBox Audio Recorder
-APP_VERSION = 0.1.0
-BUNDLE_ID = com.blackbox.audiorecorder
-MACOS_MIN_VERSION = 10.14
+APP_VERSION = 1.4.0
+BUNDLE_ID = com.dollhousemediatech.blackbox
 CARGO_BIN = cargo
-RUSTC_BIN = rustc
 
 # Directories
 TARGET_DIR = target
 RELEASE_DIR = $(TARGET_DIR)/release
-DEBUG_DIR = $(TARGET_DIR)/debug
-APP_BUNDLE_DIR = $(TARGET_DIR)/$(APP_NAME).app
-IMAGES_DIR = images
-RESOURCES_DIR = $(APP_BUNDLE_DIR)/Contents/Resources
-LAUNCH_AGENTS_DIR = $(HOME)/Library/LaunchAgents
-LOG_DIR = $(HOME)/Library/Logs/BlackBox
 
 # Binary
 BIN_NAME = blackbox
 
-# Development team ID for code signing (replace with your own)
-TEAM_ID = YOURDEVELOPMENTTEAMID
+# Load .env if present (contains TEAM_ID for code signing)
+-include .env
+
+# Development team ID for code signing (from .env, env var, or DEVELOPMENT_TEAM)
+TEAM_ID ?= $(DEVELOPMENT_TEAM)
+
+# --- Rust ---
 
 # Default target
 .PHONY: all
 all: build
 
-# Build the app in debug mode
+# Build Rust in debug mode
 .PHONY: build
 build:
 	$(CARGO_BIN) build
 
-# Build the app in release mode
-.PHONY: release
-release:
+# Build Rust in release mode
+.PHONY: release-build
+release-build:
 	$(CARGO_BIN) build --release
 
 # Run tests
@@ -43,62 +40,39 @@ release:
 test:
 	$(CARGO_BIN) test
 
-# Run linting
+# Fast Rust lint (the no-features clippy lane + fmt). `make check-rust` runs
+# all three feature sets, rustdoc, deny, machete and the MSRV check.
 .PHONY: lint
 lint:
-	$(CARGO_BIN) clippy -- -D warnings
+	$(CARGO_BIN) clippy --all-targets --no-default-features -- -D warnings
 	$(CARGO_BIN) fmt --all -- --check
 
-# Create macOS .app bundle (release mode)
-.PHONY: app-bundle
-app-bundle: release
-	@echo "Creating macOS app bundle..."
-	@mkdir -p $(APP_BUNDLE_DIR)/Contents/MacOS
-	@mkdir -p $(APP_BUNDLE_DIR)/Contents/Resources/images
-	@cp $(RELEASE_DIR)/$(BIN_NAME) $(APP_BUNDLE_DIR)/Contents/MacOS/
-	@cp Info.plist $(APP_BUNDLE_DIR)/Contents/
-	@cp -R $(IMAGES_DIR)/* $(APP_BUNDLE_DIR)/Contents/Resources/images/
-	@[ -f $(IMAGES_DIR)/App.icns ] && cp $(IMAGES_DIR)/App.icns $(APP_BUNDLE_DIR)/Contents/Resources/ || echo "Warning: App.icns not found"
-	@defaults write $(APP_BUNDLE_DIR)/Contents/Info.plist CFBundleShortVersionString $(APP_VERSION)
-	@plutil -convert xml1 $(APP_BUNDLE_DIR)/Contents/Info.plist
-	@echo "App bundle created at $(APP_BUNDLE_DIR)"
+# Swift lint only (seconds): swift-format + swiftlint --strict.
+.PHONY: lint-swift
+lint-swift:
+	./scripts/check.sh lint
 
-# Create debug app bundle
-.PHONY: app-bundle-debug
-app-bundle-debug: build
-	@echo "Creating macOS debug app bundle..."
-	@mkdir -p $(APP_BUNDLE_DIR)/Contents/MacOS
-	@mkdir -p $(APP_BUNDLE_DIR)/Contents/Resources/images
-	@cp $(DEBUG_DIR)/$(BIN_NAME) $(APP_BUNDLE_DIR)/Contents/MacOS/
-	@cp Info.plist $(APP_BUNDLE_DIR)/Contents/
-	@cp -R $(IMAGES_DIR)/* $(APP_BUNDLE_DIR)/Contents/Resources/images/
-	@[ -f $(IMAGES_DIR)/App.icns ] && cp $(IMAGES_DIR)/App.icns $(APP_BUNDLE_DIR)/Contents/Resources/ || echo "Warning: App.icns not found"
-	@defaults write $(APP_BUNDLE_DIR)/Contents/Info.plist CFBundleShortVersionString $(APP_VERSION)
-	@plutil -convert xml1 $(APP_BUNDLE_DIR)/Contents/Info.plist
-	@echo "Debug app bundle created at $(APP_BUNDLE_DIR)"
+# Autoformat everything the linters can fix mechanically.
+.PHONY: fmt
+fmt:
+	$(CARGO_BIN) fmt --all
+	swift format --in-place --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
+	@command -v swiftlint >/dev/null 2>&1 && swiftlint --fix --quiet || true
+	swift format --in-place --recursive BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests
 
-# Code sign the app (macOS)
-.PHONY: sign
-sign: app-bundle
-	@echo "Signing app bundle..."
-	@codesign --force --deep --sign "Developer ID Application: $(TEAM_ID)" --options runtime $(APP_BUNDLE_DIR)
-	@echo "App signed."
+# The guardrail loop (DOLL-652): everything CI gates on, run locally. Green
+# means done. Sections: check-rust | check-swift | check-sanitize (local only).
+.PHONY: check check-rust check-swift check-sanitize
+check:
+	./scripts/check.sh
+check-rust:
+	./scripts/check.sh rust
+check-swift:
+	./scripts/check.sh swift
+check-sanitize:
+	./scripts/check.sh sanitize
 
-# Create DMG installer
-.PHONY: dmg
-dmg: sign
-	@echo "Creating DMG installer..."
-	@hdiutil create -volname "$(APP_NAME)" -srcfolder $(APP_BUNDLE_DIR) -ov -format UDZO $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
-	@echo "DMG created at $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg"
-
-# Notarize macOS app (requires Apple Developer account)
-.PHONY: notarize
-notarize: dmg
-	@echo "Notarizing DMG..."
-	@xcrun notarytool submit $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg --apple-id "YOUR_APPLE_ID" --password "YOUR_APP_PASSWORD" --team-id "$(TEAM_ID)" --wait
-	@echo "Notarization complete"
-
-# Run the app directly
+# Run the CLI directly
 .PHONY: run
 run:
 	$(CARGO_BIN) run
@@ -107,73 +81,297 @@ run:
 .PHONY: clean
 clean:
 	$(CARGO_BIN) clean
-	rm -rf $(APP_BUNDLE_DIR)
-	rm -f $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
 
-# Create images directory
-.PHONY: create-image-dirs
-create-image-dirs:
-	mkdir -p $(IMAGES_DIR)
-	@echo "Created images directory. Please add idle_icon.png and recording_icon.png (16x16 PNG format)"
+# Verify: the full guardrail loop plus the App Store metadata lint. Run before
+# pushing. The Rust/Swift steps live in scripts/check.sh so this target, the
+# pre-commit hook (SKIP_TESTS=0) and CI all run the same commands (DOLL-652).
+.PHONY: verify
+verify: check-app-store
+	./scripts/check.sh
 
-# Install the service
-.PHONY: install
-install: release
-	@echo "Installing BlackBox service..."
-	@mkdir -p $(LAUNCH_AGENTS_DIR)
-	@mkdir -p $(LOG_DIR)
-	@cp com.blackbox.audiorecorder.plist $(LAUNCH_AGENTS_DIR)/
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
-	@echo "Service installed and started. Check logs at $(LOG_DIR)/"
+# Coverage (DOLL-272): non-gating line-coverage summary to surface untested
+# code. Informational only — deliberately NOT part of `verify`. Rust via
+# cargo-llvm-cov, Swift via xccov on the test result bundle.
+.PHONY: coverage
+coverage:
+	@if command -v cargo-llvm-cov >/dev/null 2>&1; then \
+		echo "== Rust coverage (cargo llvm-cov) =="; \
+		$(CARGO_BIN) llvm-cov --no-default-features --summary-only; \
+	else \
+		echo "cargo-llvm-cov not installed; skipping Rust coverage."; \
+		echo "  Install with: cargo install cargo-llvm-cov --locked"; \
+	fi
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		echo "== Swift coverage (xccov) =="; \
+		rm -rf target/coverage.xcresult; \
+		$(CARGO_BIN) build --release --features ffi && \
+		xcodebuild test -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) \
+			-destination 'platform=macOS' -enableCodeCoverage YES \
+			-resultBundlePath target/coverage.xcresult CODE_SIGN_IDENTITY="-" -quiet && \
+		xcrun xccov view --report --only-targets target/coverage.xcresult; \
+	fi
 
-# Start the service
-.PHONY: start
-start:
-	@echo "Starting BlackBox service..."
-	@launchctl load $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
-	@echo "Service started. Check logs at $(LOG_DIR)/"
+# --- SwiftUI Menu Bar App ---
 
-# Stop the service
-.PHONY: stop
-stop:
-	@echo "Gracefully stopping BlackBox service..."
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
-	@echo "Waiting for service to finalize files..."
-	@sleep 5
-	@echo "Service stopped"
+XCODE_PROJECT = BlackBoxApp/BlackBoxApp.xcodeproj
+XCODE_SCHEME = BlackBoxApp
+XCODE_CONFIG = Release
+SWIFT_APP_DIR = BlackBoxApp
+SWIFT_APP_BUNDLE = $(RELEASE_DIR)/$(APP_NAME).app
 
-# Uninstall the service
-.PHONY: uninstall
-uninstall:
-	@echo "Gracefully stopping BlackBox service..."
-	@launchctl unload $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist 2>/dev/null || true
-	@echo "Waiting for service to finalize files..."
-	@sleep 5
-	@echo "Removing service files..."
-	@rm -f $(LAUNCH_AGENTS_DIR)/com.blackbox.audiorecorder.plist
-	@echo "Service uninstalled"
+# Build the Rust static library with FFI exports.
+# DOLL-188: matches CI's swift-app lane (cargo build --release --features ffi)
+# — default features ON. Today default = [] so this is identical to
+# --no-default-features, but using --features ffi keeps local/CI aligned
+# if a default feature ever reappears.
+.PHONY: rust-lib
+rust-lib:
+	$(CARGO_BIN) build --release --features ffi
+
+# DOLL-463: the rust-lib-universal (arm64 + x86_64 lipo) target was removed.
+# The app is deliberately Apple-Silicon-only — ARCHS is pinned to arm64 in
+# project.yml, the Fastfile, and the xcodebuild flags below — and nothing
+# ever consumed the universal lib (LIBRARY_SEARCH_PATHS only lists
+# target/release and target/debug). See ARCHITECTURE.md "Platform support".
+
+# Build the SwiftUI app (depends on rust-lib)
+.PHONY: swift-app
+swift-app: rust-lib
+	@if command -v xcodebuild >/dev/null 2>&1 && xcodebuild -version >/dev/null 2>&1; then \
+		echo "Building with xcodebuild..."; \
+		xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) build; \
+		BUILT_APP=$$(xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration $(XCODE_CONFIG) -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | sed 's/.*= //'); \
+		if [ -d "$$BUILT_APP/$(APP_NAME).app" ]; then \
+			rm -rf "$(SWIFT_APP_BUNDLE)"; \
+			cp -R "$$BUILT_APP/$(APP_NAME).app" "$(SWIFT_APP_BUNDLE)"; \
+			echo "Copied app bundle to $(SWIFT_APP_BUNDLE)"; \
+		fi; \
+	else \
+		echo "Error: xcodebuild is required to build the SwiftUI app."; \
+		exit 1; \
+	fi
+
+# Build both Rust lib + Swift app
+.PHONY: app
+app: swift-app
+
+# Build and run the SwiftUI menu bar app
+.PHONY: run-app
+run-app: swift-app
+	@open "$(SWIFT_APP_BUNDLE)"
+
+# Archive for App Store submission (Apple Silicon only, automatic signing)
+ARCHIVE_PATH = $(TARGET_DIR)/BlackBoxApp.xcarchive
+.PHONY: archive
+archive: rust-lib
+	@echo "Archiving for distribution..."
+	xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration Release \
+		-archivePath "$(ARCHIVE_PATH)" \
+		-arch arm64 \
+		DEVELOPMENT_TEAM="$(TEAM_ID)" \
+		ARCHS=arm64 \
+		ONLY_ACTIVE_ARCH=NO \
+		archive
+	@echo "Archive created at $(ARCHIVE_PATH)"
+
+# Upload archive to App Store Connect (TestFlight)
+.PHONY: upload
+upload: archive
+	@echo "Uploading to App Store Connect..."
+	xcodebuild -exportArchive \
+		-archivePath "$(ARCHIVE_PATH)" \
+		-exportPath "$(TARGET_DIR)/export" \
+		-exportOptionsPlist ExportOptions.plist \
+		-allowProvisioningUpdates
+	@echo "Upload complete — build should appear in App Store Connect shortly."
+
+# Verify that the marketing version and build number are consistent across
+# Cargo.toml, Makefile, project.yml, and Info.plist. Run before tagging.
+.PHONY: check-versions
+check-versions:
+	@./scripts/check-versions.sh
+
+# Verify src/ffi.rs and include/blackbox_ffi.h declare the same symbols.
+# The header is hand-maintained (no cbindgen) — this catches drift
+# before it surfaces as a broken Swift build (DOLL-190).
+.PHONY: check-ffi-header
+check-ffi-header:
+	@./scripts/check-ffi-header.sh
+
+# Lint Fastlane / App Store metadata against Apple's current OpenAPI spec
+# so schema drift is caught locally instead of mid-deploy on the CI runner.
+# Caches the spec at .cache/asc-openapi.json (~3 MB JSON).
+.PHONY: check-app-store
+check-app-store:
+	@python3 ./scripts/lint-app-store-metadata.py
+
+# Tag a release and push — CI handles build, TestFlight, and GitHub Release.
+# Usage: make release VERSION=1.0.1
+.PHONY: release
+release: check-versions
+ifndef VERSION
+	$(error Usage: make release VERSION=1.0.1)
+endif
+	@if [ "$(VERSION)" != "$$(grep -E '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')" ]; then \
+	    echo "Error: VERSION=$(VERSION) does not match Cargo.toml. Run scripts/bump-version.sh $(VERSION) first."; \
+	    exit 1; \
+	fi
+	@echo "Tagging v$(VERSION)..."
+	git tag -a "v$(VERSION)" -m "Release $(VERSION)"
+	git push origin "v$(VERSION)"
+	@echo ""
+	@echo "Tag v$(VERSION) pushed. CI will:"
+	@echo "  1. Run full test suite"
+	@echo "  2. Build and upload to TestFlight"
+	@echo "  3. Create GitHub Release with binaries"
+	@echo ""
+	@echo "Approve the release deployment at:"
+	@echo "  https://github.com/tibbon/audio_blackbox/actions"
+
+# Export signed app from archive (for direct distribution).
+# DOLL-451: uses ExportOptionsLocal.plist (method: developer-id), which
+# writes the signed .app under $(TARGET_DIR)/export/. ExportOptions.plist
+# is the App Store Connect UPLOAD config (destination: upload) — pointing
+# export at it sent the archive to ASC and produced no local files, so
+# `make dmg` had nothing to package.
+.PHONY: export
+export: archive
+	@echo "Exporting signed app..."
+	xcodebuild -exportArchive \
+		-archivePath "$(ARCHIVE_PATH)" \
+		-exportPath "$(TARGET_DIR)/export" \
+		-exportOptionsPlist ExportOptionsLocal.plist \
+		-allowProvisioningUpdates
+	@echo "Exported to $(TARGET_DIR)/export/"
+
+# Create a notarized DMG installer from the exported app (DOLL-451).
+# A Developer-ID-signed app still gets blocked by Gatekeeper on other
+# Macs unless the DMG is notarized and stapled. notarytool needs
+# credentials stored once via:
+#   xcrun notarytool store-credentials $(NOTARY_PROFILE) \
+#     --apple-id <you@example.com> --team-id FB8QBNNT6D \
+#     --password <app-specific password>
+# Override the profile name with: make dmg NOTARY_PROFILE=my-profile
+NOTARY_PROFILE ?= blackbox-notary
+DMG_PATH = $(TARGET_DIR)/$(BIN_NAME)-$(APP_VERSION).dmg
+.PHONY: dmg
+dmg: export
+	@echo "Creating DMG installer..."
+	@hdiutil create -volname "$(APP_NAME)" -srcfolder "$(TARGET_DIR)/export/$(APP_NAME).app" -ov -format UDZO $(DMG_PATH)
+	@echo "Notarizing $(DMG_PATH) (profile: $(NOTARY_PROFILE))..."
+	@xcrun notarytool submit "$(DMG_PATH)" --keychain-profile "$(NOTARY_PROFILE)" --wait || { \
+		echo ""; \
+		echo "Notarization failed. If credentials are missing, store them once with:"; \
+		echo "  xcrun notarytool store-credentials $(NOTARY_PROFILE) --apple-id <apple-id> --team-id FB8QBNNT6D --password <app-specific password>"; \
+		exit 1; \
+	}
+	@xcrun stapler staple "$(DMG_PATH)"
+	@echo "Notarized DMG created at $(DMG_PATH)"
+
+# Regenerate Xcode project from project.yml (requires xcodegen)
+.PHONY: xcodegen
+xcodegen:
+	cd $(SWIFT_APP_DIR) && xcodegen generate
+
+# --- Fastlane (sources .env for API key) ---
+
+FL_ENV = set -a && . ./.env && set +a &&
+
+# Upload metadata to App Store Connect
+.PHONY: fl-metadata
+fl-metadata:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane metadata
+
+# Download current metadata from App Store Connect
+.PHONY: fl-fetch
+fl-fetch:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane fetch_metadata
+
+# Cancel existing App Store review submission
+.PHONY: fl-cancel
+fl-cancel:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane cancel_review
+
+# Submit latest build for App Store review (cancels existing submission if needed)
+.PHONY: fl-submit
+fl-submit:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane submit_review
+
+# Build, upload to TestFlight, and submit for review
+.PHONY: fl-beta
+fl-beta:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane beta
+
+# Check metadata for common rejection reasons
+.PHONY: fl-check
+fl-check:
+	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane check
+
+# --- Setup ---
+
+# Install git hooks from scripts/
+.PHONY: hooks
+hooks:
+	@echo "Installing git hooks..."
+	@cp scripts/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Git hooks installed."
+
+# First-time repo setup: install hooks and verify toolchain
+.PHONY: setup
+setup:
+	@echo "=== Setting up BlackBox development environment ==="
+	@command -v cargo >/dev/null 2>&1 || { echo "Error: Rust toolchain not found. Install from https://rustup.rs"; exit 1; }
+	@command -v xcodebuild >/dev/null 2>&1 || echo "Warning: Xcode not found — Swift builds will be skipped"
+	@$(MAKE) hooks
+	@echo "Running initial verify..."
+	@$(MAKE) verify
+	@echo "=== Setup complete ==="
 
 # Help
 .PHONY: help
 help:
 	@echo "BlackBox Audio Recorder Makefile"
 	@echo ""
-	@echo "Targets:"
+	@echo "Rust:"
 	@echo "  build           - Build debug version"
-	@echo "  release         - Build release version"
+	@echo "  release-build   - Build release version"
 	@echo "  test            - Run tests"
-	@echo "  lint            - Run linting checks"
-	@echo "  app-bundle      - Create macOS app bundle (release)"
-	@echo "  app-bundle-debug - Create macOS app bundle (debug)"
-	@echo "  sign            - Code sign the macOS app bundle"
-	@echo "  dmg             - Create DMG installer"
-	@echo "  notarize        - Notarize the app with Apple"
-	@echo "  run             - Run the app directly"
+	@echo "  lint            - Fast Rust lint (fmt + clippy, no features)"
+	@echo "  lint-swift      - swift-format + swiftlint --strict (seconds)"
+	@echo "  fmt             - Autoformat Rust and Swift"
+	@echo "  check           - Full guardrail loop (scripts/check.sh): green means done"
+	@echo "  check-rust      - Rust half of check (clippy x3, rustdoc, tests, deny, machete, MSRV)"
+	@echo "  check-swift     - Swift half of check (format, swiftlint, xcodebuild test, analyze)"
+	@echo "  check-sanitize  - Swift tests under TSan then ASan+UBSan (slow, local only)"
+	@echo "  verify          - check + App Store metadata lint"
+	@echo "  coverage        - Line-coverage summary (Rust llvm-cov + Swift xccov)"
+	@echo "  run             - Run the CLI directly"
 	@echo "  clean           - Clean build files"
-	@echo "  create-image-dirs - Create images directory for app icons"
-	@echo "  install         - Install and start the service"
-	@echo "  start           - Start the service"
-	@echo "  stop            - Stop the service"
-	@echo "  uninstall       - Stop and remove the service"
-	@echo "  help            - Show this help" 
+	@echo ""
+	@echo "SwiftUI App:"
+	@echo "  rust-lib        - Build Rust static library with FFI"
+	@echo "  swift-app       - Build SwiftUI menu bar app"
+	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
+	@echo "  run-app         - Build and run the SwiftUI app"
+	@echo "  check-versions  - Verify version fields are aligned across all files"
+	@echo "  release VERSION=X.Y.Z - Tag and push; CI builds + uploads to TestFlight"
+	@echo "  upload          - Archive and upload to App Store Connect (local)"
+	@echo "  archive         - Create Xcode archive for distribution"
+	@echo "  export          - Export Developer-ID-signed app from archive (local)"
+	@echo "  dmg             - Create notarized DMG installer (needs notarytool credentials)"
+	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
+	@echo ""
+	@echo "Fastlane:"
+	@echo "  fl-beta         - Build, upload to TestFlight, and submit for review"
+	@echo "  fl-metadata     - Upload metadata to App Store Connect"
+	@echo "  fl-fetch        - Download current metadata from App Store Connect"
+	@echo "  fl-cancel       - Cancel existing App Store review submission"
+	@echo "  fl-submit       - Submit latest build for review (auto-cancels existing)"
+	@echo "  fl-check        - Check metadata for common rejection reasons"
+	@echo ""
+	@echo "Setup:"
+	@echo "  setup           - First-time repo setup (hooks + verify)"
+	@echo "  hooks           - Install/update git hooks"
+	@echo ""
+	@echo "  help            - Show this help"

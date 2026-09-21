@@ -1,0 +1,55 @@
+// BlackBoxApp/Guardrails.xcconfig (DOLL-652)
+//
+// Applied to every target and configuration through project.yml `configFiles`.
+// Everything here is a floor. Keys that also appear in project.yml `settings`
+// are owned by project.yml: xcodegen writes those as build settings, which
+// override xcconfig values (ENABLE_HARDENED_RUNTIME, CODE_SIGN_ENTITLEMENTS,
+// ARCHS, MACOSX_DEPLOYMENT_TARGET, versions — scripts/check-versions.sh reads
+// them there). Sanitizers are not build settings; `scripts/check.sh sanitize`
+// passes them to xcodebuild.
+//
+// Needs Xcode 26 for the default-isolation and approachable-concurrency keys
+// (CI: macos-26 image, Xcode 26.5). Older Xcode ignores unknown keys, so a
+// local build on Xcode 16 is looser than CI, not stricter.
+
+// ---------- Swift language and concurrency ----------
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
+
+// Menu-bar UI app: MainActor is the right default for every type that does
+// not say otherwise. Types that must run elsewhere (the FFI wrapper, anything
+// touched from a CoreAudio or Carbon callback) opt out with `nonisolated`.
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+
+// Upcoming features that stop the compiler from guessing.
+SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+SWIFT_UPCOMING_FEATURE_INTERNAL_IMPORTS_BY_DEFAULT = YES
+
+// Debug adds runtime actor checks, which catch what @unchecked and
+// nonisolated(unsafe) hid. (The type-checker budget flags from the original
+// kit are deliberately absent: with warnings-as-errors they turn slow CI
+// runners into build failures.)
+OTHER_SWIFT_FLAGS[config=Debug] = $(inherited) -Xfrontend -enable-actor-data-race-checks
+
+// ---------- Clang (bridge/module.modulemap + blackbox_ffi.h) ----------
+GCC_TREAT_WARNINGS_AS_ERRORS = YES
+WARNING_CFLAGS = $(inherited) -Wall -Wextra -Wconversion -Wshadow -Wnullable-to-nonnull-conversion -Wimplicit-fallthrough
+CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE
+CLANG_ENABLE_OBJC_ARC = YES
+CLANG_STATIC_ANALYZER_MODE = deep
+CLANG_ANALYZER_NONNULL = YES_AGGRESSIVE
+CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE
+CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES
+CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES
+CLANG_ANALYZER_SECURITY_INSECUREAPI_RAND = YES
+CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES
+
+// ---------- Hardening and distribution ----------
+ENABLE_APP_SANDBOX = YES
+DEAD_CODE_STRIPPING = YES
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+ENABLE_TESTABILITY[config=Debug] = YES
+ENABLE_TESTABILITY[config=Release] = NO

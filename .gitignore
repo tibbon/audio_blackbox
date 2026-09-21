@@ -2,4 +2,23 @@
 .DS_Store
 .cargo
 *.wav
+/logs
 /recordings
+# Claude Code: local settings and skills stay private at any depth; the root saved workflows are shared (DOLL-654).
+**/.claude/*
+!/.claude/workflows/
+CLAUDE.md
+*.app/
+profile.json.gz
+.env
+# Bundler installs fastlane's gems into the app directory (DOLL-658)
+/BlackBoxApp/vendor/
+/BlackBoxApp/.bundle/
+# Apple code-signing artifacts — keep private keys / profiles out of git
+# (DOLL-388). *.p12 bundles the private key; the rest are signing material.
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+*.cer
+.cache/

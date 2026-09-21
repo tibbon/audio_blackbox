@@ -1,0 +1,303 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Fastlane lane to run"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - beta
+          - metadata
+          - submit_review
+          - fetch_metadata
+          - cancel_review
+          - check
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # ── Test gate ─────────────────────────────────────────────────────
+  # Re-run the Rust quality checks on the tag's exact SHA before any
+  # release artifact is published. Without this, a tag pushed from a
+  # branch that didn't go through PR review (or whose checks went red
+  # after merge) would still upload to TestFlight and create a GitHub
+  # Release. Both the github-release and testflight jobs `needs:` this
+  # so a red check blocks both. (DOLL-136)
+  #
+  # Mirrors rust.yml's fmt + clippy + test gates so the release path
+  # can't ship fmt/clippy regressions that a non-PR'd tag would skip
+  # (DOLL-260). The Swift app is compiled by the testflight job itself
+  # (fastlane builds before upload), so it isn't rebuilt here to keep
+  # the gate cheap.
+  tests:
+    name: Test gate
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+      with:
+        components: clippy, rustfmt
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    # DOLL-462: version alignment was previously enforced only via
+    # `make release` — a plain `git tag && git push` bypassed the gate
+    # entirely, and the Fastfile then overwrites the marketing version
+    # from the tag (masking the committed mismatch). Pure shell +
+    # PlistBuddy; runs in seconds on the already-provisioned runner.
+    - name: Check version alignment across manifests
+      run: ./scripts/check-versions.sh
+
+    # DOLL-462: a tagged release must have a CHANGELOG.md heading for the
+    # version being released (Keep-a-Changelog style: "## [X.Y.Z] — date"),
+    # so release notes can't silently lag the release.
+    - name: Check CHANGELOG has an entry for this version
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION="${GITHUB_REF#refs/tags/v}"
+        if ! grep -qE "^## \[${VERSION//./\\.}\]" CHANGELOG.md; then
+          echo "::error::CHANGELOG.md has no '## [${VERSION}]' heading — add release notes before tagging."
+          exit 1
+        fi
+        echo "CHANGELOG.md has an entry for ${VERSION}"
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy (all targets)
+      run: cargo clippy --all-targets --no-default-features -- -D warnings
+
+    - name: Run tests
+      run: cargo test --no-default-features -- --test-threads=1
+
+    # DOLL-461: mirror rust.yml's ffi lane — `--features ffi` is the exact
+    # C-ABI surface the shipped app links, and cargo features are not
+    # additive for the test binary, so the no-features run above never
+    # compiles it. Without this a directly-pushed tag could release with
+    # the FFI tests/lints unrun on that SHA (the same gap DOLL-260/DOLL-357
+    # closed for fmt and audit). The test pass is scoped to ffi_tests:
+    # everything else in the binary is byte-identical to the no-features
+    # run above (`default = []`); clippy still type-checks the whole crate
+    # with the feature enabled.
+    - name: Run clippy (FFI, all targets)
+      run: cargo clippy --all-targets --features ffi -- -D warnings
+
+    - name: Run tests (FFI)
+      run: cargo test --features ffi ffi_tests -- --test-threads=1
+
+    # DOLL-357: the release gate re-runs main's checks on the tag SHA
+    # (DOLL-260) but previously omitted the audit + lockfile-freshness checks
+    # that main enforces — so a directly-pushed tag could ship a fresh-RUSTSEC
+    # dependency or a stale Cargo.lock with the release path green. Mirror both.
+    - name: Check Cargo.lock is up-to-date
+      run: cargo update --locked --dry-run
+
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@45472d76f4b8b7996b14d7dcd5f5f35784b9dd1d  # cargo-audit
+
+    - name: Run audit
+      run: cargo audit --deny warnings
+
+  # ── GitHub Release binaries ───────────────────────────────────────
+  # macOS-only — DOLL-153 dropped the Linux CLI artifact since the
+  # shipped product is Mac App Store. Re-add a Linux matrix entry if/
+  # when a Linux distribution channel is needed again.
+  github-release:
+    name: GitHub Release (macos-latest)
+    needs: tests
+    if: startsWith(github.ref, 'refs/tags/v')
+    # DOLL-358: gate the public Release behind the same manual approval as the
+    # testflight job, so a mistaken/premature tag can't publish a non-draft
+    # public Release (with the CLI binary) before a human approves.
+    environment: release
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    # Pin the MSRV (1.98) for the shipped artifact rather than floating
+    # stable, so the published binary is reproducible (DOLL-260).
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build CLI release
+      run: cargo build --release
+
+    - name: Copy CLI binary
+      run: cp target/release/blackbox blackbox-macos-arm64
+
+    # Note (DOLL-152): the SwiftUI .app.zip used to be built and uploaded
+    # here, but we'd been signing it ad-hoc (CODE_SIGN_IDENTITY="-") and
+    # users hit Gatekeeper rejection on download. The Mac App Store /
+    # TestFlight (the testflight job below, which signs + notarizes via
+    # fastlane) is the canonical distribution channel; the GitHub
+    # Release artifact is just the CLI binary. If a notarized .app.zip
+    # is needed for direct distribution again, do it via the testflight
+    # job's keychain context, not as ad-hoc here.
+
+    - name: Upload CLI binary
+      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3
+      with:
+        files: blackbox-macos-arm64
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── TestFlight / App Store ────────────────────────────────────────
+  # Builds and uploads via Fastlane. Protected environment requires
+  # manual approval from the repo owner.
+  testflight:
+    name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
+    needs: tests
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: BlackBoxApp
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+    # Pin the MSRV (1.98) for the shipped artifact rather than floating
+    # stable, so the TestFlight build is reproducible (DOLL-260).
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Extract version (tag or Info.plist fallback)
+      id: version
+      # No `working-directory` override — `..` resolves outside
+      # $GITHUB_WORKSPACE on hosted runners, which silently breaks
+      # relative file reads. Use the absolute workspace path instead.
+      run: |
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Releasing version $VERSION (from tag)"
+        else
+          # workflow_dispatch — read the marketing version straight out
+          # of the committed Info.plist so metadata/submit_review lanes
+          # know which App Store version to target.
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$GITHUB_WORKSPACE/BlackBoxApp/BlackBoxApp/Info.plist")
+          echo "Manual run — using version $VERSION (from Info.plist)"
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Build Rust static library (FFI)
+      run: cd .. && make rust-lib
+
+    - name: Install signing certificate
+      env:
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      run: |
+        # Create a temporary keychain
+        KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+        # Import certificate
+        CERT_PATH=$RUNNER_TEMP/certificate.p12
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+        security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+          -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        rm "$CERT_PATH"
+
+        # Allow codesign to access the keychain
+        security set-key-partition-list -S apple-tool:,apple: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+    - name: Set up Ruby + bundler cache
+      # bundler-cache: true reads BlackBoxApp/Gemfile.lock to install
+      # the pinned fastlane (DOLL-137) and caches the gem set keyed on
+      # the lockfile hash. No more "next minor fastlane release breaks
+      # deliver mid-deploy" — bumps go through dependabot review.
+      uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b  # v1.321.0
+      with:
+        ruby-version: "4.0"
+        working-directory: BlackBoxApp
+        bundler-cache: true
+
+    - name: Write ASC API key file
+      env:
+        ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      run: |
+        # xcodebuild needs the .p8 key as a file for -allowProvisioningUpdates
+        KEY_DIR="$RUNNER_TEMP/asc_keys"
+        mkdir -p "$KEY_DIR"
+        echo "$ASC_KEY_CONTENT" | base64 --decode > "$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+        echo "ASC_KEY_PATH=$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+      working-directory: ..
+
+    - name: Run Fastlane
+      env:
+        ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        SKIP_RUST_BUILD: "true"
+      run: |
+        # Decode base64 key content for Fastlane API auth
+        export ASC_KEY_CONTENT=$(echo "$ASC_KEY_CONTENT" | base64 --decode)
+        bundle exec fastlane "${{ github.event.inputs.lane || 'beta' }}"
+
+    - name: Clean up secrets
+      if: always()
+      run: |
+        KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+        if [ -f "$KEYCHAIN_PATH" ]; then
+          security delete-keychain "$KEYCHAIN_PATH"
+        fi
+        rm -rf "$RUNNER_TEMP/asc_keys"

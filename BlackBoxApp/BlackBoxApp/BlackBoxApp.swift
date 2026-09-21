@@ -1,0 +1,381 @@
+import SwiftUI
+
+@main
+struct BlackBoxApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var recorder = RecordingState()
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
+    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
+    @AppStorage(SettingsKeys.hasCompletedOnboarding) private var hasCompletedOnboarding = false
+    // DOLL-211: surface the output directory in the dropdown so users
+    // don't have to open Finder to see where recordings are going.
+    @AppStorage(SettingsKeys.lastOutputDirPath) private var lastOutputDirPath: String = ""
+    // DOLL-212: the bit depth feeds the pre-flight summary below the
+    // Start Recording button so the user can verify the format before
+    // committing.
+    @AppStorage(SettingsKeys.bitDepth) private var bitDepth: Int = 24
+    @State private var didAutoOpenOnboarding = false
+    // DOLL-208: one-shot nudge on the menu-bar icon after onboarding finishes.
+    // Defaults to false on every launch, so it only fires on the false→true
+    // transition that happens during a live onboarding completion — never on
+    // cold-launch of an already-onboarded user.
+    @State private var shouldShowDiscoveryNudge = false
+
+    var body: some Scene {
+        // Side effects in a result builder must be `let _ =` declarations: a bare
+        // `_ = f()` is an assignment expression that SceneBuilder feeds to
+        // buildExpression, which then fails because `()` is not a Scene.
+        // Wire up delegate so applicationShouldTerminate can finalize recordings
+        // swiftlint:disable:next redundant_discardable_let - `_ = f()` is a builder component in a Scene body; only `let _` runs a side effect
+        let _ = { appDelegate.recorder = recorder }()
+        // Auto-open onboarding on first launch
+        // swiftlint:disable:next redundant_discardable_let - `_ = f()` is a builder component in a Scene body; only `let _` runs a side effect
+        let _ = autoOpenOnboardingIfNeeded()
+        MenuBarExtra {
+            if !hasCompletedOnboarding {
+                Text("Setup Required")
+                    .font(.headline)
+
+                Text("Complete setup to start recording")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Button("Set Up BlackBox\u{2026}") {
+                    bringOnboardingForward()
+                }
+
+                Divider()
+
+                Button("Quit BlackBox") {
+                    appDelegate.explicitQuit = true
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q")
+            } else {
+                normalMenu
+            }
+        } label: {
+            menuBarLabel
+                .accessibilityLabel(menuBarAccessibilityLabel)
+                .background(StatusItemTooltip(tooltip: menuBarTooltip))
+                .onChange(of: hasCompletedOnboarding) { oldValue, newValue in
+                    guard !oldValue, newValue else { return }
+                    shouldShowDiscoveryNudge = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(5))
+                        shouldShowDiscoveryNudge = false
+                    }
+                }
+        }
+
+        Window("Welcome to BlackBox", id: "onboarding") {
+            OnboardingView(recorder: recorder)
+        }
+        // Sized for the tallest step (recordingModeStep): icon + title + subtitle
+        // + two recording-mode cards + divider + silence toggle + button row.
+        .defaultSize(width: 460, height: 540)
+        .windowResizability(.contentSize)
+
+        // DOLL-148: SwiftUI Settings scene rather than a generic Window.
+        // This gives us the standard macOS Settings affordance — `⌘,`
+        // reopen, system-managed close-on-`⌘W` semantics, and a standard
+        // app-menu position — instead of a custom Window that only the
+        // menu-bar Settings… button knew how to surface.
+        Settings {
+            SettingsView(recorder: recorder)
+        }
+        .defaultSize(width: 480, height: 500)
+        .windowResizability(.contentSize)
+
+        Window("Level Meter", id: "meter") {
+            MeterView(recorder: recorder)
+        }
+        .defaultSize(width: 340, height: 200)
+        .windowResizability(.contentSize)
+
+        Window("About BlackBox", id: "about") {
+            AboutView()
+        }
+        .defaultSize(width: 300, height: 200)
+        .windowResizability(.contentSize)
+    }
+
+    @ViewBuilder private var normalMenu: some View {
+        MenuStatusSection(recorder: recorder)
+
+        Divider()
+
+        // Primary action — show the user's configured global shortcut if set
+        Button {
+            recorder.toggle()
+        } label: {
+            let action = recorder.isRecording ? "Stop Recording" : "Start Recording"
+            if let shortcut = GlobalHotkeyManager.shared.currentShortcut {
+                Text("\(action)  \(shortcut.displayString)")
+                    // DOLL-385: without this VoiceOver speaks the raw glyphs
+                    // ("Start Recording command shift R"). Keep the label clean
+                    // and expose the shortcut as a hint instead.
+                    .accessibilityLabel(action)
+                    .accessibilityHint("Keyboard shortcut \(shortcut.displayString)")
+            } else {
+                Text(action)
+            }
+        }
+
+        // DOLL-212: pre-flight summary so the user can verify what's
+        // about to be recorded before pressing Start. Hidden mid-record
+        // because the active-recording caption above already covers it
+        // (and changing settings while recording isn't a flow we want
+        // to encourage here).
+        if !recorder.isRecording {
+            let device =
+                selectedDevice.isEmpty
+                ? (recorder.systemDefaultDeviceName ?? "System Default")
+                : selectedDevice
+            let chCount = countChannels(channelSpec)
+            let chLabel = chCount == 1 ? "1 channel" : "\(chCount) channels"
+
+            Text("Device: \(device)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("Format: \(bitDepth)-bit \u{00B7} \(chLabel)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !lastOutputDirPath.isEmpty {
+                Text("Location: \(abbreviateHomePath(lastOutputDirPath))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+
+        Button("Level Meter\u{2026}") {
+            bringWindowForward(id: "meter", titleHint: "Level Meter")
+        }
+
+        Divider()
+
+        MenuInputDeviceSection(recorder: recorder)
+
+        Button("Show in Finder") {
+            recorder.openOutputDir()
+        }
+        // DOLL-211: caption under the action shows the abbreviated
+        // destination path (the in-container default folder, or a user-chosen
+        // one). Center-truncates because the menu is narrow and arbitrary
+        // paths can be long.
+        if !lastOutputDirPath.isEmpty {
+            Text(abbreviateHomePath(lastOutputDirPath))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityLabel("Recordings save to \(abbreviateHomePath(lastOutputDirPath))")
+        }
+
+        Divider()
+
+        Button("About BlackBox\u{2026}") {
+            bringWindowForward(id: "about", titleHint: "About BlackBox")
+        }
+
+        Button("Settings\u{2026}") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        }
+        .keyboardShortcut(",")
+
+        Divider()
+
+        Menu("Help") {
+            if let url = AppURL.support { Link("BlackBox Support", destination: url) }
+            if let url = AppURL.privacy { Link("Privacy Policy", destination: url) }
+        }
+
+        Divider()
+
+        Button("Quit BlackBox") {
+            quitApp()
+        }
+        .keyboardShortcut("q")
+    }
+
+    /// Auto-open the onboarding window on first launch. Called as a side effect
+    /// during body evaluation — uses Task to avoid modifying state during render.
+    private func autoOpenOnboardingIfNeeded() {
+        guard !hasCompletedOnboarding, !didAutoOpenOnboarding else { return }
+        didAutoOpenOnboarding = true  // Set immediately to prevent duplicate Tasks
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            bringOnboardingForward()
+        }
+    }
+
+    /// Open the onboarding window, or bring it to the foreground if it
+    /// is already open.
+    @MainActor
+    private func bringOnboardingForward() {
+        bringWindowForward(id: "onboarding", titleHint: "Welcome to BlackBox")
+    }
+
+    /// Open the SwiftUI `Window(id:)` matching `id`, or — if the user
+    /// previously opened it and Cmd-Tabbed away — bring the existing
+    /// NSWindow to the front. SwiftUI's `openWindow(id:)` is a no-op
+    /// when the window already exists, so naively calling it leaves the
+    /// menu item looking dead.
+    @MainActor
+    private func bringWindowForward(id: String, titleHint: String) {
+        // `activate(ignoringOtherApps:)` is deprecated on macOS 14+, but the
+        // no-arg `activate()` does not reliably foreground a background
+        // accessory app from a user-initiated menu click. Keep the
+        // load-bearing form.
+        NSApp.activate(ignoringOtherApps: true)
+
+        // SwiftUI assigns the exact `id` string as the NSWindow identifier's
+        // rawValue, so an `==` match is correct (and tighter than substring,
+        // which would collide if any future window id were a substring of
+        // another). titleHint is a fallback for environments where the
+        // identifier isn't set yet.
+        if let window = NSApp.windows.first(where: { window in
+            window.identifier?.rawValue == id
+                || window.title == titleHint
+        }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            openWindow(id: id)
+        }
+    }
+
+    /// Whether the user has asked the system to reduce motion in
+    /// `System Settings → Accessibility → Display`. Honoured for the
+    /// recording-state pulse so motion-sensitive users see a static red icon.
+    private var prefersReducedMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// Replace the user's home directory with "~" so paths display tightly
+    /// in the menu. DOLL-211. Mirrors the abbreviation used in OnboardingView.
+    private func abbreviateHomePath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) { return "~" + path.dropFirst(home.count) }
+        return path
+    }
+
+    @ViewBuilder private var menuBarLabel: some View {
+        if !hasCompletedOnboarding {
+            Image(systemName: "questionmark.circle")
+        } else if recorder.errorMessage != nil {
+            Image(systemName: "exclamationmark.circle")
+        } else if recorder.isRecording {
+            Image(systemName: "record.circle.fill")
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, options: .repeating, isActive: !prefersReducedMotion)
+        } else {
+            // DOLL-208: bounce the idle icon for ~3 hops when onboarding
+            // completes, so the user notices where the app lives.
+            Image(systemName: "record.circle")
+                .symbolEffect(
+                    .bounce,
+                    options: .repeat(3),
+                    isActive: shouldShowDiscoveryNudge && !prefersReducedMotion
+                )
+        }
+    }
+
+    // DOLL-439: AppKit tooltip / accessibility label are plain String — wrapped
+    // in String(localized:). "BlackBox" alone is the (untranslated) product name.
+    private var menuBarTooltip: String {
+        if !hasCompletedOnboarding {
+            return String(localized: "BlackBox — Setup required")
+        }
+        if recorder.isRecording {
+            return String(localized: "BlackBox — \(recorder.statusText)")
+        }
+        return "BlackBox"
+    }
+
+    private var menuBarAccessibilityLabel: String {
+        if !hasCompletedOnboarding {
+            return String(localized: "BlackBox: Setup required")
+        }
+        if let error = recorder.errorMessage {
+            return String(localized: "BlackBox: Error \u{2014} \(error)")
+        }
+        if recorder.isRecording {
+            return String(localized: "BlackBox: \(recorder.statusText)")
+        }
+        return String(localized: "BlackBox: Ready")
+    }
+
+    private func quitApp() {
+        if recorder.isRecording {
+            let alert = NSAlert()
+            // DOLL-438: AppKit strings wrapped in String(localized:) for the catalog.
+            alert.messageText = String(localized: "Recording in Progress")
+            alert.informativeText = String(
+                localized: "BlackBox is currently recording. Do you want to stop recording and quit?"
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.addButton(withTitle: String(localized: "Stop & Quit"))
+            // Stop & Quit discards the in-progress recording — mark it
+            // destructive (DOLL-254). Cancel stays first, so it remains the
+            // default (Return) button.
+            alert.buttons.last?.hasDestructiveAction = true
+
+            NSApp.activate()
+            if alert.runModal() == .alertFirstButtonReturn {
+                return
+            }
+            recorder.stop()
+        }
+        recorder.releaseOutputDirAccess()
+        appDelegate.explicitQuit = true
+        NSApplication.shared.terminate(nil)
+    }
+}
+
+// MARK: - URLs
+
+// AppURL is internal (no `private`) so AboutView.swift can use it after
+// the DOLL-203 extraction. Anyone else needing app URLs imports it here.
+enum AppURL {
+    static let support = URL(string: "https://dollhousemediatech.com/blackbox/support")
+    static let privacy = URL(string: "https://dollhousemediatech.com/blackbox/privacy")
+    static let website = URL(string: "https://dollhousemediatech.com/blackbox/")
+    static let releaseNotes = URL(string: "https://github.com/tibbon/audio_blackbox/commits/main/")
+    static let license = URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/LICENSE")
+    static let acknowledgments = URL(string: "https://github.com/tibbon/audio_blackbox/blob/main/ACKNOWLEDGMENTS.md")
+}
+
+// AboutView moved to AboutView.swift (DOLL-203).
+
+/// Sets a tooltip on the menu bar status item by walking up the view hierarchy
+/// to find the NSStatusBarButton parent.
+private struct StatusItemTooltip: NSViewRepresentable {
+    let tooltip: String
+
+    func makeNSView(context _: Context) -> NSView { NSView() }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        Task { @MainActor in
+            var view = nsView.superview
+            while let current = view {
+                if let button = current as? NSStatusBarButton {
+                    button.toolTip = tooltip
+                    return
+                }
+                view = current.superview
+            }
+        }
+    }
+}
+
+// AboutWindowConfigurator moved to AboutView.swift (DOLL-203).

@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Rust dependencies (crates)
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "ci"
+    open-pull-requests-limit: 5
+
+  # Fastlane (and transitive Ruby gems) — pinned via Gemfile.lock,
+  # bumped through dependabot to defeat schema-drift mid-deploy
+  # surprises (DOLL-137).
+  - package-ecosystem: "bundler"
+    directory: "/BlackBoxApp"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "ci"
+    open-pull-requests-limit: 3

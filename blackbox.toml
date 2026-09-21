@@ -15,19 +15,21 @@ debug = false
 duration = 0
 
 # Output mode: "single" (one file), "split" (one file per channel)
+# IMPORTANT: For multi-channel recording, only use "single" or "split"
 # Default: single
 output_mode = "split"
 
-# Silence threshold (0-100, 0 disables silence detection)
-# Default: 0
-silence_threshold = 20
+# Silence threshold: normalized amplitude 0.0–1.0 (0.01 = 1% of full scale).
+# 0 disables silence detection; if unset, the built-in default (0.01) applies.
+# Note: converted from the old 0-100 scale (was 20) to the new normalized scale.
+silence_threshold = 0.2
 
 # Continuous recording mode (true/false)
-# Default: false
+# Default: true
 continuous_mode = true
 
 # Recording cadence in seconds (how often to rotate files in continuous mode)
-# Default: 300
+# Default: 900
 recording_cadence = 3600
 
 # Output directory for recordings

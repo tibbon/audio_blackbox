@@ -1,0 +1,584 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */; };
+		03E4F2B1C3A66DD675F3BEFB /* SilenceDetectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */; };
+		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
+		0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924678D133EB74205F702B27 /* OutputSettingsTab.swift */; };
+		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
+		314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */; };
+		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
+		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
+		4600E03701AFEF6D356EECC2 /* OnboardingView+ShortcutStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */; };
+		4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */; };
+		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
+		5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0674B223253655522C4B25 /* SleepWakePolicy.swift */; };
+		5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98679487F91174C239180404 /* RecordingState+Notifications.swift */; };
+		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
+		6948821D570B742FB31B0301 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */; };
+		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
+		8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */; };
+		8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */ = {isa = PBXBuildFile; fileRef = CABDBB4ADB98586777721416 /* CustomCadenceField.swift */; };
+		86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */; };
+		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
+		901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C8B317B7C306370E48F169 /* ChannelSpec.swift */; };
+		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
+		9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */; };
+		B3254C14B4D86E7804D4F71F /* OnboardingView+Steps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */; };
+		B37E1AC67BACBE9D8170A4D6 /* GeneralSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */; };
+		BBCA09CE7681F5ACF0DF61C1 /* ShortcutRecorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E076F3CD808732BAE342FB1 /* ShortcutRecorderButton.swift */; };
+		BE185DA077E00152905E3845 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E06870571E2C3D34F75C6 /* CoreTests.swift */; };
+		C795389EB60CB1F564B56C8C /* RecordingSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */; };
+		D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAA96D336F9106E336A98A7 /* MeterView.swift */; };
+		D1DC5F1FBC0B5827F827EF52 /* MenuStatusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */; };
+		DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */; };
+		DFD271895780ACAB4386AEE6 /* OnboardingView+DirectoryStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */; };
+		E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C515ABD54DB00D283F73A524 /* OnboardingView.swift */; };
+		F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */; };
+		F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1992609A38241E7F7388606F /* RecordingState+Session.swift */; };
+		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3B634197B6166BC407A59651 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 43D9CE3A68B4CCF3D8573D94 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DD8280819EC1745861DD709C;
+			remoteInfo = BlackBoxApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		01DDEAE84906E5E68097EE69 /* Guardrails.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Guardrails.xcconfig; sourceTree = "<group>"; };
+		05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Monitoring.swift"; sourceTree = "<group>"; };
+		0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeTests.swift; sourceTree = "<group>"; };
+		1992609A38241E7F7388606F /* RecordingState+Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Session.swift"; sourceTree = "<group>"; };
+		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
+		3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
+		3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuInputDeviceSection.swift; sourceTree = "<group>"; };
+		4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+Steps.swift"; sourceTree = "<group>"; };
+		51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+StatusPoll.swift"; sourceTree = "<group>"; };
+		5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+DirectoryStep.swift"; sourceTree = "<group>"; };
+		64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutDisplayStringTests.swift; sourceTree = "<group>"; };
+		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		72C8B317B7C306370E48F169 /* ChannelSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSpec.swift; sourceTree = "<group>"; };
+		7A3E06870571E2C3D34F75C6 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
+		7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+ShortcutStep.swift"; sourceTree = "<group>"; };
+		833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSelectionGrid.swift; sourceTree = "<group>"; };
+		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		924678D133EB74205F702B27 /* OutputSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputSettingsTab.swift; sourceTree = "<group>"; };
+		98679487F91174C239180404 /* RecordingState+Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Notifications.swift"; sourceTree = "<group>"; };
+		98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+OutputDirectory.swift"; sourceTree = "<group>"; };
+		9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9E076F3CD808732BAE342FB1 /* ShortcutRecorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRecorderButton.swift; sourceTree = "<group>"; };
+		A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0674B223253655522C4B25 /* SleepWakePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakePolicy.swift; sourceTree = "<group>"; };
+		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
+		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		BE10D00516431CD06B0874FE /* SettingsKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsKeys.swift; sourceTree = "<group>"; };
+		BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsTab.swift; sourceTree = "<group>"; };
+		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		CABDBB4ADB98586777721416 /* CustomCadenceField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomCadenceField.swift; sourceTree = "<group>"; };
+		CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetectionSection.swift; sourceTree = "<group>"; };
+		EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+SleepWake.swift"; sourceTree = "<group>"; };
+		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
+		F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuStatusSection.swift; sourceTree = "<group>"; };
+		F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSettingsTab.swift; sourceTree = "<group>"; };
+		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
+		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1C451CB95C0A5482D6C6F55D /* BlackBoxAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
+				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
+				0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */,
+			);
+			path = BlackBoxAppTests;
+			sourceTree = "<group>";
+		};
+		7F01E7D61DE30C7E836DED8F = {
+			isa = PBXGroup;
+			children = (
+				BA337CCE7A5957FF5AD4D45C /* BlackBoxApp */,
+				BEBD31073F932DC6649383AD /* BlackBoxApp */,
+				1C451CB95C0A5482D6C6F55D /* BlackBoxAppTests */,
+				9B0C183B2A902029D8F0A18D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9B0C183B2A902029D8F0A18D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */,
+				6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BA337CCE7A5957FF5AD4D45C /* BlackBoxApp */ = {
+			isa = PBXGroup;
+			children = (
+				B4713B5D81249F6C8AF904AE /* AboutView.swift */,
+				F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */,
+				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
+				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
+				833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */,
+				72C8B317B7C306370E48F169 /* ChannelSpec.swift */,
+				CABDBB4ADB98586777721416 /* CustomCadenceField.swift */,
+				BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */,
+				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
+				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
+				A5F9C94BBA088438A7F626AA /* Localizable.xcstrings */,
+				3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */,
+				F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */,
+				FCAA96D336F9106E336A98A7 /* MeterView.swift */,
+				C515ABD54DB00D283F73A524 /* OnboardingView.swift */,
+				5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */,
+				7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */,
+				4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */,
+				924678D133EB74205F702B27 /* OutputSettingsTab.swift */,
+				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
+				F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */,
+				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
+				05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */,
+				98679487F91174C239180404 /* RecordingState+Notifications.swift */,
+				98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */,
+				1992609A38241E7F7388606F /* RecordingState+Session.swift */,
+				EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */,
+				51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */,
+				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
+				BE10D00516431CD06B0874FE /* SettingsKeys.swift */,
+				FD293BB00932B1C1871E349D /* SettingsView.swift */,
+				9E076F3CD808732BAE342FB1 /* ShortcutRecorderButton.swift */,
+				CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */,
+				AB0674B223253655522C4B25 /* SleepWakePolicy.swift */,
+			);
+			path = BlackBoxApp;
+			sourceTree = "<group>";
+		};
+		BEBD31073F932DC6649383AD /* BlackBoxApp */ = {
+			isa = PBXGroup;
+			children = (
+				01DDEAE84906E5E68097EE69 /* Guardrails.xcconfig */,
+			);
+			name = BlackBoxApp;
+			path = .;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C670EF17C033687DAC7960A8 /* BlackBoxAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D7F407082C5C8F11F6B5258 /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */;
+			buildPhases = (
+				14CFE0023F1A379F9F5D19CC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				93D585BC39E78B1BC8DD7758 /* PBXTargetDependency */,
+			);
+			name = BlackBoxAppTests;
+			packageProductDependencies = (
+			);
+			productName = BlackBoxAppTests;
+			productReference = 6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DD8280819EC1745861DD709C /* BlackBoxApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D7D534FF3BDA0C2535A6C537 /* Build configuration list for PBXNativeTarget "BlackBoxApp" */;
+			buildPhases = (
+				37A5FC8F87988A7E93524B1C /* Sources */,
+				1F55504D77CA800AB144130B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BlackBoxApp;
+			packageProductDependencies = (
+			);
+			productName = BlackBoxApp;
+			productReference = A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		43D9CE3A68B4CCF3D8573D94 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					DD8280819EC1745861DD709C = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = A270336424195CA52B515B29 /* Build configuration list for PBXProject "BlackBoxApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7F01E7D61DE30C7E836DED8F;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9B0C183B2A902029D8F0A18D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DD8280819EC1745861DD709C /* BlackBoxApp */,
+				C670EF17C033687DAC7960A8 /* BlackBoxAppTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1F55504D77CA800AB144130B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */,
+				86F2EE1AA61244A734E874D0 /* Localizable.xcstrings in Resources */,
+				94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		14CFE0023F1A379F9F5D19CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
+				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
+				F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		37A5FC8F87988A7E93524B1C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */,
+				6948821D570B742FB31B0301 /* AppDelegate.swift in Sources */,
+				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
+				DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */,
+				901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */,
+				8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */,
+				B37E1AC67BACBE9D8170A4D6 /* GeneralSettingsTab.swift in Sources */,
+				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
+				00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */,
+				D1DC5F1FBC0B5827F827EF52 /* MenuStatusSection.swift in Sources */,
+				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
+				DFD271895780ACAB4386AEE6 /* OnboardingView+DirectoryStep.swift in Sources */,
+				4600E03701AFEF6D356EECC2 /* OnboardingView+ShortcutStep.swift in Sources */,
+				B3254C14B4D86E7804D4F71F /* OnboardingView+Steps.swift in Sources */,
+				E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */,
+				0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */,
+				C795389EB60CB1F564B56C8C /* RecordingSettingsTab.swift in Sources */,
+				8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */,
+				5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */,
+				0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */,
+				F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */,
+				4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */,
+				9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */,
+				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
+				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
+				427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */,
+				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
+				BBCA09CE7681F5ACF0DF61C1 /* ShortcutRecorderButton.swift in Sources */,
+				03E4F2B1C3A66DD675F3BEFB /* SilenceDetectionSection.swift in Sources */,
+				5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		93D585BC39E78B1BC8DD7758 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DD8280819EC1745861DD709C /* BlackBoxApp */;
+			targetProxy = 3B634197B6166BC407A59651 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		139D29AA7006551DD1983958 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 15;
+				ENABLE_HARDENED_RUNTIME = YES;
+				IMPORT_PATHS = "$(SRCROOT)/bridge";
+				INFOPLIST_FILE = BlackBoxApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../target/release",
+					"$(SRCROOT)/../target/debug",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.4.0;
+				OTHER_LDFLAGS = (
+					"-lblackbox",
+					"-framework",
+					CoreAudio,
+					"-framework",
+					AudioToolbox,
+					"-framework",
+					Carbon,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
+				PRODUCT_NAME = "BlackBox Audio Recorder";
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+			};
+			name = Debug;
+		};
+		181AD27695D6B9BF31C9D930 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 01DDEAE84906E5E68097EE69 /* Guardrails.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		29F230D58F45C00BB97780A1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 15;
+				ENABLE_HARDENED_RUNTIME = YES;
+				IMPORT_PATHS = "$(SRCROOT)/bridge";
+				INFOPLIST_FILE = BlackBoxApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../target/release",
+					"$(SRCROOT)/../target/debug",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.4.0;
+				OTHER_LDFLAGS = (
+					"-lblackbox",
+					"-framework",
+					CoreAudio,
+					"-framework",
+					AudioToolbox,
+					"-framework",
+					Carbon,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.blackbox;
+				PRODUCT_NAME = "BlackBox Audio Recorder";
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+			};
+			name = Release;
+		};
+		758EB9345E2F9FC57A803356 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 01DDEAE84906E5E68097EE69 /* Guardrails.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		ADC6C1A1978C820BA21BA021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IMPORT_PATHS = "$(SRCROOT)/bridge";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.BlackBoxAppTests;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder";
+			};
+			name = Release;
+		};
+		F7C3AA61BD6DB3AD75C2A5D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IMPORT_PATHS = "$(SRCROOT)/bridge";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.dollhousemediatech.BlackBoxAppTests;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/bridge";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BlackBox Audio Recorder.app/Contents/MacOS/BlackBox Audio Recorder";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5D7F407082C5C8F11F6B5258 /* Build configuration list for PBXNativeTarget "BlackBoxAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F7C3AA61BD6DB3AD75C2A5D3 /* Debug */,
+				ADC6C1A1978C820BA21BA021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A270336424195CA52B515B29 /* Build configuration list for PBXProject "BlackBoxApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				758EB9345E2F9FC57A803356 /* Debug */,
+				181AD27695D6B9BF31C9D930 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D7D534FF3BDA0C2535A6C537 /* Build configuration list for PBXNativeTarget "BlackBoxApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				139D29AA7006551DD1983958 /* Debug */,
+				29F230D58F45C00BB97780A1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 43D9CE3A68B4CCF3D8573D94 /* Project object */;
+}

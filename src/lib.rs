@@ -1,329 +1,255 @@
-// audio_recorder: A cross-platform audio recording library in Rust
-// Copyright (C) 2023, David Fisher
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// BlackBox Audio Recorder — Copyright (C) 2023-2026, David Fisher
+// Licensed under the Business Source License 1.1 (BUSL-1.1). See LICENSE.
 
-// Modular organization of code
+//! BlackBox audio recording engine.
+//!
+//! Lock-free real-time audio capture for macOS. Linux builds compile
+//! (CLI only — no GUI) but are not exercised in CI; treat support as
+//! best-effort, not maintained.
+//! The audio callback only pushes raw f32 samples into a `rtrb` ring
+//! buffer; a dedicated writer thread converts to the configured bit
+//! depth and writes WAV files. No file I/O, locks, or allocations
+//! happen on the RT thread.
+//!
+//! # Public surface
+//!
+//! - [`AudioRecorder`] — the high-level entry point. Wraps an
+//!   [`AudioProcessor`] (typically [`CpalAudioProcessor`]) and an
+//!   [`AppConfig`] and drives recording start/stop/finalize.
+//! - [`AppConfig`] — configuration loaded from `blackbox.toml` or
+//!   `BLACKBOX_*` environment variables.
+//! - [`OutputMode`] — single-file vs. file-per-channel.
+//! - [`BlackboxError`] — typed error enum.
+//! - The `ffi` module (feature `ffi`) — C ABI consumed by the SwiftUI app.
+//!
+//! See `README.md` for the architecture diagram and benchmark numbers.
+
 mod audio_processor;
 mod audio_recorder;
+#[cfg(feature = "benchmarking")]
 mod benchmarking;
 mod config;
 mod constants;
 mod cpal_processor;
+pub mod error;
+#[cfg(feature = "ffi")]
+pub mod ffi;
+#[cfg(target_os = "macos")]
+mod macos_sample_rate_listener;
+#[cfg(test)]
 mod mock_processor;
+mod numeric;
+mod raw_wav_writer;
+mod silence_check_worker;
 mod utils;
+mod writer_thread;
 
 // Only include test_utils in test builds
 #[cfg(test)]
 pub mod test_utils;
 
-// Re-exports for public API
+// ----------------------------------------------------------------------------
+// Public API re-exports
+// ----------------------------------------------------------------------------
+// These are consumed by the binaries (src/bin/) and external Rust crates.
+// Items used only inside this crate use pub(crate) re-exports below.
 pub use audio_processor::AudioProcessor;
 pub use audio_recorder::AudioRecorder;
-pub use benchmarking::{measure_execution_time, PerformanceMetrics, PerformanceTracker};
+#[cfg(feature = "benchmarking")]
+pub use benchmarking::{PerformanceMetrics, PerformanceTracker};
 pub use config::AppConfig;
-pub use constants::*;
+pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
-pub use utils::*;
+pub use error::BlackboxError;
+#[cfg(feature = "benchmarking")]
+pub use writer_thread::bench_real_pipeline;
+
+// ----------------------------------------------------------------------------
+// Test-only re-exports
+// ----------------------------------------------------------------------------
+// The inline smoke tests below reach these through `use super::*`. Nothing in
+// the non-test crate goes through the lib root for them (modules use
+// `crate::constants::*` / `crate::utils::*` directly), so they are gated to
+// avoid an unused-import warning in every non-test build.
+#[cfg(test)]
+pub(crate) use constants::DEFAULT_DURATION;
+#[cfg(test)]
+pub(crate) use utils::parse_channel_string;
 
 // Expose test utilities
 #[cfg(test)]
 pub use mock_processor::MockAudioProcessor;
 
+// ---------------------------------------------------------------------------
+// Test-only allocation counter — wraps the system allocator with atomic
+// counters so we can prove the hot path does zero heap allocations.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod alloc_counter {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static ALLOC_COUNT: AtomicU64 = AtomicU64::new(0);
+
+    pub(crate) struct CountingAllocator;
+
+    // SAFETY: `CountingAllocator` is a transparent wrapper around `System`.
+    // Each method delegates directly with the same `Layout`/`ptr`
+    // arguments, preserving every invariant `GlobalAlloc` requires.
+    // The added `fetch_add` only writes to a `AtomicU64`, which has no
+    // safety implications for the allocator contract.
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            // SAFETY: forwards `layout` unmodified to `System::alloc`,
+            // whose contract we satisfy by virtue of being called from
+            // a `GlobalAlloc::alloc` impl.
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: caller's `GlobalAlloc::dealloc` contract pinned `ptr`
+            // to a previous `alloc` of the same `layout`; we forward both
+            // unmodified.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
+            // SAFETY: same as `dealloc` plus `new_size` validity — we
+            // forward all three args unmodified to `System::realloc`.
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+    }
+
+    /// Snapshot the current global allocation count.
+    pub(crate) fn snapshot() -> u64 {
+        ALLOC_COUNT.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+#[global_allocator]
+static COUNTING_ALLOCATOR: alloc_counter::CountingAllocator = alloc_counter::CountingAllocator;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
     use mock_processor::MockAudioProcessor;
-    use std::env;
     use std::path::Path;
-    use std::sync::Mutex;
     use tempfile::tempdir;
 
-    // Include shutdown tests
+    mod alloc_tests;
+    mod benchmark_tests;
+    mod channel_tests;
+    mod config_tests;
+    mod cpal_integration_tests;
+    mod error_tests;
+    #[cfg(feature = "ffi")]
+    mod ffi_tests;
+    #[cfg(feature = "benchmarking")]
+    mod performance_tests;
+    mod recorder_tests;
+    mod ring_buffer_tests;
     mod shutdown_tests;
+    mod silence_gate_tests;
+    mod silence_tests;
+    mod writer_thread_tests;
 
-    // Check if we're running in CI
-    fn is_ci() -> bool {
-        env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok()
-    }
-
-    // Use a mutex to serialize test executions
-    lazy_static! {
-        static ref TEST_MUTEX: Mutex<()> = Mutex::new(());
-    }
-
-    fn reset_test_env() {
-        // Remove environment variables that might affect tests
-        env::remove_var("AUDIO_CHANNELS");
-        env::remove_var("DEBUG");
-        env::remove_var("RECORD_DURATION");
-        env::remove_var("OUTPUT_MODE");
-        env::remove_var("SILENCE_THRESHOLD");
-        env::remove_var("CONTINUOUS_MODE");
-        env::remove_var("RECORDING_CADENCE");
-        env::remove_var("OUTPUT_DIR");
-        env::remove_var("PERFORMANCE_LOGGING");
-
-        // Set environment variables to override any config file settings
-        // This ensures tests run with predictable values regardless of config file
-        env::set_var("AUDIO_CHANNELS", DEFAULT_CHANNELS);
-        env::set_var("DEBUG", DEFAULT_DEBUG.to_string());
-        env::set_var("RECORD_DURATION", DEFAULT_DURATION.to_string());
-        env::set_var("OUTPUT_MODE", DEFAULT_OUTPUT_MODE);
-        env::set_var("SILENCE_THRESHOLD", DEFAULT_SILENCE_THRESHOLD.to_string());
-        env::set_var("CONTINUOUS_MODE", DEFAULT_CONTINUOUS_MODE.to_string());
-        env::set_var("RECORDING_CADENCE", DEFAULT_RECORDING_CADENCE.to_string());
-        env::set_var("OUTPUT_DIR", DEFAULT_OUTPUT_DIR);
-        env::set_var(
-            "PERFORMANCE_LOGGING",
-            DEFAULT_PERFORMANCE_LOGGING.to_string(),
-        );
-    }
+    /// Re-export the consolidated helper (DOLL-118) for inline tests below.
+    use crate::test_utils::default_test_env;
 
     // Test environment variable handling
     #[test]
     fn test_environment_variable_handling() {
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
+        temp_env::with_vars(default_test_env(), || {
+            // Test channels parsing
+            assert_eq!(parse_channel_string("0,1").unwrap(), vec![0, 1]);
+            assert_eq!(parse_channel_string("0-3").unwrap(), vec![0, 1, 2, 3]);
+            assert_eq!(
+                parse_channel_string("0,2-4,7").unwrap(),
+                vec![0, 2, 3, 4, 7]
+            );
 
-        // Test channels parsing
-        assert_eq!(parse_channel_string("0,1").unwrap(), vec![0, 1]);
-        assert_eq!(parse_channel_string("0-3").unwrap(), vec![0, 1, 2, 3]);
-        assert_eq!(
-            parse_channel_string("0,2-4,7").unwrap(),
-            vec![0, 2, 3, 4, 7]
-        );
+            // Test bool parsing
+            assert!("true".parse::<bool>().unwrap_or(false));
+            assert!(!"false".parse::<bool>().unwrap_or(false));
 
-        // Test bool parsing
-        assert_eq!("true".parse::<bool>().unwrap_or_else(|_| false), true);
-        assert_eq!("false".parse::<bool>().unwrap_or_else(|_| false), false);
-
-        // Test duration parsing
-        assert_eq!("20".parse::<u64>().unwrap_or(DEFAULT_DURATION), 20);
-
-        reset_test_env();
+            // Test duration parsing
+            assert_eq!("20".parse::<u64>().unwrap_or(DEFAULT_DURATION), 20);
+        });
     }
 
-    #[test]
-    fn test_recorder_basic_functionality() {
-        if is_ci() {
-            println!("Skipping audio test in CI environment");
-            return;
-        }
+    // test_recorder_basic_functionality removed (DOLL-455) — it fully
+    // duplicated recorder_tests::test_recorder_with_config (modulo `new` vs
+    // `with_config(default)`) and carried the silent-pass `is_ci()` skip
+    // anti-pattern. The output-mode assertion it added lives there now.
 
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
-
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-        let file_name = format!("{}/test.wav", temp_path);
-
-        // Create a MockAudioProcessor
-        let processor = MockAudioProcessor::new(&file_name);
-
-        // Create recorder with custom processor
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording with default parameters
-        let record_result = recorder.start_recording();
-        assert!(record_result.is_ok());
-
-        // Check that our processor got called correctly
-        let processor = recorder.get_processor();
-        assert!(processor.audio_processed);
-        assert_eq!(processor.output_mode, DEFAULT_OUTPUT_MODE);
-
-        // Can't really test actual audio recording without hardware,
-        // but we can make sure no errors were thrown
-
-        reset_test_env();
-    }
-
-    #[test]
-    fn test_channel_parsing() {
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
-
-        // Test basic channel list
-        assert_eq!(parse_channel_string("0,1,2").unwrap(), vec![0, 1, 2]);
-
-        // Test range parsing
-        assert_eq!(parse_channel_string("0-3").unwrap(), vec![0, 1, 2, 3]);
-
-        // Test mixed format
-        assert_eq!(
-            parse_channel_string("0,2-4,6").unwrap(),
-            vec![0, 2, 3, 4, 6]
-        );
-
-        // Test deduplication
-        assert_eq!(parse_channel_string("0,0,1,1").unwrap(), vec![0, 1]);
-
-        // Test error on invalid format
-        assert!(parse_channel_string("invalid").is_err());
-
-        // Test error on too many channels
-        let too_many = (0..=MAX_CHANNELS)
-            .collect::<Vec<_>>()
-            .iter()
-            .map(|n| n.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        assert!(parse_channel_string(&too_many).is_err());
-
-        reset_test_env();
-    }
+    // test_channel_parsing removed — every case here is covered exhaustively
+    // in src/tests/channel_tests.rs.
 
     #[test]
     fn test_silence_detection() {
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
+        let mut env = default_test_env();
+        env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
+        env.push(("SILENCE_THRESHOLD", Some("10")));
 
-        // This test creates a silent WAV file and checks if it's detected as silent
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
+        temp_env::with_vars(env, || {
+            let temp_dir = tempdir().unwrap();
+            let temp_path = temp_dir.path().to_str().unwrap();
 
-        // First, create a silent file
-        let file_name = format!("{}/silent-test.wav", temp_path);
-        let mut processor = MockAudioProcessor::new(&file_name);
+            let file_name = format!("{temp_path}/silent-test.wav");
+            let mut processor = MockAudioProcessor::new(&file_name);
+            processor.create_silent_file = true;
 
-        // Configure the mock to create a silent file
-        processor.create_silent_file = true;
+            let mut recorder = AudioRecorder::new(processor);
+            let result = recorder.start_recording();
+            assert!(result.is_ok());
 
-        // Set the silence threshold to detect silence
-        env::set_var("SILENCE_THRESHOLD", "10");
+            let path = Path::new(&file_name);
+            assert!(path.exists(), "Test file should have been created");
 
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-        assert!(result.is_ok());
-
-        // Make sure the file was created
-        let path = Path::new(&file_name);
-
-        // The file should exist immediately after recording
-        assert!(path.exists(), "Test file should have been created");
-
-        // Now manually finalize to trigger silence detection
-        let _ = recorder.processor.finalize();
-
-        // The file should now be deleted since it was silent and threshold is set
-        assert!(!path.exists(), "Silent file should have been deleted");
-
-        reset_test_env();
+            recorder
+                .processor_mut()
+                .finalize()
+                .expect("finalize should succeed");
+            assert!(!path.exists(), "Silent file should have been deleted");
+        });
     }
 
-    #[test]
-    fn test_silence_deletion() {
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
-
-        // Set threshold for this test
-        env::set_var("SILENCE_THRESHOLD", "10");
-
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
-
-        // Create a silent file
-        let file_name = format!("{}/silent-test.wav", temp_path);
-        let mut processor = MockAudioProcessor::new(&file_name);
-
-        // Configure the mock to create a silent file
-        processor.create_silent_file = true;
-
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-        assert!(result.is_ok());
-
-        // Manually finalize the recording
-        let _ = recorder.processor.finalize();
-
-        // The file should now be deleted since it was silent and threshold is set
-        let path = Path::new(&file_name);
-        assert!(!path.exists(), "Silent file should have been deleted");
-
-        reset_test_env();
-    }
+    // test_silence_deletion removed — strictly subsumed by
+    // test_silence_detection above, which asserts the file existed
+    // before finalize and was gone after.
 
     #[test]
     fn test_normal_file_not_deleted() {
-        let lock = TEST_MUTEX.lock();
-        if lock.is_err() {
-            println!("Mutex was poisoned, creating a new test environment");
-            // Continue with the test even if the mutex was poisoned
-        }
-        reset_test_env();
+        let mut env = default_test_env();
+        env.retain(|&(k, _)| k != "SILENCE_THRESHOLD");
+        env.push(("SILENCE_THRESHOLD", Some("10")));
 
-        // Set threshold for this test using environment variable
-        // This will be picked up by AppConfig
-        env::set_var("SILENCE_THRESHOLD", "10");
+        temp_env::with_vars(env, || {
+            let temp_dir = tempdir().unwrap();
+            let temp_path = temp_dir.path().to_str().unwrap();
 
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path().to_str().unwrap();
+            let file_name = format!("{temp_path}/normal-test.wav");
+            let mut processor = MockAudioProcessor::new(&file_name);
+            processor.create_silent_file = false;
 
-        let file_name = format!("{}/normal-test.wav", temp_path);
-        let processor = MockAudioProcessor::new(&file_name);
+            let mut recorder = AudioRecorder::new(processor);
+            let result = recorder.start_recording();
+            assert!(result.is_ok());
 
-        // Configure the mock to create a normal (non-silent) file
-        let mut processor = processor;
-        processor.create_silent_file = false;
+            let path = Path::new(&file_name);
+            assert!(path.exists(), "File should have been created");
 
-        // Create the recorder with our mock
-        let mut recorder = AudioRecorder::new(processor);
-
-        // Start recording
-        let result = recorder.start_recording();
-        assert!(result.is_ok());
-
-        // Verify the file exists
-        let path = Path::new(&file_name);
-        assert!(path.exists(), "File should have been created");
-
-        // Manually finalize the recording
-        // We need to access the processor directly since we need mutable access
-        let _ = recorder.processor.finalize();
-
-        // The file should still exist since it's not silent
-        assert!(
-            path.exists(),
-            "Non-silent file should not have been deleted"
-        );
-
-        // Clean up environment after test
-        reset_test_env();
+            recorder
+                .processor_mut()
+                .finalize()
+                .expect("finalize should succeed");
+            assert!(
+                path.exists(),
+                "Non-silent file should not have been deleted"
+            );
+        });
     }
 }
