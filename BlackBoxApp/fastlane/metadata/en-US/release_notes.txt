@@ -1,7 +1,1 @@
-Localization, accessibility, and reliability improvements.
-
-• The app is now localizable, with number, file-size, and bitrate values formatted for your region.
-• Recordings no longer clip the moment audio begins — the sound that opens the silence gate is captured from the start.
-• Improved fidelity when saving 16-bit files (dither on conversion).
-• Accessibility: VoiceOver support across onboarding, the level meter, the channel grid, and the menu; Reduce Motion and Dynamic Type are honored.
-• More reliable recovery from disk-write failures and across sleep/wake; recordings now save to the app's own folder by default.
+This release focuses on under-the-hood improvements: internal code refactoring, stricter automated quality checks, and updated dependencies for better security and reliability. No changes to features or behavior.
