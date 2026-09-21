@@ -20,10 +20,21 @@ allow-indexing-slicing-in-tests = true
 allow-useless-vec-in-tests = true
 
 # Complexity budgets. Agents pad functions and thread booleans through signatures.
+# These are ratcheted to the tightest value the current tree passes at (measured,
+# not guessed), so the ceiling can only come DOWN as code improves — never drift
+# up. Re-measure with an aggressive probe run before lowering further.
+#   too-many-lines 80 -> 73   : longest fn is 73 lines; frozen there.
+#   type-complexity 200 -> 160: measured across all three feature sets; the two
+#                               worst types live in bench_writer.rs (~150-160).
+#   cognitive-complexity -> 15: currently non-binding (the lint stays quiet on this
+#                               tree even at 1), kept low so it bites if it activates.
+# At their floor already (tightening needs code changes, deliberately NOT done to
+# avoid churn): too-many-arguments 6 (6 fns take 6 args), excessive-nesting 5
+# (~22 sites at depth 5).
 too-many-arguments-threshold = 6
-too-many-lines-threshold = 80
-cognitive-complexity-threshold = 20
-type-complexity-threshold = 200
+too-many-lines-threshold = 73
+cognitive-complexity-threshold = 15
+type-complexity-threshold = 160
 excessive-nesting-threshold = 5
 max-fn-params-bools = 2
 max-struct-bools = 3
@@ -62,4 +73,9 @@ disallowed-methods = [
   { path = "std::env::home_dir", reason = "the sandboxed app gets paths from Swift via security-scoped bookmarks; the CLI takes an explicit output_dir" },
   { path = "f32::partial_cmp", reason = "use total_cmp; partial_cmp().unwrap() panics on NaN" },
   { path = "f64::partial_cmp", reason = "use total_cmp; partial_cmp().unwrap() panics on NaN" },
+  # This app runs an audio callback, a writer thread and a silence worker
+  # concurrently. Mutating the process environment from any of them is a data
+  # race (and is `unsafe` in edition 2024). Tests set env via the temp-env crate.
+  { path = "std::env::set_var", reason = "process-wide env mutation is a data race across the audio/writer/silence threads; use Config or the temp-env crate in tests" },
+  { path = "std::env::remove_var", reason = "process-wide env mutation is a data race across the audio/writer/silence threads; use Config or the temp-env crate in tests" },
 ]
