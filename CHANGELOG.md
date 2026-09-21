@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-09-21
+
+A maintenance and hardening release: ~70 commits of internal refactoring,
+stricter lint policy, and dependency/security updates on top of 1.4.0. No
+user-facing feature changes and no breaking changes.
+
+### Changed
+- Swift app restructured for readability: `RecordingState` split into
+  per-concern extensions; `SettingsView`, the onboarding flow, the menu
+  sections, `AppDelegate` and `SleepWakePolicy` each moved into their own
+  files; `MeterView`/`MeterBar` and the settings tabs broken into section
+  properties (DOLL-653).
+- Adopted a strict Rust and Swift lint policy — Swift 6 strict concurrency,
+  `swift-format` + SwiftLint (with `closure_body_length`), and a tightened
+  clippy configuration (complexity budgets ratcheted to the tree's floor;
+  bans on NaN-unsafe float `partial_cmp` and process-wide env mutation).
+- Unified local, pre-commit and CI checks into a single guardrail loop
+  (DOLL-652); added the `/ship-ticket` workflow and reviewer briefs
+  (DOLL-654).
+- Raised the minimum supported Rust version to 1.98 and moved the release
+  pipeline to Ruby 4.0 (DOLL-657).
+
+### Fixed
+- bench-writer single mode declared a 16-bit WAV header but wrote 24-bit
+  samples; `percent_of` is now exact and rounds to the nearest basis point.
+
+### Security
+- Updated every dependency to its latest release, clearing RUSTSEC-2026-0190
+  (anyhow) and RUSTSEC-2026-0274 (rtrb); bumped fastlane to 2.240.0 and
+  refreshed all pinned GitHub Actions.
+
 ## [1.4.0] — 2026-06-17
 
 Polish-pass-7: roughly 100 commits of localization, real-time-safety
