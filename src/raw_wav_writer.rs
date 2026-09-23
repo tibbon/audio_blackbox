@@ -302,8 +302,16 @@ impl RawWavWriter {
         Ok(())
     }
 
-    /// Flush buffered data and update the WAV header so the file is valid
-    /// up to this point (crash-safe recovery).
+    /// Flush buffered data, update the WAV header so the file is valid up to
+    /// this point, and push both to stable storage (crash-safe recovery).
+    ///
+    /// The writer thread calls this every 10 s of audio, off the real-time
+    /// path. Without the sync, a power cut could lose everything the OS
+    /// still held in its cache, not just the audio since the last refresh.
+    /// On macOS `sync_data` is `fcntl(F_FULLFSYNC)`, which also flushes the
+    /// drive's write cache (a plain `fsync` doesn't): about 5 ms per file on
+    /// an Apple SSD, so a 64-channel split recording spends roughly 0.3 s
+    /// every 10 s here, well inside the ring buffer's 5 s of runway.
     pub(crate) fn flush(&mut self) -> io::Result<()> {
         // Flush the BufWriter first so all data reaches the file.
         self.writer.flush()?;
@@ -311,7 +319,7 @@ impl RawWavWriter {
         // would corrupt the data stream. The pad is written only at finalize.
         self.update_header(false)?;
         self.writer.flush()?;
-        Ok(())
+        self.writer.get_ref().sync_data()
     }
 
     /// Finalize the WAV file: update the header with final sizes.
