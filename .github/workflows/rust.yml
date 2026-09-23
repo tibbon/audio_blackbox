@@ -299,8 +299,9 @@ jobs:
     # defaults to Xcode 26.6, and a toolchain split let `swiftlint analyze`
     # and Swift warnings (errors here) pass in CI but fail locally. `xcode-27`
     # is GitHub's preview image (macOS 27); move back to macos-latest once
-    # that defaults to Xcode 27. The release workflow stays on macos-latest
-    # until then.
+    # that defaults to Xcode 27. release.yml's testflight job uses the same
+    # image so the shipped app is built with the Xcode tested here; move
+    # them together.
     runs-on: xcode-27
     permissions:
       contents: read

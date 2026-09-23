@@ -252,7 +252,13 @@ jobs:
   testflight:
     name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
     needs: tests
-    runs-on: macos-latest
+    # Same image as rust.yml's Swift lane, so the shipped app is built with
+    # the Xcode CI tests (27.0, 27A266a, the build developers use locally).
+    # macos-latest still defaults to Xcode 26.6, which CI no longer builds
+    # with. Apple accepts App Store submissions built with Xcode 27 since
+    # 2026-09-10. `xcode-27` is a preview image: move both workflows back to
+    # macos-latest together once it defaults to Xcode 27.
+    runs-on: xcode-27
     environment: release
     permissions:
       contents: read
