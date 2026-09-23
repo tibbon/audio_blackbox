@@ -1004,3 +1004,28 @@ fn test_peak_levels_hold_the_max_until_read() {
         );
     });
 }
+
+/// A sample-rate change between probing the device and registering the rate
+/// listener fires no callback, so recording start reads the rate again after
+/// registering and raises `sample_rate_changed` itself if it moved. Before,
+/// such a change went unnoticed and the take was written at the wrong rate.
+#[test]
+fn test_rate_change_before_listener_is_flagged() {
+    use crate::cpal_processor::flag_rate_change_since_probe;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let changed = AtomicBool::new(false);
+    assert!(!flag_rate_change_since_probe(
+        48_000,
+        Some(48_000),
+        &changed
+    ));
+    assert!(!flag_rate_change_since_probe(48_000, None, &changed));
+    assert!(
+        !changed.load(Ordering::Relaxed),
+        "an unchanged rate is not a change"
+    );
+
+    assert!(flag_rate_change_since_probe(48_000, Some(44_100), &changed));
+    assert!(changed.load(Ordering::Relaxed));
+}

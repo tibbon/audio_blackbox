@@ -462,6 +462,30 @@ impl CpalAudioProcessor {
         Ok(config)
     }
 
+    /// Watch `device` for sample-rate changes from here on: register the
+    /// listener (macOS only) and catch a change that happened since the
+    /// stream was opened at `sample_rate`.
+    fn watch_sample_rate(&mut self, device: &cpal::Device, sample_rate: u32) {
+        // Register the sample rate change listener (macOS only) on the device
+        // the stream was opened on, not a fresh lookup by configured name or
+        // default, which can name a different device by now.
+        #[cfg(target_os = "macos")]
+        {
+            self.rate_listener = crate::macos_sample_rate_listener::SampleRateListener::for_device(
+                device,
+                Arc::clone(&self.sample_rate_changed),
+            );
+        }
+        // A rate change between the probe in `process_audio_impl` and the listener's
+        // registration fired no callback. Read the rate again now that the
+        // listener is in place: any later change is the listener's.
+        flag_rate_change_since_probe(
+            sample_rate,
+            default_input_config(device).ok().map(|c| c.sample_rate()),
+            &self.sample_rate_changed,
+        );
+    }
+
     fn process_audio_impl(
         &mut self,
         channels: &[usize],
@@ -556,16 +580,7 @@ impl CpalAudioProcessor {
         let stream = start_f32_input_stream(&device, config, callback, err_fn)?;
         self.stream = Some(Box::new(stream));
 
-        // Register the sample rate change listener (macOS only) on the device
-        // the stream was opened on, not a fresh lookup by configured name or
-        // default, which can name a different device by now.
-        #[cfg(target_os = "macos")]
-        {
-            self.rate_listener = crate::macos_sample_rate_listener::SampleRateListener::for_device(
-                &device,
-                Arc::clone(&self.sample_rate_changed),
-            );
-        }
+        self.watch_sample_rate(&device, sample_rate);
 
         // Publish the live state to lock-free external readers via a
         // Release store. Readers (FFI status poll) Acquire on the matching
@@ -576,6 +591,28 @@ impl CpalAudioProcessor {
 
         Ok(())
     }
+}
+
+/// Raise `changed` when the device's rate, read again once the rate
+/// listener is registered (`now`), differs from the rate the stream was
+/// opened at (`probed`). Returns whether it did. `None` (the device couldn't
+/// be read) raises nothing: the stream's own error callback reports a
+/// device that went away.
+pub(crate) fn flag_rate_change_since_probe(
+    probed: u32,
+    now: Option<u32>,
+    changed: &AtomicBool,
+) -> bool {
+    let moved = now.is_some_and(|rate| rate != probed);
+    if moved {
+        warn!(
+            "Input sample rate changed from {probed} Hz while the recording started; \
+             flagging a sample-rate change"
+        );
+        // Status flag only, like the listener's store.
+        changed.store(true, Ordering::Relaxed);
+    }
+    moved
 }
 
 /// The device's current default input config.
