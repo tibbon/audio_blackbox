@@ -70,7 +70,28 @@ jobs:
         fi
         echo "Release ref ${REF} is allowed"
 
+    # Full history so the ancestry check below can walk from the tag to main.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+
+    # The ref check above accepts any v* tag, and a tag can point at any
+    # commit: an unreviewed branch, a local-only commit, a rebased-away SHA.
+    # `make release` only tags HEAD == origin/main, but a bare `git tag` +
+    # push skips that. Require the tagged commit to be on main, so the only
+    # code that ships is code that landed through a reviewed PR.
+    - name: Check the tagged commit is on main
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        REF: ${{ github.ref }}
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+        if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          echo "::error::${REF} points at ${GITHUB_SHA}, which is not on main. Releases ship only merged code: merge the change to main, delete this tag, and retag with 'make release'."
+          exit 1
+        fi
+        echo "${REF} (${GITHUB_SHA}) is on main"
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
@@ -209,6 +230,13 @@ jobs:
   # ── TestFlight / App Store ────────────────────────────────────────
   # Builds and uploads via Fastlane. Protected environment requires
   # manual approval from the repo owner.
+  #
+  # This is the only job that reads the signing and App Store Connect
+  # secrets (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, ASC_KEY_CONTENT,
+  # ASC_KEY_ID, ASC_ISSUER_ID). Keep it that way: those secrets belong in the
+  # `release` environment, so a job without `environment: release` gets
+  # empty strings, and the Test gate must stay secret-free because it runs
+  # before anyone approves.
   testflight:
     name: Fastlane (${{ github.event.inputs.lane || 'beta' }})
     needs: tests
