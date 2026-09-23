@@ -394,10 +394,11 @@ fn test_writer_thread_silence_on_rotation() {
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
         reply_rx.recv().unwrap().unwrap();
-        // After handle.join(): the writer thread has returned, the state has
-        // been dropped, the silence-check worker has been joined, and any
-        // submitted batches have completed. No sleep needed (DOLL-97 fix).
+        // After handle.join() the writer state has been dropped, but its
+        // silence-check worker finishes the queue in the background, so
+        // rendezvous on the checks. No sleep needed (DOLL-97 fix).
         handle.join().unwrap();
+        crate::test_utils::drain_silence_checks();
 
         let files = wav_files_in(temp_dir.path());
         assert!(

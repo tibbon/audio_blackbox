@@ -24,7 +24,7 @@ The contract behind BlackBox's recording pipeline. Read this before changing any
                          +-----------+
 ```
 
-The RT thread never blocks on I/O, locks, or allocations. The writer thread does all WAV encoding, peak metering, file rotation, and disk-space checks. The silence-check worker is a single dedicated thread that finalize() drains via join-on-drop.
+The RT thread never blocks on I/O, locks, or allocations. The writer thread does all WAV encoding, peak metering, file rotation, and disk-space checks. The silence-check worker is a single dedicated thread per session that keeps scanning after finalize() returns.
 
 ## Threading rules
 
@@ -50,9 +50,11 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 
 ### Silence-check worker
 
-`silence_check_worker::SilenceCheckWorker` is a single thread fed via a bounded `mpsc::sync_channel`. Its `Drop` impl closes the sending side and joins the worker — guaranteeing every queued file is processed before `finalize()` returns. Don't call `mem::forget` on it.
+`silence_check_worker::SilenceCheckWorker` is a single thread fed via a bounded `mpsc::sync_channel`. Its `Drop` impl closes the sending side and does **not** join: the thread scans whatever is still queued and then exits on its own. A scan decodes a silent file to its end, which takes minutes for a long multichannel take, and the drop runs while stopping a recording — on the Swift main thread via `blackbox_stop_recording`, and before an automatic restart after a sample-rate change or stream error. Stop must not wait on it.
 
-That join has no timeout. `CpalAudioProcessor::finalize` bounds the writer's *reply* at 30 s, but its `join()` then waits for the writer to drop its state, which waits for every queued scan. Stopping after a long, mostly silent session therefore blocks the caller (the Swift main thread, via `blackbox_stop_recording`) until the scans finish.
+The same goes for queueing: `finalize_all` submits with `try_submit`, so a full queue keeps those files unchecked instead of blocking the writer's shutdown reply. Rotation still uses the blocking `submit` (the back-pressure described above).
+
+If the process exits before a scan runs, that file is kept. The check only ever deletes, so cutting it short never loses audio. `wait_for_silence_checks(timeout)` waits for every submitted scan; the CLI calls it before exiting, and tests rendezvous on it through `test_utils::drain_silence_checks`. Don't call it from a UI thread.
 
 ### Sample-rate listener (macOS)
 
@@ -163,7 +165,7 @@ If the bookmark can't be resolved or access fails, the bookmark is dropped and t
 | `src/cpal_processor.rs` | Real audio I/O via cpal: device selection, the RT callback, spawning the writer thread, rotation counting. |
 | `src/writer_thread.rs` | Writer-thread loop, ring-buffer consumer, file lifecycle, silence gate, peak metering. |
 | `src/raw_wav_writer.rs` | Hand-rolled WAV writer for the hot path. |
-| `src/silence_check_worker.rs` | Single-thread post-rotation silence checker with join-on-drop. |
+| `src/silence_check_worker.rs` | Single-thread post-rotation silence checker; finishes its queue in the background after stop. |
 | `src/utils.rs` | Channel-spec parsing, `is_silent`, and disk-space queries. |
 | `src/macos_sample_rate_listener.rs` | CoreAudio property listener (macOS only). |
 | `src/ffi.rs` | C ABI consumed by the SwiftUI app. Owns the canonical lock order. |

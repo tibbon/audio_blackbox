@@ -541,7 +541,8 @@ fn failed_finalize_is_kept_out_of_the_silence_check() {
             state.finalize_all().is_err(),
             "the failing writer's finalize must surface as an error"
         );
-        drop(state); // joins the silence-check worker
+        drop(state);
+        crate::test_utils::drain_silence_checks();
 
         assert!(
             Path::new(&final_path).exists(),

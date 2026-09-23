@@ -20,8 +20,7 @@ pub struct PerformanceTracker {
     interval_secs: u64,
     /// `JoinHandle` for the worker thread spawned in `start`. Wrapped in
     /// a `Mutex<Option>` because `stop` and `Drop` take `&self` and need
-    /// to consume the handle (DOLL-143). Mirrors `SilenceCheckWorker`'s
-    /// join-on-drop pattern in `writer_thread.rs`.
+    /// to consume the handle (DOLL-143).
     handle: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
@@ -120,8 +119,7 @@ impl PerformanceTracker {
     /// The worker may still be mid-iteration when `stop` is called; it
     /// observes `running == false` on its next loop check (worst case
     /// `interval_secs` later) and exits, then this method blocks until
-    /// the join completes. Mirrors the join-on-drop pattern used by
-    /// `SilenceCheckWorker` in `writer_thread.rs`.
+    /// the join completes.
     pub fn stop(&self) {
         if !self.enabled {
             return;

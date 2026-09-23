@@ -800,13 +800,16 @@ impl AudioProcessor for CpalAudioProcessor {
             // to avoid hanging the app on quit.
             //
             // DOLL-352: the detach is a deliberate tradeoff with two costs.
-            // (1) The detached thread still owns its `WriterThreadState`, whose
-            //     `silence_worker` is joined only on state drop — so if the
-            //     thread is wedged (e.g. slow/hung disk I/O in
-            //     `finalize_all`/`drain_remaining`), that background
-            //     SilenceCheckWorker lingers too, and a new writer thread may be
-            //     spawned on the next `process_audio_impl`. Under repeated
-            //     wedged-shutdown cycles this is unbounded thread growth.
+            // (1) The detached thread still owns its `WriterThreadState` — so
+            //     if the thread is wedged (e.g. slow/hung disk I/O in
+            //     `finalize_all`/`drain_remaining`), it lingers with its open
+            //     files, and a new writer thread may be spawned on the next
+            //     `process_audio_impl`. Under repeated wedged-shutdown cycles
+            //     this is unbounded thread growth.
+            //
+            // The join below is prompt once the thread has replied: dropping
+            // its state no longer waits for queued silence scans (the silence
+            // worker finishes them in the background).
             // (2) The 30 s `recv_timeout` above stalls the user-visible stop.
             // Both are accepted because hanging the app on quit is worse, and a
             // wedged writer is expected only on pathological disk failures. If
@@ -822,7 +825,7 @@ impl AudioProcessor for CpalAudioProcessor {
             } else {
                 warn!(
                     "Writer thread did not respond within 30s — detaching to avoid hang \
-                     (its SilenceCheckWorker will not be joined; see DOLL-352)"
+                     (see DOLL-352)"
                 );
             }
         }

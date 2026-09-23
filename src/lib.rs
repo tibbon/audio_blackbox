@@ -61,6 +61,7 @@ pub use config::AppConfig;
 pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
+pub use silence_check_worker::wait_for_silence_checks;
 #[cfg(feature = "benchmarking")]
 pub use writer_thread::bench_real_pipeline;
 

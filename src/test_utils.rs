@@ -110,6 +110,23 @@ pub fn wait_for_flag_cleared(flag: &std::sync::atomic::AtomicBool, timeout: std:
     }
 }
 
+/// Block until every submitted silence check has run.
+///
+/// Stopping a recording no longer joins the silence-check worker, so a test
+/// that asserts a silent file was deleted (or kept) rendezvous here after
+/// finalize instead of relying on the drop.
+///
+/// # Panics
+///
+/// If the checks don't finish within 10 s: a wedged worker is a test failure.
+#[cfg(test)]
+pub fn drain_silence_checks() {
+    assert!(
+        crate::wait_for_silence_checks(std::time::Duration::from_secs(10)),
+        "silence checks did not finish within 10 s"
+    );
+}
+
 /// Standard set of env-var overrides to isolate tests from the host
 /// environment. Sets the `*` (unprefixed) keys to defaults and clears
 /// every `BLACKBOX_*` override. Use with `temp_env::with_vars(...)`.

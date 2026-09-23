@@ -247,7 +247,8 @@ pub(crate) struct WriterThreadState {
     pub(crate) timestamp_fn: TimestampFn,
     /// Single dedicated worker that scans recently-rotated files for
     /// silence and deletes them. `Some` when `silence_threshold > 0`,
-    /// `None` otherwise. Joined when `WriterThreadState` is dropped.
+    /// `None` otherwise. Dropping it closes its queue; the thread finishes
+    /// the queued scans in the background (see `silence_check_worker`).
     silence_worker: Option<SilenceCheckWorker>,
     /// Cumulative count of samples consumed via `read_available`. Tests
     /// poll this to know when the writer thread has drained a known
@@ -1243,15 +1244,14 @@ impl WriterThreadState {
     pub(crate) fn finalize_all(&mut self) -> Result<(), BlackboxError> {
         let (checkable, first_err) = self.close_files();
 
-        // Hand finalized files to the silence-check worker. Drop of the
-        // worker (when WriterThreadState is dropped) joins the worker
-        // thread, so any in-flight check completes before the process
-        // tears down — eliminating the race the prior detached spawn had
-        // with file-system teardown on shutdown.
+        // Hand finalized files to the silence-check worker without
+        // blocking: this runs on the way to a stop, and the stop must not
+        // wait behind scans already queued. The worker keeps scanning after
+        // the state is dropped; a file it never gets to is simply kept.
         if !checkable.is_empty()
             && let Some(worker) = self.silence_worker.as_ref()
         {
-            worker.submit(checkable);
+            worker.try_submit(checkable);
         }
 
         first_err.map_or(Ok(()), Err)

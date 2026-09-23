@@ -99,6 +99,15 @@ fn main() {
         error!("Error finalizing recording: {e}");
     }
 
+    // Stopping doesn't wait for silence checks (the app must not block its
+    // main thread on them), so the CLI waits here: exiting now would keep
+    // silent files that should have been deleted.
+    if !blackbox::wait_for_silence_checks(SILENCE_CHECK_WAIT) {
+        warn!(
+            "Silence checks still running after {SILENCE_CHECK_WAIT:?}; unchecked files are kept"
+        );
+    }
+
     // Stop performance tracking
     #[cfg(feature = "benchmarking")]
     if let Some(ref tracker) = perf_tracker {
@@ -106,16 +115,13 @@ fn main() {
     }
 
     info!("Recording finished!");
-    // DOLL-205: return normally instead of `std::process::exit(0)`.
-    // `exit` skips destructors on the stack-rooted `recorder` —
-    // notably `SilenceCheckWorker::Drop`, which closes the send side
-    // of the silence-check channel and joins the worker. Without that
-    // join, a Ctrl-C during recording with `silence_threshold > 0` and
-    // pending silence checks on rotated files would cut those checks
-    // short, leaving silent files on disk that should have been
-    // auto-deleted. Returning from `main` runs all destructors in
-    // reverse declaration order.
+    // DOLL-205: return normally instead of `std::process::exit(0)`, so
+    // destructors on the stack-rooted `recorder` run.
 }
+
+/// How long the CLI waits on exit for queued silence checks. A check
+/// decodes a silent file to its end, so a long silent take needs a while.
+const SILENCE_CHECK_WAIT: Duration = Duration::from_secs(600);
 
 /// Create `blackbox.toml` if it's missing, load the configuration, and create
 /// its output directory. Logs and returns `None` if either file step fails.
