@@ -789,3 +789,48 @@ fn load_keeps_known_keys_when_one_is_misspelled() {
         },
     );
 }
+
+/// One invalid value skips only its own key: the rest of the file still
+/// applies, and the bad key and any unknown key come back as warnings.
+/// `toml::from_str` used to fail on the whole file, so a single
+/// `recording_cadence = -1` silently reset every setting to its default.
+#[test]
+fn one_invalid_value_keeps_the_rest_of_the_file() {
+    let content = "recording_cadence = -1\nbits_per_sample = 70000\nduration = 7\n\
+                   output_dir = \"takes\"\nduraton = 5\n";
+    let (config, problems) = AppConfig::from_toml_forgiving(content).expect("valid TOML");
+    assert_eq!(config.duration, Some(7));
+    assert_eq!(config.output_dir.as_deref(), Some("takes"));
+    assert_eq!(config.recording_cadence, None, "the bad key is skipped");
+    assert_eq!(config.bits_per_sample, None, "the bad key is skipped");
+    assert_eq!(problems.len(), 3, "{problems:?}");
+    for key in ["recording_cadence", "bits_per_sample", "duraton"] {
+        assert!(
+            problems.iter().any(|p| p.contains(&format!("`{key}`"))),
+            "{key} must be reported: {problems:?}"
+        );
+    }
+    assert!(AppConfig::from_toml_forgiving("not [[[ toml").is_err());
+}
+
+/// The same through `AppConfig::load` on a real file.
+#[test]
+fn load_applies_valid_keys_next_to_an_invalid_one() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("bad-value.toml");
+    fs::write(&path, "recording_cadence = -1\nduration = 7\n").unwrap();
+    temp_env::with_vars(
+        vec![
+            ("BLACKBOX_CONFIG", Some(path.to_str().unwrap())),
+            ("BLACKBOX_DURATION", None),
+            ("RECORD_DURATION", None),
+            ("BLACKBOX_RECORDING_CADENCE", None),
+            ("RECORDING_CADENCE", None),
+        ],
+        || {
+            let config = AppConfig::load();
+            assert_eq!(config.get_duration(), 7);
+            assert_eq!(config.get_recording_cadence(), DEFAULT_RECORDING_CADENCE);
+        },
+    );
+}

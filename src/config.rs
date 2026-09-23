@@ -185,20 +185,12 @@ impl AppConfig {
         // Try to find and load the configuration file
         if let Some(config_path) = Self::find_config_file() {
             match fs::read_to_string(&config_path) {
-                Ok(content) => match toml::from_str::<Self>(&content) {
-                    Ok(file_config) => {
+                Ok(content) => match Self::from_toml_forgiving(&content) {
+                    Ok((file_config, problems)) => {
                         info!("Loaded configuration from {}", config_path.display());
-                        // Forgiving like the rest of loading: an unknown key
-                        // is ignored, but say so, since it is usually a typo
-                        // that leaves the intended setting at its default.
-                        for key in unknown_config_keys(&content) {
-                            warn!(
-                                "Unknown key `{key}` in {} ignored (misspelled?); known keys: {}",
-                                config_path.display(),
-                                CONFIG_KEYS.join(", ")
-                            );
+                        for problem in problems {
+                            warn!("{}: {problem}", config_path.display());
                         }
-                        // Merge with defaults
                         config.merge(file_config);
                     }
                     Err(e) => {
@@ -215,6 +207,59 @@ impl AppConfig {
         config.apply_env_vars();
 
         config
+    }
+
+    /// Parse a TOML configuration key by key, keeping every key that parses.
+    ///
+    /// Forgiving like the rest of loading: a key whose value has the wrong
+    /// type or range for its field (`recording_cadence = -1`,
+    /// `bits_per_sample = 70000`) is skipped, and so is an unknown key
+    /// (usually a typo that leaves the intended setting at its default).
+    /// Each skipped key comes back as a message to warn with. Parsing the
+    /// whole file as one struct used to drop every setting in it over one
+    /// bad value.
+    ///
+    /// Fails only when `content` isn't a TOML document at all.
+    pub(crate) fn from_toml_forgiving(
+        content: &str,
+    ) -> Result<(Self, Vec<String>), toml::de::Error> {
+        let table: toml::Table = content.parse()?;
+        let mut config = Self {
+            audio_channels: None,
+            debug: None,
+            duration: None,
+            output_mode: None,
+            silence_threshold: None,
+            continuous_mode: None,
+            recording_cadence: None,
+            output_dir: None,
+            performance_logging: None,
+            input_device: None,
+            min_disk_space_mb: None,
+            bits_per_sample: None,
+            silence_gate_enabled: None,
+            silence_gate_timeout_secs: None,
+        };
+        let mut problems = Vec::new();
+        for (key, value) in table {
+            if !CONFIG_KEYS.contains(&key.as_str()) {
+                problems.push(format!(
+                    "unknown key `{key}` ignored (misspelled?); known keys: {}",
+                    CONFIG_KEYS.join(", ")
+                ));
+                continue;
+            }
+            let mut single = toml::Table::new();
+            single.insert(key.clone(), value);
+            match toml::Value::Table(single).try_into::<Self>() {
+                Ok(one) => config.merge(one),
+                Err(e) => problems.push(format!(
+                    "`{key}` ignored, its value is invalid ({}); using the default",
+                    e.message()
+                )),
+            }
+        }
+        Ok((config, problems))
     }
 
     /// Merge another configuration into this one, only taking values that are Some
@@ -653,8 +698,10 @@ pub(crate) const CONFIG_KEYS: [&str; 14] = [
 ];
 
 /// Top-level keys in the TOML document `content` that `AppConfig` doesn't
-/// know, sorted by name. Empty if `content` isn't a TOML table (the
-/// caller reports parse errors separately).
+/// know, sorted by name. Empty if `content` isn't a TOML table. Tests use it
+/// to keep the example configs free of unknown keys; loading reports them
+/// through `AppConfig::from_toml_forgiving`.
+#[cfg(test)]
 pub(crate) fn unknown_config_keys(content: &str) -> Vec<String> {
     content.parse::<toml::Table>().map_or_else(
         |_| Vec::new(),
