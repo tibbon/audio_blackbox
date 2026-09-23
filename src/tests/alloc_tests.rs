@@ -271,7 +271,7 @@ fn test_rt_push_zero_alloc() {
     // whole, then the writer side drains everything.
     let mut round = || {
         for _ in 0..3 {
-            push_samples_with_overflow_count(&mut producer, &data, &write_errors);
+            push_samples_with_overflow_count(&mut producer, &data, 2, &write_errors);
         }
         let queued = consumer.slots();
         consumer
