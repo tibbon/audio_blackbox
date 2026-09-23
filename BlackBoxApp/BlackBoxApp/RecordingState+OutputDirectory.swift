@@ -163,36 +163,41 @@ extension RecordingState {
 
     /// Show an alert asking the user to re-select their output directory when
     /// a security-scoped bookmark can no longer be resolved (e.g. volume unmounted).
+    ///
+    /// Runs synchronously inside the bookmark-restore Task, which already runs
+    /// after init, so the menu bar is up. It used to spawn its own Task and
+    /// return, which let `bookmarkRestoreTask` finish while the alert was
+    /// still pending: auto-record then started on Rust's relative
+    /// "recordings" default, unwritable in the sandbox. Every outcome now
+    /// points the engine at a usable folder before auto-record proceeds.
     private func promptToReselectOutputDir(failedPath: String) {
-        // Defer to next run loop so init() completes before showing UI
-        Task { [weak self] in
-            guard let self else { return }
-            let alert = NSAlert()
-            alert.messageText = String(localized: "Output Directory Unavailable")
-            alert.informativeText = String(
-                localized:
-                    "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
-            )
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: String(localized: "Choose Directory\u{2026}"))
-            alert.addButton(withTitle: String(localized: "Use Default"))
-            NSApp.activate(ignoringOtherApps: true)
-            if alert.runModal() == .alertFirstButtonReturn {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.canCreateDirectories = true
-                panel.prompt = String(localized: "Select")
-                panel.message = String(localized: "Select output directory for recordings")
-                if panel.runModal() == .OK, let url = panel.url {
-                    saveOutputDirBookmark(for: url)
-                }
-            } else {
-                // Use the in-container default (no security scope needed). The
-                // old ~/Music default is unwritable under the sandbox. (DOLL-344)
-                useDefaultOutputDir()
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Output Directory Unavailable")
+        alert.informativeText = String(
+            localized:
+                "BlackBox can no longer access \"\(failedPath)\". Please select a new output directory, or use the default location."
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: String(localized: "Choose Directory\u{2026}"))
+        alert.addButton(withTitle: String(localized: "Use Default"))
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.prompt = String(localized: "Select")
+            panel.message = String(localized: "Select output directory for recordings")
+            if panel.runModal() == .OK, let url = panel.url {
+                saveOutputDirBookmark(for: url)
+                return
             }
         }
+        // "Use Default", or the picker was cancelled (which used to leave the
+        // engine on the unwritable relative default): the in-container
+        // default, which needs no security scope. The old ~/Music default is
+        // unwritable under the sandbox. (DOLL-344)
+        useDefaultOutputDir()
     }
 
     /// Release security-scoped resource access.

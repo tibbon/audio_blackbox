@@ -134,7 +134,7 @@ Known gaps against this intent:
 The user-picked output directory is persisted as a security-scoped bookmark in UserDefaults. Lifecycle:
 
 1. **Save**: `RecordingState.saveOutputDirBookmark(for:)`, called from the folder pickers in onboarding and `OutputSettingsTab`; `URL.bookmarkData(options: .withSecurityScope)`. It stops access on the previous URL before storing the new one. The in-container default folder needs no bookmark (`useDefaultOutputDir()`, DOLL-344).
-2. **Restore on launch**: a deferred `Task` (`bookmarkRestoreTask`, DOLL-114) resolves the bookmark, calls `startAccessingSecurityScopedResource`, and pushes the path into the Rust engine. Auto-record waits on this Task (DOLL-181).
+2. **Restore on launch**: a deferred `Task` (`bookmarkRestoreTask`, DOLL-114) resolves the bookmark, calls `startAccessingSecurityScopedResource`, and pushes the path into the Rust engine. Auto-record waits on this Task (DOLL-181), which includes the re-pick prompt below, so auto-record never starts before the user has answered it.
 3. **Hold during runtime**: the URL stays scoped until it is replaced or released.
 4. **Release**: `releaseOutputDirAccess()` runs on quit (from `applicationShouldTerminate`, after `stop()`) and when switching to the default folder.
 

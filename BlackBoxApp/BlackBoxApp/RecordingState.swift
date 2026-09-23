@@ -246,7 +246,8 @@ final class RecordingState {
     /// Bookmark-restore Task (DOLL-181). Stored so auto-record can `await`
     /// it before starting, preventing a race where auto-record fires with
     /// the default output dir because the bookmark Task hadn't completed
-    /// yet. `nil` until init kicks the Task off; `nil` after restoration
+    /// yet. The Task includes any "Output Directory Unavailable" prompt, so
+    /// it completes only after the user has answered it. `nil` until init kicks the Task off; `nil` after restoration
     /// completes (we never read it later so dropping the reference is fine).
     private var bookmarkRestoreTask: Task<Void, Never>?
 
