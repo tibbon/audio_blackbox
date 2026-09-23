@@ -131,14 +131,10 @@ struct OutputSettingsTab: View {
             // (5 min is too long to wait for a smoke test).
             // The duration itself signals "for testing" — no
             // real user would pick 30 s for production audio.
-            Text("30 seconds").tag(30)
-            Text("1 minute").tag(60)
-            Text("5 minutes").tag(300)
-            Text("15 minutes").tag(900)
-            Text("30 minutes").tag(1800)
-            Text("1 hour").tag(3600)
-            Text("2 hours").tag(7200)
-            Text("Custom").tag(-1)
+            ForEach(CadencePresets.all, id: \.seconds) { preset in
+                Text(preset.label).tag(preset.seconds)
+            }
+            Text("Custom").tag(CadencePresets.custom)
         }
         .onChange(of: cadenceSelection) {
             // "Custom" (-1) only reveals the field; its commit applies.
@@ -152,7 +148,7 @@ struct OutputSettingsTab: View {
         }
         .accessibilityLabel("Rotation interval")
 
-        if cadenceSelection == -1 {
+        if cadenceSelection == CadencePresets.custom {
             CustomCadenceField(recordingCadence: $recordingCadence, onCommit: commitCustomCadence)
         }
 
@@ -240,10 +236,8 @@ struct OutputSettingsTab: View {
         return outputDir
     }
 
-    private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]
-
     private func syncCadenceSelection() {
-        cadenceSelection = Self.cadencePresets.contains(recordingCadence) ? recordingCadence : -1
+        cadenceSelection = CadencePresets.selection(for: recordingCadence)
     }
 
     /// Commit the custom-cadence TextField on focus loss / Return.
@@ -294,6 +288,30 @@ struct OutputSettingsTab: View {
         ]
         recorder.bridge.setConfig(config)
         applied = currentSettings
+    }
+}
+
+/// The rotation intervals the "Rotate every:" picker offers. The picker's rows
+/// and the mapping from a saved cadence back to a picker row both read this
+/// list, so every preset the picker shows reopens as itself rather than as
+/// "Custom" (the 30 s and 1 min presets used to).
+nonisolated enum CadencePresets {
+    /// The picker tag for "Custom", which reveals the free-form field.
+    static let custom = -1
+
+    static let all: [(seconds: Int, label: LocalizedStringResource)] = [
+        (30, "30 seconds"),
+        (60, "1 minute"),
+        (300, "5 minutes"),
+        (900, "15 minutes"),
+        (1800, "30 minutes"),
+        (3600, "1 hour"),
+        (7200, "2 hours"),
+    ]
+
+    /// The picker row for a saved cadence: the preset itself, or `custom`.
+    static func selection(for cadence: Int) -> Int {
+        all.contains { $0.seconds == cadence } ? cadence : custom
     }
 }
 

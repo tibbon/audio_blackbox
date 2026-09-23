@@ -410,3 +410,27 @@ nonisolated final class SettingsKeysTests: XCTestCase {
         XCTAssertEqual(SettingsKeys.globalShortcut, "globalShortcut")
     }
 }
+
+// MARK: - Rotation Cadence Presets
+
+nonisolated final class CadencePresetsTests: XCTestCase {
+    /// Every preset the picker offers reopens as itself, not as "Custom".
+    /// The 30 s and 1 min presets used to fall through to "Custom".
+    func testEveryPresetRoundTrips() {
+        for preset in CadencePresets.all {
+            XCTAssertEqual(CadencePresets.selection(for: preset.seconds), preset.seconds)
+        }
+        XCTAssertEqual(CadencePresets.selection(for: 30), 30)
+        XCTAssertEqual(CadencePresets.selection(for: 60), 60)
+    }
+
+    func testOtherValuesAreCustom() {
+        XCTAssertEqual(CadencePresets.selection(for: 45), CadencePresets.custom)
+        XCTAssertEqual(CadencePresets.selection(for: 86_400), CadencePresets.custom)
+    }
+
+    func testPresetTagsAreUniqueAndDistinctFromCustom() {
+        XCTAssertFalse(CadencePresets.all.contains { $0.seconds == CadencePresets.custom })
+        XCTAssertEqual(Set(CadencePresets.all.map(\.seconds)).count, CadencePresets.all.count)
+    }
+}
