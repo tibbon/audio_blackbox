@@ -48,9 +48,26 @@ final class GlobalHotkeyManager {
     // MARK: - Public
 
     /// Register (or re-register) a global hotkey. Returns `true` on success.
-    /// On failure, leaves no partial state behind so a subsequent call starts clean.
+    ///
+    /// On failure the previously registered shortcut, if any, is registered
+    /// again: callers only save the new shortcut on success, so UserDefaults
+    /// and Settings still show the old one, and it must keep working rather
+    /// than leave the app with no hotkey until the next launch.
     @discardableResult
     func register(_ shortcut: Shortcut) -> Bool {
+        let previous = currentShortcut
+        guard tryRegister(shortcut) else {
+            if let previous, previous != shortcut, !tryRegister(previous) {
+                Self.log.error("Could not restore the previous hotkey \(previous.displayString, privacy: .public)")
+            }
+            return false
+        }
+        return true
+    }
+
+    /// Replace whatever is registered with `shortcut`. On failure, leaves no
+    /// partial state behind (`currentShortcut` nil) so a later call starts clean.
+    private func tryRegister(_ shortcut: Shortcut) -> Bool {
         unregister()
         currentShortcut = shortcut
         guard installHotkeyHandler(), registerHotkey(shortcut) else {

@@ -41,6 +41,7 @@
 		BBCA09CE7681F5ACF0DF61C1 /* ShortcutRecorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E076F3CD808732BAE342FB1 /* ShortcutRecorderButton.swift */; };
 		BE185DA077E00152905E3845 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3E06870571E2C3D34F75C6 /* CoreTests.swift */; };
 		C795389EB60CB1F564B56C8C /* RecordingSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */; };
+		CA6EF4FDEC7D13BFB6C6D47D /* GlobalHotkeyManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05557FAD356D8C445ADAA0E /* GlobalHotkeyManagerTests.swift */; };
 		D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAA96D336F9106E336A98A7 /* MeterView.swift */; };
 		D1DC5F1FBC0B5827F827EF52 /* MenuStatusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */; };
 		DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */; };
@@ -92,6 +93,7 @@
 		A782BA5F7F4C87D96BB05260 /* BlackBoxApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlackBoxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB0674B223253655522C4B25 /* SleepWakePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakePolicy.swift; sourceTree = "<group>"; };
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B05557FAD356D8C445ADAA0E /* GlobalHotkeyManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManagerTests.swift; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
 		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedEngineConfigTests.swift; sourceTree = "<group>"; };
@@ -118,6 +120,7 @@
 			children = (
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
 				EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */,
+				B05557FAD356D8C445ADAA0E /* GlobalHotkeyManagerTests.swift */,
 				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
 				C303713C77B1900DC615925B /* SessionPolicyTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
@@ -292,6 +295,7 @@
 			files = (
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
 				749B9C7A6A540CB18A5B7A06 /* EngineStatusPolicyTests.swift in Sources */,
+				CA6EF4FDEC7D13BFB6C6D47D /* GlobalHotkeyManagerTests.swift in Sources */,
 				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
 				A6DE84B5EABEF1DF0D426B9F /* SessionPolicyTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
