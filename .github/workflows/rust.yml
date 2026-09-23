@@ -287,7 +287,13 @@ jobs:
   # menu bar app via xcodebuild.
   swift-app:
     name: Swift app
-    runs-on: macos-latest
+    # Match the Xcode developers build with locally (27.x). macos-latest still
+    # defaults to Xcode 26.6, and a toolchain split let `swiftlint analyze`
+    # and Swift warnings (errors here) pass in CI but fail locally. `xcode-27`
+    # is GitHub's preview image (macOS 27); move back to macos-latest once
+    # that defaults to Xcode 27. The release workflow stays on macos-latest
+    # until then.
+    runs-on: xcode-27
     permissions:
       contents: read
     steps:
@@ -358,9 +364,9 @@ jobs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
         path: ~/Library/Developer/Xcode/DerivedData
-        key: ${{ runner.os }}-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
+        key: ${{ runner.os }}-xcode27-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
         restore-keys: |
-          ${{ runner.os }}-deriveddata-
+          ${{ runner.os }}-xcode27-deriveddata-
 
     # DOLL-190: hand-maintained include/blackbox_ffi.h drift check.
     # Runs *before* the Rust build so a header mismatch fails fast
