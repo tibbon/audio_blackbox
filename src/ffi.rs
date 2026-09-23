@@ -719,6 +719,29 @@ pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) 
     CpalAudioProcessor::get_device_channel_count(name).map_or(BLACKBOX_ERR_AUDIO_DEVICE, i32::from)
 }
 
+/// Repair and rename the `.recording.wav` files a crash left in `output_dir`
+/// (see [`crate::recover_recordings`]).
+///
+/// Returns how many files were recovered (>= 0), or:
+///
+/// * `BLACKBOX_ERR_INVALID_ARG` — `output_dir` is null or not valid UTF-8.
+/// * `BLACKBOX_ERR_IO` — the directory can't be read.
+///
+/// Per-file failures are logged and skipped, not returned. Call it only
+/// while nothing is recording into `output_dir` (e.g. at launch, before the
+/// first start): it rewrites and renames every `.recording.wav` it finds.
+/// Needs no handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn blackbox_recover_recordings(output_dir: *const c_char) -> i32 {
+    // SAFETY: the FFI contract requires `output_dir` to be null or a
+    // NUL-terminated string that outlives this call; the borrowed `&str` is
+    // only used within this function body.
+    let Some(dir) = (unsafe { cstr_to_str(output_dir) }) else {
+        return BLACKBOX_ERR_INVALID_ARG;
+    };
+    crate::recover_recordings(dir).map_or(BLACKBOX_ERR_IO, |n| i32::try_from(n).unwrap_or(i32::MAX))
+}
+
 /// Update the configuration from a JSON string.
 ///
 /// Only fields present (non-null) in the JSON are updated; others are left unchanged.

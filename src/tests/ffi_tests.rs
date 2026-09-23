@@ -516,6 +516,49 @@ fn test_get_device_channel_count_invalid_utf8() {
     assert_eq!(rc, BLACKBOX_ERR_INVALID_ARG);
 }
 
+/// `blackbox_recover_recordings` returns the recovered count, maps an
+/// unreadable directory to `BLACKBOX_ERR_IO`, and rejects a null or
+/// non-UTF-8 path with `BLACKBOX_ERR_INVALID_ARG`.
+#[test]
+fn test_recover_recordings() {
+    let dir = tempfile::tempdir().unwrap();
+    let tmp = dir.path().join("take.recording.wav");
+    let spec = crate::raw_wav_writer::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+    };
+    let mut w = crate::raw_wav_writer::RawWavWriter::create(tmp.to_str().unwrap(), spec).unwrap();
+    for i in 0..100 {
+        w.write_sample(i).unwrap();
+    }
+    drop(w); // a crash: audio on disk, header never refreshed
+
+    let c_dir = CString::new(dir.path().to_str().unwrap()).unwrap();
+    assert_eq!(blackbox_recover_recordings(c_dir.as_ptr()), 1);
+    assert!(dir.path().join("take.wav").exists());
+    assert_eq!(
+        blackbox_recover_recordings(c_dir.as_ptr()),
+        0,
+        "nothing left to recover"
+    );
+
+    let missing = CString::new(dir.path().join("missing").to_str().unwrap()).unwrap();
+    assert_eq!(
+        blackbox_recover_recordings(missing.as_ptr()),
+        BLACKBOX_ERR_IO
+    );
+    assert_eq!(
+        blackbox_recover_recordings(std::ptr::null()),
+        BLACKBOX_ERR_INVALID_ARG
+    );
+    let bad: [u8; 2] = [0xFF, 0];
+    assert_eq!(
+        blackbox_recover_recordings(bad.as_ptr().cast::<std::os::raw::c_char>()),
+        BLACKBOX_ERR_INVALID_ARG
+    );
+}
+
 #[test]
 fn test_get_peak_levels_idle_returns_zero_count() {
     // Freshly created handle has no peaks — legitimate empty read returns 0

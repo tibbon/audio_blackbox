@@ -54,7 +54,7 @@ fn tmp_wav_path(final_path: &str) -> String {
 /// unlikely), it appends a nanosecond suffix rather than returning the
 /// colliding original — never silently overwrite an existing recording
 /// (DOLL-268).
-fn disambiguate_path(final_path: &str) -> String {
+pub(crate) fn disambiguate_path(final_path: &str) -> String {
     if !Path::new(final_path).exists() {
         return final_path.to_owned();
     }

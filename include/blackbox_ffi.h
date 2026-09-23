@@ -128,6 +128,20 @@ char *blackbox_get_default_input_device_name(void);
 int32_t blackbox_get_device_channel_count(const char *device_name);
 
 /*
+ * Repair and rename the *.recording.wav files a crash left in output_dir:
+ * each header is rewritten to cover every whole frame in the file and the
+ * file is renamed to its final .wav name (never over an existing file; a
+ * -1, -2, ... suffix is added instead). Header-only files are deleted;
+ * files that aren't readable WAVs are left alone.
+ * Call only while nothing is recording into output_dir (e.g. at launch,
+ * before the first start). Needs no handle.
+ * Returns the number of files recovered (>= 0), or one of:
+ *   BLACKBOX_ERR_INVALID_ARG  — output_dir NULL or not valid UTF-8
+ *   BLACKBOX_ERR_IO           — output_dir can't be read
+ */
+int32_t blackbox_recover_recordings(const char *output_dir);
+
+/*
  * Update configuration from a JSON string.
  * Only fields present in the JSON are updated; others are left unchanged.
  * Returns BLACKBOX_OK on success, or one of:

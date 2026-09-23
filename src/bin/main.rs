@@ -6,10 +6,12 @@
 //!    applies `BLACKBOX_*` env overrides on top.
 //! 2. Installs a Ctrl-C / SIGTERM / SIGHUP handler with a debounce
 //!    so double-tap doesn't fan out work.
-//! 3. Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`,
+//! 3. Recovers `.recording.wav` files a crash left in the output directory
+//!    (`blackbox::recover_recordings`).
+//! 4. Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`,
 //!    and runs until duration expires, a signal arrives, or the engine
 //!    reports a failure (disk full, write failure, stream error).
-//! 4. Finalizes the recording explicitly before exit.
+//! 5. Finalizes the recording explicitly before exit.
 //!
 //! Exits with status 0 only when the recording ran and finalized cleanly;
 //! any failure exits non-zero so scripts and service managers can tell.
@@ -49,6 +51,15 @@ fn main() -> ExitCode {
     });
 
     let running = install_shutdown_handler();
+
+    // Repair and rename takes a crash left under `.recording.wav` names.
+    // Nothing is recording into the directory yet, which recovery requires.
+    let output_dir = config.get_output_dir();
+    match blackbox::recover_recordings(&output_dir) {
+        Ok(0) => {}
+        Ok(n) => info!("Recovered {n} interrupted recording(s) in {output_dir}"),
+        Err(e) => warn!("Could not scan {output_dir} for interrupted recordings: {e}"),
+    }
 
     let Some(mut recorder) = start_recorder(&config) else {
         return ExitCode::FAILURE;

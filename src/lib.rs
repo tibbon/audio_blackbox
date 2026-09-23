@@ -20,6 +20,8 @@
 //!   `BLACKBOX_*` environment variables.
 //! - [`OutputMode`] — single-file vs. file-per-channel.
 //! - [`BlackboxError`] — typed error enum.
+//! - [`recover_recordings`] — repair and rename `.recording.wav` files a
+//!   crash left behind; call before recording starts.
 //! - The `ffi` module (feature `ffi`) — C ABI consumed by the SwiftUI app.
 //!
 //! See `README.md` for the architecture diagram and benchmark numbers.
@@ -40,6 +42,7 @@ mod macos_sample_rate_listener;
 mod mock_processor;
 mod numeric;
 mod raw_wav_writer;
+mod recovery;
 mod silence_check_worker;
 mod utils;
 mod writer_thread;
@@ -61,6 +64,7 @@ pub use config::AppConfig;
 pub use constants::{OutputMode, RING_BUFFER_SECONDS};
 pub use cpal_processor::CpalAudioProcessor;
 pub use error::BlackboxError;
+pub use recovery::recover_recordings;
 pub use silence_check_worker::wait_for_silence_checks;
 #[cfg(feature = "benchmarking")]
 pub use writer_thread::bench_real_pipeline;
@@ -151,6 +155,7 @@ mod tests {
     #[cfg(feature = "benchmarking")]
     mod performance_tests;
     mod recorder_tests;
+    mod recovery_tests;
     mod ring_buffer_tests;
     mod shutdown_tests;
     mod silence_gate_tests;

@@ -253,6 +253,78 @@ fn header_sizes(data_bytes: u64, pad: bool) -> (u32, u32) {
     (file_size, data_size)
 }
 
+/// Where the parts of a RIFF/WAVE file's header sit, found by walking its
+/// chunks rather than assuming a fixed 44-byte layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WavLayout {
+    /// Bytes per frame, from the `fmt ` chunk.
+    pub block_align: u16,
+    /// Offset of the `data` chunk's size field.
+    pub data_size_offset: u64,
+    /// Offset of the first audio byte (the `data` chunk body).
+    pub data_offset: u64,
+}
+
+/// Parse the chunk layout from the start of a WAV file.
+///
+/// `bytes` must reach at least the `data` chunk header. Returns `None` when
+/// it isn't a RIFF/WAVE file, has no `fmt ` chunk before `data`, or `bytes`
+/// ends first.
+pub(crate) fn parse_wav_layout(bytes: &[u8]) -> Option<WavLayout> {
+    let read_u32 = |at: usize| -> Option<u32> {
+        let field: [u8; 4] = bytes.get(at..at.checked_add(4)?)?.try_into().ok()?;
+        Some(u32::from_le_bytes(field))
+    };
+    if bytes.get(0..4)? != b"RIFF" || bytes.get(8..12)? != b"WAVE" {
+        return None;
+    }
+    let mut block_align = None;
+    let mut pos = 12_usize;
+    loop {
+        let id = bytes.get(pos..pos.checked_add(4)?)?;
+        let size = usize::try_from(read_u32(pos + 4)?).ok()?;
+        if id == b"data" {
+            let data_offset = u64::try_from(pos + 8).ok()?;
+            return Some(WavLayout {
+                block_align: block_align?,
+                data_size_offset: data_offset - 4,
+                data_offset,
+            });
+        }
+        if id == b"fmt " {
+            // block_align is the u16 at offset 12 of the fmt body.
+            let at = pos + 8 + 12;
+            let field: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+            block_align = Some(u16::from_le_bytes(field)).filter(|&b| b > 0);
+        }
+        // Chunks are word-aligned: an odd-sized body is followed by a pad byte.
+        pos = pos
+            .checked_add(8)?
+            .checked_add(size)?
+            .checked_add(size % 2)?;
+    }
+}
+
+/// The audio length, RIFF size field and data size field to write into a
+/// file of `file_len` bytes with `layout`, recovering it after a crash.
+///
+/// The audio is everything after the data chunk header, rounded down to
+/// whole frames (a crash can cut the last frame short), and capped so the
+/// RIFF size (header after the preamble + data + a pad byte) still fits the
+/// `u32` field. Returns `(data_bytes, riff_size, data_size)`.
+pub(crate) fn recovered_sizes(file_len: u64, layout: WavLayout) -> (u64, u32, u32) {
+    let align = u64::from(layout.block_align.max(1));
+    let header_after_preamble = layout.data_offset - 8;
+    let cap = u64::from(u32::MAX) - header_after_preamble - 1;
+    let raw = file_len.saturating_sub(layout.data_offset).min(cap);
+    let data_bytes = raw - raw % align;
+    let pad = data_bytes % 2;
+    // Both fit: data_bytes <= cap keeps the sum at or below u32::MAX.
+    let riff = u32::try_from(header_after_preamble + data_bytes + pad).unwrap_or(u32::MAX);
+    let data = u32::try_from(data_bytes).unwrap_or(u32::MAX);
+    (data_bytes, riff, data)
+}
+
 /// How many data bytes a header rewritten after a failed flush can claim:
 /// no more than reached the file (`on_disk`) or were written (`counted`),
 /// rounded down to whole frames so a player never reads a torn frame.
