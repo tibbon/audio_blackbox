@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 use sysinfo::System;
@@ -22,6 +22,9 @@ pub struct PerformanceTracker {
     /// a `Mutex<Option>` because `stop` and `Drop` take `&self` and need
     /// to consume the handle (DOLL-143).
     handle: Mutex<Option<thread::JoinHandle<()>>>,
+    /// Dropped by `stop` to wake the worker out of its wait between samples,
+    /// so stopping doesn't wait out the rest of an `interval_secs` sleep.
+    stop_tx: Mutex<Option<mpsc::Sender<()>>>,
 }
 
 /// Struct to store a single performance snapshot
@@ -49,6 +52,7 @@ impl PerformanceTracker {
             history_length,
             interval_secs,
             handle: Mutex::new(None),
+            stop_tx: Mutex::new(None),
         }
     }
 
@@ -71,7 +75,11 @@ impl PerformanceTracker {
         let running = Arc::clone(&self.running);
         let log_path = self.log_path.clone();
         let history_length = self.history_length;
-        let interval_secs = self.interval_secs;
+        let interval = Duration::from_secs(self.interval_secs);
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        if let Ok(mut guard) = self.stop_tx.lock() {
+            *guard = Some(stop_tx);
+        }
 
         let join_handle = thread::spawn(move || {
             let mut sys = System::new_all();
@@ -97,11 +105,14 @@ impl PerformanceTracker {
                     record_metric(&metrics, history_length, &log_path, metric);
                 }
 
-                #[expect(
-                    clippy::disallowed_methods,
-                    reason = "sampling interval of the perf-log thread; `running` is polled each tick and there is nothing else to wait on"
-                )]
-                thread::sleep(Duration::from_secs(interval_secs));
+                // Wait out the interval on the stop channel rather than
+                // sleeping: `stop` drops the sender, which ends the wait at
+                // once. A sleep made exit wait up to `interval_secs` (5 s in
+                // the CLI) for the thread to notice.
+                match stop_rx.recv_timeout(interval) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
         });
 
@@ -116,16 +127,18 @@ impl PerformanceTracker {
 
     /// Stop the performance tracking and join the worker thread.
     ///
-    /// The worker may still be mid-iteration when `stop` is called; it
-    /// observes `running == false` on its next loop check (worst case
-    /// `interval_secs` later) and exits, then this method blocks until
-    /// the join completes.
+    /// Dropping the stop channel wakes the worker from its wait between
+    /// samples, so this returns as soon as any sample in progress finishes,
+    /// not up to `interval_secs` later.
     pub fn stop(&self) {
         if !self.enabled {
             return;
         }
 
         self.running.store(false, Ordering::Relaxed);
+        if let Ok(mut guard) = self.stop_tx.lock() {
+            drop(guard.take());
+        }
 
         // Take the JoinHandle out from under the mutex and join. If
         // `stop` is called twice, the second call sees None and is a

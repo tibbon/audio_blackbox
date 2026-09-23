@@ -37,6 +37,38 @@ fn test_measure_execution_time() {
     assert!(duration.as_millis() >= 50);
 }
 
+/// `stop` must not wait out the sampling interval. The worker used to
+/// `thread::sleep(interval)` between samples and only then notice the stop,
+/// so with the CLI's 5 s interval, exit hung for up to 5 s. Now `stop` wakes
+/// it at once and returns after at most the sample in progress.
+#[test]
+fn stop_does_not_wait_for_the_interval() {
+    let temp_dir = tempdir().unwrap();
+    let log_path = temp_dir.path().join("perf.log");
+    let tracker = PerformanceTracker::new(true, log_path.to_str().unwrap(), 10, 60);
+    tracker.start();
+
+    // Wait for the first sample, so the worker is in its between-samples
+    // wait when `stop` runs (stopping before the first sample would exit
+    // at the loop check even with the old sleep).
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while tracker.get_current_metrics().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "tracker never produced a sample"
+        );
+        thread::yield_now();
+    }
+
+    let started = std::time::Instant::now();
+    tracker.stop();
+    let took = started.elapsed();
+    assert!(
+        took < Duration::from_secs(10),
+        "stop took {took:?} with a 60 s interval; it must not wait for the interval"
+    );
+}
+
 #[test]
 #[ignore = "real metrics collection takes seconds; run with --ignored locally"]
 fn test_performance_tracker_basic() {
