@@ -647,3 +647,40 @@ fn test_config_invalid_env_vars() {
         },
     );
 }
+
+/// `blackbox.example.toml` is what users copy to configure the CLI, so it
+/// must set every key (a misspelled key would be silently ignored, since
+/// `AppConfig` does not deny unknown fields) and show the real defaults.
+#[test]
+fn example_config_sets_every_key_to_its_default() {
+    let config: AppConfig = toml::from_str(include_str!("../../blackbox.example.toml"))
+        .expect("blackbox.example.toml must parse");
+
+    assert_eq!(config.audio_channels.as_deref(), Some(DEFAULT_CHANNELS));
+    assert_eq!(config.debug, Some(DEFAULT_DEBUG));
+    assert_eq!(config.duration, Some(DEFAULT_DURATION));
+    assert_eq!(config.output_mode.as_deref(), Some(DEFAULT_OUTPUT_MODE));
+    let threshold = config
+        .silence_threshold
+        .expect("silence_threshold must be set");
+    assert!((threshold - DEFAULT_SILENCE_THRESHOLD).abs() < f32::EPSILON);
+    assert_eq!(config.continuous_mode, Some(DEFAULT_CONTINUOUS_MODE));
+    assert_eq!(config.recording_cadence, Some(DEFAULT_RECORDING_CADENCE));
+    assert_eq!(config.output_dir.as_deref(), Some(DEFAULT_OUTPUT_DIR));
+    assert_eq!(
+        config.performance_logging,
+        Some(DEFAULT_PERFORMANCE_LOGGING)
+    );
+    assert_eq!(config.min_disk_space_mb, Some(DEFAULT_MIN_DISK_SPACE_MB));
+    assert_eq!(config.bits_per_sample, Some(DEFAULT_BITS_PER_SAMPLE));
+    assert_eq!(
+        config.silence_gate_enabled,
+        Some(DEFAULT_SILENCE_GATE_ENABLED)
+    );
+    assert_eq!(
+        config.silence_gate_timeout_secs,
+        Some(DEFAULT_SILENCE_GATE_TIMEOUT_SECS)
+    );
+    // Left commented out on purpose: unset means the system default input.
+    assert_eq!(config.input_device, None);
+}

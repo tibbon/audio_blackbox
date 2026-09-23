@@ -41,7 +41,7 @@ cargo build --release       # or just the CLI recorder: target/release/blackbox
 make check                  # the same gate CI runs
 ```
 
-The CLI reads `blackbox.toml` from the working directory, and every setting can be overridden with a `BLACKBOX_*` environment variable. The variables are listed in [AGENTS.md](AGENTS.md#environment-variables-doll-198).
+To configure the CLI, copy `blackbox.example.toml` to `blackbox.toml` (gitignored) and edit it. The example lists every setting with its default, and each one can also be overridden with a `BLACKBOX_*` environment variable. The variables are listed in [AGENTS.md](AGENTS.md#environment-variables-doll-198).
 
 ## How it works
 

@@ -1,0 +1,49 @@
+# BlackBox CLI configuration example.
+#
+# Copy to blackbox.toml (gitignored) and edit:
+#   cp blackbox.example.toml blackbox.toml
+#
+# The CLI looks for a config in this order: $BLACKBOX_CONFIG, ./blackbox.toml,
+# ~/.config/blackbox/config.toml, $XDG_CONFIG_HOME/blackbox/config.toml,
+# /etc/blackbox/config.toml. Every key can be overridden with a BLACKBOX_*
+# environment variable (see AGENTS.md). The Mac app does not read this file.
+#
+# The values below are the built-in defaults (src/constants.rs); a test keeps
+# them in sync.
+
+# Channels to record, 0-based: a list and/or ranges, e.g. "0,2-4,7".
+audio_channels = "0"
+
+# "single" (one interleaved file) or "split" (one mono file per channel).
+output_mode = "single"
+
+# WAV bit depth: 16, 24, or 32.
+bits_per_sample = 24
+
+# Recording length in seconds; 0 = until Ctrl-C.
+duration = 30
+
+# Directory for recordings. Relative paths are relative to where you run the CLI.
+output_dir = "recordings"
+
+# Continuous mode rotates to a new file every recording_cadence seconds.
+continuous_mode = false
+recording_cadence = 300
+
+# Delete finished files whose level never exceeds this fraction of full scale
+# (0.01 = 1%). 0 disables. Keep it low: 0.2 deletes most speech and room tone.
+silence_threshold = 0.01
+
+# Silence gate: stop writing after silence_gate_timeout_secs of silence, and
+# start a new file when signal returns.
+silence_gate_enabled = true
+silence_gate_timeout_secs = 300
+
+# Stop recording when free space drops below this many MB; 0 disables.
+min_disk_space_mb = 500
+
+# Input device name as the system reports it; unset = system default input.
+# input_device = "MacBook Pro Microphone"
+
+debug = false
+performance_logging = false
