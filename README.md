@@ -4,7 +4,7 @@
 
 **Set-and-forget continuous audio recording for macOS.** Captures from any input device — built-in mic, USB interface, multichannel audio interface — and never loses a take when the app, the Mac, or the power decides otherwise. Designed for audio engineers, podcasters, and field recorders who want a quiet menu-bar utility that just runs.
 
-**[Download on the Mac App Store](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12)**
+[![Download on the Mac App Store](https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us)](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12)
 
 <!-- TODO: hero screenshot of the menu bar dropdown with live meters -->
 
