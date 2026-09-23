@@ -583,3 +583,98 @@ fn test_stop_monitoring_preserves_live_recording_status() {
         blackbox_destroy(handle);
     });
 }
+
+#[test]
+fn test_monitoring_null_handle() {
+    assert_eq!(
+        blackbox_start_monitoring(std::ptr::null_mut()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert_eq!(
+        blackbox_stop_monitoring(std::ptr::null_mut()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert!(!blackbox_is_monitoring(std::ptr::null()));
+}
+
+/// DOLL-249: starting monitoring on top of a live recording would open a
+/// second stream on the device and orphan the in-flight `.recording.wav`.
+/// It must be a no-op success that leaves the recording's published status
+/// alone and never reaches the audio device (so this runs without one).
+#[test]
+fn test_start_monitoring_during_recording_is_noop() {
+    use std::sync::atomic::Ordering;
+
+    use tempfile::tempdir;
+
+    use crate::audio_recorder::AudioRecorder;
+    use crate::config::AppConfig;
+    use crate::constants::OutputMode;
+    use crate::cpal_processor::CpalAudioProcessor;
+    use crate::test_utils::test_env_no_silence;
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let handle = blackbox_create(std::ptr::null());
+        let processor = CpalAudioProcessor::new_for_test(dir, 44_100, &[0], OutputMode::Single)
+            .expect("test processor");
+        processor
+            .status_arcs()
+            .recording_active
+            .store(true, Ordering::Release);
+        // SAFETY: `handle` came from `blackbox_create` above and is not freed
+        // until the `blackbox_destroy` at the end of this test.
+        unsafe { &*handle }
+            .test_install_recorder(AudioRecorder::with_config(processor, AppConfig::default()));
+
+        assert_eq!(blackbox_start_monitoring(handle), BLACKBOX_OK);
+        assert!(
+            blackbox_is_recording(handle),
+            "start_monitoring must not replace a live recording's published status"
+        );
+        assert!(
+            !blackbox_is_monitoring(handle),
+            "no monitor stream should have been opened"
+        );
+        assert!(
+            blackbox_get_last_error(handle).is_null(),
+            "the no-op path is a success and must not record an error"
+        );
+
+        // Clear the synthetic recording flag so destroy takes the
+        // not-recording path (same teardown as the DOLL-446 test above).
+        // SAFETY: `handle` came from `blackbox_create` and is destroyed only
+        // on the next line, after this access.
+        unsafe { &*handle }
+            .test_status_bundle()
+            .recording_active
+            .store(false, Ordering::Release);
+        blackbox_destroy(handle);
+    });
+}
+
+/// DOLL-215/DOLL-234: NULL is in-band ("no default input device", e.g. a CI
+/// runner), otherwise a caller-freed, non-empty name of a device that the
+/// device list also reports.
+#[test]
+fn test_get_default_input_device_name() {
+    // SAFETY: the pointer was just returned by
+    // `blackbox_get_default_input_device_name`, which yields null or a
+    // NUL-terminated string owned by the caller, freed once by `read_and_free`.
+    let Some(name) = (unsafe { read_and_free(blackbox_get_default_input_device_name()) }) else {
+        return;
+    };
+    assert!(!name.is_empty(), "a default device name must not be empty");
+
+    // SAFETY: as above, for `blackbox_list_input_devices`.
+    let devices_str = unsafe { read_and_free(blackbox_list_input_devices()) }
+        .expect("device list should be readable");
+    let devices: Vec<String> =
+        serde_json::from_str(&devices_str).expect("device list should be a JSON string array");
+    assert!(
+        devices.contains(&name),
+        "default device {name:?} should be one of the listed input devices {devices:?}"
+    );
+}
