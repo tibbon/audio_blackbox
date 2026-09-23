@@ -216,3 +216,36 @@ fn test_placeholder_header_with_audio_is_kept() {
 
     assert!(!is_silent(file_path.to_str().unwrap(), 0.1).unwrap());
 }
+
+/// The same two cases for a 24-bit file, which `RawWavWriter` writes as
+/// `WAVE_FORMAT_EXTENSIBLE` with a 68-byte header: a header-only file is
+/// silent, and one with audio behind a placeholder header is kept. Under the
+/// old fixed 44-byte assumption a header-only EXTENSIBLE file looked like it
+/// held 24 bytes of unknown audio.
+#[test]
+fn test_extensible_header_only_vs_placeholder_with_audio() {
+    use crate::raw_wav_writer::{RawWavWriter, WavSpec as RawSpec};
+    let temp_dir = tempdir().unwrap();
+    let spec = RawSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 24,
+    };
+
+    let empty = temp_dir.path().join("empty.wav");
+    RawWavWriter::create(empty.to_str().unwrap(), spec)
+        .unwrap()
+        .finalize()
+        .unwrap();
+    assert_eq!(fs::metadata(&empty).unwrap().len(), 68);
+    assert!(is_silent(empty.to_str().unwrap(), 0.1).unwrap());
+
+    // Audio on disk, header still at the placeholder (dropped unfinalized).
+    let placeholder = temp_dir.path().join("placeholder.wav");
+    let mut w = RawWavWriter::create(placeholder.to_str().unwrap(), spec).unwrap();
+    for _ in 0..1_000 {
+        w.write_sample(0).unwrap();
+    }
+    drop(w);
+    assert!(!is_silent(placeholder.to_str().unwrap(), 0.1).unwrap());
+}

@@ -34,11 +34,19 @@ fn single_state(dir: &str) -> WriterThreadState {
     state
 }
 
-/// Read the WAV data-chunk size field (little-endian u32 at byte offset 40).
+/// Read the WAV data-chunk size field (little-endian u32 at byte offset 40
+/// for plain PCM, 64 for the EXTENSIBLE header 24-bit files get).
 /// 0 means the header has not been rewritten since `create` (which writes 0).
 fn read_wav_data_size(path: &str) -> u32 {
     let mut f = File::open(path).expect("open wav");
-    f.seek(SeekFrom::Start(40)).expect("seek to data size");
+    let mut head = Vec::new();
+    (&mut f)
+        .take(68)
+        .read_to_end(&mut head)
+        .expect("read header");
+    let layout = crate::raw_wav_writer::parse_wav_layout(&head).expect("valid header");
+    f.seek(SeekFrom::Start(layout.data_size_offset))
+        .expect("seek to data size");
     let mut b = [0_u8; 4];
     f.read_exact(&mut b).expect("read data size");
     u32::from_le_bytes(b)

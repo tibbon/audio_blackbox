@@ -250,7 +250,7 @@ pub(crate) fn is_silent(file_path: &str, threshold: f32) -> Result<bool, Blackbo
         // unknown: keep it. Only a file that really is just a header is
         // silent.
         let len = std::fs::metadata(file_path)?.len();
-        if len > crate::raw_wav_writer::HEADER_LEN {
+        if len > wav_header_len(file_path)? {
             log::warn!("{file_path} has {len} bytes but its header reports no samples; keeping it");
             return Ok(false);
         }
@@ -259,4 +259,18 @@ pub(crate) fn is_silent(file_path: &str, threshold: f32) -> Result<bool, Blackbo
 
     let rms = (sum_of_squares / crate::numeric::count_to_f64(count)).sqrt();
     Ok(rms < threshold_f64)
+}
+
+/// Where the audio starts in the WAV file at `file_path`: 44 bytes for plain
+/// PCM, 68 for `WAVE_FORMAT_EXTENSIBLE`, or wherever the `data` chunk is.
+/// Falls back to the plain-PCM length if the header can't be parsed, which
+/// only makes `is_silent` keep more files.
+fn wav_header_len(file_path: &str) -> Result<u64, BlackboxError> {
+    use std::io::Read;
+    let mut head = Vec::new();
+    std::fs::File::open(file_path)?
+        .take(4096)
+        .read_to_end(&mut head)?;
+    Ok(crate::raw_wav_writer::parse_wav_layout(&head)
+        .map_or(crate::raw_wav_writer::PCM_HEADER_LEN, |l| l.data_offset))
 }

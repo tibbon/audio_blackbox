@@ -31,16 +31,50 @@ pub(crate) struct RawWavWriter {
     byte_width: u8,
     /// Bytes per frame (`byte_width * channels`).
     block_align: u16,
+    /// Length of the header `create` wrote: where the audio starts
+    /// (`PCM_HEADER_LEN` or `EXTENSIBLE_HEADER_LEN`).
+    header_len: u64,
 }
 
-/// Size of the RIFF/WAVE header `create` writes; the data chunk starts here.
-pub(crate) const HEADER_LEN: u64 = 44;
+/// Header length for plain `WAVE_FORMAT_PCM` (16-byte `fmt ` chunk).
+pub(crate) const PCM_HEADER_LEN: u64 = 44;
+
+/// Header length for `WAVE_FORMAT_EXTENSIBLE` (40-byte `fmt ` chunk).
+pub(crate) const EXTENSIBLE_HEADER_LEN: u64 = 68;
 
 /// Audio bytes after which the writer thread starts a new file. The RIFF
-/// size field (`u32`) must hold the data plus 36 header bytes and a pad
-/// byte; 1 MiB of margin covers the up to 64 KiB one writer-thread read can
-/// add after the check.
+/// size field (`u32`) must hold the data plus up to 60 header bytes and a
+/// pad byte; 1 MiB of margin covers the up to 64 KiB one writer-thread read
+/// can add after the check.
 pub(crate) const MAX_WAV_DATA_BYTES: u64 = u32::MAX as u64 - (1 << 20);
+
+/// `WAVE_FORMAT_EXTENSIBLE` format tag.
+const FORMAT_EXTENSIBLE: u16 = 0xFFFE;
+
+/// `KSDATAFORMAT_SUBTYPE_PCM` (`00000001-0000-0010-8000-00AA00389B71`) as it
+/// is stored on disk: the first three GUID fields little-endian.
+const SUBTYPE_PCM: [u8; 16] = [
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+];
+
+/// Whether `spec` needs `WAVE_FORMAT_EXTENSIBLE`. Microsoft's
+/// `WAVEFORMATEX` documentation limits plain `WAVE_FORMAT_PCM` to 8- or
+/// 16-bit samples and one or two channels; strict readers reject (or
+/// misread) anything else under the plain tag.
+pub(crate) const fn needs_extensible(spec: WavSpec) -> bool {
+    spec.bits_per_sample > 16 || spec.channels > 2
+}
+
+/// `dwChannelMask` for `channels`: front center for mono, front left and
+/// right for stereo, and 0 (speaker positions unassigned) above that, since
+/// arbitrary interface inputs have no speaker positions.
+pub(crate) const fn channel_mask(channels: u16) -> u32 {
+    match channels {
+        1 => 0x4, // SPEAKER_FRONT_CENTER
+        2 => 0x3, // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+        _ => 0,
+    }
+}
 
 /// 64 KB write buffer — same as the constant in `writer_thread.rs`.
 const WAV_BUF_CAPACITY: usize = 65_536;
@@ -68,7 +102,8 @@ impl RawWavWriter {
         let file = File::create(path)?;
         let mut writer = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
 
-        // Write the 44-byte RIFF/WAV header with placeholder sizes.
+        // Write the RIFF/WAVE header with placeholder sizes: 44 bytes for
+        // plain PCM, 68 for WAVE_FORMAT_EXTENSIBLE (see `needs_extensible`).
         // Saturating arithmetic so an extreme spec (e.g. 384 kHz × 32-bit
         // × hundreds of channels) caps the header value rather than
         // wrapping silently into an OS-accepted-but-misinterpreted u32
@@ -86,17 +121,31 @@ impl RawWavWriter {
             .try_into()
             .unwrap_or(u16::MAX);
 
+        let extensible = needs_extensible(spec);
         writer.write_all(b"RIFF")?;
         writer.write_all(&0_u32.to_le_bytes())?; // placeholder file size
         writer.write_all(b"WAVE")?;
         writer.write_all(b"fmt ")?;
-        writer.write_all(&16_u32.to_le_bytes())?; // PCM fmt chunk size
-        writer.write_all(&1_u16.to_le_bytes())?; // PCM format tag
+        if extensible {
+            writer.write_all(&40_u32.to_le_bytes())?; // fmt chunk size
+            writer.write_all(&FORMAT_EXTENSIBLE.to_le_bytes())?;
+        } else {
+            writer.write_all(&16_u32.to_le_bytes())?; // fmt chunk size
+            writer.write_all(&1_u16.to_le_bytes())?; // WAVE_FORMAT_PCM
+        }
         writer.write_all(&spec.channels.to_le_bytes())?;
         writer.write_all(&spec.sample_rate.to_le_bytes())?;
         writer.write_all(&byte_rate.to_le_bytes())?;
         writer.write_all(&block_align.to_le_bytes())?;
+        // wBitsPerSample is the container size; every depth we write fills
+        // its bytes, so it equals the valid bits below.
         writer.write_all(&spec.bits_per_sample.to_le_bytes())?;
+        if extensible {
+            writer.write_all(&22_u16.to_le_bytes())?; // cbSize
+            writer.write_all(&spec.bits_per_sample.to_le_bytes())?; // wValidBitsPerSample
+            writer.write_all(&channel_mask(spec.channels).to_le_bytes())?;
+            writer.write_all(&SUBTYPE_PCM)?;
+        }
         writer.write_all(b"data")?;
         writer.write_all(&0_u32.to_le_bytes())?; // placeholder data size
 
@@ -106,6 +155,11 @@ impl RawWavWriter {
             data_bytes_written: 0,
             byte_width,
             block_align,
+            header_len: if extensible {
+                EXTENSIBLE_HEADER_LEN
+            } else {
+                PCM_HEADER_LEN
+            },
         })
     }
 
@@ -126,6 +180,7 @@ impl RawWavWriter {
             data_bytes_written: 0,
             byte_width: 3,
             block_align: 3,
+            header_len: EXTENSIBLE_HEADER_LEN,
         }
     }
 
@@ -198,13 +253,14 @@ impl RawWavWriter {
     fn salvage_header(self) -> io::Result<()> {
         let block_align = self.block_align;
         let counted = self.data_bytes_written;
+        let header_len = self.header_len;
         let (mut file, _unwritten) = self.writer.into_parts();
-        let on_disk = file.metadata()?.len().saturating_sub(HEADER_LEN);
+        let on_disk = file.metadata()?.len().saturating_sub(header_len);
         let data_bytes = salvaged_data_len(on_disk, counted, block_align);
-        let (file_size, data_size) = header_sizes(data_bytes, false);
+        let (file_size, data_size) = header_sizes(data_bytes, false, header_len);
         file.seek(SeekFrom::Start(4))?;
         file.write_all(&file_size.to_le_bytes())?;
-        file.seek(SeekFrom::Start(40))?;
+        file.seek(SeekFrom::Start(header_len - 4))?;
         file.write_all(&data_size.to_le_bytes())?;
         file.flush()
     }
@@ -229,27 +285,33 @@ impl RawWavWriter {
                 self.data_bytes_written
             );
         }
-        let (file_size, data_size) = header_sizes(self.data_bytes_written, pad);
+        let (file_size, data_size) = header_sizes(self.data_bytes_written, pad, self.header_len);
 
         let pos = self.writer.stream_position()?;
         self.writer.seek(SeekFrom::Start(4))?;
         self.writer.write_all(&file_size.to_le_bytes())?;
-        self.writer.seek(SeekFrom::Start(40))?;
+        // The data chunk's size field is the last 4 bytes of the header.
+        self.writer.seek(SeekFrom::Start(self.header_len - 4))?;
         self.writer.write_all(&data_size.to_le_bytes())?;
         self.writer.seek(SeekFrom::Start(pos))?;
         Ok(())
     }
 }
 
-/// The RIFF and data-chunk size fields for `data_bytes` of audio.
-fn header_sizes(data_bytes: u64, pad: bool) -> (u32, u32) {
+/// The RIFF and data-chunk size fields for `data_bytes` of audio behind a
+/// `header_len`-byte header.
+fn header_sizes(data_bytes: u64, pad: bool, header_len: u64) -> (u32, u32) {
     let data_size = u32::try_from(data_bytes).unwrap_or(u32::MAX);
     // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
     // in release and panic in debug. The header value can't represent more
     // than u32::MAX anyway, so saturating is the most-honest answer.
-    // 36 = 44-byte header minus the 8-byte RIFF preamble; +1 more when a
-    // word-alignment pad byte trails the data chunk (DOLL-372).
-    let file_size = data_size.saturating_add(if pad { 37 } else { 36 });
+    // The RIFF size counts the header minus its 8-byte preamble (36 for
+    // plain PCM, 60 for EXTENSIBLE); +1 more when a word-alignment pad byte
+    // trails the data chunk (DOLL-372).
+    let after_preamble = u32::try_from(header_len - 8).unwrap_or(u32::MAX);
+    let file_size = data_size
+        .saturating_add(after_preamble)
+        .saturating_add(u32::from(pad));
     (file_size, data_size)
 }
 
@@ -400,12 +462,90 @@ mod tests {
         assert_eq!(block_align, 255 * 4);
     }
 
-    /// Reads the RIFF chunk size (offset 4) and data-chunk size (offset 40).
+    /// Reads the RIFF chunk size (offset 4) and the data-chunk size (offset
+    /// 40 for plain PCM, 64 for EXTENSIBLE).
     fn read_size_fields(path: &str) -> (u32, u32) {
         let bytes = std::fs::read(path).unwrap();
         let riff_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let data_size = u32::from_le_bytes(bytes[40..44].try_into().unwrap());
+        let at = usize::try_from(parse_wav_layout(&bytes).unwrap().data_size_offset).unwrap();
+        let data_size = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
         (riff_size, data_size)
+    }
+
+    /// Every header field of a plain PCM file (16-bit stereo) and an
+    /// EXTENSIBLE one (24-bit mono, 16-bit with more than two channels), per
+    /// Microsoft's `WAVEFORMATEXTENSIBLE` layout. Plain PCM is only valid
+    /// for 8/16-bit and one or two channels.
+    #[test]
+    fn format_tag_follows_depth_and_channel_count() {
+        let dir = tempdir().unwrap();
+        let header = |name: &str, channels: u16, bits: u16| -> Vec<u8> {
+            let path = dir.path().join(name).to_str().unwrap().to_owned();
+            let spec = WavSpec {
+                channels,
+                sample_rate: 48_000,
+                bits_per_sample: bits,
+            };
+            drop(RawWavWriter::create(&path, spec).unwrap());
+            std::fs::read(&path).unwrap()
+        };
+        let u16_at = |b: &[u8], at: usize| u16::from_le_bytes(b[at..at + 2].try_into().unwrap());
+        let u32_at = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+
+        let pcm = header("pcm.wav", 2, 16);
+        assert_eq!(pcm.len(), 44);
+        assert_eq!(u32_at(&pcm, 16), 16, "fmt chunk size");
+        assert_eq!(u16_at(&pcm, 20), 1, "WAVE_FORMAT_PCM");
+        assert_eq!(&pcm[36..40], b"data");
+
+        for (name, channels, bits, mask) in [
+            ("mono24.wav", 1_u16, 24_u16, 0x4_u32),
+            ("stereo32.wav", 2, 32, 0x3),
+            ("quad16.wav", 4, 16, 0),
+        ] {
+            let ext = header(name, channels, bits);
+            assert_eq!(ext.len(), 68, "{name}: header length");
+            assert_eq!(u32_at(&ext, 16), 40, "{name}: fmt chunk size");
+            assert_eq!(u16_at(&ext, 20), 0xFFFE, "{name}: WAVE_FORMAT_EXTENSIBLE");
+            assert_eq!(u16_at(&ext, 22), channels, "{name}: channels");
+            let block_align = channels * bits / 8;
+            assert_eq!(u16_at(&ext, 32), block_align, "{name}: block align");
+            assert_eq!(u16_at(&ext, 34), bits, "{name}: container bits");
+            assert_eq!(u16_at(&ext, 36), 22, "{name}: cbSize");
+            assert_eq!(u16_at(&ext, 38), bits, "{name}: valid bits");
+            assert_eq!(u32_at(&ext, 40), mask, "{name}: channel mask");
+            assert_eq!(ext[44..60], SUBTYPE_PCM, "{name}: PCM subformat GUID");
+            assert_eq!(&ext[60..64], b"data", "{name}: data chunk");
+        }
+    }
+
+    /// An EXTENSIBLE file round-trips through a WAV reader with the right
+    /// spec and samples, and the header sizes count the 68-byte header.
+    #[test]
+    fn extensible_file_reads_back() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ext.wav").to_str().unwrap().to_owned();
+        let spec = WavSpec {
+            channels: 4,
+            sample_rate: 96_000,
+            bits_per_sample: 24,
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        for i in 0..400 {
+            w.write_sample(i * 1_000 - 200_000).unwrap();
+        }
+        w.flush().unwrap();
+        assert_eq!(read_size_fields(&path), (60 + 1_200, 1_200), "flush");
+        w.finalize().unwrap();
+        assert_eq!(read_size_fields(&path), (60 + 1_200, 1_200), "finalize");
+
+        let reader = hound::WavReader::open(&path).unwrap();
+        assert_eq!(reader.spec().channels, 4);
+        assert_eq!(reader.spec().sample_rate, 96_000);
+        assert_eq!(reader.spec().bits_per_sample, 24);
+        let samples: Vec<i32> = reader.into_samples::<i32>().map(Result::unwrap).collect();
+        assert_eq!(samples.len(), 400);
+        assert_eq!(samples[399], 399 * 1_000 - 200_000);
     }
 
     // DOLL-356: the prior tests only read byte_rate/block_align after create() —
@@ -487,11 +627,12 @@ mod tests {
             0,
             "file must end on an even (word) boundary"
         );
-        assert_eq!(bytes.len(), 44 + 15 + 1, "44 header + 15 data + 1 pad");
+        // 24-bit is written as WAVE_FORMAT_EXTENSIBLE: a 68-byte header.
+        assert_eq!(bytes.len(), 68 + 15 + 1, "68 header + 15 data + 1 pad");
 
         let (riff_size, data_size) = read_size_fields(&path);
         assert_eq!(data_size, 15, "data-chunk size is unpadded");
-        assert_eq!(riff_size, 15 + 37, "RIFF size counts the pad byte");
+        assert_eq!(riff_size, 15 + 61, "RIFF size counts the pad byte");
     }
 
     /// After a failed flush the header may only claim whole frames that are
