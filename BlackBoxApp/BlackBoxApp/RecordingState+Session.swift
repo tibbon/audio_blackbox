@@ -48,6 +48,10 @@ extension RecordingState {
         isStartingRecording = true
         errorMessage = nil
         defer { isStartingRecording = false }
+        // A start from the menu or hotkey right at launch must not beat the
+        // restore Task: it would record into the default folder, and crash
+        // recovery would finalize this session's live .recording.wav.
+        await bookmarkRestoreTask?.value
         if await checkMicrophonePermission() {
             startRecordingInternal()
         } else {

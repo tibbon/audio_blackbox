@@ -183,6 +183,32 @@ extension RecordingState {
         }
     }
 
+    /// Finalize recordings a crash or power cut left as `.recording.wav` in
+    /// the output folder, so they show up as ordinary WAVs. Runs once at
+    /// launch, inside the bookmark-restore Task: after the folder's scope is
+    /// acquired, and before any start, since `startAndWait` awaits that Task.
+    /// A live recording's own file is also `.recording.wav`, so this must
+    /// never run while recording.
+    func recoverInterruptedRecordings() async {
+        guard !isRecording, let dir = bridge.getConfig()?["output_dir"] as? String, dir.hasPrefix("/") else {
+            return
+        }
+        // Rewrites headers and renames files, so keep it off the main actor.
+        let code = await Task { @concurrent in RustBridge.recoverRecordings(in: dir) }.value
+        if code > 0 {
+            Self.log.info("Recovered \(code) interrupted recording(s) in \(dir)")
+            postNotification(
+                title: String(localized: "Recordings Recovered"),
+                body: String(
+                    localized:
+                        "BlackBox finished \(Int(code)) recording(s) that were interrupted by a crash or power loss."
+                )
+            )
+        } else if code < 0 {
+            Self.log.warning("Recovering interrupted recordings failed with code \(code)")
+        }
+    }
+
     /// Show an alert asking the user to re-select their output directory when
     /// a security-scoped bookmark can no longer be resolved (e.g. volume unmounted).
     ///

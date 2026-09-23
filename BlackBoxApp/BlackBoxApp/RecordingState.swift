@@ -264,9 +264,10 @@ final class RecordingState {
     /// it before starting, preventing a race where auto-record fires with
     /// the default output dir because the bookmark Task hadn't completed
     /// yet. The Task includes any "Output Directory Unavailable" prompt, so
-    /// it completes only after the user has answered it. `nil` until init kicks the Task off; `nil` after restoration
-    /// completes (we never read it later so dropping the reference is fine).
-    private var bookmarkRestoreTask: Task<Void, Never>?
+    /// it completes only after the user has answered it, and it also runs
+    /// launch-time crash recovery. Every start (`startAndWait`) awaits it.
+    /// `nil` only in tests, where init returns before kicking it off.
+    private(set) var bookmarkRestoreTask: Task<Void, Never>?
 
     /// `nonisolated` so completion handlers that run off the main actor (e.g. the
     /// UNUserNotificationCenter authorization callback) can log; Logger is Sendable.
@@ -331,8 +332,11 @@ final class RecordingState {
         // calling `start()`. The old code raced — a 500 ms sleep wasn't
         // enough to guarantee the bookmark Task had completed first, and
         // a slow restore would auto-record into the sandbox default dir.
+        // Recovery of crash-interrupted files rides on the same Task: it
+        // needs the folder's scope, and must finish before any start.
         bookmarkRestoreTask = Task { [weak self] in
             self?.restoreOutputDirBookmark()
+            await self?.recoverInterruptedRecordings()
         }
         restoreSavedSettings()
         restoreGlobalHotkey()

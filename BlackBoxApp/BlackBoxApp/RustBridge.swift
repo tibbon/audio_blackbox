@@ -206,6 +206,15 @@ nonisolated final class RustBridge {
         return String(cString: ptr, encoding: .utf8)
     }
 
+    /// Finalize recordings a crash or power cut left under `.recording.wav`
+    /// names in `dir`. Returns the number recovered, or a negative
+    /// `BLACKBOX_ERR_*` code. Needs no handle and does file I/O, so it is
+    /// `nonisolated` to run off the main actor. Never call it while the
+    /// engine is recording into `dir`: it would finalize the live file.
+    nonisolated static func recoverRecordings(in dir: String) -> Int32 {
+        dir.withCString { blackbox_recover_recordings($0) }
+    }
+
     // MARK: - Private Helpers
 
     /// Read a C string from an FFI call, freeing it after conversion.
