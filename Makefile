@@ -13,11 +13,10 @@ RELEASE_DIR = $(TARGET_DIR)/release
 # Binary
 BIN_NAME = blackbox
 
-# Load .env if present (contains TEAM_ID for code signing)
--include .env
-
-# Development team ID for code signing (from .env, env var, or DEVELOPMENT_TEAM)
-TEAM_ID ?= $(DEVELOPMENT_TEAM)
+# .env is a shell dotenv file, not Makefile syntax: recipes that need it
+# source it in the shell (quotes and $HOME expand correctly there). Missing
+# .env is fine for everything except the fl-* targets.
+LOAD_ENV = if [ -f .env ]; then set -a; . ./.env; set +a; fi;
 
 # --- Rust ---
 
@@ -35,10 +34,11 @@ build:
 release-build:
 	$(CARGO_BIN) build --release
 
-# Run tests
+# Run tests. --test-threads=1 matches CI and scripts/check.sh: several tests
+# share env vars and the counting allocator, so parallel runs can flake.
 .PHONY: test
 test:
-	$(CARGO_BIN) test
+	$(CARGO_BIN) test -- --test-threads=1
 
 # Fast Rust lint (the no-features clippy lane + fmt). `make check-rust` runs
 # all three feature sets, rustdoc, deny, machete and the MSRV check.
@@ -165,10 +165,10 @@ ARCHIVE_PATH = $(TARGET_DIR)/BlackBoxApp.xcarchive
 .PHONY: archive
 archive: rust-lib
 	@echo "Archiving for distribution..."
-	xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration Release \
+	$(LOAD_ENV) xcodebuild -project $(XCODE_PROJECT) -scheme $(XCODE_SCHEME) -configuration Release \
 		-archivePath "$(ARCHIVE_PATH)" \
 		-arch arm64 \
-		DEVELOPMENT_TEAM="$(TEAM_ID)" \
+		$${DEVELOPMENT_TEAM:+DEVELOPMENT_TEAM="$$DEVELOPMENT_TEAM"} \
 		ARCHS=arm64 \
 		ONLY_ACTIVE_ARCH=NO \
 		archive
@@ -212,6 +212,16 @@ release: check-versions
 ifndef VERSION
 	$(error Usage: make release VERSION=1.0.1)
 endif
+	@if [ -n "$$(git status --porcelain)" ]; then \
+	    echo "Error: working tree is not clean. Commit or stash first."; \
+	    exit 1; \
+	fi
+	@git fetch --quiet origin main
+	@if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then \
+	    echo "Error: HEAD is not origin/main. Release only what is merged and pushed:"; \
+	    echo "  git switch main && git pull --ff-only"; \
+	    exit 1; \
+	fi
 	@if [ "$(VERSION)" != "$$(grep -E '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')" ]; then \
 	    echo "Error: VERSION=$(VERSION) does not match Cargo.toml. Run scripts/bump-version.sh $(VERSION) first."; \
 	    exit 1; \
@@ -297,7 +307,7 @@ fl-cancel:
 fl-submit:
 	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane submit_review
 
-# Build, upload to TestFlight, and submit for review
+# Build and upload to TestFlight (does not submit for review; see fl-submit)
 .PHONY: fl-beta
 fl-beta:
 	$(FL_ENV) cd $(SWIFT_APP_DIR) && fastlane beta
@@ -355,6 +365,8 @@ help:
 	@echo "  app             - Build Rust lib + Swift app (alias for swift-app)"
 	@echo "  run-app         - Build and run the SwiftUI app"
 	@echo "  check-versions  - Verify version fields are aligned across all files"
+	@echo "  check-ffi-header - Verify include/blackbox_ffi.h matches src/ffi.rs"
+	@echo "  check-app-store - Lint App Store metadata (run before fl-metadata)"
 	@echo "  release VERSION=X.Y.Z - Tag and push; CI builds + uploads to TestFlight"
 	@echo "  upload          - Archive and upload to App Store Connect (local)"
 	@echo "  archive         - Create Xcode archive for distribution"
@@ -363,7 +375,7 @@ help:
 	@echo "  xcodegen        - Regenerate Xcode project from project.yml"
 	@echo ""
 	@echo "Fastlane:"
-	@echo "  fl-beta         - Build, upload to TestFlight, and submit for review"
+	@echo "  fl-beta         - Build and upload to TestFlight"
 	@echo "  fl-metadata     - Upload metadata to App Store Connect"
 	@echo "  fl-fetch        - Download current metadata from App Store Connect"
 	@echo "  fl-cancel       - Cancel existing App Store review submission"

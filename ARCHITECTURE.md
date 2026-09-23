@@ -35,7 +35,7 @@ The RT thread never blocks on I/O, locks, or allocations. The writer thread does
 - **Push samples** into the `rtrb` SPSC ring buffer. The buffer is sized for `RING_BUFFER_SECONDS = 5` (`src/constants.rs`) of audio at the device's rate × channel count, providing runway for stalls in the writer.
 - **Atomic loads / stores** with Relaxed or Release ordering. No allocator calls, no mutex acquisition, no syscalls.
 
-A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `src/tests/alloc_tests.rs` (no top-level `tests/` directory; all tests live under `src/tests/` to share `pub(crate)` access) asserts the hot path produces zero allocations.
+A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `src/tests/alloc_tests.rs` (no top-level `tests/` directory; all tests live under `src/tests/` to share `pub(crate)` access) asserts that the writer's steady-state `write_samples` path allocates nothing. Those tests are `#[ignore]` and run only in the weekly ignored-tests lane. Nothing measures the cpal callback itself; it is allocation-free by inspection (`push_samples_with_overflow_count` is one `push_partial_slice` plus an atomic add).
 
 ### Writer thread
 
@@ -44,21 +44,35 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 - Drain the ring buffer, convert f32 to the configured bit depth, write WAV via `RawWavWriter` (a hand-rolled writer; we don't drag `hound` into the hot path).
 - Maintain per-channel peak levels in cache-aligned `AtomicU32` slots — read by the FFI 30 Hz meter poll.
 - Rotate files when the RT thread sets the `rotation_needed` flag (a Relaxed status flag — DOLL-391; the samples it implies are already synchronized through the rtrb ring, so no Acquire/Release pairing is needed). See `CpalAudioProcessor::process_audio_impl` (the store) and `writer_thread_main` (the `swap`).
-- Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. In practice unreachable under normal rotation cadence (rotation is ≥ 60 s; silence checks complete in milliseconds for normal-size files, so 8-deep buffering is ample).
+- Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. It can fill: rotation can be as short as 1 s, and `is_silent` decodes a silent file to the end, so checking a long silent file takes seconds to minutes.
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
-- Keep files crash-readable: `flush_writers` flushes and rewrites the WAV header every 10 s of audio (`sample_rate * 10` frames). A hard kill or power cut therefore loses up to about 10 s, and leaves the file under its `.recording.wav` temp name. This is the bound behind the README's "seconds of audio, not the whole session".
+- Keep files crash-readable; see [Recording file lifecycle](#recording-file-lifecycle).
 
 ### Silence-check worker
 
 `silence_check_worker::SilenceCheckWorker` is a single thread fed via a bounded `mpsc::sync_channel`. Its `Drop` impl closes the sending side and joins the worker — guaranteeing every queued file is processed before `finalize()` returns. Don't call `mem::forget` on it.
 
+That join has no timeout. `CpalAudioProcessor::finalize` bounds the writer's *reply* at 30 s, but its `join()` then waits for the writer to drop its state, which waits for every queued scan. Stopping after a long, mostly silent session therefore blocks the caller (the Swift main thread, via `blackbox_stop_recording`) until the scans finish.
+
 ### Sample-rate listener (macOS)
 
 `macos_sample_rate_listener::SampleRateListener` registers a CoreAudio property listener for sample-rate changes on the active device. The `client_data` is `Arc::into_raw(Arc::clone(&flag))` — the listener owns one strong refcount of an `Arc<AtomicBool>`.
 
-`Drop` **deliberately leaks** the strong reference rather than reclaiming it: it rebuilds the `Arc` with `Arc::from_raw` inside a `ManuallyDrop`, so the refcount is never decremented. Apple's docs do not guarantee that `AudioObjectRemovePropertyListener` blocks until in-flight callbacks on other threads have returned — only that no *new* callbacks will start. Leaking eliminates the race entirely; the cost is one `AtomicBool` (1 byte) per recording session for the process lifetime, bounded.
+`Drop` **deliberately leaks** the strong reference rather than reclaiming it: it rebuilds the `Arc` with `Arc::from_raw` inside a `ManuallyDrop`, so the refcount is never decremented. Apple's docs do not guarantee that `AudioObjectRemovePropertyListener` blocks until in-flight callbacks on other threads have returned — only that no *new* callbacks will start. Leaking eliminates the race entirely; the cost is one `Arc<AtomicBool>` allocation (about 24 bytes) per recording session for the process lifetime, bounded.
 
 If you "fix" this by letting that `Arc` drop, you reintroduce a use-after-free that only fires under sample-rate-change-during-listener-removal — extremely rare, hard to reproduce, exactly the kind of bug we're refusing to ship.
+
+## Recording file lifecycle
+
+This is how the product keeps its "don't lose a take" promise. All of it runs on the writer thread.
+
+1. **Open.** Each file is created as `<output_dir>/<YYYY-MM-DD-HH-MM-SS>[-chN].recording.wav` with a placeholder header. `-chN` appears only in split mode and is the 0-based device channel. `disambiguate_path` appends `-1`, `-2`, … when the *final* `.wav` name already exists, so a finished recording is never overwritten.
+2. **Write.** `RawWavWriter` buffers through a `BufWriter`. Every 10 s of audio (`flush_writers`, `sample_rate * 10` frames) it flushes and rewrites the RIFF and data sizes, so the file on disk is always a readable WAV up to the last refresh. A hard kill or power cut loses up to about 10 s and leaves the file under its `.recording.wav` name; nothing renames or recovers those files on the next launch.
+3. **Rotate or close.** Rotation (continuous mode), a silence-gate close, stop, and shutdown all call `finalize_all`. It finalizes every writer (flush, RIFF pad byte, header), then renames every pending `.recording.wav` to its `.wav` name. A failure on one file does not stop the others (DOLL-345); the first error is returned.
+4. **Silence check.** When `silence_threshold > 0`, renamed files go to the silence-check worker, which deletes any file whose peak and RMS stay below the threshold. `is_silent` treats a file with zero samples as silent.
+5. **Limits.** WAV sizes are `u32`, so a file past 4 GiB keeps growing on disk while its header saturates at `u32::MAX` (DOLL-204). Nothing rotates on size; only the cadence and the gate end a file.
+
+Two consequences of steps 3 and 4 to keep in mind when changing this code: a file whose `finalize` failed (for example on a full disk) is still renamed and still submitted to the silence check, and if its header never got past the placeholder, the check sees zero samples and deletes it.
 
 ## Lock acquisition order (FFI)
 
@@ -92,7 +106,7 @@ The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackB
 
 ### MenuBarExtra + Window-scene termination
 
-`AppDelegate` (in `AppDelegate.swift`) handles a known SwiftUI quirk: closing the last `Window` scene fires `applicationShouldTerminate`. The delegate returns `.terminateCancel` unless `explicitQuit == true`, so the app stays alive while keeping its menu bar item. Explicit Quit (menu bar, system shutdown) sets the flag then calls `terminate(nil)`.
+`AppDelegate` (in `AppDelegate.swift`) handles a known SwiftUI quirk: closing the last `Window` scene fires `applicationShouldTerminate`. The delegate returns `.terminateCancel` unless `explicitQuit == true`, so the app stays alive while keeping its menu bar item. Only the menu's Quit items (which then call `terminate(nil)`) and the `willPowerOff` observer set the flag. Any other quit request, such as an Apple Event from Activity Monitor or an installer, is cancelled.
 
 ### Sleep / wake matrix
 
@@ -106,20 +120,25 @@ The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackB
 | `didWake` | `wasSleepInterrupted` set | deferred `Task.sleep(1500ms) → start()` |
 | `sessionDidResignActive` | yes | `.pauseForResume` (always; fast-user-switch / screen-saver is recoverable) |
 | `sessionDidBecomeActive` | `wasSleepInterrupted` set | deferred `start()`, same as `didWake` |
-| `willPowerOff` | any | drain immediately via `recorder?.stop()` (DOLL-183) |
+| `willPowerOff` | any | set `explicitQuit`, then `recorder?.stop()` (DOLL-183) |
 
-`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop(reason: .user)` (DOLL-182 — otherwise a manual stop within the 1.5s deferred-resume window would let the deferred Task resurrect the recording). The willSleep / sessionResign handlers stop with `reason: .sleepInterruption`, which preserves the flag they just set — `stop()` clearing it unconditionally made resume-on-wake dead code (DOLL-442).
+`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop(reason: .user)` (DOLL-182). The willSleep / sessionResign handlers stop with `reason: .sleepInterruption`, which preserves the flag they just set — `stop()` clearing it unconditionally made resume-on-wake dead code (DOLL-442).
+
+Known gaps against this intent:
+
+- **DOLL-182 does not hold.** `handleDidWake` and `handleSessionDidBecomeActive` clear the flag *before* scheduling the 1.5 s Task, and the Task checks only `!isRecording`. A user who starts and then stops within that window still gets the recording resumed.
+- **`willPowerOff` is not synchronous.** Since DOLL-652 the observers are `for await` Tasks, so the handler runs on a later main-actor turn rather than inside the notification post. DOLL-183 assumed it drained directly.
 
 ### Security-scoped bookmark lifecycle
 
 The user-picked output directory is persisted as a security-scoped bookmark in UserDefaults. Lifecycle:
 
-1. **Save**: in `OnboardingView` / `SettingsView` directory-picker; `URL.bookmarkData(options: .withSecurityScope)`.
+1. **Save**: `RecordingState.saveOutputDirBookmark(for:)`, called from the folder pickers in onboarding and `OutputSettingsTab`; `URL.bookmarkData(options: .withSecurityScope)`. It stops access on the previous URL before storing the new one. The in-container default folder needs no bookmark (`useDefaultOutputDir()`, DOLL-344).
 2. **Restore on launch**: a deferred `Task` (`bookmarkRestoreTask`, DOLL-114) resolves the bookmark, calls `startAccessingSecurityScopedResource`, and pushes the path into the Rust engine. Auto-record waits on this Task (DOLL-181).
-3. **Hold during runtime**: the URL stays scoped from restore until quit.
-4. **Release on quit**: `applicationShouldTerminate` calls `releaseOutputDirAccess` after `stop()`.
+3. **Hold during runtime**: the URL stays scoped until it is replaced or released.
+4. **Release**: `releaseOutputDirAccess()` runs on quit (from `applicationShouldTerminate`, after `stop()`) and when switching to the default folder.
 
-A stale bookmark (folder deleted, volume unmounted) prompts the user to re-pick via `promptToReselectOutputDir`.
+If the bookmark can't be resolved or access fails, the bookmark is dropped and the user is asked to pick again via `promptToReselectOutputDir` (DOLL-379). A bookmark that resolves but is marked stale is refreshed silently by calling `saveOutputDirBookmark(for:)` on the same URL. **Known bug:** that call stops access on the URL it was just granted, so the rest of that launch has no access to the folder. Nothing stops a recording from continuing into a folder whose access was just released by picking a new one.
 
 ### Carbon hotkey lifecycle
 
@@ -131,11 +150,11 @@ A stale bookmark (folder deleted, volume unmounted) prompts the user to re-pick 
 
 ### Meter polling cadence
 
-`RecordingState.isMeterWindowOpen` drives the meter Task. When the window is open and the engine is recording or monitoring, a Task polls `bridge.fillPeakLevels(into:)` at ~30 Hz. The Task is paused / cancelled when the window closes — no FFI calls happen with a closed meter.
+`RecordingState.isMeterWindowOpen` and `isMeterWindowOccluded` drive the meter Task. When the window is open, not fully covered, and the engine is recording or monitoring, a Task polls `bridge.fillPeakLevels(into:)` at ~30 Hz (DOLL-348, DOLL-374). The Task stops when the window closes or is covered, so no FFI calls happen for a meter nobody can see. Separately, the 1 Hz status poll reads only the lock-free status flags.
 
 ### `@Observable RecordingState` pattern
 
-`RecordingState` is `@MainActor`-isolated and `@Observable` (Swift macro). It's passed by value into views (not via `@Environment`); SwiftUI's observation system propagates change notifications. View-model mutation off-main is a compile error because of `@MainActor`.
+`RecordingState` is `@MainActor`-isolated and `@Observable` (Swift macro). Views hold it as a plain stored property (`var recorder: RecordingState`), not via `@Environment`; it's a class, so every view shares one instance, and SwiftUI's observation system propagates changes. View-model mutation off-main is a compile error because of `@MainActor`.
 
 ## Module map
 
@@ -143,14 +162,22 @@ A stale bookmark (folder deleted, volume unmounted) prompts the user to re-pick 
 |--------|------|
 | `src/audio_processor.rs` | `AudioProcessor` trait — central abstraction over real (cpal) and mock processors. |
 | `src/audio_recorder.rs` | High-level driver wrapping a processor + config. |
-| `src/cpal_processor.rs` | Real audio I/O via cpal; spawns the writer thread. |
-| `src/writer_thread.rs` | Writer-thread loop, ring-buffer consumer, WAV file management, peak metering. |
-| `src/silence_check_worker.rs` | Single-thread post-rotation silence checker with join-on-drop. |
-| `src/macos_sample_rate_listener.rs` | CoreAudio property listener (macOS only). |
+| `src/cpal_processor.rs` | Real audio I/O via cpal: device selection, the RT callback, spawning the writer thread, rotation counting. |
+| `src/writer_thread.rs` | Writer-thread loop, ring-buffer consumer, file lifecycle, silence gate, peak metering. |
 | `src/raw_wav_writer.rs` | Hand-rolled WAV writer for the hot path. |
+| `src/silence_check_worker.rs` | Single-thread post-rotation silence checker with join-on-drop. |
+| `src/utils.rs` | Channel-spec parsing, `is_silent`, and disk-space queries. |
+| `src/macos_sample_rate_listener.rs` | CoreAudio property listener (macOS only). |
 | `src/ffi.rs` | C ABI consumed by the SwiftUI app. Owns the canonical lock order. |
-| `src/config.rs` | TOML + `BLACKBOX_*` env-var configuration; env vars take precedence. |
+| `src/config.rs` | `AppConfig`: TOML + `BLACKBOX_*` env vars for the CLI (env wins); the app sets config through the FFI instead. |
+| `src/constants.rs` | Defaults and tunables (`DEFAULT_*`, `MAX_CHANNELS`, `RING_BUFFER_SECONDS`, `WRITER_THREAD_READ_CHUNK`). |
+| `src/numeric.rs` | Integer-to-float conversions, with the precision bound for each written down once. |
 | `src/error.rs` | Typed error enum (`BlackboxError`) with `thiserror`. |
+| `src/mock_processor.rs` | In-memory processor for tests. |
+| `src/test_utils.rs` | Test helpers: synthetic audio, env-var fixtures, `MockClock`. |
+| `src/benchmarking.rs` | Performance tracking behind the `benchmarking` feature. |
+| `src/bin/main.rs` | The CLI recorder. |
+| `src/bin/bench_writer.rs` | Write-throughput benchmark; only `--mode pipeline` exercises the production path. |
 | `BlackBoxApp/` | SwiftUI menu-bar app; calls Rust via FFI. |
 
-See `README.md` for the user-facing feature list and benchmark numbers.
+See `README.md` for the user-facing feature list and `SETUP.md` for build and release setup.
