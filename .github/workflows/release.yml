@@ -44,6 +44,21 @@ jobs:
     permissions:
       contents: read
     steps:
+    # workflow_dispatch lets anyone with write access pick any branch in the
+    # "Run workflow" dropdown, and the testflight job would then build and
+    # upload whatever that branch holds. Releases ship only from reviewed
+    # code: main or a v* tag. Both other jobs `needs:` this one, so failing
+    # here stops the run before any toolchain install or approval prompt.
+    - name: Check the run is on main or a version tag
+      env:
+        REF: ${{ github.ref }}
+      run: |
+        if [[ "$REF" != "refs/heads/main" && "$REF" != refs/tags/v* ]]; then
+          echo "::error::Releases run only from main or a v* tag, not ${REF}. Re-run the workflow with main selected, or push a tag with 'make release'."
+          exit 1
+        fi
+        echo "Release ref ${REF} is allowed"
+
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install Rust
