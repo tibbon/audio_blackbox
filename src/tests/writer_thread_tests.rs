@@ -524,6 +524,49 @@ fn clean_batch_resets_write_failure_streak() {
     });
 }
 
+/// NaN input is written as 0 on the real write path at every depth,
+/// including 16-bit where dither is added: NaN is not clamped to a bound
+/// (a full-scale click), it survives the clamps and the saturating cast
+/// maps it to 0.
+#[test]
+fn nan_samples_are_written_as_zero() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        for bits in [16_u16, 24, 32] {
+            let td = tempdir().unwrap();
+            let dir = td.path().to_str().unwrap();
+            let mut state = WriterThreadState::new(
+                dir,
+                48_000,
+                &[0],
+                OutputMode::Single,
+                0.0,
+                Arc::new(AtomicU64::new(0)),
+                0,
+                Arc::new(AtomicBool::new(false)),
+                bits,
+                Arc::from([CacheAlignedPeak::new(0)]),
+                false,
+                0,
+            )
+            .unwrap();
+            state.total_device_channels = 1;
+            let final_path = state.pending_files[0].1.clone();
+            state.write_samples(&[f32::NAN; 64]);
+            state.finalize_all().unwrap();
+            let samples: Vec<i32> = hound::WavReader::open(&final_path)
+                .unwrap()
+                .into_samples::<i32>()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(samples.len(), 64);
+            assert!(
+                samples.iter().all(|&s| s == 0),
+                "{bits}-bit: NaN must be written as 0, got {samples:?}"
+            );
+        }
+    });
+}
+
 /// DOLL-373: 16-bit output gets TPDF dither, so a constant-0 input is perturbed
 /// off zero (within ~1 LSB) instead of writing a dead-silent quantized stream;
 /// 24-bit output is left undithered (exact). Deterministic given the fixed

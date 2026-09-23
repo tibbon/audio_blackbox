@@ -274,9 +274,10 @@ pub(crate) struct WriterThreadState {
 
 /// Convert an f32 sample (range -1.0..1.0) to an i32 scaled for the given bit depth.
 ///
-/// Clamps out-of-range inputs (and NaN, which clamps to one of the bounds)
-/// before rounding, so callers can't silently emit truncated or sign-flipped
-/// values. The hot path uses the pre-cached `sample_scale` field on
+/// Clamps out-of-range inputs before rounding, so callers can't silently
+/// emit truncated or sign-flipped values. NaN is not clamped (`f32::clamp`
+/// returns NaN for NaN); it passes through the multiply and round and the
+/// saturating float-to-int cast turns it into 0, a silent sample. The hot path uses the pre-cached `sample_scale` field on
 /// `WriterThreadState` for speed; this helper exists solely so tests can
 /// assert the conversion math without going through `write_samples`. The
 /// `bench-writer` binary keeps an inline copy because the lib helper is
@@ -371,6 +372,9 @@ fn xorshift32_unit(state: &mut u32) -> f32 {
 /// so the added noise can't push the result past the integer range. 24/32-bit
 /// output has enough headroom that dither is unnecessary, so it stays
 /// bit-identical to the plain conversion.
+///
+/// A NaN input stays NaN through both clamps and the dither add, and the
+/// saturating cast writes it as 0 (see `f32_to_wav_sample`).
 #[inline]
 fn convert_sample(s: f32, scale: f32, dither: bool, rng: &mut u32) -> i32 {
     let v = s.clamp(-1.0, 1.0) * scale;
