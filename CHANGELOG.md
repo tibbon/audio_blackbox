@@ -30,10 +30,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Onboarding asks before setting a global shortcut instead of claiming ⌘⇧R
   (the browsers' hard reload) on its own. No shortcut is set unless you
   click "Use ⇧⌘R" or record one; a shortcut you already saved is kept.
+- Changing continuous mode, the rotation interval, minimum free space,
+  silence detection or its threshold, or auto-split or its timeout while
+  recording now asks to restart the recording, as bit depth and channels
+  already did. Before, the change silently waited for the next session.
+- Choosing a new output folder while recording restarts the recording in
+  the new folder. Before, the engine kept writing to the old folder after
+  the app had given up access to it.
+- "Run Setup Again" is disabled while recording, and re-running setup starts
+  from your saved recording mode and rotation interval instead of the
+  first-run defaults. Skip keeps a folder you already picked.
+- The pre-flight warning for long takes says files are split at 4 GB, not
+  truncated.
+- The CLI exits with a non-zero status when it fails, and stops (finalizing
+  its files) as soon as the engine reports a full disk, a write failure or a
+  stream error, instead of recording nothing until the timer or Ctrl-C.
+- The CLI creates a default `blackbox.toml` only when no config file exists,
+  at `BLACKBOX_CONFIG` if that is set, and logs the file it actually loaded.
+  In continuous mode it logs the duration as "unlimited".
 
 ### Added
 - Crash recovery: recordings a crash or power cut left as `.recording.wav`
   are repaired and renamed to ordinary WAVs at the next launch (app and CLI).
+- The input device list refreshes when a device is plugged in or removed.
+  The menu shows the device a recording actually uses, and the pre-flight
+  summary says when the chosen device is not connected.
 
 ### Fixed
 - Rotation boundaries no longer drift over long sessions.
@@ -47,6 +68,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quitting from Activity Monitor, an installer or AppleScript finalizes the
   recording and quits, instead of being cancelled.
 - The CLI exits promptly with performance logging on.
+- Every recording mode starts a new file before a WAV reaches its 4 GB size
+  limit. A single long take (continuous mode off) used to grow past it, and
+  players then read only the first 4 GB.
+- The CLI finalizes its recording on SIGTERM and SIGHUP (`kill`, a service
+  manager stop, a closed terminal), not only on Ctrl-C.
+- When the ring buffer overflows, only whole frames are kept. A partial frame
+  used to shift every later sample onto the wrong channel for the rest of the
+  session.
+- If the silence gate cannot open its files, recording stops and you are
+  notified, instead of showing "Recording" while nothing reached disk.
+- A file whose finalize failed (for example on a full disk) is no longer
+  mistaken for silence and deleted, and its audio stays readable.
+- Stopping no longer waits for queued silence checks, which could hang the
+  app for minutes after a long, mostly silent multichannel session.
+- The silence gate's pre-roll is written in order, including when it wraps
+  the ring buffer, so the start of a take is no longer shifted or lost.
+- Level meters hold each peak until the display reads it, so clips and short
+  transients show up.
+- Meter bars are labelled with the device channels being recorded:
+  recording channels 3 and 4 shows "Ch 3" and "Ch 4", not "Ch 1" and "Ch 2".
+- Logout, restart and shutdown are no longer blocked while recording, and
+  going to sleep finalizes the recording before the Mac sleeps.
+- Stopping or starting a recording right after waking cancels the automatic
+  resume, so a manual stop is no longer undone.
+- A stop that failed while finalizing no longer leaves the menu showing
+  "Recording" forever.
+- The "Restart Recording" notification action starts recording again (it
+  did nothing).
+- When an automatic restart after a sample-rate change fails, the
+  notification says recording stopped instead of "restarted".
+- A shortcut change that fails (because another app owns the combination)
+  keeps the old shortcut working.
+- Closing the meter window while the microphone prompt is up no longer
+  leaves the microphone in use.
+- Refreshing an outdated output-folder bookmark keeps access to the folder.
+- Auto-record waits for you to re-pick an output folder the app can no
+  longer reach, and cancelling that picker falls back to the app's own
+  folder instead of an unwritable one.
+- A "Disabled" minimum free space setting survives a relaunch; the app used
+  to fall back to 500 MB and stop on a check you had turned off.
+- The channel range field is checked before it is saved, so a half-typed
+  range can no longer make every later recording fail to start.
+- The menu's warning icons (errors, dropped samples, low battery, 4 GB) show
+  on macOS 27.
 
 ## [1.5.0] — 2026-09-21
 

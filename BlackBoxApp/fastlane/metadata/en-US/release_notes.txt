@@ -1,1 +1,14 @@
-This release focuses on under-the-hood improvements: internal code refactoring, stricter automated quality checks, and updated dependencies for better security and reliability. No changes to features or behavior.
+Safer long recordings, and a round of reliability fixes.
+
+• Recordings cut short by a crash or power loss are repaired automatically the next time BlackBox opens.
+• Long takes start a new file before reaching the 4 GB WAV limit, so every file opens fully in any audio app.
+• The input device list updates when you plug in or unplug an audio interface.
+• Changing a recording setting while recording offers to restart, so the change takes effect right away. Choosing a new folder continues the recording there.
+• Level meters catch short peaks and clips, and are labelled with the channels you are recording.
+• 24-bit, 32-bit and multichannel files use the WAV header that professional audio tools expect. Split-mode files are numbered from channel 1, matching the app.
+• Setup asks before assigning a global shortcut, and running setup again keeps your current settings.
+• Logging out or shutting down is no longer blocked while recording, and BlackBox finishes the file before your Mac sleeps or another app quits it.
+• Stopping no longer hangs after a long session with silence detection on.
+• Fixed channels that could swap after the recorder briefly fell behind.
+• The "Restart Recording" notification button now works, and a "Disabled" minimum free space setting is kept after relaunch.
+• Warning icons in the menu show on macOS 27.
