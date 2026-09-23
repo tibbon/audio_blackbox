@@ -142,7 +142,7 @@ jobs:
     # Pin the MSRV (1.98) for the shipped artifact rather than floating
     # stable, so the published binary is reproducible (DOLL-260).
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # 1.98
 
     - name: Cache Rust dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -199,7 +199,7 @@ jobs:
     # Pin the MSRV (1.98) for the shipped artifact rather than floating
     # stable, so the TestFlight build is reproducible (DOLL-260).
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
+      uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # 1.98
 
     - name: Cache Rust dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
