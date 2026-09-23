@@ -520,3 +520,66 @@ fn test_gate_preroll_keeps_only_last_idle_batch() {
         );
     });
 }
+
+/// A gate open that can't create its files must stop the recording the way a
+/// failed rotation does (DOLL-444): raise `write_failed` so the app stops and
+/// tells the user, and leave no empty files behind. Split mode here, with only
+/// the second channel's file blocked, so the first channel's file is opened
+/// and has to be cleaned up. Previously the error was logged, the gate stayed
+/// Idle, and every later batch with signal retried the open.
+#[test]
+fn test_gate_open_failure_latches_write_failed() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = WriterThreadState::new(
+            dir,
+            48000,
+            &[0, 1],
+            OutputMode::Split,
+            0.01,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::from([CacheAlignedPeak::new(0), CacheAlignedPeak::new(0)]),
+            true,
+            5,
+        )
+        .unwrap();
+        state.total_device_channels = 2;
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+        let write_failed = Arc::clone(&state.write_failed);
+
+        // A directory where channel 1's temp file would go makes its create fail.
+        std::fs::create_dir_all(temp_dir.path().join("tick-000-ch1.recording.wav")).unwrap();
+
+        state.write_samples(&vec![0.5_f32; 4_800]);
+        assert!(state.gate_pending_open);
+        state.process_gate_open();
+
+        assert!(
+            write_failed.load(Ordering::Relaxed),
+            "a failed gate open must latch write_failed"
+        );
+        assert!(state.disk_stopped, "the failed open must stop writing");
+        assert!(state.pending_files.is_empty());
+        assert!(state.multichannel_writers.iter().all(Option::is_none));
+        let files: Vec<_> = all_wav_like_files(temp_dir.path())
+            .into_iter()
+            .filter(|p| p.is_file())
+            .collect();
+        assert!(
+            files.is_empty(),
+            "the channel file that did open must be removed, found: {files:?}"
+        );
+
+        // No retry: more signal neither re-arms the open nor creates files.
+        state.write_samples(&vec![0.5_f32; 4_800]);
+        assert!(!state.gate_pending_open, "a stopped writer must not retry");
+        state.process_gate_open();
+        assert!(state.pending_files.is_empty());
+    });
+}

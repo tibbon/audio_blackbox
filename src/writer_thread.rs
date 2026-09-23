@@ -978,7 +978,18 @@ impl WriterThreadState {
         self.gate_pending_open = false;
         info!("Silence gate: signal detected, opening writers");
         if let Err(e) = self.open_writers_for_gate() {
-            error!("Silence gate: failed to open writers: {e}");
+            // Same unwritable-output stop as a failed rotation (DOLL-444).
+            // Leaving the gate Idle used to retry on every batch with signal
+            // (an error log per ~ms) while the UI showed "recording" and no
+            // audio reached disk; in split mode each retry also truncated
+            // the channel files the previous attempt had opened.
+            error!(
+                "Silence gate: failed to open writers: {e} — stopping recording \
+                 (disk full or output directory unwritable)"
+            );
+            self.discard_unwritten_files();
+            self.gate_preroll.clear();
+            self.latch_write_failed_stop();
         } else {
             self.gate_state = GateState::Recording;
             // Status flag only; no synchronizes-with relationship.
@@ -1033,9 +1044,29 @@ impl WriterThreadState {
         Ok(())
     }
 
+    /// Close and delete the files a failed gate open managed to create.
+    ///
+    /// The gate opens files only from Idle, when nothing is pending, so every
+    /// pending pair belongs to the failed open and holds no audio yet (the
+    /// pre-roll is replayed only after a successful open). Renaming them
+    /// would leave empty takes next to the error.
+    fn discard_unwritten_files(&mut self) {
+        self.writer = None;
+        for writer in &mut self.multichannel_writers {
+            *writer = None;
+        }
+        for (tmp_path, _) in std::mem::take(&mut self.pending_files) {
+            if let Err(e) = fs::remove_file(&tmp_path)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                warn!("Could not remove unused {tmp_path}: {e}");
+            }
+        }
+    }
+
     /// Latch the unwritable-output self-stop shared by the persistent
-    /// write-failure path (DOLL-349/437) and rotation file-creation
-    /// failure (DOLL-444): raise the `write_failed` status flag so the
+    /// write-failure path (DOLL-349/437) and file-creation failure on
+    /// rotation (DOLL-444) or silence-gate open: raise the `write_failed` status flag so the
     /// UI reports a disk error, set `disk_stopped` so `write_samples` /
     /// `rotate_files` become no-ops, and finalize so every sample that
     /// reached disk is preserved under its final name.
