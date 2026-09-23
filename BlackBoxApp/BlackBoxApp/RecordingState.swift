@@ -303,6 +303,12 @@ final class RecordingState {
         return docs.appendingPathComponent("BlackBox Recordings", isDirectory: true)
     }
 
+    /// The input device `selectDevice` last sent to the engine ("" for the
+    /// system default). Starts as the saved choice, which
+    /// `restoreSavedSettings` sends at launch. Lets `selectDevice` ignore a
+    /// repeat of the device already applied.
+    @ObservationIgnored var appliedInputDevice = UserDefaults.standard.string(forKey: SettingsKeys.inputDevice) ?? ""
+
     /// Enable verbose logging to macOS Console. Toggle via UserDefaults key "debugLogging".
     /// Cached to avoid a UserDefaults lookup on every 30 Hz meter tick.
     var debugLogging: Bool = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)

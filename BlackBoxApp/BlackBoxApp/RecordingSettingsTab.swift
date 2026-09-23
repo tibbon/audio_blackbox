@@ -89,6 +89,10 @@ struct RecordingSettingsTab: View {
             .labelsHidden()
             .onChange(of: selectedDevice) {
                 refreshChannelCount()
+                // A pick in the menu bar writes this setting too, and has
+                // already applied it (restarting a live recording); only a
+                // pick here still needs applying.
+                guard selectedDevice != recorder.appliedInputDevice else { return }
                 applyConfig()
                 recorder.selectDevice(selectedDevice)
             }

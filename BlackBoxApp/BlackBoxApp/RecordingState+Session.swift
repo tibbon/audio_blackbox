@@ -379,14 +379,23 @@ extension RecordingState {
         }
     }
 
-    func selectDevice(_ name: String) {
+    /// Switch the input device, restarting a live recording (or the
+    /// monitoring stream) onto it. Returns `false`, doing nothing, when
+    /// `name` is already the applied device: a pick in the menu writes the
+    /// setting, and an open Settings window's picker then reports the same
+    /// change back, which used to restart the recording a second time.
+    @discardableResult
+    func selectDevice(_ name: String) -> Bool {
         UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
+        guard name != appliedInputDevice else { return false }
+        appliedInputDevice = name
         bridge.setConfig(["input_device": name])
         if isRecording {
             restartIfRecording(reason: "device changed")
         } else if isMonitoring {
             restartMonitoring()
         }
+        return true
     }
 
     // MARK: - Config snapshot (DOLL-233)

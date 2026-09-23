@@ -254,6 +254,9 @@ struct GeneralSettingsTab: View {
             "silence_gate_enabled": true,
             "silence_gate_timeout_secs": 300,
         ])
+        // Keep selectDevice's record of the applied device in step with the
+        // engine, or a later pick of the old device would be ignored.
+        recorder.appliedInputDevice = ""
     }
 
     private func updateLoginItem() {

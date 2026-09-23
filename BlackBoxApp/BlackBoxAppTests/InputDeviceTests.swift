@@ -40,4 +40,21 @@ nonisolated final class InputDeviceTests: StandardDefaultsTestCase {
 
         XCTAssertEqual(recorder.configSnapshot?.deviceName, "Mic")
     }
+
+    /// A menu pick applies the device once. The open Settings picker then
+    /// sees the same value and must not apply it again: that restarted a
+    /// live recording a second time.
+    @MainActor
+    func testReselectingTheAppliedDeviceDoesNothing() {
+        let recorder = RecordingState()
+        recorder.appliedInputDevice = ""
+
+        XCTAssertTrue(recorder.selectDevice("Scarlett"))
+        XCTAssertEqual(recorder.appliedInputDevice, "Scarlett")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: SettingsKeys.inputDevice), "Scarlett")
+        XCTAssertEqual(recorder.bridge.getConfig()?["input_device"] as? String, "Scarlett")
+
+        XCTAssertFalse(recorder.selectDevice("Scarlett"))
+        XCTAssertTrue(recorder.selectDevice(""))
+    }
 }
