@@ -342,6 +342,14 @@ jobs:
         echo "ASC_KEY_PATH=$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
       working-directory: ..
 
+    # metadata-lint.yml runs this on PRs that touch the metadata, but a
+    # manual dispatch can upload from a main that changed since (or never
+    # had a PR run). Re-lint the exact files deliver is about to send, so
+    # schema drift or over-length copy fails here instead of mid-upload.
+    - name: Lint App Store metadata
+      if: github.event.inputs.lane == 'metadata' || github.event.inputs.lane == 'submit_review'
+      run: python3 ../scripts/lint-app-store-metadata.py
+
     - name: Run Fastlane
       env:
         ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}

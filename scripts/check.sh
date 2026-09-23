@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # scripts/check.sh — the full guardrail loop. Green means done (DOLL-652).
 #
-# Usage:  scripts/check.sh              everything CI gates on (rust + swift)
+# Usage:  scripts/check.sh              everything CI gates on (metadata + rust + swift)
 #         scripts/check.sh rust         Rust only: fmt, clippy x3 feature sets, rustdoc,
 #                                       tests, bench smoke, deny, machete, MSRV, FFI header,
 #                                       attribution
 #         scripts/check.sh swift        Swift only: swift-format, swiftlint, xcodebuild test,
 #                                       swiftlint analyze, string-catalog sync, pbxproj parity,
 #                                       Release-configuration build
+#         scripts/check.sh metadata     App Store metadata lint (fast; same as metadata-lint.yml)
 #         scripts/check.sh tooling      Claude workflow scripts parse and pass their mocked scenarios (fast)
 #         scripts/check.sh sanitize     Swift tests under TSan, then ASan+UBSan (slow; local only)
-#         scripts/check.sh all          rust + swift + sanitize
+#         scripts/check.sh all          metadata + rust + swift + sanitize
 #
 # Every step here mirrors a CI lane (.github/workflows/rust.yml) or is stricter
 # than one, so a green run locally means a green run on GitHub. Actions minutes
@@ -158,6 +159,14 @@ check_swift() {
   xcb -configuration Release build 2>&1 | pretty
 }
 
+# ---------------------------------------------------------------- App Store metadata
+# Same lint as metadata-lint.yml and release.yml's metadata/submit_review
+# lanes. Downloads Apple's OpenAPI spec once into .cache/, then runs offline.
+check_metadata() {
+  step "App Store metadata lint (schema drift, character limits)"
+  python3 scripts/lint-app-store-metadata.py
+}
+
 # ---------------------------------------------------------------- Claude workflows (local only)
 # .claude/workflows/*.js run as /<name> commands (DOLL-654). The runtime only
 # reports a syntax error when someone launches the workflow, so parse them here.
@@ -200,14 +209,15 @@ check_sanitize() {
 }
 
 case "$section" in
-  default)  check_workflows; check_rust; check_swift ;;
-  all)      check_workflows; check_rust; check_swift; check_sanitize ;;
+  default)  check_workflows; check_metadata; check_rust; check_swift ;;
+  all)      check_workflows; check_metadata; check_rust; check_swift; check_sanitize ;;
+  metadata) check_metadata ;;
   rust)     check_rust ;;
   swift)    check_swift ;;
   lint)     check_swift_lint ;;
   tooling)  check_workflows ;;
   sanitize) check_sanitize ;;
-  *) echo "unknown section: $section (rust | swift | lint | tooling | sanitize | all)"; exit 2 ;;
+  *) echo "unknown section: $section (rust | swift | lint | metadata | tooling | sanitize | all)"; exit 2 ;;
 esac
 
 if ((${#missing[@]})); then

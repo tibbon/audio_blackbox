@@ -82,11 +82,11 @@ run:
 clean:
 	$(CARGO_BIN) clean
 
-# Verify: the full guardrail loop plus the App Store metadata lint. Run before
-# pushing. The Rust/Swift steps live in scripts/check.sh so this target, the
+# Verify: the full guardrail loop, which includes the App Store metadata lint.
+# Run before pushing. The steps live in scripts/check.sh so this target, the
 # pre-commit hook (SKIP_TESTS=0) and CI all run the same commands (DOLL-652).
 .PHONY: verify
-verify: check-app-store
+verify:
 	./scripts/check.sh
 
 # Coverage (DOLL-272): non-gating line-coverage summary to surface untested
@@ -355,7 +355,7 @@ help:
 	@echo "  check-rust      - Rust half of check (clippy x3, rustdoc, tests, deny, machete, MSRV)"
 	@echo "  check-swift     - Swift half of check (format, swiftlint, xcodebuild test, analyze)"
 	@echo "  check-sanitize  - Swift tests under TSan then ASan+UBSan (slow, local only)"
-	@echo "  verify          - check + App Store metadata lint"
+	@echo "  verify          - same as check (includes the App Store metadata lint)"
 	@echo "  coverage        - Line-coverage summary (Rust llvm-cov + Swift xccov)"
 	@echo "  run             - Run the CLI directly"
 	@echo "  clean           - Clean build files"
