@@ -131,8 +131,9 @@ int32_t blackbox_get_device_channel_count(const char *device_name);
  * Repair and rename the *.recording.wav files a crash left in output_dir:
  * each header is rewritten to cover every whole frame in the file and the
  * file is renamed to its final .wav name (never over an existing file; a
- * -1, -2, ... suffix is added instead). Header-only files are deleted;
- * files that aren't readable WAVs are left alone.
+ * -1, -2, ... suffix is added instead). Files with no audio past a header
+ * (including ones shorter than a header) are deleted; longer files that
+ * aren't readable WAVs are left alone.
  * A file a recorder (this process or another) still has open is locked
  * and skipped, so a live recording is never touched. Needs no handle.
  * Returns the number of files recovered (>= 0), or one of:

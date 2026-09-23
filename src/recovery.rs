@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use log::{info, warn};
 
 use crate::error::BlackboxError;
-use crate::raw_wav_writer::{parse_wav_layout, recovered_sizes};
+use crate::raw_wav_writer::{PCM_HEADER_LEN, parse_wav_layout, recovered_sizes};
 use crate::writer_thread::disambiguate_path;
 
 /// Suffix of a file the writer still has open (or had open when it died).
@@ -33,7 +33,8 @@ const HEADER_PROBE_LEN: u64 = 4096;
 /// can hold), a torn trailing frame is cut off, and the file is renamed to
 /// the name the recorder would have given it (`<stem>.wav`, or `<stem>-1.wav`
 /// and so on if that exists — an existing file is never replaced). A file
-/// with no audio after its header is deleted. A file that isn't a WAV this
+/// with no audio after its header, or shorter than a header, is deleted, as
+/// is a temp name an earlier recovery already linked to its final name. A file that isn't a WAV this
 /// engine could have written is left alone. Per-file failures are logged and
 /// skipped so one bad file doesn't strand the rest.
 ///
@@ -91,8 +92,8 @@ fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
     let mut file = OpenOptions::new().read(true).write(true).open(tmp)?;
     // Held until `file` is dropped, after the rename, so two recoverers
     // can't work on the same file either.
-    match file.try_lock() {
-        Ok(()) => {}
+    let locked = match file.try_lock() {
+        Ok(()) => true,
         Err(TryLockError::WouldBlock) => {
             info!(
                 "{} is still being recorded by another process; leaving it",
@@ -105,10 +106,36 @@ fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
                 "{} can't be locked on this file system; recovering it unchecked",
                 tmp.display()
             );
+            false
         }
         Err(TryLockError::Error(e)) => return Err(e),
+    };
+    let meta = file.metadata()?;
+    if has_other_links(&meta) {
+        // An earlier recovery linked this file to its final name and then
+        // failed to remove the temp name. The audio is already under the
+        // final name (repaired before it was linked); linking it again
+        // would make a second copy under a `-N` name.
+        info!(
+            "{} was already recovered under another name; removing the temp name",
+            tmp.display()
+        );
+        fs::remove_file(tmp)?;
+        return Ok(None);
     }
-    let file_len = file.metadata()?.len();
+    let file_len = meta.len();
+    // Shorter than the smallest header: created, then the process died
+    // before the first refresh wrote anything (the header waits in the
+    // writer's buffer until then). Nothing to recover. Only when locked: on
+    // a file system without locks this could be a live file's first seconds.
+    if file_len < PCM_HEADER_LEN && locked {
+        info!(
+            "{} is shorter than a WAV header; removing it",
+            tmp.display()
+        );
+        fs::remove_file(tmp)?;
+        return Ok(None);
+    }
     let mut head = Vec::new();
     (&mut file).take(HEADER_PROBE_LEN).read_to_end(&mut head)?;
     let Some(layout) = parse_wav_layout(&head) else {
@@ -153,6 +180,19 @@ fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
     let moved = move_without_clobbering(tmp, final_path).map(Some);
     drop(file);
     moved
+}
+
+/// Whether the file has a hard link besides the name it was opened by.
+#[cfg(unix)]
+fn has_other_links(meta: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.nlink() > 1
+}
+
+/// Link counts aren't available off Unix; the check is skipped.
+#[cfg(not(unix))]
+const fn has_other_links(_meta: &fs::Metadata) -> bool {
+    false
 }
 
 /// Move `from` to `to`, or to the first free `-N` variant of it. Uses a hard

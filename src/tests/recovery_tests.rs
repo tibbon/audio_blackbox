@@ -112,7 +112,8 @@ fn empty_and_unrelated_files() {
     let empty = dir.path().join("empty.recording.wav");
     crashed_recording(&empty, STEREO_16, std::iter::empty());
     let garbage = dir.path().join("garbage.recording.wav");
-    fs::write(&garbage, b"not a wav file at all").unwrap();
+    let not_a_wav = b"not a wav file at all, but longer than a WAV header".as_slice();
+    fs::write(&garbage, not_a_wav).unwrap();
     let finished = dir.path().join("done.wav");
     fs::write(&finished, b"finished").unwrap();
     let other = dir.path().join("notes.txt");
@@ -124,7 +125,7 @@ fn empty_and_unrelated_files() {
     assert!(!dir.path().join("empty.wav").exists());
     assert_eq!(
         fs::read(&garbage).unwrap(),
-        b"not a wav file at all",
+        not_a_wav,
         "an unreadable file is left as is"
     );
     assert_eq!(fs::read(&finished).unwrap(), b"finished");
@@ -226,4 +227,47 @@ fn the_writer_locks_its_file_while_open() {
     other
         .try_lock()
         .expect("closing the writer releases the lock");
+}
+
+/// Temp files shorter than a WAV header (a recorder that died before its
+/// first header refresh leaves 0 bytes, since the header waits in the
+/// writer's buffer) are deleted. They used to be left as "no readable
+/// header" forever, and reported again on every launch.
+#[test]
+fn temp_files_shorter_than_a_header_are_removed() {
+    let dir = tempdir().unwrap();
+    let empty = dir.path().join("zero.recording.wav");
+    fs::write(&empty, b"").unwrap();
+    let short = dir.path().join("short.recording.wav");
+    fs::write(&short, b"RIFF\0\0\0\0WAVE").unwrap();
+
+    assert_eq!(recover_recordings(dir.path()).unwrap(), 0);
+
+    assert!(!empty.exists(), "a 0-byte temp file is removed");
+    assert!(
+        !short.exists(),
+        "a temp file shorter than a header is removed"
+    );
+}
+
+/// A temp file an earlier recovery already hard-linked to its final name
+/// (and then failed to unlink) is not linked again: the temp name is
+/// removed and no `-1` copy appears. It used to be recovered a second time
+/// on the next launch, leaving the take twice.
+#[test]
+fn an_already_linked_temp_file_is_not_recovered_twice() {
+    let dir = tempdir().unwrap();
+    let tmp = dir.path().join("take.recording.wav");
+    crashed_recording(&tmp, STEREO_16, 0..20);
+    let final_path = dir.path().join("take.wav");
+    fs::hard_link(&tmp, &final_path).unwrap();
+
+    assert_eq!(recover_recordings(dir.path()).unwrap(), 0);
+
+    assert!(!tmp.exists(), "the leftover temp name is removed");
+    assert!(final_path.exists(), "the recovered take stays");
+    assert!(
+        !dir.path().join("take-1.wav").exists(),
+        "the take must not be linked a second time"
+    );
 }
