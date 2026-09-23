@@ -52,6 +52,9 @@ extension RecordingState {
         // restore Task: it would record into the default folder, and crash
         // recovery would finalize this session's live .recording.wav.
         await bookmarkRestoreTask?.value
+        // A start cancelled while it waited (app termination) doesn't go on
+        // to the permission prompt and the engine.
+        guard !Task.isCancelled else { return isRecording }
         if await checkMicrophonePermission() {
             startRecordingInternal()
         } else {

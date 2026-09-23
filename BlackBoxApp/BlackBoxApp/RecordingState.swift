@@ -272,8 +272,9 @@ final class RecordingState {
     /// yet. The Task includes any "Output Directory Unavailable" prompt, so
     /// it completes only after the user has answered it, and it also runs
     /// launch-time crash recovery. Every start (`startAndWait`) awaits it.
-    /// `nil` only in tests, where init returns before kicking it off.
-    private(set) var bookmarkRestoreTask: Task<Void, Never>?
+    /// `nil` in tests, where init returns before kicking it off; settable so
+    /// a test can put a pending one in its place.
+    var bookmarkRestoreTask: Task<Void, Never>?
 
     /// `nonisolated` so completion handlers that run off the main actor (e.g. the
     /// UNUserNotificationCenter authorization callback) can log; Logger is Sendable.

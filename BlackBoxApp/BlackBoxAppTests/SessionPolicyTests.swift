@@ -81,6 +81,42 @@ nonisolated final class SessionPolicyTests: StandardDefaultsTestCase {
         XCTAssertEqual(applied, 1)
     }
 
+    // MARK: - startAndWait and the launch restore
+
+    /// A start right at launch waits for the bookmark-restore Task (folder
+    /// scope and crash recovery) before it goes near the engine: starting
+    /// first would record into the default folder, and recovery would then
+    /// finalize the live session's .recording.wav.
+    @MainActor
+    func testStartWaitsForTheLaunchRestore() async {
+        let recorder = RecordingState()
+        let (restoreDone, finishRestore) = AsyncStream<Void>.makeStream()
+        recorder.bookmarkRestoreTask = Task {
+            for await _ in restoreDone {
+                // Nothing is yielded; the loop ends when the test finishes the stream.
+            }
+        }
+
+        let start = Task { await recorder.startAndWait() }
+        while !recorder.isStartingRecording {
+            await Task.yield()
+        }
+        for _ in 0..<50 {
+            await Task.yield()
+        }
+        XCTAssertTrue(recorder.isStartingRecording, "the start must still be waiting on the restore")
+        XCTAssertFalse(recorder.isRecording)
+
+        // Cancel so the resumed start stops before the permission check and
+        // the engine, which a unit test must not reach.
+        start.cancel()
+        finishRestore.finish()
+        let started = await start.value
+
+        XCTAssertFalse(started)
+        XCTAssertFalse(recorder.isStartingRecording)
+    }
+
     func testMonitoringNeverTakesTheStreamFromARecording() {
         for (recording, starting) in [(true, false), (false, true)] {
             XCTAssertFalse(
