@@ -118,6 +118,7 @@ impl RawWavWriter {
             }
         };
         let file = File::create(path)?;
+        lock_while_open(&file, path);
         let mut writer = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
 
         // Write the RIFF/WAVE header with placeholder sizes: 44 bytes for
@@ -383,6 +384,23 @@ impl RawWavWriter {
         self.writer.write_all(&data_size.to_le_bytes())?;
         self.writer.seek(SeekFrom::Start(pos))?;
         Ok(())
+    }
+}
+
+/// Take an advisory exclusive lock (`flock`) on a file being recorded, held
+/// until the file is closed.
+///
+/// `recover_recordings` skips a `.recording.wav` it can't lock, so a second
+/// recorder (the CLI and the app, or two CLIs) sharing an output folder
+/// doesn't finalize and rename a file this one is still writing. The kernel
+/// drops the lock when the process exits, so a crashed recorder's files
+/// become recoverable. A file system without `flock` support gets a warning;
+/// recording goes on unlocked.
+fn lock_while_open(file: &File, path: &str) {
+    if let Err(e) = file.try_lock() {
+        log::warn!(
+            "Could not lock {path} while recording ({e}); crash recovery in another process could touch it"
+        );
     }
 }
 

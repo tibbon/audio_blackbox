@@ -188,3 +188,42 @@ fn recovered_sizes_respect_the_4gib_limit() {
     // Ordinary case: whole frames of what follows the header.
     assert_eq!(recovered_sizes(68 + 6 * 10 + 4, layout), (60, 120, 60));
 }
+
+/// A `.recording.wav` another recorder still has open is left alone: the
+/// writer holds an exclusive lock on it, and recovery skips files it can't
+/// lock. Once the lock is released (as when a recorder crashes), the file
+/// is recovered. Recovery used to finalize and rename a live file when two
+/// recorders shared a folder.
+#[test]
+fn a_locked_temp_file_is_skipped() {
+    let dir = tempdir().unwrap();
+    let tmp = dir.path().join("live.recording.wav");
+    crashed_recording(&tmp, STEREO_16, 0..20);
+    let holder = fs::File::open(&tmp).unwrap();
+    holder.lock().unwrap();
+
+    assert_eq!(recover_recordings(dir.path()).unwrap(), 0);
+    assert!(tmp.exists(), "a locked file keeps its temp name");
+    assert!(!dir.path().join("live.wav").exists());
+
+    drop(holder);
+    assert_eq!(recover_recordings(dir.path()).unwrap(), 1);
+    assert!(dir.path().join("live.wav").exists());
+}
+
+/// The writer holds that lock for as long as the file is open.
+#[test]
+fn the_writer_locks_its_file_while_open() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("open.recording.wav");
+    let writer = RawWavWriter::create(path.to_str().unwrap(), STEREO_16).unwrap();
+    let other = fs::File::open(&path).unwrap();
+    assert!(
+        matches!(other.try_lock(), Err(fs::TryLockError::WouldBlock)),
+        "an open recording must be locked"
+    );
+    writer.finalize().unwrap();
+    other
+        .try_lock()
+        .expect("closing the writer releases the lock");
+}

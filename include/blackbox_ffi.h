@@ -133,8 +133,8 @@ int32_t blackbox_get_device_channel_count(const char *device_name);
  * file is renamed to its final .wav name (never over an existing file; a
  * -1, -2, ... suffix is added instead). Header-only files are deleted;
  * files that aren't readable WAVs are left alone.
- * Call only while nothing is recording into output_dir (e.g. at launch,
- * before the first start). Needs no handle.
+ * A file a recorder (this process or another) still has open is locked
+ * and skipped, so a live recording is never touched. Needs no handle.
  * Returns the number of files recovered (>= 0), or one of:
  *   BLACKBOX_ERR_INVALID_ARG  — output_dir NULL or not valid UTF-8
  *   BLACKBOX_ERR_IO           — output_dir can't be read

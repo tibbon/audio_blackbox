@@ -8,7 +8,7 @@
 //! points the header at every whole frame in the file and renames it to the
 //! final `.wav` name, never over an existing file.
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, OpenOptions, TryLockError};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
@@ -37,9 +37,13 @@ const HEADER_PROBE_LEN: u64 = 4096;
 /// engine could have written is left alone. Per-file failures are logged and
 /// skipped so one bad file doesn't strand the rest.
 ///
-/// Call this only while nothing is recording into `dir`: a live
-/// `.recording.wav` would be modified and renamed under its writer. The CLI
-/// calls it at startup, before recording starts.
+/// A file another recorder still has open is skipped: the writer holds an
+/// advisory exclusive lock (`flock`) on every `.recording.wav` while it is
+/// open, and a file this can't lock is left alone. A crashed process holds
+/// no lock, so its files are recovered. On a file system without `flock`
+/// the lock can't be checked, so there it is still up to the caller to run
+/// this only while nothing records into `dir`. The CLI calls it at startup,
+/// before recording starts.
 ///
 /// # Errors
 ///
@@ -85,6 +89,25 @@ fn final_path_for(path: &Path) -> Option<PathBuf> {
 /// audio.
 fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
     let mut file = OpenOptions::new().read(true).write(true).open(tmp)?;
+    // Held until `file` is dropped, after the rename, so two recoverers
+    // can't work on the same file either.
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            info!(
+                "{} is still being recorded by another process; leaving it",
+                tmp.display()
+            );
+            return Ok(None);
+        }
+        Err(TryLockError::Error(e)) if e.kind() == io::ErrorKind::Unsupported => {
+            warn!(
+                "{} can't be locked on this file system; recovering it unchecked",
+                tmp.display()
+            );
+        }
+        Err(TryLockError::Error(e)) => return Err(e),
+    }
     let file_len = file.metadata()?.len();
     let mut head = Vec::new();
     (&mut file).take(HEADER_PROBE_LEN).read_to_end(&mut head)?;
@@ -98,7 +121,6 @@ fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
 
     let (data_bytes, riff_size, data_size) = recovered_sizes(file_len, layout);
     if data_bytes == 0 {
-        drop(file);
         info!("{} holds no audio; removing it", tmp.display());
         fs::remove_file(tmp)?;
         return Ok(None);
@@ -127,9 +149,10 @@ fn recover_file(tmp: &Path, final_path: &Path) -> io::Result<Option<PathBuf>> {
         );
     }
     file.sync_all()?;
-    drop(file);
 
-    move_without_clobbering(tmp, final_path).map(Some)
+    let moved = move_without_clobbering(tmp, final_path).map(Some);
+    drop(file);
+    moved
 }
 
 /// Move `from` to `to`, or to the first free `-N` variant of it. Uses a hard

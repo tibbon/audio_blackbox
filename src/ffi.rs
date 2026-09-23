@@ -740,10 +740,10 @@ pub extern "C" fn blackbox_get_device_channel_count(device_name: *const c_char) 
 /// * `BLACKBOX_ERR_INVALID_ARG` — `output_dir` is null or not valid UTF-8.
 /// * `BLACKBOX_ERR_IO` — the directory can't be read.
 ///
-/// Per-file failures are logged and skipped, not returned. Call it only
-/// while nothing is recording into `output_dir` (e.g. at launch, before the
-/// first start): it rewrites and renames every `.recording.wav` it finds.
-/// Needs no handle.
+/// Per-file failures are logged and skipped, not returned. A
+/// `.recording.wav` a recorder (this process or another) still has open is
+/// locked and skipped, so a live recording is never touched. Needs no
+/// handle.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_recover_recordings(output_dir: *const c_char) -> i32 {
     // SAFETY: the FFI contract requires `output_dir` to be null or a
