@@ -11,6 +11,7 @@
 		03E4F2B1C3A66DD675F3BEFB /* SilenceDetectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */; };
 		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
 		0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924678D133EB74205F702B27 /* OutputSettingsTab.swift */; };
+		161E7DB85D3F18C624DCE363 /* StandardDefaultsTestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */; };
 		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
 		314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */; };
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
@@ -70,6 +71,7 @@
 		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		72C8B317B7C306370E48F169 /* ChannelSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSpec.swift; sourceTree = "<group>"; };
 		7A3E06870571E2C3D34F75C6 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
+		7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardDefaultsTestCase.swift; sourceTree = "<group>"; };
 		7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+ShortcutStep.swift"; sourceTree = "<group>"; };
 		833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSelectionGrid.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
 				0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */,
+				7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */,
 			);
 			path = BlackBoxAppTests;
 			sourceTree = "<group>";
@@ -272,6 +275,7 @@
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
 				F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */,
+				161E7DB85D3F18C624DCE363 /* StandardDefaultsTestCase.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

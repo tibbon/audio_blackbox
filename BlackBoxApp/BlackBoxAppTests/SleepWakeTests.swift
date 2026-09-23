@@ -95,17 +95,13 @@ nonisolated final class SleepWakePolicyTests: XCTestCase {
 
 // MARK: - Settings Tests
 
-nonisolated final class SleepWakeSettingsTests: XCTestCase {
+// StandardDefaultsTestCase restores the app's real preferences after each
+// test, so these only clear the keys they need unset.
+nonisolated final class SleepWakeSettingsTests: StandardDefaultsTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: SettingsKeys.sleepBehavior)
         UserDefaults.standard.removeObject(forKey: SettingsKeys.preventSleep)
-    }
-
-    override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: SettingsKeys.sleepBehavior)
-        UserDefaults.standard.removeObject(forKey: SettingsKeys.preventSleep)
-        super.tearDown()
     }
 
     func testSettingsKeyValues() {
@@ -150,17 +146,11 @@ nonisolated final class SleepWakeSettingsTests: XCTestCase {
 
 // MARK: - RecordingState Guard Path Tests
 
-nonisolated final class SleepWakeGuardTests: XCTestCase {
+nonisolated final class SleepWakeGuardTests: StandardDefaultsTestCase {
     override func setUp() {
         super.setUp()
         // Prevent auto-record from firing during RecordingState init
         UserDefaults.standard.set(false, forKey: SettingsKeys.autoRecord)
-    }
-
-    override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: SettingsKeys.autoRecord)
-        UserDefaults.standard.removeObject(forKey: SettingsKeys.sleepBehavior)
-        super.tearDown()
     }
 
     @MainActor
