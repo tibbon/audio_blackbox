@@ -121,7 +121,10 @@ struct BlackBoxApp: App {
         Button {
             recorder.toggle()
         } label: {
-            let action = recorder.isRecording ? "Stop Recording" : "Start Recording"
+            // `Text(String)` shows its argument verbatim, so the label is
+            // localized here rather than left to the Text.
+            let action =
+                recorder.isRecording ? String(localized: "Stop Recording") : String(localized: "Start Recording")
             if let shortcut = GlobalHotkeyManager.shared.currentShortcut {
                 Text("\(action)  \(shortcut.displayString)")
                     // DOLL-385: without this VoiceOver speaks the raw glyphs
@@ -147,9 +150,8 @@ struct BlackBoxApp: App {
                     selected: selectedDevice,
                     available: recorder.availableDevices,
                     systemDefault: recorder.systemDefaultDeviceName
-                ) ?? "System Default"
-            let chCount = countChannels(channelSpec)
-            let chLabel = chCount == 1 ? "1 channel" : "\(chCount) channels"
+                ) ?? String(localized: "System Default")
+            let chLabel = channelCountLabel(countChannels(channelSpec))
 
             Text("Device: \(device)")
                 .font(.caption)

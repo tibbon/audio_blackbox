@@ -11,6 +11,15 @@ import XCTest
 // MARK: - Channel Spec Conversion Tests
 
 nonisolated final class ChannelSpecTests: XCTestCase {
+    // MARK: - channelCountLabel
+
+    /// The catalog's plural variations pick the singular for one channel.
+    func testChannelCountLabelIsPluralAware() {
+        XCTAssertEqual(channelCountLabel(1), "1 channel")
+        XCTAssertEqual(channelCountLabel(2), "2 channels")
+        XCTAssertEqual(channelCountLabel(0), "0 channels")
+    }
+
     // MARK: - channelSpecToZeroBased
 
     func testSingleChannelToZeroBased() {

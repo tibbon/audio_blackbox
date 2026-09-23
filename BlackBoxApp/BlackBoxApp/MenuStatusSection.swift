@@ -60,9 +60,8 @@ struct MenuStatusSection: View {
                 selected: selectedDevice,
                 available: recorder.availableDevices,
                 systemDefault: recorder.systemDefaultDeviceName
-            ) ?? "System Default"
-        let chCount = countChannels(channelSpec)
-        Text("\(device) \u{00B7} \(chCount) ch")
+            ) ?? String(localized: "System Default")
+        Text("\(device) \u{00B7} \(channelCountLabel(countChannels(channelSpec)))")
             .font(.caption)
             .foregroundStyle(.secondary)
 

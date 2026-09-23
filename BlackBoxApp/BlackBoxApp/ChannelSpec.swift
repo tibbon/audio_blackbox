@@ -71,6 +71,12 @@ nonisolated func countChannels(_ spec: String) -> Int {
     return channels.count
 }
 
+/// "1 channel" / "8 channels", localized. The String Catalog carries plural
+/// variations for this key, so languages with other plural rules get theirs.
+nonisolated func channelCountLabel(_ count: Int) -> String {
+    String(localized: "\(count) channels", comment: "Number of recorded channels, e.g. in the menu-bar menu")
+}
+
 /// Convert a 1-based channel spec string to 0-based for the Rust engine.
 /// e.g. "1,3-5,8" → "0,2-4,7"
 nonisolated func channelSpecToZeroBased(_ spec: String) -> String {

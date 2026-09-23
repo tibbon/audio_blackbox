@@ -13,7 +13,7 @@ struct MenuInputDeviceSection: View {
                 // what "System Default" maps to right now.
                 let defaultLabel: String =
                     recorder.systemDefaultDeviceName
-                    .map { "System Default (\($0))" } ?? "System Default"
+                    .map { String(localized: "System Default (\($0))") } ?? String(localized: "System Default")
                 Toggle(
                     defaultLabel,
                     isOn: Binding(

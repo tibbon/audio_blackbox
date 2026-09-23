@@ -12,8 +12,32 @@
     "%@ is reserved by macOS" : {},
     "%@ kHz" : {},
     "%@ per file (%@ total across %lld files)%@" : {},
+    "%@ · %@" : {},
     "%@ · %lld ch" : {},
     "%@, %@" : {},
+    "%lld channels" : {
+      "comment" : "Number of recorded channels, e.g. in the menu-bar menu",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld channel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld channels"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld hours" : {},
     "%lld kHz" : {},
     "%lld minutes" : {},
@@ -265,6 +289,7 @@
     "Sleep behavior" : {},
     "Split (one file per channel)" : {},
     "Start BlackBox when you log in" : {},
+    "Start Recording" : {},
     "Start Using BlackBox" : {},
     "Start recording on launch" : {},
     "Startup" : {},
