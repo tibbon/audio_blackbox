@@ -21,6 +21,13 @@ updates:
     labels:
       - "ci"
     open-pull-requests-limit: 5
+    ignore:
+      # Pinned to the SHA of a toolchain *branch* (e.g. `# 1.98`, the MSRV
+      # and release pin, DOLL-260). Dependabot can't follow that branch and
+      # proposes the `stable` branch SHA instead (PR #338), which would
+      # silently unpin the MSRV lane and release builds. Bump by hand:
+      #   gh api repos/dtolnay/rust-toolchain/commits/<branch> --jq .sha
+      - dependency-name: "dtolnay/rust-toolchain"
 
   # Fastlane (and transitive Ruby gems) — pinned via Gemfile.lock,
   # bumped through dependabot to defeat schema-drift mid-deploy
