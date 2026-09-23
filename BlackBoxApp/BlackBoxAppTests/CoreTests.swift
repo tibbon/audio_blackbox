@@ -124,6 +124,30 @@ nonisolated final class ChannelSpecTests: XCTestCase {
         }
     }
 
+    // MARK: - recordedChannelNumbers (meter labels, mirrors recording_channels)
+
+    /// Selecting channels 3 and 4 records two channels; their meter bars are
+    /// device channels 3 and 4, not positions 1 and 2.
+    func testRecordedChannelsAreTheSelectedDeviceChannels() {
+        XCTAssertEqual(recordedChannelNumbers(spec: "3-4", deviceChannelCount: 8), [3, 4])
+        XCTAssertEqual(recordedChannelNumbers(spec: "7, 2", deviceChannelCount: 8), [2, 7])
+    }
+
+    func testChannelsTheDeviceLacksAreDropped() {
+        XCTAssertEqual(recordedChannelNumbers(spec: "2,5,9", deviceChannelCount: 6), [2, 5])
+    }
+
+    /// Like the engine: none of the requested channels exist, so it records
+    /// every device channel.
+    func testNoAvailableChannelFallsBackToAll() {
+        XCTAssertEqual(recordedChannelNumbers(spec: "9-10", deviceChannelCount: 2), [1, 2])
+    }
+
+    func testInvalidSpecIsChannelOne() {
+        XCTAssertEqual(recordedChannelNumbers(spec: "1-", deviceChannelCount: 4), [1])
+        XCTAssertEqual(recordedChannelNumbers(spec: "1", deviceChannelCount: 0), [])
+    }
+
     // MARK: - isLegacyZeroBasedSpec
 
     func testZeroBasedSingleChannel() {

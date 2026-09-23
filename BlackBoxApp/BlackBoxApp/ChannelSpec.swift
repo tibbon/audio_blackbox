@@ -37,6 +37,19 @@ nonisolated func parseChannelSpec(_ spec: String) -> [Int] {
     return channels.sorted()
 }
 
+/// The 1-based device channels a session records, in the order the engine
+/// publishes their peak levels. Mirrors `recording_channels` in
+/// src/cpal_processor.rs: the requested channels the device has, ascending
+/// (the engine's parser sorts and de-duplicates), or every device channel
+/// when it has none of them. An empty or invalid spec is the engine's
+/// default, channel 1.
+nonisolated func recordedChannelNumbers(spec: String, deviceChannelCount: Int) -> [Int] {
+    guard deviceChannelCount > 0 else { return [] }
+    let requested = parseChannelSpec(spec)
+    let kept = (requested.isEmpty ? [1] : requested).filter { $0 <= deviceChannelCount }
+    return kept.isEmpty ? Array(1...deviceChannelCount) : kept
+}
+
 /// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
 nonisolated func countChannels(_ spec: String) -> Int {
     var channels = Set<Int>()

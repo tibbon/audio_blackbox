@@ -28,6 +28,7 @@ extension RecordingState {
             let result = self.bridge.startMonitoring()
             if result.isSuccess {
                 self.isMonitoring = true
+                self.refreshMeterChannelNumbers()
                 Self.log.info("Audio monitoring started")
             } else {
                 Self.log.error(
@@ -51,6 +52,23 @@ extension RecordingState {
         guard isMonitoring else { return }
         stopMonitoring()
         startMonitoring()
+    }
+
+    /// Work out which device channels the session's peak levels belong to,
+    /// so the meter can label bars "Ch 3" and "Ch 4" for a 3,4 selection
+    /// instead of "Ch 1" and "Ch 2". The engine falls back to the system
+    /// default when the chosen device is missing, and so does this.
+    func refreshMeterChannelNumbers() {
+        let defaults = UserDefaults.standard
+        let device = defaults.string(forKey: SettingsKeys.inputDevice) ?? ""
+        var count = (try? RustBridge.getDeviceChannelCount(deviceName: device).get()) ?? 0
+        if count == 0, !device.isEmpty {
+            count = (try? RustBridge.getDeviceChannelCount(deviceName: "").get()) ?? 0
+        }
+        meterChannelNumbers = recordedChannelNumbers(
+            spec: defaults.string(forKey: SettingsKeys.audioChannels) ?? "1",
+            deviceChannelCount: count
+        )
     }
 
     // MARK: - Microphone Permission

@@ -78,6 +78,11 @@ final class RecordingState {
     /// to avoid pointless FFI calls). Empty until the first poll lands.
     var peakLevels: [Float] = []
 
+    /// The 1-based device channel each `peakLevels` entry belongs to, worked
+    /// out when a recording or monitoring session starts. The meter labels
+    /// bars with these; it falls back to positions if the counts disagree.
+    var meterChannelNumbers: [Int] = []
+
     /// Active capture sample rate in Hz, or `0` when no session is running.
     /// Persisted to UserDefaults at session start so the meter window can
     /// label its grid before the next session brings the engine up.

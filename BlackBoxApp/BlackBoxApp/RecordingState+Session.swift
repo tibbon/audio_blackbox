@@ -116,6 +116,7 @@ extension RecordingState {
             // the warning the moment the engine acknowledged the start.
             startTimer()
             beginPreventingSleep()
+            refreshMeterChannelNumbers()
             Self.log.info("Recording started")
             NSAccessibility.post(
                 element: NSApp as Any,

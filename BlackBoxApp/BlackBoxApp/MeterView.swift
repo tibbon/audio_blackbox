@@ -182,11 +182,16 @@ struct MeterView: View {
         // Without this, peakLevels can be cleared (monitoring stopped) between
         // ForEach range creation and closure execution, causing an index-out-of-bounds crash.
         let levels = recorder.peakLevels
+        // Device channel numbers, when they line up with the levels; else
+        // positions (the engine publishes one level per recorded channel).
+        let channels =
+            recorder.meterChannelNumbers.count == levels.count
+            ? recorder.meterChannelNumbers : Array(1...max(levels.count, 1))
         if (recorder.isRecording || recorder.isMonitoring) && !levels.isEmpty {
             let layout = columnLayout(for: levels.count)
             if layout.columns <= 1 {
                 ForEach(levels.indices, id: \.self) { index in
-                    MeterBar(channel: index + 1, peak: levels[index])
+                    MeterBar(channel: channels[index], peak: levels[index])
                 }
             } else {
                 HStack(alignment: .top, spacing: 16) {
@@ -195,7 +200,7 @@ struct MeterView: View {
                         let end = min(start + layout.rowsPerColumn, levels.count)
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(start..<end, id: \.self) { index in
-                                MeterBar(channel: index + 1, peak: levels[index])
+                                MeterBar(channel: channels[index], peak: levels[index])
                             }
                         }
                         .frame(minWidth: 280)

@@ -257,6 +257,7 @@ extension RecordingState {
             recordingStartTime = Date()
             statusText = String(localized: "Recording")
             startTimer()
+            refreshMeterChannelNumbers()
             Self.log.info("Recording restarted on available device")
             notifyUser(
                 title: String(localized: "Device Changed"),
