@@ -73,7 +73,9 @@ pub struct CpalAudioProcessor {
     channels: Vec<usize>,
     output_mode: OutputMode,
     debug: bool,
-    /// Counts `write_sample` errors and ring buffer overflow drops (atomic for RT safety).
+    /// Counts ring buffer overflow drops and `write_sample` failures from
+    /// streaks that recovered (atomic for RT safety). A streak that stops the
+    /// recording shows up as `write_failed` only.
     write_errors: Arc<AtomicU64>,
     /// Set by the writer thread when disk space drops below threshold.
     disk_space_low: Arc<AtomicBool>,

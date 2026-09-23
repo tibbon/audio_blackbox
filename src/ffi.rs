@@ -77,7 +77,10 @@ pub const BLACKBOX_ERR_INVALID_ARG: i32 = -8;
 #[repr(C)]
 #[derive(Debug)]
 pub struct StatusFlags {
-    /// Cumulative `write_sample` failures plus ring-buffer overflow drops.
+    /// Cumulative ring-buffer overflow drops plus `write_sample` failures from
+    /// failure streaks that recovered. A streak long enough to stop the
+    /// recording is reported by `write_failed` instead, so a full disk is
+    /// never counted here as load.
     pub write_errors: u64,
     /// Sample rate of the open stream in Hz; 0 when no stream is open.
     pub sample_rate: u32,

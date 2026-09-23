@@ -346,8 +346,8 @@ fn persistent_write_failures_latch_flag_and_self_stop() {
         assert!(!state.disk_stopped);
         assert_eq!(
             state.write_errors.load(Ordering::Relaxed),
-            47_000,
-            "each failed sample must still bump the shared write_errors counter"
+            0,
+            "a running failure streak must not count as load in write_errors"
         );
 
         // Crossing the threshold stops the writer.
@@ -365,6 +365,11 @@ fn persistent_write_failures_latch_flag_and_self_stop() {
             Path::new(&final_path).exists(),
             "audio written before the failure must be renamed to its final name"
         );
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            0,
+            "a streak that latched write_failed is reported there, not as load"
+        );
 
         // After the stop, write_samples is a no-op.
         let errors_before = state.write_errors.load(Ordering::Relaxed);
@@ -373,6 +378,79 @@ fn persistent_write_failures_latch_flag_and_self_stop() {
             state.write_errors.load(Ordering::Relaxed),
             errors_before,
             "post-stop writes must not keep bumping write_errors"
+        );
+    });
+}
+
+/// A full disk at 96 kHz must never look like CPU load. The app stops a
+/// recording as "heavy load" once `write_errors` passes 48,000, and the
+/// writer latches `write_failed` only after `sample_rate` (96,000) failed
+/// samples. When each failure bumped `write_errors`, the counter crossed the
+/// app's threshold half a second before the latch, so the status poll
+/// reported "heavy load" for a full disk.
+#[test]
+fn full_disk_above_48k_is_not_counted_as_load() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = WriterThreadState::new(
+            dir,
+            96_000,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            24,
+            Arc::from([CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .expect("construct 96 kHz writer state");
+        state.total_device_channels = 1;
+        let write_failed = Arc::clone(&state.write_failed);
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&format!(
+            "{dir}/failing.wav"
+        )));
+
+        state.write_samples(&vec![0.1_f32; 60_000]);
+        assert!(!write_failed.load(Ordering::Relaxed));
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            0,
+            "60,000 failed samples must not reach the app's 48,000 load threshold"
+        );
+
+        state.write_samples(&vec![0.1_f32; 40_000]);
+        assert!(write_failed.load(Ordering::Relaxed), "the latch must fire");
+        assert_eq!(state.write_errors.load(Ordering::Relaxed), 0);
+    });
+}
+
+/// A failure streak still running when the writer stops is counted: the
+/// shutdown path settles it into `write_errors`.
+#[test]
+fn unfinished_failure_streak_is_counted_on_shutdown() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = single_state(dir);
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&format!(
+            "{dir}/failing.wav"
+        )));
+        state.write_samples(&vec![0.1_f32; 1_000]);
+        assert_eq!(state.write_errors.load(Ordering::Relaxed), 0);
+
+        state.settle_write_failures();
+        assert_eq!(state.write_errors.load(Ordering::Relaxed), 1_000);
+        state.settle_write_failures();
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            1_000,
+            "settling twice must not double-count"
         );
     });
 }
@@ -422,6 +500,11 @@ fn clean_batch_resets_write_failure_streak() {
             "a clean batch must reset the consecutive-failure streak"
         );
         assert!(!state.disk_stopped);
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            34_000,
+            "only the first streak, which recovered, is counted so far"
+        );
 
         // Crossing the threshold within a single streak still latches.
         state.write_samples(&vec![0.1_f32; 15_000]);

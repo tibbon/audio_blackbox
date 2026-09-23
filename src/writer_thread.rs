@@ -183,10 +183,8 @@ pub(crate) struct WriterThreadState {
     /// Running count of consecutive `write_sample` failures (DOLL-349). Reset on
     /// any successful batch. When it reaches ~1s of audio, recording self-stops
     /// (disk full / unwritable) instead of silently dropping every sample
-    /// forever. This is a thread-local streak counter for the stop decision
-    /// only; individual failures also still bump the shared `write_errors`
-    /// counter (so the stop bounds, rather than fully removes, the window where
-    /// disk-full is misattributed to load — see follow-up DOLL note).
+    /// forever. Failures in a running streak are held here, not added to the
+    /// shared `write_errors` counter: see `note_write_failures` for why.
     consecutive_write_failures: u64,
 
     // --- Warm fields: accessed frequently but not per-sample ---
@@ -872,7 +870,6 @@ impl WriterThreadState {
                     && w.write_sample(convert_sample(s, scale, dither, &mut rng))
                         .is_err()
                 {
-                    self.write_errors.fetch_add(1, Ordering::Relaxed);
                     write_failures += 1;
                 }
             }
@@ -907,7 +904,6 @@ impl WriterThreadState {
                 if w.write_sample(convert_sample(s, scale, dither, &mut rng))
                     .is_err()
                 {
-                    self.write_errors.fetch_add(1, Ordering::Relaxed);
                     write_failures += 1;
                 }
             }
@@ -926,6 +922,17 @@ impl WriterThreadState {
     /// latch `disk_stopped`), and raise the distinct `write_failed` flag
     /// (DOLL-437) so the UI shows "unable to write to disk" rather than the
     /// low-space message. A batch that writes cleanly clears the streak.
+    ///
+    /// Failures are classified by how the streak ends, not counted as they
+    /// happen. The app stops a recording as "heavy load" once `write_errors`
+    /// passes a fixed sample count (48,000), while the latch here waits for
+    /// `sample_rate` failed samples. Counting each failure at once let a full
+    /// disk push `write_errors` past the app's threshold before
+    /// `write_failed` latched (for mono at any rate above 48 kHz, and briefly
+    /// inside the latching batch even at 48 kHz), so the poll could report
+    /// load instead of a disk problem. Now a streak that ends in the latch is
+    /// reported by `write_failed` alone, and one that recovers (a transient
+    /// failure) is added to `write_errors` when it ends.
     fn note_write_failures(&mut self, write_failures: u64, full_frames: usize) {
         if write_failures > 0 {
             self.consecutive_write_failures = self
@@ -938,10 +945,21 @@ impl WriterThreadState {
                      (disk full or output directory unwritable)",
                     self.consecutive_write_failures
                 );
+                self.consecutive_write_failures = 0;
                 self.latch_write_failed_stop();
             }
         } else if full_frames > 0 {
-            self.consecutive_write_failures = 0;
+            self.settle_write_failures();
+        }
+    }
+
+    /// Add a failure streak that ended without the `write_failed` stop to the
+    /// shared `write_errors` counter, and clear it. Called when a clean batch
+    /// ends the streak and when the writer shuts down mid-streak.
+    pub(crate) fn settle_write_failures(&mut self) {
+        let streak = std::mem::take(&mut self.consecutive_write_failures);
+        if streak > 0 {
+            self.write_errors.fetch_add(streak, Ordering::Relaxed);
         }
     }
 
@@ -1442,6 +1460,7 @@ pub(crate) fn writer_thread_main(
             Ok(WriterCommand::Shutdown(reply_tx)) => {
                 // Drain remaining samples from ring buffer
                 drain_remaining(&mut consumer, &mut state);
+                state.settle_write_failures();
                 let result = state.finalize_all();
                 if reply_tx.send(result).is_err() {
                     warn!("finalize requester hung up before the reply was sent");
@@ -1454,6 +1473,7 @@ pub(crate) fn writer_thread_main(
                      draining and finalizing"
                 );
                 drain_remaining(&mut consumer, &mut state);
+                state.settle_write_failures();
                 if let Err(e) = state.finalize_all() {
                     error!("Error finalizing after command channel disconnect: {e}");
                 }
