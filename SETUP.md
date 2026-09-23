@@ -77,7 +77,7 @@ Pushing, opening the PR, and merging still prompt. Add `Bash(git push:*)`, `Bash
 
 Releases run in GitHub Actions (`.github/workflows/release.yml`).
 
-1. Run `scripts/bump-version.sh X.Y.Z`, add a `## [X.Y.Z]` entry to `CHANGELOG.md`, and merge that PR.
+1. Run `scripts/bump-version.sh X.Y.Z`, add a `## [X.Y.Z]` entry to `CHANGELOG.md`, rewrite the App Store "What's New" text in `BlackBoxApp/fastlane/metadata/en-US/release_notes.txt` (check it with `make check-app-store`), and merge that PR. `make release` and the workflow both refuse a tag when `release_notes.txt` has not changed since the previous tag.
 2. Run `make release VERSION=X.Y.Z`. It checks that the version matches `Cargo.toml` and every manifest, that the working tree is clean, and that `HEAD` is `origin/main`, then tags and pushes `vX.Y.Z`. The workflow re-checks the tag against `Cargo.toml`, the manifests, and main, but tag with `make release` rather than `git tag` so a mistake fails on your machine before it starts a release run.
 3. The workflow reruns the test gate, waits for approval on the protected `release` environment, then builds, signs, and uploads to TestFlight.
 4. To submit to the App Store, dispatch the workflow's `metadata` lane, then its `submit_review` lane. Each one needs its own approval.

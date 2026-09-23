@@ -226,6 +226,7 @@ endif
 	    echo "Error: VERSION=$(VERSION) does not match Cargo.toml. Run scripts/bump-version.sh $(VERSION) first."; \
 	    exit 1; \
 	fi
+	@./scripts/check-release-notes.sh
 	@echo "Tagging v$(VERSION)..."
 	git tag -a "v$(VERSION)" -m "Release $(VERSION)"
 	git push origin "v$(VERSION)"

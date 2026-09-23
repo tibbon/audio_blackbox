@@ -136,6 +136,18 @@ jobs:
         fi
         echo "CHANGELOG.md has an entry for ${VERSION}"
 
+    # The metadata lane uploads release_notes.txt as this version's "What's
+    # New". If it has not changed since the previous tag, the App Store would
+    # show the last version's notes (1.5.0 was tagged with the 1.4.0 text).
+    # Uses the full history and tags fetched by the checkout above.
+    - name: Check App Store release notes changed since the previous tag
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        if ! ./scripts/check-release-notes.sh "$GITHUB_SHA" "$GITHUB_REF_NAME"; then
+          echo "::error::BlackBoxApp/fastlane/metadata/en-US/release_notes.txt is unchanged since the previous v* tag. Write this version's \"What's New\" text, merge it, and retag."
+          exit 1
+        fi
+
     - name: Check formatting
       run: cargo fmt --all -- --check
 
