@@ -30,6 +30,7 @@
 		89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD293BB00932B1C1871E349D /* SettingsView.swift */; };
 		901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C8B317B7C306370E48F169 /* ChannelSpec.swift */; };
 		94738B2F0B74B746E68109A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */; };
+		9A0CA03049D0B90F36E48DE5 /* SavedEngineConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B723D9CE3B09AA32A14D196B /* SavedEngineConfig.swift */; };
 		9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */; };
 		B3254C14B4D86E7804D4F71F /* OnboardingView+Steps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */; };
 		B37E1AC67BACBE9D8170A4D6 /* GeneralSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */; };
@@ -41,6 +42,7 @@
 		DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */; };
 		DFD271895780ACAB4386AEE6 /* OnboardingView+DirectoryStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */; };
 		E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C515ABD54DB00D283F73A524 /* OnboardingView.swift */; };
+		ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */; };
 		F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */; };
 		F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1992609A38241E7F7388606F /* RecordingState+Session.swift */; };
 		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
@@ -86,6 +88,8 @@
 		AD9C1C02E9A69022ECF95ABE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
 		B4713B5D81249F6C8AF904AE /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedEngineConfigTests.swift; sourceTree = "<group>"; };
+		B723D9CE3B09AA32A14D196B /* SavedEngineConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedEngineConfig.swift; sourceTree = "<group>"; };
 		BE10D00516431CD06B0874FE /* SettingsKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsKeys.swift; sourceTree = "<group>"; };
 		BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsTab.swift; sourceTree = "<group>"; };
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -105,6 +109,7 @@
 			isa = PBXGroup;
 			children = (
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
+				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
 				0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */,
 				7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */,
@@ -163,6 +168,7 @@
 				EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */,
 				51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */,
 				B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */,
+				B723D9CE3B09AA32A14D196B /* SavedEngineConfig.swift */,
 				BE10D00516431CD06B0874FE /* SettingsKeys.swift */,
 				FD293BB00932B1C1871E349D /* SettingsView.swift */,
 				9E076F3CD808732BAE342FB1 /* ShortcutRecorderButton.swift */,
@@ -273,6 +279,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
+				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
 				F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */,
 				161E7DB85D3F18C624DCE363 /* StandardDefaultsTestCase.swift in Sources */,
@@ -308,6 +315,7 @@
 				9B5115959BC5B2FB73F48742 /* RecordingState+StatusPoll.swift in Sources */,
 				5F36321926F2474499725EE2 /* RecordingState.swift in Sources */,
 				77D74B483BA578380B42071A /* RustBridge.swift in Sources */,
+				9A0CA03049D0B90F36E48DE5 /* SavedEngineConfig.swift in Sources */,
 				427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */,
 				89C335ECCEE8F031A74C4DAB /* SettingsView.swift in Sources */,
 				BBCA09CE7681F5ACF0DF61C1 /* ShortcutRecorderButton.swift in Sources */,
