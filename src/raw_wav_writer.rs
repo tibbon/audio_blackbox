@@ -36,6 +36,12 @@ pub(crate) struct RawWavWriter {
 /// Size of the RIFF/WAVE header `create` writes; the data chunk starts here.
 pub(crate) const HEADER_LEN: u64 = 44;
 
+/// Audio bytes after which the writer thread starts a new file. The RIFF
+/// size field (`u32`) must hold the data plus 36 header bytes and a pad
+/// byte; 1 MiB of margin covers the up to 64 KiB one writer-thread read can
+/// add after the check.
+pub(crate) const MAX_WAV_DATA_BYTES: u64 = u32::MAX as u64 - (1 << 20);
+
 /// 64 KB write buffer — same as the constant in `writer_thread.rs`.
 const WAV_BUF_CAPACITY: usize = 65_536;
 
@@ -123,6 +129,11 @@ impl RawWavWriter {
         }
     }
 
+    /// Audio data bytes written so far (excluding the header).
+    pub(crate) const fn data_bytes(&self) -> u64 {
+        self.data_bytes_written
+    }
+
     /// The path this writer was created at.
     pub(crate) fn path(&self) -> &str {
         &self.path
@@ -208,7 +219,8 @@ impl RawWavWriter {
         // out at `u32::MAX` — readers fail to import or silently
         // truncate to the first 4 GiB. Log a warning so the operator
         // knows their recording will be partially unreadable;
-        // upgrading to RF64 / W64 is out of scope.
+        // upgrading to RF64 / W64 is out of scope. The writer thread
+        // rotates at MAX_WAV_DATA_BYTES, so this is a last resort.
         if self.data_bytes_written > u64::from(u32::MAX) {
             log::error!(
                 "WAV file exceeds 4 GiB ({} bytes); header data-chunk-size capped at u32::MAX. \

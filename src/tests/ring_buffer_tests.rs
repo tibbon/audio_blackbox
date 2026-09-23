@@ -910,3 +910,73 @@ fn read_available_handles_ring_wraparound() {
         }
     });
 }
+
+/// A file must never outgrow the `u32` WAV size fields: once its audio data
+/// reaches `max_data_bytes`, the writer loop finishes it and continues in a
+/// new file, like a cadence rotation. The limit is lowered to 1000 bytes
+/// (500 16-bit samples) so the test doesn't write 4 GiB. Before, nothing
+/// rotated on size and the header saturated at `u32::MAX`.
+#[test]
+fn test_writer_rotates_before_file_outgrows_wav_size_limit() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::from([CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+        state.max_data_bytes = 1_000;
+        let samples_counter = Arc::clone(&state.samples_consumed_total);
+
+        let (mut producer, consumer) = rtrb::RingBuffer::new(44100 * RING_BUFFER_SECONDS);
+        let rotation_needed = Arc::new(AtomicBool::new(false));
+        let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+        let handle = std::thread::spawn(move || {
+            writer_thread_main(consumer, &rotation_needed, &command_rx, state);
+        });
+
+        // 600 samples = 1200 bytes: past the limit, so the loop rotates right
+        // after this read, before it reads anything else.
+        producer.push_entire_slice(&[0.25_f32; 600]).unwrap();
+        crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            600,
+            std::time::Duration::from_secs(2),
+        );
+        producer.push_entire_slice(&[0.25_f32; 100]).unwrap();
+        crate::test_utils::wait_for_samples_consumed(
+            &samples_counter,
+            700,
+            std::time::Duration::from_secs(2),
+        );
+
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
+        reply_rx.recv().unwrap().unwrap();
+        handle.join().unwrap();
+
+        let mut lengths: Vec<usize> = wav_files_in(temp_dir.path())
+            .iter()
+            .map(|f| read_wav(f).1.len())
+            .collect();
+        lengths.sort_unstable();
+        assert_eq!(
+            lengths,
+            [100, 600],
+            "the full file must be closed and the rest continue in a new one"
+        );
+    });
+}

@@ -10,7 +10,7 @@ use log::{error, info, warn};
 use crate::constants::{CacheAlignedPeak, MAX_CHANNELS, OutputMode, WRITER_THREAD_READ_CHUNK};
 use crate::error::BlackboxError;
 use crate::numeric::saturating_i32;
-use crate::raw_wav_writer::RawWavWriter;
+use crate::raw_wav_writer::{MAX_WAV_DATA_BYTES, RawWavWriter};
 use crate::silence_check_worker::SilenceCheckWorker;
 use crate::utils::{available_disk_space_mb, is_silent};
 
@@ -221,6 +221,10 @@ pub(crate) struct WriterThreadState {
     /// writers before live samples resume. Lives on the writer thread only,
     /// so the RT callback is unaffected.
     gate_preroll: Vec<f32>,
+    /// Data bytes a file may hold before the writer rotates to a new one
+    /// (`MAX_WAV_DATA_BYTES`; tests lower it). WAV sizes are `u32`, so a file
+    /// past 4 GiB would carry a saturated header that players truncate.
+    pub(crate) max_data_bytes: u64,
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
@@ -486,6 +490,7 @@ impl WriterThreadState {
             gate_timeout_frames: 0,
             gate_idle: Arc::new(AtomicBool::new(false)),
             gate_preroll: Vec::new(),
+            max_data_bytes: MAX_WAV_DATA_BYTES,
             output_dir: String::new(),
             #[cfg(unix)]
             output_dir_cstr: None, // Monitor mode doesn't check disk space
@@ -1148,6 +1153,27 @@ impl WriterThreadState {
         }
     }
 
+    /// Rotate when an open file's audio data has reached `max_data_bytes`.
+    ///
+    /// Called by the main loop after every read. Without it a long take
+    /// (the app records single files by default: stereo 24-bit 48 kHz
+    /// reaches 4 GiB in about 4 hours, 8 channels in about 1) kept growing
+    /// past what the `u32` WAV header can describe, and players read only
+    /// the first 4 GiB (DOLL-204).
+    pub(crate) fn rotate_if_file_full(&mut self) {
+        let largest = self
+            .writer
+            .iter()
+            .chain(self.multichannel_writers.iter().flatten())
+            .map(RawWavWriter::data_bytes)
+            .max()
+            .unwrap_or(0);
+        if largest >= self.max_data_bytes {
+            info!("Recording file reached {largest} bytes of audio; continuing in a new file");
+            self.rotate_files();
+        }
+    }
+
     /// Finalize every writer and rename every pending `.recording.wav` to
     /// its final name, attempting all of them even when one fails (DOLL-345).
     ///
@@ -1421,6 +1447,11 @@ pub(crate) fn writer_thread_main(
 
         // 4. Read available samples from ring buffer
         let read = read_available(&mut consumer, &mut state);
+
+        // 4b. Start a new file before any open one outgrows the WAV size
+        //     field. One read adds at most WRITER_THREAD_READ_CHUNK samples,
+        //     well inside the margin below the limit.
+        state.rotate_if_file_full();
 
         // 5. Periodic flush — writes valid WAV headers for crash recovery
         state.flush_writers(read);
