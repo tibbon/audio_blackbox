@@ -177,7 +177,7 @@ const SILENCE_CHECK_WAIT: Duration = Duration::from_secs(600);
 /// when it is unset. A config found through `BLACKBOX_CONFIG` or the search
 /// order is never shadowed by a new `./blackbox.toml`.
 fn load_config() -> Option<AppConfig> {
-    let requested = std::env::var_os("BLACKBOX_CONFIG").map(PathBuf::from);
+    let requested = requested_config_path();
     if AppConfig::find_config_file().is_none() {
         let path = requested.unwrap_or_else(|| PathBuf::from("blackbox.toml"));
         info!(
@@ -217,6 +217,18 @@ fn load_config() -> Option<AppConfig> {
     }
 
     Some(config)
+}
+
+/// The path `BLACKBOX_CONFIG` names, or `None` when it is unset or empty.
+///
+/// An empty value (`BLACKBOX_CONFIG=`, as a shell or service file leaves it)
+/// means unset, as it does in `AppConfig::find_config_file`. It used to be
+/// taken as a path: with no config file anywhere the CLI then failed to
+/// create a default at "", and otherwise warned that "" did not exist.
+fn requested_config_path() -> Option<PathBuf> {
+    std::env::var_os("BLACKBOX_CONFIG")
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Install the handler for Ctrl-C (SIGINT), SIGTERM and SIGHUP (ctrlc's
@@ -303,7 +315,7 @@ fn warn_on_high_usage(tracker: &PerformanceTracker) {
 
 #[cfg(test)]
 mod tests {
-    use super::{engine_failure, run_until_stopped};
+    use super::{engine_failure, requested_config_path, run_until_stopped};
     use blackbox::{AppConfig, AudioProcessor, BlackboxError, OutputMode};
     use std::sync::atomic::AtomicBool;
 
@@ -385,5 +397,19 @@ mod tests {
     fn run_until_stopped_is_clean_after_a_signal() {
         let running = AtomicBool::new(false);
         assert_eq!(run_until_stopped(&running, 0, || None), None);
+    }
+
+    /// An empty `BLACKBOX_CONFIG` is unset, not a path named "".
+    #[test]
+    fn empty_blackbox_config_is_unset() {
+        temp_env::with_var("BLACKBOX_CONFIG", Some(""), || {
+            assert_eq!(requested_config_path(), None);
+        });
+        temp_env::with_var("BLACKBOX_CONFIG", None::<&str>, || {
+            assert_eq!(requested_config_path(), None);
+        });
+        temp_env::with_var("BLACKBOX_CONFIG", Some("my.toml"), || {
+            assert_eq!(requested_config_path(), Some("my.toml".into()));
+        });
     }
 }
