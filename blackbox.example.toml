@@ -43,6 +43,8 @@ silence_gate_timeout_secs = 300
 min_disk_space_mb = 500
 
 # Input device name as the system reports it; unset = system default input.
+# The CLI refuses to start (non-zero exit, listing the devices it found) when
+# the named device isn't present, rather than recording the default input.
 # input_device = "MacBook Pro Microphone"
 
 debug = false

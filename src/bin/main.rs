@@ -133,13 +133,16 @@ fn main() -> ExitCode {
 fn start_recorder(config: &AppConfig) -> Option<AudioRecorder<CpalAudioProcessor>> {
     // `with_config`, not `new`: `new` loads the configuration again, which
     // logs twice and could read a file edited since startup.
-    let processor = match CpalAudioProcessor::with_config(config) {
+    let mut processor = match CpalAudioProcessor::with_config(config) {
         Ok(p) => p,
         Err(e) => {
             error!("Failed to create audio processor: {e}");
             return None;
         }
     };
+    // A configured input device that isn't there fails the run (non-zero
+    // exit) instead of silently recording the default input.
+    processor.set_require_input_device(true);
 
     let mut recorder = AudioRecorder::with_config(processor, config.clone());
 

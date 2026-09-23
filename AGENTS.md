@@ -64,7 +64,7 @@ Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compat
 | `recording_cadence` | `BLACKBOX_RECORDING_CADENCE` | `RECORDING_CADENCE` | Seconds between rotations. |
 | `output_dir` | `BLACKBOX_OUTPUT_DIR` | `OUTPUT_DIR` | Path; rejects `..` traversal. |
 | `performance_logging` | `BLACKBOX_PERFORMANCE_LOGGING` | `PERFORMANCE_LOGGING` | Needs `benchmarking` feature. |
-| `input_device` | `BLACKBOX_INPUT_DEVICE` | `INPUT_DEVICE` | cpal device name; unset = system default. |
+| `input_device` | `BLACKBOX_INPUT_DEVICE` | `INPUT_DEVICE` | cpal device name; unset = system default. The CLI exits non-zero if the named device isn't present; the app falls back to the default input. |
 | `min_disk_space_mb` | `BLACKBOX_MIN_DISK_SPACE_MB` | `MIN_DISK_SPACE_MB` | `0` disables the check. |
 | `bits_per_sample` | `BLACKBOX_BITS_PER_SAMPLE` | `BITS_PER_SAMPLE` | 16 / 24 / 32; others rejected. |
 | `silence_gate_enabled` | `BLACKBOX_SILENCE_GATE_ENABLED` | `SILENCE_GATE_ENABLED` | `true`/`false`. |

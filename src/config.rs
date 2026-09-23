@@ -458,7 +458,8 @@ silence_gate_enabled = {}
 # Default: {DEFAULT_SILENCE_GATE_TIMEOUT_SECS}
 silence_gate_timeout_secs = {}
 
-# Input device name (leave commented out for system default)
+# Input device name (leave commented out for system default). The CLI exits
+# with an error if the named device isn't present.
 # input_device = "MacBook Pro Microphone"
 "#,
             default_config.get_audio_channels(),

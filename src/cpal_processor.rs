@@ -58,6 +58,15 @@ impl ProcessorStatus {
     }
 }
 
+/// What recording start does when the configured input device isn't present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MissingDevice {
+    /// Warn and record the system default input (the app).
+    UseDefault,
+    /// Fail the start with an error naming the present devices (the CLI).
+    Fail,
+}
+
 /// `CpalAudioProcessor` handles recording from audio devices using the CPAL library,
 /// and saving the audio data to WAV files.
 ///
@@ -105,6 +114,10 @@ pub struct CpalAudioProcessor {
     writer_thread: Option<WriterThreadHandle>,
     /// Whether monitoring mode is active (levels without recording).
     monitoring: bool,
+    /// What to do when the configured `input_device` isn't present: fall
+    /// back to the default input (the app) or fail (the CLI; see
+    /// `set_require_input_device`).
+    missing_device: MissingDevice,
     /// Test-only: bypass ring buffer and writer thread, write directly.
     #[cfg(test)]
     direct_state: Option<WriterThreadState>,
@@ -265,6 +278,7 @@ impl CpalAudioProcessor {
             sample_rate_atomic: Arc::new(AtomicU32::new(0)),
             writer_thread: None,
             monitoring: false,
+            missing_device: MissingDevice::UseDefault,
             #[cfg(test)]
             direct_state: None,
         })
@@ -324,24 +338,59 @@ impl CpalAudioProcessor {
         }
     }
 
+    /// Make a configured `input_device` that isn't present an error instead
+    /// of falling back to the system default input.
+    ///
+    /// The CLI sets this: someone who named a device in a config file or
+    /// `BLACKBOX_INPUT_DEVICE` and gets the laptop microphone instead,
+    /// with exit status 0, has lost the take without knowing. The app leaves
+    /// it off: its device menu lists only present devices, and a device
+    /// that was unplugged since should still record from the default.
+    pub const fn set_require_input_device(&mut self, require: bool) {
+        self.missing_device = if require {
+            MissingDevice::Fail
+        } else {
+            MissingDevice::UseDefault
+        };
+    }
+
     /// Find an input device by name, or return the default input device.
+    ///
+    /// An empty name means the default, as in `get_device_channel_count`.
+    /// When `device_name` isn't found, `MissingDevice::Fail` makes that an
+    /// error naming the devices that are present; otherwise it falls back to
+    /// the default with a warning.
     fn find_input_device(
         host: &cpal::Host,
         device_name: Option<&str>,
+        missing: MissingDevice,
     ) -> Result<cpal::Device, BlackboxError> {
-        if let Some(name) = device_name {
+        if let Some(name) = device_name.filter(|n| !n.is_empty()) {
             let devices = host
                 .input_devices()
                 .map_err(|e| BlackboxError::AudioDeviceSource {
                     context: "Failed to enumerate input devices".to_owned(),
                     source: Box::new(e),
                 })?;
+            let mut present = Vec::new();
             for device in devices {
-                if let Ok(desc) = device.description()
-                    && desc.name() == name
-                {
+                let Ok(desc) = device.description() else {
+                    continue;
+                };
+                if desc.name() == name {
                     return Ok(device);
                 }
+                present.push(desc.name().to_owned());
+            }
+            if missing == MissingDevice::Fail {
+                return Err(BlackboxError::AudioDevice(format!(
+                    "Input device '{name}' not found; available input devices: {}",
+                    if present.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        present.join(", ")
+                    }
+                )));
             }
             warn!("Input device '{name}' not found, falling back to default");
         }
@@ -509,7 +558,11 @@ impl CpalAudioProcessor {
         self.sample_rate_changed.store(false, Ordering::Relaxed);
 
         let host = cpal::default_host();
-        let device = Self::find_input_device(&host, app_config.get_input_device().as_deref())?;
+        let device = Self::find_input_device(
+            &host,
+            app_config.get_input_device().as_deref(),
+            self.missing_device,
+        )?;
 
         info!(
             "Using audio device: {}",
@@ -1014,7 +1067,11 @@ impl AudioProcessor for CpalAudioProcessor {
         self.stream_error.store(false, Ordering::Relaxed);
 
         let host = cpal::default_host();
-        let device = Self::find_input_device(&host, config.get_input_device().as_deref())?;
+        let device = Self::find_input_device(
+            &host,
+            config.get_input_device().as_deref(),
+            self.missing_device,
+        )?;
         let stream_config = self.load_input_config(&device)?;
 
         let device_channels = stream_config.channels();
@@ -1219,6 +1276,7 @@ impl CpalAudioProcessor {
             sample_rate_atomic: Arc::new(AtomicU32::new(sample_rate)),
             writer_thread: None,
             monitoring: false,
+            missing_device: MissingDevice::UseDefault,
             direct_state: Some(state),
         })
     }

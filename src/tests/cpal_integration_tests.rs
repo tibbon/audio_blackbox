@@ -1029,3 +1029,33 @@ fn test_rate_change_before_listener_is_flagged() {
     assert!(flag_rate_change_since_probe(48_000, Some(44_100), &changed));
     assert!(changed.load(Ordering::Relaxed));
 }
+
+/// With `set_require_input_device` (the CLI), a configured input device that
+/// isn't present fails the start with an error naming it, instead of
+/// silently recording the default input (and the CLI exiting 0). Nothing is
+/// opened and no file is created.
+#[test]
+fn test_missing_required_input_device_fails_start() {
+    let temp_dir = tempdir().unwrap();
+    let dir = temp_dir.path().to_str().unwrap();
+    temp_env::with_vars(test_env_no_silence(), || {
+        let config = crate::AppConfig {
+            output_dir: Some(dir.to_owned()),
+            input_device: Some("No Such Input Device 7f3a".to_owned()),
+            ..crate::AppConfig::default()
+        };
+        let mut processor = CpalAudioProcessor::with_config(&config).unwrap();
+        processor.set_require_input_device(true);
+
+        let err = processor
+            .process_audio(&[0], OutputMode::Single, false, &config)
+            .expect_err("a missing required device must fail the start");
+        assert!(
+            err.to_string().contains("No Such Input Device 7f3a"),
+            "the error must name the device: {err}"
+        );
+        assert!(!processor.is_recording());
+        assert!(wav_files_in(temp_dir.path()).is_empty());
+        assert!(recording_wav_files_in(temp_dir.path()).is_empty());
+    });
+}
