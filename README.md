@@ -2,7 +2,7 @@
 
 **Always-on multichannel audio recording for macOS.** BlackBox sits in your menu bar and records every channel of your audio interface to WAV, like a flight recorder for your studio. Start it once and never lose a take again.
 
-[![Download on the Mac App Store](https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us)](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12)
+[![Download on the Mac App Store](https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us)](https://apps.apple.com/app/apple-store/id6759437659?pt=445919&ct=github&mt=8)
 
 <!-- TODO: hero screenshot of the menu bar dropdown with live meters -->
 
@@ -25,7 +25,7 @@
 - Automatic restart when the device's stream fails or its sample rate changes
 - VoiceOver support
 
-Requires macOS 15 or later. $49.99 one-time, no subscription. Mac App Store: [BlackBox Audio Recorder](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12), or search "BlackBox Audio Recorder" in the Mac App Store. Support and privacy policy: [dollhousemediatech.com/blackbox](https://dollhousemediatech.com/blackbox/).
+Requires macOS 15 or later. $49.99 one-time, no subscription. Mac App Store: [BlackBox Audio Recorder](https://apps.apple.com/app/apple-store/id6759437659?pt=445919&ct=github&mt=8), or search "BlackBox Audio Recorder" in the Mac App Store. Support and privacy policy: [dollhousemediatech.com/blackbox](https://dollhousemediatech.com/blackbox/).
 
 ## Build from source
 
