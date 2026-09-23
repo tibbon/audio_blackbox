@@ -932,6 +932,12 @@ impl WriterThreadState {
     /// Publish peaks to the shared atomics (only active channels, not the full
     /// array).
     ///
+    /// Each slot keeps the maximum since the meter last read it (`raise`),
+    /// instead of this batch's peak: the UI polls at ~30 Hz while batches
+    /// arrive every few ms, so overwriting showed only the last batch before
+    /// each poll and missed clips and transients (a tiny second slice at a
+    /// ring wrap could even zero it). Readers reset with `take`.
+    ///
     /// `peak_levels.len() == ch_count` (both derived from the same channel list
     /// at construction), so the zip is exhaustive over the active channels
     /// with no bounds check per iteration.
@@ -942,7 +948,7 @@ impl WriterThreadState {
             .iter()
             .zip(self.peak_scratch[..ch_count].iter())
         {
-            peak_slot.value.store(peak.to_bits(), Ordering::Relaxed);
+            peak_slot.raise(peak);
         }
     }
 

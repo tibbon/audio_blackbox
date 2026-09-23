@@ -881,14 +881,14 @@ impl AudioProcessor for CpalAudioProcessor {
     fn peak_levels(&self) -> Vec<f32> {
         self.peak_levels
             .iter()
-            .map(|a| f32::from_bits(a.value.load(Ordering::Relaxed)))
+            .map(CacheAlignedPeak::take)
             .collect()
     }
 
     fn fill_peak_levels(&self, buf: &mut [f32]) -> usize {
         let count = self.peak_levels.len().min(buf.len());
         for (dst, src) in buf[..count].iter_mut().zip(self.peak_levels.iter()) {
-            *dst = f32::from_bits(src.value.load(Ordering::Relaxed));
+            *dst = src.take();
         }
         count
     }

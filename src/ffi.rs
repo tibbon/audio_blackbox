@@ -803,7 +803,9 @@ pub extern "C" fn blackbox_free_string(s: *mut c_char) {
 /// * `BLACKBOX_ERR_LOCK_POISONED` — internal lock was poisoned by a prior panic.
 ///
 /// Designed for meter UIs polled at display rate: no JSON serialization, no
-/// string allocation, just atomic reads into the buffer.
+/// string allocation, just atomic reads into the buffer. Each value is the
+/// channel's peak since the previous call, and the call resets it, so there
+/// should be one poller.
 #[unsafe(no_mangle)]
 pub extern "C" fn blackbox_get_peak_levels(
     handle: *const BlackboxHandle,
@@ -835,8 +837,11 @@ pub extern "C" fn blackbox_get_peak_levels(
     let peaks = Arc::clone(&guard);
     drop(guard);
     let count = peaks.len().min(buf.len());
+    // Read-and-reset: the writer keeps each slot at the maximum since the
+    // last read, so every poll reports the loudest moment since the one
+    // before it.
     for (dst, src) in buf[..count].iter_mut().zip(peaks.iter()) {
-        *dst = f32::from_bits(src.value.load(Ordering::Relaxed));
+        *dst = src.take();
     }
     // count <= buf.len() (a C-supplied i32 capacity), so this never saturates
     // in practice; try_from keeps it sound without an unchecked wrapping cast.

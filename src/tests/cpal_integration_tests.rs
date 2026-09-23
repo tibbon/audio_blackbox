@@ -953,3 +953,41 @@ fn test_peak_levels_silent() {
         );
     });
 }
+
+/// The meter polls at ~30 Hz while the writer publishes a peak every few ms.
+/// A read must report the loudest batch since the previous read, not just the
+/// latest one (which let clips and transients vanish between polls), and the
+/// read resets the level.
+#[test]
+fn test_peak_levels_hold_the_max_until_read() {
+    let temp_dir = tempdir().unwrap();
+    let dir = temp_dir.path().to_str().unwrap();
+
+    temp_env::with_vars(test_env_no_silence(), || {
+        let mut processor =
+            CpalAudioProcessor::new_for_test(dir, 44100, &[0], OutputMode::Single).unwrap();
+
+        // A transient, then quieter audio before the meter polls.
+        processor.feed_test_data(&[0.9; 64], 1);
+        processor.feed_test_data(&[0.1; 64], 1);
+        let first = processor.peak_levels();
+        assert!(
+            (first[0] - 0.9).abs() < 1e-6,
+            "the read must report the transient, got {}",
+            first[0]
+        );
+
+        // The read reset the level; the next one covers only newer audio.
+        processor.feed_test_data(&[0.2; 64], 1);
+        let second = processor.peak_levels();
+        assert!(
+            (second[0] - 0.2).abs() < 1e-6,
+            "after a read only newer audio counts, got {}",
+            second[0]
+        );
+        assert!(
+            processor.peak_levels()[0] < f32::EPSILON,
+            "nothing new since the last read"
+        );
+    });
+}

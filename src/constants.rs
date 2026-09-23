@@ -61,6 +61,25 @@ impl CacheAlignedPeak {
             value: std::sync::atomic::AtomicU32::new(val),
         }
     }
+
+    /// Raise the stored peak to `peak` if it is higher. The writer calls
+    /// this for every batch, so a reader sees the loudest batch since its
+    /// last [`take`](Self::take), not just the most recent one.
+    ///
+    /// Integer `fetch_max` on the bits orders non-negative floats correctly
+    /// (IEEE 754 bit patterns sort like the values for sign bit 0). Peaks are
+    /// `abs()` of finite samples, so never negative or NaN; a `-0.0` from a
+    /// caller would sort above everything, so it is normalised first.
+    pub(crate) fn raise(&self, peak: f32) {
+        let bits = if peak > 0.0 { peak.to_bits() } else { 0 };
+        self.value
+            .fetch_max(bits, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Read the peak accumulated since the last `take` and reset it to 0.
+    pub(crate) fn take(&self) -> f32 {
+        f32::from_bits(self.value.swap(0, std::sync::atomic::Ordering::Relaxed))
+    }
 }
 
 /// Output mode for recording.

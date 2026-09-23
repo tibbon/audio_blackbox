@@ -99,7 +99,9 @@ pub trait AudioProcessor {
         false
     }
 
-    /// Return per-channel peak levels (0.0..1.0) for metering.
+    /// Return per-channel peak levels (0.0..1.0) for metering: the maximum
+    /// since the previous read. Reading resets them, so a meter should be
+    /// the only reader.
     fn peak_levels(&self) -> Vec<f32> {
         Vec::new()
     }

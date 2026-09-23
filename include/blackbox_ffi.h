@@ -146,7 +146,8 @@ int32_t blackbox_set_config_json(BlackboxHandle *handle, const char *json);
  *   BLACKBOX_ERR_INVALID_HANDLE  — handle null or not a live handle
  *   BLACKBOX_ERR_INVALID_ARG     — out null or max_channels <= 0
  *   BLACKBOX_ERR_LOCK_POISONED   — internal lock poisoned
- * Lightweight zero-allocation read for meter UIs.
+ * Lightweight zero-allocation read for meter UIs. Each value is the
+ * channel's peak since the previous call; the call resets it.
  */
 int32_t blackbox_get_peak_levels(const BlackboxHandle *handle, float *out, int32_t max_channels);
 

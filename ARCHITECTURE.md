@@ -42,7 +42,7 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 `writer_thread::writer_thread_main` is spawned in `process_audio` and joined when `finalize()` is called. Responsibilities:
 
 - Drain the ring buffer, convert f32 to the configured bit depth, write WAV via `RawWavWriter` (a hand-rolled writer; we don't drag `hound` into the hot path).
-- Maintain per-channel peak levels in cache-aligned `AtomicU32` slots — read by the FFI 30 Hz meter poll.
+- Maintain per-channel peak levels in cache-aligned `AtomicU32` slots — each slot holds the maximum since the last read (`CacheAlignedPeak::raise`), and the FFI 30 Hz meter poll reads and resets it (`take`), so transients between polls are not lost.
 - Rotate files when the RT thread sets the `rotation_needed` flag (a Relaxed status flag — DOLL-391; the samples it implies are already synchronized through the rtrb ring, so no Acquire/Release pairing is needed). See `CpalAudioProcessor::process_audio_impl` (the store) and `writer_thread_main` (the `swap`).
 - Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. It can fill: rotation can be as short as 1 s, and `is_silent` decodes a silent file to the end, so checking a long silent file takes seconds to minutes.
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
