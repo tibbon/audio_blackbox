@@ -28,9 +28,13 @@ struct OnboardingView: View {
     // suggested ⌘⇧R only gets auto-registered once per onboarding run
     // — if the user clears it and navigates Back→Continue, we won't
     // silently re-register the default they just rejected.
+    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var shortcutLabel = String(localized: "None")
+    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var isRecordingShortcut: Bool = false
+    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var shortcutError: String?
+    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var didOfferDefaultShortcut = false
 
     // DOLL-344: the default lives inside the app's sandbox container so it's
