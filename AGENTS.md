@@ -54,7 +54,7 @@ Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compat
 
 | Field | `BLACKBOX_*` | Legacy alias | Notes |
 |-------|------------|-------------|-------|
-| (config file path) | `BLACKBOX_CONFIG` | — | Absolute or relative path to a `.toml`. Wins over the search order. |
+| (config file path) | `BLACKBOX_CONFIG` | — | Absolute or relative path to a `.toml`. Used ahead of the search order when that file exists. If it doesn't, the search order still applies (the CLI warns); only when no config is found at all does the CLI create its default at this path. Empty = unset. |
 | `audio_channels` | `BLACKBOX_AUDIO_CHANNELS` | `AUDIO_CHANNELS` | Comma + range form (`"0,2-4,7"`). 0-based. |
 | `debug` | `BLACKBOX_DEBUG` | `DEBUG` | `true`/`false`. |
 | `duration` | `BLACKBOX_DURATION` | `RECORD_DURATION` | Seconds; `0` = unlimited. |

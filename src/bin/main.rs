@@ -53,7 +53,8 @@ fn main() -> ExitCode {
     let shutdown = install_shutdown_handler();
 
     // Repair and rename takes a crash left under `.recording.wav` names.
-    // Nothing is recording into the directory yet, which recovery requires.
+    // Files another recorder still has open are locked, and recovery skips
+    // them.
     let output_dir = config.get_output_dir();
     match blackbox::recover_recordings(&output_dir) {
         Ok(0) => {}
