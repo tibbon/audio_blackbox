@@ -41,6 +41,7 @@ struct MenuStatusSection: View {
 
         if let error = recorder.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.titleAndIcon)
                 .foregroundStyle(Color(nsColor: .systemRed))
                 .font(.caption)
                 .accessibilityLabel("Error: \(error)")
@@ -78,10 +79,12 @@ struct MenuStatusSection: View {
             // DOLL-371: the default MenuBarExtra `.menu` style flattens
             // content to NSMenuItems and strips foreground colors, so the
             // orange tint alone wouldn't read as a warning. Use a Label
-            // with a warning glyph (which DOES render in `.menu`) so the
-            // severity survives without relying on color. The other warning
-            // rows below already pair a glyph with their text.
+            // with a warning glyph so the severity survives without relying
+            // on color. macOS 27 hides menu-item icons unless the label asks
+            // for them, hence `.labelStyle(.titleAndIcon)` on every warning
+            // row here.
             Label("\(recorder.writeErrorsCount) samples dropped", systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.titleAndIcon)
                 .font(.caption)
                 .foregroundStyle(Color(nsColor: .systemOrange))
                 .accessibilityLabel("Warning: \(recorder.writeErrorsCount) samples dropped during this recording")
@@ -96,6 +99,7 @@ struct MenuStatusSection: View {
                 "Battery low — plug in to avoid an unexpected stop",
                 systemImage: "battery.25percent"
             )
+            .labelStyle(.titleAndIcon)
             .font(.caption)
             .foregroundStyle(Color(nsColor: .systemOrange))
             .accessibilityLabel("Warning: battery low, plug in to avoid an unexpected stop")
@@ -105,6 +109,7 @@ struct MenuStatusSection: View {
         // start; a notification also fires for menu-closed visibility.
         if let preflight = recorder.preflightSizeWarning {
             Label(preflight, systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.titleAndIcon)
                 .font(.caption)
                 .foregroundStyle(Color(nsColor: .systemOrange))
                 .lineLimit(3)
