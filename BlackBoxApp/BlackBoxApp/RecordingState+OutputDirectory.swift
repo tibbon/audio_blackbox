@@ -61,13 +61,7 @@ extension RecordingState {
     func saveOutputDirBookmark(for url: URL) {
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            let bookmarkData = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
-            UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
+            try storeOutputDirBookmark(for: url)
 
             // Release previous access if any
             securityScopedURL?.stopAccessingSecurityScopedResource()
@@ -81,6 +75,20 @@ extension RecordingState {
             errorMessage = err
             Self.log.error("\(err)")
         }
+    }
+
+    /// Persist a security-scoped bookmark for `url` without touching the
+    /// access currently held. Used alone to refresh a stale bookmark for the
+    /// URL we are already accessing: going through `saveOutputDirBookmark`
+    /// there would stop access on that very URL.
+    private func storeOutputDirBookmark(for url: URL) throws {
+        let bookmarkData = try url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
+        UserDefaults.standard.set(url.path, forKey: SettingsKeys.lastOutputDirPath)
     }
 
     /// Restore the security-scoped bookmark on launch.
@@ -121,8 +129,17 @@ extension RecordingState {
                 // DOLL-379: only refresh a stale bookmark when access actually
                 // succeeded — otherwise we'd persist a .withSecurityScope
                 // bookmark for a URL whose scope was never acquired.
+                // Rewrite only the stored bookmark data: saveOutputDirBookmark
+                // would stop access on securityScopedURL, which is this URL,
+                // leaving the engine without access for the rest of the launch.
                 if isStale {
-                    saveOutputDirBookmark(for: url)
+                    do {
+                        try storeOutputDirBookmark(for: url)
+                    } catch {
+                        // The resolved bookmark still works this launch; the next
+                        // launch retries the refresh.
+                        Self.log.warning("Failed to refresh stale bookmark: \(error.localizedDescription)")
+                    }
                 }
             } else {
                 // DOLL-379: access failed. Drop the unusable bookmark so it

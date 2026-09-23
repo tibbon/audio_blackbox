@@ -138,7 +138,7 @@ The user-picked output directory is persisted as a security-scoped bookmark in U
 3. **Hold during runtime**: the URL stays scoped until it is replaced or released.
 4. **Release**: `releaseOutputDirAccess()` runs on quit (from `applicationShouldTerminate`, after `stop()`) and when switching to the default folder.
 
-If the bookmark can't be resolved or access fails, the bookmark is dropped and the user is asked to pick again via `promptToReselectOutputDir` (DOLL-379). A bookmark that resolves but is marked stale is refreshed silently by calling `saveOutputDirBookmark(for:)` on the same URL. **Known bug:** that call stops access on the URL it was just granted, so the rest of that launch has no access to the folder. Nothing stops a recording from continuing into a folder whose access was just released by picking a new one.
+If the bookmark can't be resolved or access fails, the bookmark is dropped and the user is asked to pick again via `promptToReselectOutputDir` (DOLL-379). A bookmark that resolves but is marked stale is refreshed silently by rewriting only the stored bookmark data (`storeOutputDirBookmark(for:)`); it does not go through `saveOutputDirBookmark(for:)`, which would stop access on the URL it was just granted. **Known gap:** nothing stops a recording from continuing into a folder whose access was just released by picking a new one.
 
 ### Carbon hotkey lifecycle
 
