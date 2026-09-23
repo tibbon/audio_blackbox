@@ -1,7 +1,8 @@
 import AppKit
 
-/// Handles system-initiated termination (logout, restart, shutdown) by gracefully
-/// finalizing any active recording before allowing the app to quit.
+/// Handles system-initiated termination (logout, restart, shutdown) and quit
+/// requests from other apps by gracefully finalizing any active recording
+/// before allowing the app to quit.
 ///
 /// Also prevents SwiftUI from terminating the app when the last Window scene closes,
 /// which is a known issue with MenuBarExtra + Window combinations.
@@ -145,18 +146,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        shouldTerminate(currentAppleEvent: NSAppleEventManager.shared().currentAppleEvent)
+    }
+
+    /// `applicationShouldTerminate`, with the Apple event being handled (if
+    /// any) passed in so tests can supply one.
+    func shouldTerminate(currentAppleEvent: NSAppleEventDescriptor?) -> NSApplication.TerminateReply {
         // SwiftUI triggers NSApp.terminate() when the last Window scene closes.
-        // Block that — we're a menu bar app and should stay alive.
-        guard explicitQuit else {
+        // Block that — we're a menu bar app and should stay alive. A quit
+        // Apple event is not that: it is another process asking us to quit
+        // (Activity Monitor's Quit, an installer, `osascript -e 'quit app'`),
+        // and cancelling it left the app running with nothing telling the
+        // sender why.
+        guard explicitQuit || Self.isQuitAppleEvent(currentAppleEvent) else {
             NSApp.setActivationPolicy(.accessory)
             return .terminateCancel
         }
 
-        // Explicit quit (user or system) — finalize recordings gracefully.
+        // Explicit quit (user, system or another app) — finalize recordings
+        // gracefully. stop() is synchronous: the files are finalized before
+        // this returns, so terminating now loses nothing.
         if let recorder, recorder.isRecording {
             recorder.stop()
         }
         recorder?.releaseOutputDirAccess()
         return .terminateNow
+    }
+
+    /// Whether `event` is the core `quit` Apple event ('aevt'/'quit'), which
+    /// is how other processes, the Dock and logout ask an app to quit.
+    /// SwiftUI's last-window terminate calls `terminate(_:)` directly, outside
+    /// any Apple event, so it never matches.
+    nonisolated static func isQuitAppleEvent(_ event: NSAppleEventDescriptor?) -> Bool {
+        guard let event else { return false }
+        return event.eventClass == kCoreEventClass && event.eventID == kAEQuitApplication
     }
 }

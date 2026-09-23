@@ -386,6 +386,45 @@ nonisolated final class AppDelegateTests: XCTestCase {
         let reply = delegate.applicationShouldTerminate(NSApplication.shared)
         XCTAssertEqual(reply, .terminateNow)
     }
+
+    private func appleEvent(_ eventClass: AEEventClass, _ eventID: AEEventID) -> NSAppleEventDescriptor {
+        NSAppleEventDescriptor(
+            eventClass: eventClass,
+            eventID: eventID,
+            targetDescriptor: nil,
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+    }
+
+    /// A quit Apple event (Activity Monitor, an installer, osascript) is a
+    /// real request to quit: finalize the recording and terminate instead of
+    /// treating it as SwiftUI's last-window terminate and cancelling it.
+    @MainActor
+    func testQuitAppleEventFinalizesTheRecordingAndTerminates() {
+        let delegate = AppDelegate()
+        let recorder = RecordingState()
+        delegate.recorder = recorder
+        recorder.isRecording = true
+
+        let reply = delegate.shouldTerminate(currentAppleEvent: appleEvent(kCoreEventClass, kAEQuitApplication))
+
+        XCTAssertEqual(reply, .terminateNow)
+        XCTAssertFalse(recorder.isRecording)
+    }
+
+    /// Any other Apple event (or none, as for SwiftUI's own terminate call)
+    /// keeps the old behavior: stay alive as a menu-bar app.
+    @MainActor
+    func testOtherAppleEventsDoNotAllowTermination() {
+        let delegate = AppDelegate()
+        XCTAssertEqual(delegate.shouldTerminate(currentAppleEvent: nil), .terminateCancel)
+        XCTAssertEqual(
+            delegate.shouldTerminate(currentAppleEvent: appleEvent(kCoreEventClass, kAEOpenApplication)),
+            .terminateCancel
+        )
+        XCTAssertFalse(AppDelegate.isQuitAppleEvent(appleEvent(kCoreEventClass, kAEReopenApplication)))
+    }
 }
 
 // MARK: - Settings Keys Completeness Tests
