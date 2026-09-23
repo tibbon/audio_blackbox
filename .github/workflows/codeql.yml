@@ -78,8 +78,10 @@ jobs:
       - name: Cache Rust dependencies (Swift only)
         # Without this, every CodeQL Swift run rebuilds the Rust FFI
         # static lib from a cold target/ — that was most of the 21
-        # minutes the first failing run took. Cache key matches the
-        # `swift-app` job's so they share warm artifacts.
+        # minutes the first failing run took. The key is this job's own:
+        # the old `<os>-cargo-` restore prefix matched every rust.yml lane's
+        # key (other toolchains and feature sets), so this job restored
+        # whichever of them was newest rather than a release ffi build.
         if: matrix.language == 'swift'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -87,9 +89,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-codeql-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-codeql-cargo-ffi-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63  # v4

@@ -37,6 +37,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
 
+      # Own key and restore prefix: a bare `<os>-cargo-` prefix matched every
+      # rust.yml lane's cache, built with other feature sets and profiles.
       - name: Cache Rust dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -44,9 +46,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-ignored-tests-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-ignored-tests-cargo-
 
       # --test-threads=1 matches the per-PR `test` lane and avoids
       # contention between benchmarks that allocate / measure throughput.
