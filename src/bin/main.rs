@@ -50,7 +50,7 @@ fn main() -> ExitCode {
         tracker
     });
 
-    let running = install_shutdown_handler();
+    let shutdown = install_shutdown_handler();
 
     // Repair and rename takes a crash left under `.recording.wav` names.
     // Nothing is recording into the directory yet, which recovery requires.
@@ -77,7 +77,7 @@ fn main() -> ExitCode {
         info!("Recording for {duration_secs} seconds...");
     }
 
-    let loop_failure = run_until_stopped(&running, duration_secs, || {
+    let loop_failure = run_until_stopped(&shutdown.running, duration_secs, || {
         // Check system resources if performance monitoring is enabled
         #[cfg(feature = "benchmarking")]
         if let Some(tracker) = &perf_tracker {
@@ -106,11 +106,7 @@ fn main() -> ExitCode {
     // Stopping doesn't wait for silence checks (the app must not block its
     // main thread on them), so the CLI waits here: exiting now would keep
     // silent files that should have been deleted.
-    if !blackbox::wait_for_silence_checks(SILENCE_CHECK_WAIT) {
-        warn!(
-            "Silence checks still running after {SILENCE_CHECK_WAIT:?}; unchecked files are kept"
-        );
-    }
+    wait_for_silence_checks_at_exit(&shutdown.abandon_wait);
 
     // Stop performance tracking
     #[cfg(feature = "benchmarking")]
@@ -231,18 +227,30 @@ fn requested_config_path() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Flags the signal handler sets.
+struct ShutdownFlags {
+    /// Cleared by the first signal: stop and finalize the recording.
+    running: Arc<AtomicBool>,
+    /// Set by a second signal: stop waiting for silence checks and exit.
+    abandon_wait: Arc<AtomicBool>,
+}
+
 /// Install the handler for Ctrl-C (SIGINT), SIGTERM and SIGHUP (ctrlc's
-/// `termination` feature) and return the flag it clears, so each of them
-/// stops and finalizes the recording.
-fn install_shutdown_handler() -> Arc<AtomicBool> {
+/// `termination` feature). The first signal clears `running`, so the
+/// recording stops and is finalized; a second one sets `abandon_wait`, which
+/// cuts short the wait for silence checks at exit.
+fn install_shutdown_handler() -> ShutdownFlags {
     let running = Arc::new(AtomicBool::new(true));
+    let abandon_wait = Arc::new(AtomicBool::new(false));
     let r = Arc::clone(&running);
+    let a = Arc::clone(&abandon_wait);
     let s = Arc::new(AtomicBool::new(false));
     if let Err(e) = ::ctrlc::set_handler(move || {
         // Status flags only — single-bit signal, no synchronizes-with payload.
-        if !s.load(Ordering::Relaxed) {
+        if s.swap(true, Ordering::Relaxed) {
+            a.store(true, Ordering::Relaxed);
+        } else {
             info!("Shutting down...");
-            s.store(true, Ordering::Relaxed);
             r.store(false, Ordering::Relaxed);
         }
     }) {
@@ -252,7 +260,78 @@ fn install_shutdown_handler() -> Arc<AtomicBool> {
         // Ctrl-C shutdown is degraded (DOLL-115).
         warn!("Failed to install Ctrl-C handler ({e}); shutdown will rely on the duration timer.");
     }
-    running
+    ShutdownFlags {
+        running,
+        abandon_wait,
+    }
+}
+
+/// Wait for queued silence checks before exiting, up to
+/// `SILENCE_CHECK_WAIT`; a second signal (`abandon`) stops the wait. Logs
+/// when files are left unchecked.
+fn wait_for_silence_checks_at_exit(abandon: &AtomicBool) {
+    match wait_for_silence_checks_or_signal(
+        SILENCE_CHECK_WAIT,
+        abandon,
+        blackbox::wait_for_silence_checks,
+    ) {
+        SilenceWait::Done => {}
+        SilenceWait::TimedOut => warn!(
+            "Silence checks still running after {SILENCE_CHECK_WAIT:?}; unchecked files are kept"
+        ),
+        SilenceWait::Abandoned => warn!(
+            "Interrupted again: not waiting for the remaining silence checks; \
+             unchecked files are kept"
+        ),
+    }
+}
+
+/// How a wait for silence checks ended.
+#[derive(Debug, PartialEq, Eq)]
+enum SilenceWait {
+    /// Every queued check finished.
+    Done,
+    /// `SILENCE_CHECK_WAIT` ran out.
+    TimedOut,
+    /// A second signal asked to stop waiting.
+    Abandoned,
+}
+
+/// How often the exit wait looks for a second signal.
+const SILENCE_WAIT_SLICE: Duration = Duration::from_millis(250);
+
+/// Wait up to `limit` for queued silence checks with `wait` (which takes a
+/// timeout and returns whether they all finished), in slices of
+/// `SILENCE_WAIT_SLICE`, stopping early once `abandon` is set.
+///
+/// A single `wait_for_silence_checks(600 s)` used to hold the process for
+/// up to ten minutes with no way out short of `kill -9`: the handler ignores
+/// signals after the first.
+fn wait_for_silence_checks_or_signal(
+    limit: Duration,
+    abandon: &AtomicBool,
+    mut wait: impl FnMut(Duration) -> bool,
+) -> SilenceWait {
+    let mut waited = Duration::ZERO;
+    let mut hinted = false;
+    while waited < limit {
+        if abandon.load(Ordering::Relaxed) {
+            return SilenceWait::Abandoned;
+        }
+        let slice = SILENCE_WAIT_SLICE.min(limit.saturating_sub(waited));
+        if wait(slice) {
+            return SilenceWait::Done;
+        }
+        waited += slice;
+        if !hinted {
+            info!(
+                "Waiting for silence checks to finish; press Ctrl+C again to skip them \
+                 (unchecked files are kept)"
+            );
+            hinted = true;
+        }
+    }
+    SilenceWait::TimedOut
 }
 
 /// Why the engine can no longer record, if it can't: the flags the app's
@@ -315,9 +394,14 @@ fn warn_on_high_usage(tracker: &PerformanceTracker) {
 
 #[cfg(test)]
 mod tests {
-    use super::{engine_failure, requested_config_path, run_until_stopped};
+    use super::{
+        SilenceWait, engine_failure, requested_config_path, run_until_stopped,
+        wait_for_silence_checks_or_signal,
+    };
     use blackbox::{AppConfig, AudioProcessor, BlackboxError, OutputMode};
     use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     /// A processor that only reports status flags.
     #[derive(Default)]
@@ -397,6 +481,45 @@ mod tests {
     fn run_until_stopped_is_clean_after_a_signal() {
         let running = AtomicBool::new(false);
         assert_eq!(run_until_stopped(&running, 0, || None), None);
+    }
+
+    /// The exit wait for silence checks ends as soon as a second signal is
+    /// seen, instead of running out the whole limit.
+    #[test]
+    fn a_second_signal_stops_the_silence_check_wait() {
+        let abandon = AtomicBool::new(false);
+        let mut slices = 0;
+        let outcome = wait_for_silence_checks_or_signal(Duration::from_secs(600), &abandon, |_| {
+            slices += 1;
+            if slices == 3 {
+                abandon.store(true, Ordering::Relaxed);
+            }
+            false
+        });
+        assert_eq!(outcome, SilenceWait::Abandoned);
+        assert_eq!(slices, 3, "the wait stops at the next slice");
+    }
+
+    /// Without a second signal the wait ends when the checks finish, or
+    /// times out after the whole limit.
+    #[test]
+    fn the_silence_check_wait_finishes_or_times_out() {
+        let abandon = AtomicBool::new(false);
+        let mut calls = 0;
+        let done = wait_for_silence_checks_or_signal(Duration::from_secs(600), &abandon, |_| {
+            calls += 1;
+            calls == 2
+        });
+        assert_eq!(done, SilenceWait::Done);
+
+        let mut total = Duration::ZERO;
+        let timed_out =
+            wait_for_silence_checks_or_signal(Duration::from_millis(600), &abandon, |slice| {
+                total += slice;
+                false
+            });
+        assert_eq!(timed_out, SilenceWait::TimedOut);
+        assert_eq!(total, Duration::from_millis(600), "waits exactly the limit");
     }
 
     /// An empty `BLACKBOX_CONFIG` is unset, not a path named "".
