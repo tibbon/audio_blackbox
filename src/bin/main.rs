@@ -3,7 +3,7 @@
 //! Distinct from the `SwiftUI` app (which calls Rust via FFI). The CLI:
 //! 1. Loads `blackbox.toml` (creates a default if missing), applies
 //!    `BLACKBOX_*` env overrides on top.
-//! 2. Installs a Ctrl-C handler with a `shutdown_in_progress` debounce
+//! 2. Installs a Ctrl-C / SIGTERM / SIGHUP handler with a debounce
 //!    so double-tap doesn't fan out work.
 //! 3. Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`,
 //!    and runs until duration expires or Ctrl-C fires.
@@ -153,7 +153,9 @@ fn load_config() -> Option<AppConfig> {
     Some(config)
 }
 
-/// Install the Ctrl-C handler and return the flag it clears.
+/// Install the handler for Ctrl-C (SIGINT), SIGTERM and SIGHUP (ctrlc's
+/// `termination` feature) and return the flag it clears, so each of them
+/// stops and finalizes the recording.
 fn install_shutdown_handler() -> Arc<AtomicBool> {
     let running = Arc::new(AtomicBool::new(true));
     let r = Arc::clone(&running);
