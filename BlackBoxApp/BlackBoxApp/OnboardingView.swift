@@ -81,6 +81,11 @@ struct OnboardingView: View {
                 chosenURL = defaultDir
                 dirChangedByUser = true
             }
+            // Start the mode step from the saved choices on "Run Setup
+            // Again" (the recommendation only on the first run).
+            let mode = OnboardingSettings.initialRecordingMode(from: UserDefaults.standard)
+            continuousMode = mode.continuous
+            silenceGateEnabled = mode.silenceGate
             checkMicStatus()
         }
         .onChange(of: step) {
@@ -279,15 +284,7 @@ struct OnboardingView: View {
             recorder.switchOutputDir(to: nil)
         }
 
-        let defaults = UserDefaults.standard
-        defaults.set(true, forKey: SettingsKeys.continuousMode)
-        defaults.set(3600, forKey: SettingsKeys.recordingCadence)
-        defaults.set(true, forKey: SettingsKeys.silenceGateEnabled)
-        recorder.bridge.setConfig([
-            "continuous_mode": true,
-            "recording_cadence": 3600,
-            "silence_gate_enabled": true,
-        ])
+        recorder.bridge.setConfig(OnboardingSettings.applySkip(to: UserDefaults.standard))
 
         // Warn if mic permission hasn't been granted yet
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -316,18 +313,15 @@ struct OnboardingView: View {
             }
         }
 
-        // Save recording mode choice
-        let defaults = UserDefaults.standard
-        defaults.set(continuousMode, forKey: SettingsKeys.continuousMode)
-        if continuousMode {
-            defaults.set(3600, forKey: SettingsKeys.recordingCadence)
-        }
-        defaults.set(silenceGateEnabled, forKey: SettingsKeys.silenceGateEnabled)
-        recorder.bridge.setConfig([
-            "continuous_mode": continuousMode,
-            "recording_cadence": continuousMode ? 3600 : 300,
-            "silence_gate_enabled": silenceGateEnabled,
-        ])
+        // Save recording mode choice (keeping a rotation interval the user
+        // already chose).
+        recorder.bridge.setConfig(
+            OnboardingSettings.applyRecordingMode(
+                continuous: continuousMode,
+                silenceGate: silenceGateEnabled,
+                to: UserDefaults.standard
+            )
+        )
 
         hasCompletedOnboarding = true
         dismiss()

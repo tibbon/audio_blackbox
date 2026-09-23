@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */; };
 		03E4F2B1C3A66DD675F3BEFB /* SilenceDetectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */; };
+		09A9830DE02F1E761E06161D /* OnboardingSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */; };
 		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
 		0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924678D133EB74205F702B27 /* OutputSettingsTab.swift */; };
 		161E7DB85D3F18C624DCE363 /* StandardDefaultsTestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */; };
@@ -51,6 +52,7 @@
 		F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */; };
 		F7D01204EDBA1E8A7140ACE7 /* RecordingState+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1992609A38241E7F7388606F /* RecordingState+Session.swift */; };
 		F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */; };
+		FE8E6D1121D9DF973C4D8C9E /* OnboardingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ACBE5E9FE040504307BE08B /* OnboardingSettings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +71,7 @@
 		0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeTests.swift; sourceTree = "<group>"; };
 		1077ED94E970763AE3601179 /* SessionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPolicy.swift; sourceTree = "<group>"; };
 		1992609A38241E7F7388606F /* RecordingState+Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Session.swift"; sourceTree = "<group>"; };
+		26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSettingsTests.swift; sourceTree = "<group>"; };
 		3868EB3B5B085E587D3126F3 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
 		3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuInputDeviceSection.swift; sourceTree = "<group>"; };
@@ -82,6 +85,7 @@
 		7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardDefaultsTestCase.swift; sourceTree = "<group>"; };
 		7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+ShortcutStep.swift"; sourceTree = "<group>"; };
 		833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSelectionGrid.swift; sourceTree = "<group>"; };
+		8ACBE5E9FE040504307BE08B /* OnboardingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSettings.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8CCE2CDF0FF6C12C8D2F0664 /* EngineStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStatusPolicy.swift; sourceTree = "<group>"; };
 		924678D133EB74205F702B27 /* OutputSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputSettingsTab.swift; sourceTree = "<group>"; };
@@ -121,6 +125,7 @@
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
 				EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */,
 				B05557FAD356D8C445ADAA0E /* GlobalHotkeyManagerTests.swift */,
+				26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */,
 				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
 				C303713C77B1900DC615925B /* SessionPolicyTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
@@ -167,6 +172,7 @@
 				3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */,
 				F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */,
 				FCAA96D336F9106E336A98A7 /* MeterView.swift */,
+				8ACBE5E9FE040504307BE08B /* OnboardingSettings.swift */,
 				C515ABD54DB00D283F73A524 /* OnboardingView.swift */,
 				5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */,
 				7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */,
@@ -296,6 +302,7 @@
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
 				749B9C7A6A540CB18A5B7A06 /* EngineStatusPolicyTests.swift in Sources */,
 				CA6EF4FDEC7D13BFB6C6D47D /* GlobalHotkeyManagerTests.swift in Sources */,
+				09A9830DE02F1E761E06161D /* OnboardingSettingsTests.swift in Sources */,
 				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
 				A6DE84B5EABEF1DF0D426B9F /* SessionPolicyTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
@@ -320,6 +327,7 @@
 				00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */,
 				D1DC5F1FBC0B5827F827EF52 /* MenuStatusSection.swift in Sources */,
 				D083C88A345CEA567DF63EB9 /* MeterView.swift in Sources */,
+				FE8E6D1121D9DF973C4D8C9E /* OnboardingSettings.swift in Sources */,
 				DFD271895780ACAB4386AEE6 /* OnboardingView+DirectoryStep.swift in Sources */,
 				4600E03701AFEF6D356EECC2 /* OnboardingView+ShortcutStep.swift in Sources */,
 				B3254C14B4D86E7804D4F71F /* OnboardingView+Steps.swift in Sources */,
