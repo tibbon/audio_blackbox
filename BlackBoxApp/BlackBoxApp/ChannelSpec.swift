@@ -3,6 +3,40 @@ import Foundation
 // The channel-spec helpers below are `nonisolated`: pure string parsing with no
 // shared state, called from main-actor code and from nonisolated unit tests alike.
 
+/// Highest 1-based channel number the engine accepts (Rust `MAX_CHANNELS` is
+/// 255, and its 0-based channels run 0...254).
+nonisolated let maxChannelNumber = 255
+
+/// Parse a 1-based channel spec ("1-8, 16, 24-32") the way the engine will:
+/// the sorted, de-duplicated channel numbers, or an empty array (a valid spec
+/// always names at least one channel) when the spec would
+/// make `blackbox_start_recording` fail — an empty spec, an empty or
+/// malformed token ("1-", "a", "1,,2"), a reversed range, or a channel
+/// outside `1...maxChannelNumber`.
+nonisolated func parseChannelSpec(_ spec: String) -> [Int] {
+    var channels = Set<Int>()
+    for part in spec.split(separator: ",", omittingEmptySubsequences: false) {
+        let token = part.trimmingCharacters(in: .whitespaces)
+        let bounds = token.split(separator: "-", omittingEmptySubsequences: false)
+            .map { Int($0.trimmingCharacters(in: .whitespaces)) }
+        switch bounds.count {
+        case 1:
+            guard let channel = bounds[0], (1...maxChannelNumber).contains(channel) else { return [] }
+            channels.insert(channel)
+
+        case 2:
+            guard let start = bounds[0], let end = bounds[1],
+                start >= 1, start <= end, end <= maxChannelNumber
+            else { return [] }
+            channels.formUnion(start...end)
+
+        default:
+            return []
+        }
+    }
+    return channels.sorted()
+}
+
 /// Count the number of unique channels in a 1-based spec string (e.g. "1,3-5,8" → 5).
 nonisolated func countChannels(_ spec: String) -> Int {
     var channels = Set<Int>()

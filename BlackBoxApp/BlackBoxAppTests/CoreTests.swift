@@ -110,6 +110,20 @@ nonisolated final class ChannelSpecTests: XCTestCase {
         XCTAssertEqual(countChannels(" 1 , 3 - 5 , 8 "), 5)
     }
 
+    // MARK: - parseChannelSpec (strict, mirrors the engine's parser)
+
+    func testParseChannelSpecAcceptsListsAndRanges() {
+        XCTAssertEqual(parseChannelSpec("1"), [1])
+        XCTAssertEqual(parseChannelSpec(" 3 - 5 , 1, 4 "), [1, 3, 4, 5])
+        XCTAssertEqual(parseChannelSpec("255"), [255])
+    }
+
+    func testParseChannelSpecRejectsWhatTheEngineRejects() {
+        for spec in ["", " ", "1-", "-3", "1,,2", "1,", "a", "5-3", "0", "256", "1-256", "1-2-3"] {
+            XCTAssertEqual(parseChannelSpec(spec), [], "\"\(spec)\" must be rejected")
+        }
+    }
+
     // MARK: - isLegacyZeroBasedSpec
 
     func testZeroBasedSingleChannel() {

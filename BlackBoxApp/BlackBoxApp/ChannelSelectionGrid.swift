@@ -7,11 +7,17 @@ import SwiftUI
 struct ChannelSelectionGrid: View {
     let deviceChannelCount: Int
     @Binding var selectedChannels: Set<Int>
-    @Binding var channelSpec: String
+    /// The saved spec. The range field edits `specDraft`, not this, so a
+    /// half-typed "1-" is never saved (every start would fail on it).
+    let channelSpec: String
     /// Writes the checkbox state back to the channel spec (and the engine).
     let onSelectionChange: @MainActor () -> Void
-    /// Re-parses and clamps a typed channel spec.
-    let onCommitSpecText: @MainActor () -> Void
+    /// Validates and applies a typed channel spec, returning the spec now in
+    /// effect (the old one when the text was rejected).
+    let onCommitSpecText: @MainActor (String) -> String
+
+    @State private var specDraft = ""
+    @FocusState private var specFieldFocused: Bool
 
     // DOLL-221: row height scales with Dynamic Type so the grid stays
     // legible at larger text sizes (the old fixed 24pt cramped rows
@@ -69,11 +75,19 @@ struct ChannelSelectionGrid: View {
             Text("Range:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("e.g. 1-8, 16, 24-32", text: $channelSpec)
+            TextField("e.g. 1-8, 16, 24-32", text: $specDraft)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
                 .monospacedDigit()
-                .onSubmit { onCommitSpecText() }
+                .focused($specFieldFocused)
+                // Commit on Return or focus loss, like CustomCadenceField
+                // (DOLL-196), not per keystroke.
+                .onSubmit { commitSpecDraft() }
+                .onChange(of: specFieldFocused) { _, focused in
+                    if !focused { commitSpecDraft() }
+                }
+                .onAppear { specDraft = channelSpec }
+                .onChange(of: channelSpec) { _, spec in specDraft = spec }
                 .accessibilityLabel("Channel range")
                 .accessibilityHint(
                     "Enter channels as a comma-separated list with optional dash ranges, like 1-8, 16, 24-32"
@@ -101,6 +115,11 @@ struct ChannelSelectionGrid: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func commitSpecDraft() {
+        guard specDraft != channelSpec else { return }
+        specDraft = onCommitSpecText(specDraft)
     }
 
     private func channelToggle(_ ch: Int) -> some View {

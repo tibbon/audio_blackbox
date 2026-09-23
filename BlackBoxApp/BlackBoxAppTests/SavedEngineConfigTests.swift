@@ -44,6 +44,15 @@ nonisolated final class SavedEngineConfigTests: XCTestCase {
         XCTAssertEqual(config["audio_channels"] as? String, "0,2-3")
     }
 
+    /// A half-typed spec saved by the old per-keystroke binding made every
+    /// start fail; restore drops it so the engine falls back to channel 1.
+    func testInvalidSavedChannelSpecIsDiscarded() {
+        defaults.set("1-", forKey: SettingsKeys.audioChannels)
+        let config = SavedEngineConfig.restore(from: defaults)
+        XCTAssertNil(config["audio_channels"])
+        XCTAssertNil(defaults.string(forKey: SettingsKeys.audioChannels))
+    }
+
     func testLegacyZeroBasedSpecIsMigrated() {
         defaults.set("0,2", forKey: SettingsKeys.audioChannels)
         let config = SavedEngineConfig.restore(from: defaults)

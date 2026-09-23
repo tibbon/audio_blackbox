@@ -1,5 +1,7 @@
 import Foundation
 
+import struct os.Logger
+
 /// Builds the engine configuration from the settings saved in UserDefaults.
 /// `RecordingState` pushes the result to Rust once at launch, before
 /// auto-record can fire.
@@ -16,14 +18,21 @@ nonisolated enum SavedEngineConfig {
         if let device = defaults.string(forKey: SettingsKeys.inputDevice), !device.isEmpty {
             config["input_device"] = device
         }
-        if let channels = defaults.string(forKey: SettingsKeys.audioChannels) {
+        if var channels = defaults.string(forKey: SettingsKeys.audioChannels) {
             if isLegacyZeroBasedSpec(channels) {
                 // Migrate old 0-based spec to 1-based for UserDefaults
-                let migrated = channelSpecToOneBased(channels)
-                defaults.set(migrated, forKey: SettingsKeys.audioChannels)
-                config["audio_channels"] = channels  // Already 0-based, pass directly
-            } else {
+                channels = channelSpecToOneBased(channels)
+                defaults.set(channels, forKey: SettingsKeys.audioChannels)
+            }
+            if !parseChannelSpec(channels).isEmpty {
                 config["audio_channels"] = channelSpecToZeroBased(channels)
+            } else {
+                // A spec the engine would reject (e.g. a half-typed "1-" saved
+                // by an older build) makes every start fail with a config
+                // error. Drop it: the engine and Settings both fall back to
+                // channel 1.
+                RecordingState.log.warning("Discarding invalid saved channel spec \"\(channels, privacy: .public)\"")
+                defaults.removeObject(forKey: SettingsKeys.audioChannels)
             }
         }
         config["output_mode"] = defaults.string(forKey: SettingsKeys.outputMode) ?? "split"

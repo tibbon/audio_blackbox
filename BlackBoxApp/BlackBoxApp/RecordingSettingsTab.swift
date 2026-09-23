@@ -33,7 +33,7 @@ struct RecordingSettingsTab: View {
                     ChannelSelectionGrid(
                         deviceChannelCount: deviceChannelCount,
                         selectedChannels: $selectedChannels,
-                        channelSpec: $channelSpec,
+                        channelSpec: channelSpec,
                         onSelectionChange: syncChannelSpecFromCheckboxes,
                         onCommitSpecText: commitChannelSpecText
                     )
@@ -171,16 +171,17 @@ struct RecordingSettingsTab: View {
         }
     }
 
-    /// Commit a free-form channel-spec edit: re-parse, clamp to what the
-    /// device supports, and push the canonicalised string back to
-    /// @AppStorage so the grid + persisted spec stay in sync.
-    private func commitChannelSpecText() {
-        // Re-derive the canonical Set from whatever the user typed; this
-        // also drops out-of-range and malformed entries silently.
-        syncCheckboxesFromChannelSpec()
-        selectedChannels = selectedChannels.filter { $0 >= 1 && $0 <= deviceChannelCount }
-        if selectedChannels.isEmpty { selectedChannels = [1] }
+    /// Commit a free-form channel-spec edit: validate it, clamp to what the
+    /// device supports, and save the canonical string through the same path
+    /// as the checkboxes (which asks before restarting a live recording).
+    /// A malformed spec, or one naming none of the device's channels, is
+    /// rejected and the saved spec stays. Returns the spec now in effect.
+    private func commitChannelSpecText(_ text: String) -> String {
+        let onDevice = parseChannelSpec(text).filter { $0 <= deviceChannelCount }
+        guard !onDevice.isEmpty else { return channelSpec }
+        selectedChannels = Set(onDevice)
         syncChannelSpecFromCheckboxes()
+        return channelSpec
     }
 
     /// Parse the channel spec string into the checkbox state.
