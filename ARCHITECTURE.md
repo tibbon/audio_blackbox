@@ -46,6 +46,7 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 - Rotate files when the RT thread sets the `rotation_needed` flag (a Relaxed status flag — DOLL-391; the samples it implies are already synchronized through the rtrb ring, so no Acquire/Release pairing is needed). See `CpalAudioProcessor::process_audio_impl` (the store) and `writer_thread_main` (the `swap`).
 - Submit rotated files to the silence-check worker over a bounded `mpsc::sync_channel` (capacity 8). Back-pressures the writer thread if the silence checker can't keep up — acceptable trade-off for bounded memory. In practice unreachable under normal rotation cadence (rotation is ≥ 60 s; silence checks complete in milliseconds for normal-size files, so 8-deep buffering is ample).
 - Monitor disk space and flip `disk_space_low` when the configured `min_disk_space_mb` precondition fails.
+- Keep files crash-readable: `flush_writers` flushes and rewrites the WAV header every 10 s of audio (`sample_rate * 10` frames). A hard kill or power cut therefore loses up to about 10 s, and leaves the file under its `.recording.wav` temp name. This is the bound behind the README's "seconds of audio, not the whole session".
 
 ### Silence-check worker
 
