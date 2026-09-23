@@ -192,3 +192,27 @@ fn test_mixed_amplitude() {
     // Test that the file is not silent
     assert!(!is_silent(file_path.to_str().unwrap(), 0.01).unwrap());
 }
+
+/// A file whose header was never rewritten (a finalize that failed on a full
+/// disk leaves the placeholder "0 data bytes") reads as zero samples even
+/// though audio follows the header. That must not count as silent: the silence
+/// check would delete the take.
+#[test]
+fn test_placeholder_header_with_audio_is_kept() {
+    let temp_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join("placeholder.wav");
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 44100,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    create_test_wav_file(&file_path, &[0; 1000], spec).unwrap();
+    // Zero the RIFF and data sizes, as RawWavWriter::create writes them.
+    let mut bytes = fs::read(&file_path).unwrap();
+    bytes[4..8].fill(0);
+    bytes[40..44].fill(0);
+    fs::write(&file_path, &bytes).unwrap();
+
+    assert!(!is_silent(file_path.to_str().unwrap(), 0.1).unwrap());
+}

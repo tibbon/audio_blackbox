@@ -196,7 +196,9 @@ pub fn available_disk_space_mb(_path: &str) -> Option<u64> {
 /// Returns:
 /// - `Ok(true)` if both the peak and RMS checks consider the file silent.
 /// - `Ok(false)` if any sample peaks above threshold, the RMS exceeds
-///   threshold, or silence detection is disabled.
+///   threshold, or silence detection is disabled. Also `Ok(false)` when the
+///   header reports no samples but the file is longer than a header: the
+///   header was never rewritten, so the audio in it is unknown.
 /// - `Err` if reading or decoding the file failed.
 ///
 /// Doc/code drift fix: the previous doc described only the RMS path
@@ -242,7 +244,17 @@ pub(crate) fn is_silent(file_path: &str, threshold: f32) -> Result<bool, Blackbo
     }
 
     if count == 0 {
-        return Ok(true); // Empty file is silent
+        // Zero samples by the header. If the file holds bytes past the
+        // header, the header was never rewritten (a finalize that failed on
+        // a full disk leaves the placeholder "0 bytes"), so the audio is
+        // unknown: keep it. Only a file that really is just a header is
+        // silent.
+        let len = std::fs::metadata(file_path)?.len();
+        if len > crate::raw_wav_writer::HEADER_LEN {
+            log::warn!("{file_path} has {len} bytes but its header reports no samples; keeping it");
+            return Ok(false);
+        }
+        return Ok(true);
     }
 
     let rms = (sum_of_squares / crate::numeric::count_to_f64(count)).sqrt();

@@ -22,11 +22,19 @@ pub(crate) struct WavSpec {
 /// `to_le_bytes()` slice + `write_all` — no match, no range check.
 pub(crate) struct RawWavWriter {
     writer: BufWriter<File>,
+    /// Where the file was created, so callers can tell which file a failed
+    /// `finalize` belongs to.
+    path: String,
     /// Total PCM data bytes written so far.
     data_bytes_written: u64,
     /// Bytes per sample (2 for 16-bit, 3 for 24-bit, 4 for 32-bit).
     byte_width: u8,
+    /// Bytes per frame (`byte_width * channels`).
+    block_align: u16,
 }
+
+/// Size of the RIFF/WAVE header `create` writes; the data chunk starts here.
+pub(crate) const HEADER_LEN: u64 = 44;
 
 /// 64 KB write buffer — same as the constant in `writer_thread.rs`.
 const WAV_BUF_CAPACITY: usize = 65_536;
@@ -88,8 +96,10 @@ impl RawWavWriter {
 
         Ok(Self {
             writer,
+            path: path.to_owned(),
             data_bytes_written: 0,
             byte_width,
+            block_align,
         })
     }
 
@@ -106,9 +116,16 @@ impl RawWavWriter {
         let read_only = File::open(path).expect("reopen read-only");
         Self {
             writer: BufWriter::with_capacity(1, read_only),
+            path: path.to_owned(),
             data_bytes_written: 0,
             byte_width: 3,
+            block_align: 3,
         }
+    }
+
+    /// The path this writer was created at.
+    pub(crate) fn path(&self) -> &str {
+        &self.path
     }
 
     /// Write a single i32 sample as little-endian bytes.
@@ -138,8 +155,18 @@ impl RawWavWriter {
 
     /// Finalize the WAV file: update the header with final sizes.
     /// Consumes self, closing the file.
+    ///
+    /// If the final flush fails (typically a full disk), the header is still
+    /// rewritten to cover the whole frames that did reach the file, so the
+    /// audio already on disk stays readable instead of keeping the
+    /// placeholder "0 bytes of data" header. The flush error is returned.
     pub(crate) fn finalize(mut self) -> io::Result<()> {
-        self.writer.flush()?;
+        if let Err(flush_err) = self.writer.flush() {
+            if let Err(e) = self.salvage_header() {
+                log::error!("Could not rewrite the WAV header after a failed flush: {e}");
+            }
+            return Err(flush_err);
+        }
         // DOLL-372: RIFF requires each chunk's data be padded to an even byte
         // count. A 24-bit-mono recording with an odd sample count ends the data
         // chunk on an odd boundary; append a single 0x00 pad byte so strict
@@ -152,6 +179,23 @@ impl RawWavWriter {
         self.update_header(pad)?;
         self.writer.flush()?;
         Ok(())
+    }
+
+    /// Point the header at the audio that reached the file after a flush
+    /// failed. Writes through the `File` directly: the `BufWriter` would try
+    /// to flush its stranded buffer again first.
+    fn salvage_header(self) -> io::Result<()> {
+        let block_align = self.block_align;
+        let counted = self.data_bytes_written;
+        let (mut file, _unwritten) = self.writer.into_parts();
+        let on_disk = file.metadata()?.len().saturating_sub(HEADER_LEN);
+        let data_bytes = salvaged_data_len(on_disk, counted, block_align);
+        let (file_size, data_size) = header_sizes(data_bytes, false);
+        file.seek(SeekFrom::Start(4))?;
+        file.write_all(&file_size.to_le_bytes())?;
+        file.seek(SeekFrom::Start(40))?;
+        file.write_all(&data_size.to_le_bytes())?;
+        file.flush()
     }
 
     /// Seek back and write the correct RIFF and data chunk sizes. `pad` is true
@@ -173,13 +217,7 @@ impl RawWavWriter {
                 self.data_bytes_written
             );
         }
-        let data_size = u32::try_from(self.data_bytes_written).unwrap_or(u32::MAX);
-        // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
-        // in release and panic in debug. The header value can't represent more
-        // than u32::MAX anyway, so saturating is the most-honest answer.
-        // 36 = 44-byte header minus the 8-byte RIFF preamble; +1 more when a
-        // word-alignment pad byte trails the data chunk (DOLL-372).
-        let file_size = data_size.saturating_add(if pad { 37 } else { 36 });
+        let (file_size, data_size) = header_sizes(self.data_bytes_written, pad);
 
         let pos = self.writer.stream_position()?;
         self.writer.seek(SeekFrom::Start(4))?;
@@ -189,6 +227,26 @@ impl RawWavWriter {
         self.writer.seek(SeekFrom::Start(pos))?;
         Ok(())
     }
+}
+
+/// The RIFF and data-chunk size fields for `data_bytes` of audio.
+fn header_sizes(data_bytes: u64, pad: bool) -> (u32, u32) {
+    let data_size = u32::try_from(data_bytes).unwrap_or(u32::MAX);
+    // Saturating add: data_size = u32::MAX (a single 4 GiB+ WAV) would wrap
+    // in release and panic in debug. The header value can't represent more
+    // than u32::MAX anyway, so saturating is the most-honest answer.
+    // 36 = 44-byte header minus the 8-byte RIFF preamble; +1 more when a
+    // word-alignment pad byte trails the data chunk (DOLL-372).
+    let file_size = data_size.saturating_add(if pad { 37 } else { 36 });
+    (file_size, data_size)
+}
+
+/// How many data bytes a header rewritten after a failed flush can claim:
+/// no more than reached the file (`on_disk`) or were written (`counted`),
+/// rounded down to whole frames so a player never reads a torn frame.
+fn salvaged_data_len(on_disk: u64, counted: u64, block_align: u16) -> u64 {
+    let bytes = on_disk.min(counted);
+    bytes - bytes % u64::from(block_align.max(1))
 }
 
 #[cfg(test)]
@@ -350,6 +408,48 @@ mod tests {
         let (riff_size, data_size) = read_size_fields(&path);
         assert_eq!(data_size, 15, "data-chunk size is unpadded");
         assert_eq!(riff_size, 15 + 37, "RIFF size counts the pad byte");
+    }
+
+    /// After a failed flush the header may only claim whole frames that are
+    /// actually in the file.
+    #[test]
+    fn salvaged_length_is_whole_frames_on_disk() {
+        // Partial frame on disk: 6-byte stereo 24-bit frames, 20 bytes landed.
+        assert_eq!(salvaged_data_len(20, 60, 6), 18);
+        // More on disk than counted (e.g. a stale tail): trust the count.
+        assert_eq!(salvaged_data_len(100, 60, 6), 60);
+        assert_eq!(salvaged_data_len(0, 60, 6), 0);
+    }
+
+    /// `salvage_header` rewrites the placeholder sizes from what is on disk.
+    #[test]
+    fn salvage_header_covers_audio_on_disk() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("salvage.wav").to_str().unwrap().to_owned();
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+        };
+        let mut w = RawWavWriter::create(&path, spec).unwrap();
+        for i in 0..10 {
+            w.write_sample(i).unwrap();
+        }
+        // Push the samples to the file without touching the header, as if
+        // the disk filled up right before finalize.
+        w.writer.flush().unwrap();
+        // One more frame stays buffered: it never reaches the file.
+        w.write_sample(1).unwrap();
+        w.write_sample(2).unwrap();
+        assert_eq!(read_size_fields(&path), (0, 0), "placeholder header");
+
+        w.salvage_header().unwrap();
+
+        let (riff_size, data_size) = read_size_fields(&path);
+        assert_eq!(data_size, 20, "the 5 frames on disk, not the buffered one");
+        assert_eq!(riff_size, 20 + 36);
+        let reader = hound::WavReader::open(&path).expect("salvaged file must be valid");
+        assert_eq!(reader.len(), 10);
     }
 
     // An even-length data chunk must NOT get a pad byte.

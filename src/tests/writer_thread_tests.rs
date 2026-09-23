@@ -494,3 +494,58 @@ fn dither_perturbs_16bit_output_but_not_24bit() {
         );
     });
 }
+
+/// A file whose `finalize` failed is renamed (its audio is kept) but must not
+/// go to the silence check: its header may not describe what is on disk, and
+/// the check used to delete such a file as "silent". The failing writer here
+/// sits on a file holding a valid, silent WAV, so a silence check would
+/// certainly delete it.
+#[test]
+fn failed_finalize_is_kept_out_of_the_silence_check() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = WriterThreadState::new(
+            dir,
+            48_000,
+            &[0],
+            OutputMode::Single,
+            0.01, // silence detection on: the worker exists
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::from([CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .expect("construct writer state");
+        state.total_device_channels = 1;
+        let (tmp_path, final_path) = state.pending_files[0].clone();
+
+        state.writer = Some(RawWavWriter::new_failing_for_tests(&tmp_path));
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut silent = hound::WavWriter::create(&tmp_path, spec).unwrap();
+        for _ in 0..1_000 {
+            silent.write_sample(0_i16).unwrap();
+        }
+        silent.finalize().unwrap();
+
+        assert!(
+            state.finalize_all().is_err(),
+            "the failing writer's finalize must surface as an error"
+        );
+        drop(state); // joins the silence-check worker
+
+        assert!(
+            Path::new(&final_path).exists(),
+            "a file whose finalize failed must be kept, not silence-checked away"
+        );
+    });
+}

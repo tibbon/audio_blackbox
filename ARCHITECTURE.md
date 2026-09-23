@@ -68,11 +68,9 @@ This is how the product keeps its "don't lose a take" promise. All of it runs on
 
 1. **Open.** Each file is created as `<output_dir>/<YYYY-MM-DD-HH-MM-SS>[-chN].recording.wav` with a placeholder header. `-chN` appears only in split mode and is the 0-based device channel. `disambiguate_path` appends `-1`, `-2`, … when the *final* `.wav` name already exists, so a finished recording is never overwritten.
 2. **Write.** `RawWavWriter` buffers through a `BufWriter`. Every 10 s of audio (`flush_writers`, `sample_rate * 10` frames) it flushes and rewrites the RIFF and data sizes, so the file on disk is always a readable WAV up to the last refresh. A hard kill or power cut loses up to about 10 s and leaves the file under its `.recording.wav` name; nothing renames or recovers those files on the next launch.
-3. **Rotate or close.** Rotation (continuous mode), a silence-gate close, stop, and shutdown all call `finalize_all`. It finalizes every writer (flush, RIFF pad byte, header), then renames every pending `.recording.wav` to its `.wav` name. A failure on one file does not stop the others (DOLL-345); the first error is returned.
-4. **Silence check.** When `silence_threshold > 0`, renamed files go to the silence-check worker, which deletes any file whose peak and RMS stay below the threshold. `is_silent` treats a file with zero samples as silent.
+3. **Rotate or close.** Rotation (continuous mode), a silence-gate close, stop, and shutdown all go through `close_files`. It finalizes every writer (flush, RIFF pad byte, header), then renames every pending `.recording.wav` to its `.wav` name. A failure on one file does not stop the others (DOLL-345); the first error is returned. If the final flush fails (a full disk), `finalize` still rewrites the header to cover the whole frames that reached the file.
+4. **Silence check.** When `silence_threshold > 0`, renamed files go to the silence-check worker, which deletes any file whose peak and RMS stay below the threshold. A file whose `finalize` failed is renamed but never submitted: its header may not describe the audio on disk. `is_silent` also keeps a file whose header reports zero samples but which is longer than a header; only a header-only file counts as silent.
 5. **Limits.** WAV sizes are `u32`, so a file past 4 GiB keeps growing on disk while its header saturates at `u32::MAX` (DOLL-204). Nothing rotates on size; only the cadence and the gate end a file.
-
-Two consequences of steps 3 and 4 to keep in mind when changing this code: a file whose `finalize` failed (for example on a full disk) is still renamed and still submitted to the silence check, and if its header never got past the placeholder, the check sees zero samples and deletes it.
 
 ## Lock acquisition order (FFI)
 

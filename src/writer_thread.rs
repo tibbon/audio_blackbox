@@ -1102,15 +1102,16 @@ impl WriterThreadState {
         }
         info!("Rotating recording files...");
 
-        let final_files = self.close_period_files();
+        // Errors are logged inside; rotation carries on with the next period.
+        let (checkable, _) = self.close_files();
 
         // Hand the recently-rotated files to the dedicated silence-check
         // worker. The writer thread immediately resumes draining the ring
         // buffer during rotation; silence detection happens off-thread.
-        if !final_files.is_empty()
+        if !checkable.is_empty()
             && let Some(worker) = self.silence_worker.as_ref()
         {
-            worker.submit(final_files);
+            worker.submit(checkable);
         }
 
         // Create new files for the next recording period. Any creation
@@ -1124,42 +1125,57 @@ impl WriterThreadState {
         }
     }
 
-    /// Finalize the current period's writers and rename their temp files
-    /// into place. Returns the final paths that were renamed.
-    fn close_period_files(&mut self) -> Vec<String> {
-        // Take all pending (tmp → final) pairs from the previous period
-        let old_pending: Vec<(String, String)> = std::mem::take(&mut self.pending_files);
+    /// Finalize every writer and rename every pending `.recording.wav` to
+    /// its final name, attempting all of them even when one fails (DOLL-345).
+    ///
+    /// Returns the renamed files that may go to the silence check, and the
+    /// first error. A file whose `finalize` failed is still renamed (its audio
+    /// is kept under its final name) but is left out of the silence check:
+    /// its header may not describe the audio on disk, and a header still at
+    /// the placeholder reads as zero samples, which must never get a take
+    /// deleted as "silent".
+    fn close_files(&mut self) -> (Vec<String>, Option<BlackboxError>) {
+        let mut first_err: Option<BlackboxError> = None;
+        let mut unfinalized: Vec<String> = Vec::new();
 
-        // Finalize the main WAV file if it exists
-        if let Some(writer) = self.writer.take()
-            && let Err(e) = writer.finalize()
-        {
-            error!("Error finalizing WAV file during rotation: {e}");
-        }
-
-        // Finalize any multichannel writers
-        for writer_opt in &mut self.multichannel_writers {
-            if let Some(writer) = writer_opt.take()
-                && let Err(e) = writer.finalize()
-            {
-                error!("Error finalizing channel WAV file during rotation: {e}");
+        let writers = self.writer.take().into_iter().chain(
+            self.multichannel_writers
+                .iter_mut()
+                .filter_map(Option::take),
+        );
+        for writer in writers {
+            let path = writer.path().to_owned();
+            if let Err(e) = writer.finalize() {
+                let err = BlackboxError::Wav(format!("Error finalizing WAV file {path}: {e}"));
+                error!("{err}");
+                first_err.get_or_insert(err);
+                unfinalized.push(path);
             }
         }
 
-        // Rename tmp files to final paths
-        let mut final_files = Vec::new();
-        for (tmp_path, final_path) in old_pending {
+        // Rename all pending .recording.wav files to their final .wav paths —
+        // attempt every one; a single rename failure must not strand the rest.
+        let mut checkable = Vec::new();
+        for (tmp_path, final_path) in std::mem::take(&mut self.pending_files) {
             if !Path::new(&tmp_path).exists() {
                 continue;
             }
-            if let Err(e) = fs::rename(&tmp_path, &final_path) {
-                error!("Error renaming {tmp_path} to {final_path}: {e}");
-            } else {
-                info!("Finalized recording to {final_path}");
-                final_files.push(final_path);
+            match fs::rename(&tmp_path, &final_path) {
+                Ok(()) => {
+                    info!("Finalized recording to {final_path}");
+                    if unfinalized.contains(&tmp_path) {
+                        warn!("Keeping {final_path} without a silence check: its finalize failed");
+                    } else {
+                        checkable.push(final_path);
+                    }
+                }
+                Err(e) => {
+                    error!("Error renaming {tmp_path} to {final_path}: {e}");
+                    first_err.get_or_insert_with(|| BlackboxError::from(e));
+                }
             }
         }
-        final_files
+        (checkable, first_err)
     }
 
     /// Open the next period's files. Returns `false` if any could not be
@@ -1225,56 +1241,17 @@ impl WriterThreadState {
     /// surface a failure (the first error) so callers know something went
     /// wrong, but only after giving every file its best chance to land.
     pub(crate) fn finalize_all(&mut self) -> Result<(), BlackboxError> {
-        let mut first_err: Option<BlackboxError> = None;
-
-        // Finalize the main WAV file
-        if let Some(writer) = self.writer.take()
-            && let Err(e) = writer.finalize()
-        {
-            let err = BlackboxError::Wav(format!("Error finalizing WAV file: {e}"));
-            error!("{err}");
-            first_err.get_or_insert(err);
-        }
-
-        // Finalize any multichannel writers — attempt all even if one fails
-        for writer_opt in &mut self.multichannel_writers {
-            if let Some(writer) = writer_opt.take()
-                && let Err(e) = writer.finalize()
-            {
-                let err = BlackboxError::Wav(format!("Error finalizing channel WAV file: {e}"));
-                error!("{err}");
-                first_err.get_or_insert(err);
-            }
-        }
-
-        // Rename all pending .recording.wav files to their final .wav paths —
-        // attempt every one; a single rename failure must not strand the rest.
-        let pending = std::mem::take(&mut self.pending_files);
-        let mut final_files = Vec::new();
-        for (tmp_path, final_path) in &pending {
-            if Path::new(tmp_path).exists() {
-                match fs::rename(tmp_path, final_path) {
-                    Ok(()) => {
-                        info!("Finalized recording to {final_path}");
-                        final_files.push(final_path.clone());
-                    }
-                    Err(e) => {
-                        error!("Error renaming {tmp_path} to {final_path}: {e}");
-                        first_err.get_or_insert_with(|| BlackboxError::from(e));
-                    }
-                }
-            }
-        }
+        let (checkable, first_err) = self.close_files();
 
         // Hand finalized files to the silence-check worker. Drop of the
         // worker (when WriterThreadState is dropped) joins the worker
         // thread, so any in-flight check completes before the process
         // tears down — eliminating the race the prior detached spawn had
         // with file-system teardown on shutdown.
-        if !final_files.is_empty()
+        if !checkable.is_empty()
             && let Some(worker) = self.silence_worker.as_ref()
         {
-            worker.submit(final_files);
+            worker.submit(checkable);
         }
 
         first_err.map_or(Ok(()), Err)
