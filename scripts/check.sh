@@ -18,7 +18,7 @@
 #
 # Missing optional tools are reported and skipped, never silently ignored:
 #   brew install swiftlint            cargo install cargo-deny cargo-machete --locked
-#   rustup toolchain install 1.98.1   (MSRV check; must match rust-version in Cargo.toml)
+#   rustup toolchain install 1.98.1   (MSRV tests; must match rust-version in Cargo.toml)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -87,12 +87,12 @@ check_rust() {
   step "dependency hygiene: cargo machete (unused dependencies)"
   if have cargo-machete; then cargo machete; else skip "cargo-machete not installed"; fi
 
-  step "MSRV ${MSRV}: cargo check"
+  step "MSRV ${MSRV}: cargo test (the toolchain releases ship with)"
   # rust-version is "1.98"; the installed toolchain is named "1.98.<patch>-<host>".
   local msrv_toolchain
   msrv_toolchain="$(rustup toolchain list | awk -v m="$MSRV." 'index($1, m) == 1 { print $1; exit }')"
   if [[ -n "$msrv_toolchain" ]]; then
-    rustup run "$msrv_toolchain" cargo check --all-targets --no-default-features
+    rustup run "$msrv_toolchain" cargo test --no-default-features -- --test-threads=1
   else
     skip "toolchain $MSRV not installed (rustup toolchain install $MSRV.0)"
   fi

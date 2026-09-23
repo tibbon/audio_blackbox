@@ -92,8 +92,16 @@ jobs:
   # Cargo.toml claims `rust-version = "1.98"`. Without this job an
   # MSRV regression (someone adopting a 1.99-only feature) ships
   # silently because every other job uses `@stable`. Pin to the MSRV
-  # toolchain and `cargo check`. Bump the toolchain ref in lockstep
-  # with `Cargo.toml`'s `rust-version` field. (DOLL-150)
+  # toolchain. Bump the toolchain ref in lockstep with `Cargo.toml`'s
+  # `rust-version` field. (DOLL-150)
+  #
+  # release.yml builds the shipped CLI and the app's static library with
+  # this same pinned toolchain (same SHA), so this lane runs the test suite
+  # rather than `cargo check`: otherwise the compiler that ships is never
+  # tested, only the stable one the Test lane uses. `cargo test` builds every
+  # target `cargo check --all-targets` did (there are no bench or example
+  # targets) and runs the tests on the warm MSRV cache, for about the cost of
+  # the Test lane. Clippy stays on stable in the Clippy lane.
   msrv:
     name: MSRV (1.98)
     runs-on: macos-latest
@@ -112,12 +120,12 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-msrv-1.98-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-msrv-test-1.98-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-msrv-1.98-
+          ${{ runner.os }}-msrv-test-1.98-
 
-    - name: cargo check (MSRV)
-      run: cargo check --all-targets --no-default-features
+    - name: cargo test (MSRV)
+      run: cargo test --no-default-features -- --test-threads=1
 
   # ── Tests ──────────────────────────────────────────────────────────
   # macOS-only — the shipped product is Mac App Store; Ubuntu added cost
