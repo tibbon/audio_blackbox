@@ -85,6 +85,26 @@ final class GlobalHotkeyManager {
         return true
     }
 
+    /// Unregister the current hotkey while the user records a new one, so
+    /// pressing the current combination is captured instead of toggling
+    /// recording. Returns the shortcut to hand back to `endCapture`.
+    func beginCapture() -> Shortcut? {
+        let current = currentShortcut
+        unregister()
+        return current
+    }
+
+    /// End a capture started with `beginCapture`. When it registered nothing
+    /// (cancelled, a reserved combination, or a registration failure), the
+    /// shortcut from before the capture is registered again, provided it is
+    /// still the saved one.
+    func endCapture(restoring previous: Shortcut?) {
+        guard currentShortcut == nil, let previous, loadSaved() == previous else { return }
+        if !tryRegister(previous) {
+            Self.log.error("Could not restore the hotkey \(previous.displayString, privacy: .public) after a capture")
+        }
+    }
+
     /// Replace whatever is registered with `shortcut`. On failure, leaves no
     /// partial state behind (`currentShortcut` nil) so a later call starts clean.
     private func tryRegister(_ shortcut: Shortcut) -> Bool {

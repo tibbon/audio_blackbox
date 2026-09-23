@@ -73,6 +73,86 @@ nonisolated final class ShortcutRecorderTests: StandardDefaultsTestCase {
         XCTAssertFalse(state.isRecording)
         XCTAssertNil(coordinator.localMonitor)
     }
+
+    private static let hyper = UInt32(cmdKey | optionKey | controlKey | shiftKey)
+
+    /// Register and save `shortcut` as the working hotkey, or skip the test
+    /// if this machine won't allow it.
+    @MainActor
+    private func installWorkingHotkey(_ shortcut: GlobalHotkeyManager.Shortcut) throws {
+        let registered = GlobalHotkeyManager.shared.registerAndSave(shortcut)
+        try XCTSkipUnless(registered, "could not register \(shortcut.displayString) on this machine")
+    }
+
+    /// While capturing, the saved hotkey is not registered, so pressing it
+    /// is captured instead of toggling recording. Cancelling brings it back.
+    @MainActor
+    func testCaptureSuspendsTheHotkeyAndCancelRestoresIt() throws {
+        let manager = GlobalHotkeyManager.shared
+        let working = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F16), carbonModifiers: Self.hyper)
+        try installWorkingHotkey(working)
+        defer { manager.unregister() }
+        let coordinator = ShortcutRecorderButton.Coordinator(parent: Bindings().recorder())
+
+        coordinator.startRecording()
+        XCTAssertNil(manager.currentShortcut, "the hotkey must not fire while a new one is captured")
+
+        coordinator.stopRecording()
+        XCTAssertEqual(manager.currentShortcut, working)
+    }
+
+    /// A captured combination that can't be registered leaves the previous
+    /// hotkey working, as a failed rebind does outside a capture.
+    @MainActor
+    func testAFailedCaptureRestoresTheHotkey() throws {
+        let manager = GlobalHotkeyManager.shared
+        let working = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F17), carbonModifiers: Self.hyper)
+        let taken = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F18), carbonModifiers: Self.hyper)
+        var blocker: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            taken.keyCode,
+            taken.carbonModifiers,
+            EventHotKeyID(signature: OSType(0x5445_5354), id: 11),  // "TEST"
+            GetApplicationEventTarget(),
+            0,
+            &blocker
+        )
+        try XCTSkipUnless(status == noErr, "could not occupy the test combination (OSStatus \(status))")
+        defer {
+            if let blocker { UnregisterEventHotKey(blocker) }
+            manager.unregister()
+        }
+        try installWorkingHotkey(working)
+        let coordinator = ShortcutRecorderButton.Coordinator(parent: Bindings().recorder())
+
+        coordinator.startRecording()
+        // What the key handler does with the captured combination.
+        let saved = manager.registerAndSave(taken)
+        try XCTSkipIf(saved, "Carbon accepted a duplicate registration, so the failure can't be provoked here")
+        coordinator.stopRecording()
+
+        XCTAssertEqual(manager.currentShortcut, working)
+        XCTAssertEqual(manager.loadSaved(), working)
+    }
+
+    /// A successful capture keeps the new hotkey; the old one is not put back.
+    @MainActor
+    func testASuccessfulCaptureKeepsTheNewHotkey() throws {
+        let manager = GlobalHotkeyManager.shared
+        let working = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F19), carbonModifiers: Self.hyper)
+        let chosen = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F16), carbonModifiers: Self.hyper)
+        try installWorkingHotkey(working)
+        defer { manager.unregister() }
+        let coordinator = ShortcutRecorderButton.Coordinator(parent: Bindings().recorder())
+
+        coordinator.startRecording()
+        let saved = manager.registerAndSave(chosen)
+        try XCTSkipUnless(saved, "could not register \(chosen.displayString) on this machine")
+        coordinator.stopRecording()
+
+        XCTAssertEqual(manager.currentShortcut, chosen)
+        XCTAssertEqual(manager.loadSaved(), chosen)
+    }
 }
 
 /// Onboarding's shortcut step is opt-in: ⌘⇧R is the browsers' hard reload,

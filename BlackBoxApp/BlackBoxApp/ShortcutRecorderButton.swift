@@ -42,6 +42,9 @@ struct ShortcutRecorderButton: NSViewRepresentable {
     class Coordinator {
         let parent: ShortcutRecorderButton
         var localMonitor: Any?
+        /// The global hotkey unregistered for this capture, registered again
+        /// by `stopRecording` unless the capture registered a new one.
+        private var suspendedShortcut: GlobalHotkeyManager.Shortcut?
 
         init(parent: ShortcutRecorderButton) {
             self.parent = parent
@@ -50,15 +53,23 @@ struct ShortcutRecorderButton: NSViewRepresentable {
         func startRecording() {
             parent.isRecording = true
             parent.error = nil
+            // A registered hotkey consumes its key combination before this
+            // monitor sees it, so pressing the current shortcut toggled
+            // recording instead of being captured.
+            suspendedShortcut = GlobalHotkeyManager.shared.beginCapture()
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 self?.handleKeyEvent(event)
                 return nil  // Consume the event
             }
         }
 
+        /// End the capture: on Escape, a second click, a rejected or failed
+        /// combination, a successful one, and teardown.
         func stopRecording() {
             parent.isRecording = false
             removeMonitor()
+            GlobalHotkeyManager.shared.endCapture(restoring: suspendedShortcut)
+            suspendedShortcut = nil
         }
 
         /// Uninstall the key monitor if one is active. Part of the teardown
