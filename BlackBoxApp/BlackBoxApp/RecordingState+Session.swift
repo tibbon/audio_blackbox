@@ -396,7 +396,7 @@ extension RecordingState {
     /// (`computeRotationCountdown`, `computeCurrentFileSize`,
     /// `evaluatePreflightFileSizeWarning`) read this snapshot rather
     /// than hitting UserDefaults 5-7 times every second.
-    private func captureConfigSnapshot() -> RecordingConfigSnapshot {
+    func captureConfigSnapshot() -> RecordingConfigSnapshot {
         let defaults = UserDefaults.standard
         let bitDepthValue = defaults.integer(forKey: SettingsKeys.bitDepth)
         return RecordingConfigSnapshot(
@@ -404,7 +404,12 @@ extension RecordingState {
             recordingCadence: defaults.integer(forKey: SettingsKeys.recordingCadence),
             channelCount: countChannels(defaults.string(forKey: SettingsKeys.audioChannels) ?? "1"),
             bitDepth: bitDepthValue > 0 ? bitDepthValue : 24,
-            outputMode: defaults.string(forKey: SettingsKeys.outputMode) ?? "split"
+            outputMode: defaults.string(forKey: SettingsKeys.outputMode) ?? "split",
+            deviceName: resolvedInputDeviceName(
+                selected: defaults.string(forKey: SettingsKeys.inputDevice) ?? "",
+                available: availableDevices,
+                systemDefault: systemDefaultDeviceName
+            )
         )
     }
 

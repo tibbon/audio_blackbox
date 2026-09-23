@@ -232,6 +232,12 @@ final class RecordingState {
         var channelCount: Int
         var bitDepth: Int
         var outputMode: String
+        /// The input device the session opened, resolved when it started:
+        /// the chosen device if connected, otherwise the system default the
+        /// engine falls back to. The menu names this rather than resolving
+        /// the live device list, which changes under a running session.
+        /// nil when neither was known.
+        var deviceName: String?
     }
     var configSnapshot: RecordingConfigSnapshot?
 

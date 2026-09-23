@@ -185,7 +185,8 @@ nonisolated final class SessionPolicyTests: StandardDefaultsTestCase {
             recordingCadence: 7200,
             channelCount: 8,
             bitDepth: 24,
-            outputMode: "single"
+            outputMode: "single",
+            deviceName: nil
         )
 
         recorder.evaluatePreflightFileSizeWarning(isRestart: false)
@@ -208,7 +209,8 @@ nonisolated final class SessionPolicyTests: StandardDefaultsTestCase {
             recordingCadence: 7200,
             channelCount: 8,
             bitDepth: 24,
-            outputMode: "single"
+            outputMode: "single",
+            deviceName: nil
         )
         recorder.evaluatePreflightFileSizeWarning(isRestart: false)
 

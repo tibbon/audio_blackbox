@@ -271,6 +271,13 @@ extension RecordingState {
         if bridge.startRecording().isSuccess {
             // Restarted successfully (e.g., System Default fell back to built-in mic)
             recordingStartTime = Date()
+            // The session is on a different device now; name that one.
+            refreshDevices()
+            configSnapshot?.deviceName = resolvedInputDeviceName(
+                selected: UserDefaults.standard.string(forKey: SettingsKeys.inputDevice) ?? "",
+                available: availableDevices,
+                systemDefault: systemDefaultDeviceName
+            )
             statusText = String(localized: "Recording")
             startTimer()
             refreshMeterChannelNumbers()

@@ -4,8 +4,6 @@ import SwiftUI
 /// details and warnings, the post-Stop summary, and the current error.
 struct MenuStatusSection: View {
     var recorder: RecordingState
-    @AppStorage(SettingsKeys.inputDevice) private var selectedDevice: String = ""
-    @AppStorage(SettingsKeys.audioChannels) private var channelSpec: String = "1"
 
     var body: some View {
         // Menu-flicker fix v2: the live elapsed-time `Text(_, style: .timer)`
@@ -53,15 +51,13 @@ struct MenuStatusSection: View {
         // show the resolved system default name (e.g. "MacBook Pro
         // Microphone") instead of the literal "System Default" so the
         // user knows what's actually recording.
-        // A chosen device that is no longer connected is not what's
-        // recording: the engine fell back to the system default.
-        let device =
-            resolvedInputDeviceName(
-                selected: selectedDevice,
-                available: recorder.availableDevices,
-                systemDefault: recorder.systemDefaultDeviceName
-            ) ?? String(localized: "System Default")
-        Text("\(device) \u{00B7} \(channelCountLabel(countChannels(channelSpec)))")
+        // Both come from the snapshot taken when the session started: the
+        // live device list and settings change under a running session
+        // (a device plugged in, the default input switched), and the menu
+        // then named a device the session never opened.
+        let snapshot = recorder.configSnapshot
+        let device = snapshot?.deviceName ?? String(localized: "System Default")
+        Text("\(device) \u{00B7} \(channelCountLabel(snapshot?.channelCount ?? 0))")
             .font(.caption)
             .foregroundStyle(.secondary)
 
