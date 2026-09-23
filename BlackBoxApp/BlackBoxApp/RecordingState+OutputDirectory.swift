@@ -193,6 +193,15 @@ extension RecordingState {
         guard !isRecording, let dir = bridge.getConfig()?["output_dir"] as? String, dir.hasPrefix("/") else {
             return
         }
+        // Hold our own access to the folder while Rust works in it. Switching
+        // folders or quitting releases the session's access
+        // (releaseOutputDirAccess, saveOutputDirBookmark), and neither waits
+        // for this Task, so the recovery could lose the folder mid-rewrite.
+        // Access is counted, so this extra claim outlives that release.
+        let scopedFolder = securityScopedURL
+        // swiftlint:disable:next security_scoped_balance - balanced by the defer on the next line
+        let holdsScope = scopedFolder?.startAccessingSecurityScopedResource() ?? false
+        defer { if holdsScope { scopedFolder?.stopAccessingSecurityScopedResource() } }
         // Rewrites headers and renames files, so keep it off the main actor.
         let code = await Task { @concurrent in RustBridge.recoverRecordings(in: dir) }.value
         if code > 0 {
