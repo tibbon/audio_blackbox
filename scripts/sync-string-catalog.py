@@ -5,12 +5,20 @@ Xcode's IDE updates the String Catalog on every build, but `xcodebuild` does
 not write back to the catalog — so a CLI-only workflow (this repo's) leaves it
 empty/stale. This script replicates the IDE's sync deterministically:
 
-  1. Build with extraction enabled so the compiler emits .stringsdata:
+  1. Build with extraction enabled so the compiler emits .stringsdata, into
+     this checkout's own DerivedData:
        xcodebuild build -project BlackBoxApp/BlackBoxApp.xcodeproj \
          -scheme BlackBoxApp -destination platform=macOS \
+         -derivedDataPath target/DerivedData \
          SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-"
-  2. Run this script, pointing at the DerivedData (or any) root containing
-     the emitted *.stringsdata files.
+  2. Run this script. It reads *.stringsdata under target/DerivedData
+     (--stringsdata-root to point elsewhere).
+
+The root must hold only this checkout's build. Xcode's shared
+~/Library/Developer/Xcode/DerivedData has one BlackBoxApp-* folder per
+worktree or clone, so reading it merged every checkout's strings: another
+branch's keys were added here, and keys this branch deleted never went away.
+scripts/check.sh and the CI Swift lane both build into target/DerivedData.
 
 Merge semantics (mirrors Xcode):
   - keys extracted from source but absent from the catalog are ADDED
@@ -25,8 +33,8 @@ only for recompiled files: a partial extraction looks like "these strings
 were removed" and pruning would silently drop live keys (this bit us on
 DOLL-460 — CI's restored DerivedData cache makes partial extractions the
 norm). Only pass --prune after a guaranteed-full extraction, e.g.:
-    touch BlackBoxApp/BlackBoxApp/*.swift   # force re-emission
-    xcodebuild test ... SWIFT_EMIT_LOC_STRINGS=YES ...
+    rm -rf target/DerivedData               # force full re-emission
+    xcodebuild test ... -derivedDataPath target/DerivedData SWIFT_EMIT_LOC_STRINGS=YES ...
     python3 scripts/sync-string-catalog.py --prune
 
 Output is byte-deterministic (sorted keys, fixed formatting), so CI can run
@@ -43,9 +51,8 @@ import sys
 from pathlib import Path
 
 DEFAULT_CATALOG = Path("BlackBoxApp/BlackBoxApp/Localizable.xcstrings")
-DEFAULT_ROOT = (
-    Path.home() / "Library/Developer/Xcode/DerivedData"
-)
+# This checkout's own DerivedData, not Xcode's shared one (see the docstring).
+DEFAULT_ROOT = Path("target/DerivedData")
 
 
 def extracted_keys(root: Path) -> dict[str, str]:
@@ -56,8 +63,8 @@ def extracted_keys(root: Path) -> dict[str, str]:
         sys.exit(f"error: no .stringsdata files under {root} — "
                  "build with SWIFT_EMIT_LOC_STRINGS=YES first")
     for f in files:
-        # Only the app's own build products; ignore unrelated projects when
-        # pointed at the whole DerivedData directory.
+        # Only the app project's build products, in case --stringsdata-root
+        # points at a directory that also holds other projects.
         if "BlackBoxApp" not in str(f):
             continue
         raw = f.read_bytes()

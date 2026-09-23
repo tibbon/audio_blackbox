@@ -363,10 +363,12 @@ jobs:
     - name: Cache Rust dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
+        # target/DerivedData has its own cache below; keep it out of this one.
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
+          !target/DerivedData
         key: ${{ runner.os }}-cargo-ffi-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-ffi-
@@ -377,13 +379,17 @@ jobs:
     # restore for incremental rebuilds. (NOT applied to the CodeQL Swift job:
     # CodeQL traces every swiftc invocation, and a fully-cached build would
     # skip compilation and starve the extractor.)
+    # Every xcodebuild here uses -derivedDataPath target/DerivedData, as
+    # scripts/check.sh does, so the String Catalog sync reads only this
+    # checkout's build. The key prefix changed with the path so a cache of
+    # the old ~/Library location is never restored into it.
     - name: Cache Xcode DerivedData
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
       with:
-        path: ~/Library/Developer/Xcode/DerivedData
-        key: ${{ runner.os }}-xcode27-deriveddata-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
+        path: target/DerivedData
+        key: ${{ runner.os }}-xcode27-dd-target-${{ hashFiles('BlackBoxApp/**/*.swift', 'BlackBoxApp/BlackBoxApp.xcodeproj/project.pbxproj') }}
         restore-keys: |
-          ${{ runner.os }}-xcode27-deriveddata-
+          ${{ runner.os }}-xcode27-dd-target-
 
     # DOLL-190: hand-maintained include/blackbox_ffi.h drift check.
     # Runs *before* the Rust build so a header mismatch fails fast
@@ -404,7 +410,7 @@ jobs:
       run: |
         set -euo pipefail
         mkdir -p target
-        xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" 2>&1 \
+        xcodebuild test -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -destination 'platform=macOS' -derivedDataPath target/DerivedData SWIFT_EMIT_LOC_STRINGS=YES CODE_SIGN_IDENTITY="-" 2>&1 \
           | tee target/xcodebuild.log \
           | grep -E 'error:|warning:|Test Suite|Test Case.*(passed|failed)|Executed|\*\* ' || true
         grep -q '\*\* TEST SUCCEEDED \*\*' target/xcodebuild.log
@@ -418,12 +424,12 @@ jobs:
     # .stringsdata the test build just emitted and fail on any diff.
     - name: Check String Catalog is in sync
       run: |
-        python3 scripts/sync-string-catalog.py
+        python3 scripts/sync-string-catalog.py --stringsdata-root target/DerivedData
         git diff --exit-code BlackBoxApp/BlackBoxApp/Localizable.xcstrings || {
           echo "::error::Localizable.xcstrings is out of sync — run scripts/sync-string-catalog.py after a SWIFT_EMIT_LOC_STRINGS=YES build and commit the result."
           exit 1
         }
 
     - name: Build SwiftUI app
-      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
+      run: xcodebuild -project BlackBoxApp/BlackBoxApp.xcodeproj -scheme BlackBoxApp -configuration Release -derivedDataPath target/DerivedData DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" CODE_SIGN_IDENTITY="-" build
 

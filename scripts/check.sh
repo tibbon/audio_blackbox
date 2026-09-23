@@ -29,6 +29,9 @@ XCODE_SCHEME="${XCODE_SCHEME:-BlackBoxApp}"
 SWIFT_DIRS=(BlackBoxApp/BlackBoxApp BlackBoxApp/BlackBoxAppTests)
 MSRV="$(sed -nE 's/^rust-version = "([0-9.]+)"/\1/p' Cargo.toml)"
 BUILD_LOG="target/xcodebuild.log"
+# This checkout's own DerivedData. Xcode's shared default holds one folder per
+# worktree, and the String Catalog sync must read only this checkout's strings.
+DERIVED_DATA="target/DerivedData"
 
 section="${1:-default}"
 missing=()
@@ -49,7 +52,7 @@ pretty(){ if have xcbeautify; then xcbeautify --quiet; else grep -E 'error|warni
 
 xcb() {
   xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
-    -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" "$@"
+    -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA" CODE_SIGN_IDENTITY="-" "$@"
 }
 
 # ---------------------------------------------------------------- Rust
@@ -138,7 +141,7 @@ check_swift() {
   # Both generators below are compared before/after, not against the git index,
   # so uncommitted-but-correct changes on a branch don't trip them.
   step "String Catalog in sync with the sources (DOLL-449)"
-  if changed_by python3 scripts/sync-string-catalog.py -- BlackBoxApp/BlackBoxApp/Localizable.xcstrings; then
+  if changed_by python3 scripts/sync-string-catalog.py --stringsdata-root "$DERIVED_DATA" -- BlackBoxApp/BlackBoxApp/Localizable.xcstrings; then
     echo "Localizable.xcstrings was out of sync; it has been updated — commit it."
     exit 1
   fi
