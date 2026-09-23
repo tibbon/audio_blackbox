@@ -119,12 +119,13 @@ impl AudioProcessor for MockAudioProcessor {
             // Create an empty WAV file for each channel
             for &channel in channels {
                 let base_path = Path::new(&self.file_name);
+                let suffix = crate::writer_thread::split_channel_suffix(channel);
                 let file_name = base_path.file_stem().and_then(|s| s.to_str()).map_or_else(
-                    || format!("{}-ch{channel}", self.file_name),
+                    || format!("{}{suffix}", self.file_name),
                     |stem| {
                         base_path.extension().and_then(|s| s.to_str()).map_or_else(
-                            || format!("{stem}-ch{channel}"),
-                            |ext| format!("{stem}-ch{channel}.{ext}"),
+                            || format!("{stem}{suffix}"),
+                            |ext| format!("{stem}{suffix}.{ext}"),
                         )
                     },
                 );

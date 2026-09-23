@@ -313,6 +313,15 @@ fn prepare_output_dir(
     Ok(())
 }
 
+/// File-name suffix for one channel's file in split mode: `-ch1` for device
+/// channel 0. The engine stores channels 0-based, but the app shows them from
+/// 1, so the file names count from 1 to match what the user picked. The
+/// number is the device channel, not the position in the selection: channels
+/// "2,4" in the app (engine `audio_channels = "1,3"`) write `-ch2` and `-ch4`.
+pub(crate) fn split_channel_suffix(device_channel: usize) -> String {
+    format!("-ch{}", device_channel.saturating_add(1))
+}
+
 /// Pack up to `MAX_CHANNELS` channel indices into the inline array the hot
 /// path reads, returning the array and how many entries are set.
 ///
@@ -546,7 +555,8 @@ impl WriterThreadState {
         self.multichannel_writers.resize_with(ch_count, || None);
 
         for idx in 0..ch_count {
-            let final_path = self.period_path(&date_str, &format!("-ch{}", self.channels[idx]));
+            let suffix = split_channel_suffix(usize::from(self.channels[idx]));
+            let final_path = self.period_path(&date_str, &suffix);
             let writer =
                 self.open_pending_writer(final_path, self.mono_spec(), "channel WAV file")?;
             self.multichannel_writers[idx] = Some(writer);
@@ -1283,8 +1293,8 @@ impl WriterThreadState {
             OutputMode::Split => {
                 let mut all_created = true;
                 for idx in 0..ch_count {
-                    let final_path =
-                        self.period_path(&date_str, &format!("-ch{}", self.channels[idx]));
+                    let suffix = split_channel_suffix(usize::from(self.channels[idx]));
+                    let final_path = self.period_path(&date_str, &suffix);
                     match self.open_pending_writer(final_path, self.mono_spec(), "channel WAV file")
                     {
                         Ok(w) => self.multichannel_writers[idx] = Some(w),

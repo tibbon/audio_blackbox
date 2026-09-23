@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the menu's remaining strings are localizable.
 - The CLI warns about unknown keys in `blackbox.toml`, and rejects a zero
   silence-gate timeout or a rotation cadence long enough to overflow.
+- Split-mode files number channels from 1 to match the app: the first input
+  channel's file is `...-ch1.wav` (was `...-ch0.wav`). The number is still
+  the device channel, so recording channels 2 and 4 writes `-ch2` and `-ch4`.
+  CLI `audio_channels` stays 0-based. Existing files are not renamed.
 
 ### Added
 - Crash recovery: recordings a crash or power cut left as `.recording.wav`

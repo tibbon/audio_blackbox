@@ -194,6 +194,15 @@ fn test_split_mode_channel_isolation() {
 
         assert_eq!(files.len(), 2);
 
+        // File names count device channels from 1, like the app: device
+        // channels 0 and 2 are `-ch1` and `-ch3`, not positions 1 and 2.
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect();
+        assert!(names[0].ends_with("-ch1.wav"), "got {names:?}");
+        assert!(names[1].ends_with("-ch3.wav"), "got {names:?}");
+
         let (_, samples_ch0) = read_wav(&files[0]);
         let (_, samples_ch2) = read_wav(&files[1]);
 
@@ -507,7 +516,8 @@ fn test_split_mode_silence_per_channel() {
         crate::test_utils::drain_silence_checks();
 
         let files = wav_files_in(temp_dir.path());
-        // ch0 is silent and should be deleted, ch1 should remain
+        // Device channel 0 (file -ch1) is silent and should be deleted;
+        // device channel 1 (file -ch2) should remain.
         assert_eq!(
             files.len(),
             1,
@@ -515,8 +525,8 @@ fn test_split_mode_silence_per_channel() {
         );
         let name = files[0].to_str().unwrap();
         assert!(
-            name.contains("-ch1"),
-            "Remaining file should be ch1, got: {name}"
+            name.ends_with("-ch2.wav"),
+            "Remaining file should be -ch2, got: {name}"
         );
     });
 }
@@ -541,12 +551,15 @@ fn test_channel_beyond_device_range() {
         processor.feed_test_data(&data, 2);
         processor.finalize().unwrap();
 
-        // We get 2 split files (ch0 and ch5), but ch5 has no samples written
-        // since frames only have 2 channels. The ch5 file may exist but be empty/silent.
+        // We get 2 split files (device channels 0 and 5, named -ch1 and
+        // -ch6), but channel 5 has no samples written since frames only have
+        // 2 channels. Its file may exist but be empty/silent.
         let files = wav_files_in(temp_dir.path());
-        // ch0 should have data
-        let ch0_file = files.iter().find(|f| f.to_str().unwrap().contains("-ch0"));
-        assert!(ch0_file.is_some(), "ch0 file should exist");
+        // Device channel 0 should have data
+        let ch0_file = files
+            .iter()
+            .find(|f| f.to_str().unwrap().ends_with("-ch1.wav"));
+        assert!(ch0_file.is_some(), "-ch1 file should exist");
         let (_, samples) = read_wav(ch0_file.unwrap());
         assert_eq!(samples.len(), 200);
     });

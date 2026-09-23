@@ -582,8 +582,9 @@ fn test_gate_open_failure_latches_write_failed() {
         state.set_timestamp_fn(clock.as_timestamp_fn());
         let write_failed = Arc::clone(&state.write_failed);
 
-        // A directory where channel 1's temp file would go makes its create fail.
-        std::fs::create_dir_all(temp_dir.path().join("tick-000-ch1.recording.wav")).unwrap();
+        // A directory where the second channel's temp file would go makes its
+        // create fail. File names count from 1, so device channel 1 is -ch2.
+        std::fs::create_dir_all(temp_dir.path().join("tick-000-ch2.recording.wav")).unwrap();
 
         state.write_samples(&vec![0.5_f32; 4_800]);
         assert!(state.gate_pending_open);
