@@ -35,7 +35,7 @@ The RT thread never blocks on I/O, locks, or allocations. The writer thread does
 - **Push samples** into the `rtrb` SPSC ring buffer. The buffer is sized for `RING_BUFFER_SECONDS = 5` (`src/constants.rs`) of audio at the device's rate × channel count, providing runway for stalls in the writer.
 - **Atomic loads / stores** with Relaxed or Release ordering. No allocator calls, no mutex acquisition, no syscalls.
 
-A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `src/tests/alloc_tests.rs` (no top-level `tests/` directory; all tests live under `src/tests/` to share `pub(crate)` access) asserts that the writer's steady-state `write_samples` path and the cpal callback's `push_samples_with_overflow_count` (with and without ring-buffer overflow) allocate nothing. They take about a second in a debug build and run in every `cargo test`; they rely on `--test-threads=1`, because the counter is process-wide.
+A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the system allocator with `AtomicU64::fetch_add`, and `src/tests/alloc_tests.rs` (no top-level `tests/` directory; all tests live under `src/tests/` to share `pub(crate)` access) asserts that the writer's steady-state `write_samples` path and the cpal callback's `push_samples_with_overflow_count` (with and without ring-buffer overflow; one `slots` load, one `push_partial_slice` of whole frames, and an atomic add) allocate nothing. They take about a second in a debug build and run in every `cargo test`; they rely on `--test-threads=1`, because the counter is process-wide.
 
 ### Writer thread
 

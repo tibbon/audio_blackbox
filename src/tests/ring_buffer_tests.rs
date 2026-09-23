@@ -80,6 +80,7 @@ fn test_ring_buffer_overflow_counted() {
         crate::cpal_processor::push_samples_with_overflow_count(
             &mut producer,
             &overflow_data,
+            1,
             &write_errors,
         );
 
@@ -514,6 +515,7 @@ impl Flooder {
                 crate::cpal_processor::push_samples_with_overflow_count(
                     &mut producer,
                     &chunk,
+                    1,
                     &write_errors,
                 );
                 std::thread::yield_now();

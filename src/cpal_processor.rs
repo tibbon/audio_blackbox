@@ -112,16 +112,38 @@ pub struct CpalAudioProcessor {
 /// suffix in `write_errors`. Used by the cpal audio callback (real-time)
 /// and by tests that need to verify the overflow-counting contract — both
 /// call this single helper so the test can't drift from production.
+///
+/// Only whole frames of `frame_size` interleaved samples are accepted. The
+/// writer frees slots in reads of up to `WRITER_THREAD_READ_CHUNK` samples,
+/// which need not be a multiple of the channel count, so on overflow the
+/// free space can end mid-frame. Pushing that partial frame and dropping the
+/// rest used to shift every later sample by the missing channels: split files
+/// got another channel's audio for the rest of the session, and the writer's
+/// `frame_remainder` carried the shift across rotations. Rounding the accepted
+/// length down to a frame boundary keeps the stream aligned; the whole
+/// rejected tail (including the partial frame) is counted.
+///
+/// RT-safe: one atomic load (`slots`), one memcpy, and at most one atomic add.
 pub(crate) fn push_samples_with_overflow_count(
     producer: &mut rtrb::Producer<f32>,
     data: &[f32],
+    frame_size: usize,
     write_errors: &AtomicU64,
 ) {
-    // push_partial_slice uses memcpy internally for Copy types and handles
-    // partial writes when the buffer is nearly full.
-    let (_, remainder) = producer.push_partial_slice(data);
-    if !remainder.is_empty() {
-        write_errors.fetch_add(remainder.len() as u64, Ordering::Relaxed);
+    let slots = producer.slots();
+    let accepted = if data.len() <= slots {
+        data.len()
+    } else {
+        slots - slots % frame_size.max(1)
+    };
+    // push_partial_slice uses memcpy internally for Copy types. `accepted`
+    // fits by construction (this is the only producer), so `unpushed` is
+    // empty; it is still counted rather than assumed.
+    let (head, _) = data.split_at(accepted);
+    let (_, unpushed) = producer.push_partial_slice(head);
+    let rejected = data.len() - accepted + unpushed.len();
+    if rejected > 0 {
+        write_errors.fetch_add(rejected as u64, Ordering::Relaxed);
     }
 }
 
@@ -509,6 +531,7 @@ impl CpalAudioProcessor {
             pipeline.rotation_needed,
             self.continuous_mode,
             rotation_threshold_samples(sample_rate, total_channels, self.recording_cadence),
+            total_channels,
         );
         let stream = start_f32_input_stream(&device, config, callback, err_fn)?;
         self.stream = Some(Box::new(stream));
@@ -644,6 +667,7 @@ fn recording_callback(
     rotation_needed: Arc<AtomicBool>,
     continuous_mode: bool,
     rotation_threshold: u64,
+    frame_size: usize,
 ) -> impl FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static {
     // Sample counter for rotation (avoids Instant::now() syscall in RT callback)
     let mut rotation_sample_counter: u64 = 0;
@@ -671,7 +695,7 @@ fn recording_callback(
             rotation_needed.store(true, Ordering::Relaxed);
         }
 
-        push_samples_with_overflow_count(&mut producer, data, &write_errors);
+        push_samples_with_overflow_count(&mut producer, data, frame_size, &write_errors);
     }
 }
 
@@ -927,7 +951,7 @@ impl AudioProcessor for CpalAudioProcessor {
             // (same as the recording callback) so the monitoring
             // producer can't drift from the overflow-counting
             // contract covered by push_samples_counts_rejected_suffix.
-            push_samples_with_overflow_count(&mut producer, data, &write_errors);
+            push_samples_with_overflow_count(&mut producer, data, total_channels, &write_errors);
         };
         let stream = start_f32_input_stream(&device, stream_config, callback, err_fn)?;
 
@@ -1238,7 +1262,7 @@ mod push_samples_tests {
 
         // Push fewer than capacity → no overflow.
         let small = vec![0.0_f32; 8];
-        push_samples_with_overflow_count(&mut producer, &small, &write_errors);
+        push_samples_with_overflow_count(&mut producer, &small, 1, &write_errors);
         assert_eq!(
             write_errors.load(Ordering::Relaxed),
             0,
@@ -1247,7 +1271,7 @@ mod push_samples_tests {
 
         // Push exactly the remaining capacity → fits, still no overflow.
         let fill = vec![0.0_f32; 8];
-        push_samples_with_overflow_count(&mut producer, &fill, &write_errors);
+        push_samples_with_overflow_count(&mut producer, &fill, 1, &write_errors);
         assert_eq!(
             write_errors.load(Ordering::Relaxed),
             0,
@@ -1258,7 +1282,7 @@ mod push_samples_tests {
         // entire batch is rejected. The counter must reflect the full
         // remainder length.
         let overflow = vec![0.0_f32; 100];
-        push_samples_with_overflow_count(&mut producer, &overflow, &write_errors);
+        push_samples_with_overflow_count(&mut producer, &overflow, 1, &write_errors);
         assert_eq!(
             write_errors.load(Ordering::Relaxed),
             100,
@@ -1270,11 +1294,47 @@ mod push_samples_tests {
             chunk.commit_all();
         }
         let asymmetric = vec![0.0_f32; 10];
-        push_samples_with_overflow_count(&mut producer, &asymmetric, &write_errors);
+        push_samples_with_overflow_count(&mut producer, &asymmetric, 1, &write_errors);
         assert_eq!(
             write_errors.load(Ordering::Relaxed),
             106,
             "expected 100 + 6 rejected samples after asymmetric push"
         );
+    }
+
+    /// On overflow only whole frames are pushed. With 5 free slots and a
+    /// 2-channel stream, 4 samples (2 frames) go in and the partial frame is
+    /// counted with the rest of the rejected tail. Pushing the 5th sample
+    /// (the old behavior) would leave half a frame in the ring and shift
+    /// every later sample onto the wrong channel.
+    #[test]
+    fn overflow_push_keeps_frames_aligned() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(16);
+        let write_errors = AtomicU64::new(0);
+
+        // Fill 11 of 16 slots, leaving 5 free (an odd count).
+        push_samples_with_overflow_count(&mut producer, &[0.0_f32; 11], 1, &write_errors);
+        assert_eq!(producer.slots(), 5);
+
+        // Stereo batch of 4 frames: L = 1.0, R = -1.0.
+        let batch: Vec<f32> = [1.0_f32, -1.0].repeat(4);
+        push_samples_with_overflow_count(&mut producer, &batch, 2, &write_errors);
+        assert_eq!(
+            write_errors.load(Ordering::Relaxed),
+            4,
+            "2 whole frames fit; the partial frame and the last frame are rejected"
+        );
+        assert_eq!(producer.slots(), 1, "exactly 2 frames were pushed");
+
+        // Drop the filler, then check that the ring ends on a frame boundary.
+        consumer.read_chunk(11).unwrap().commit_all();
+        let pushed: Vec<f32> = std::iter::from_fn(|| consumer.pop().ok()).collect();
+        assert_eq!(pushed.len(), 4);
+        for &[left, right] in pushed.as_chunks::<2>().0 {
+            assert!(
+                left > 0.0 && right < 0.0,
+                "frame must stay L/R: [{left}, {right}]"
+            );
+        }
     }
 }
