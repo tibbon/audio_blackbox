@@ -48,6 +48,14 @@ struct BlackBoxApp: App {
                     bringOnboardingForward()
                 }
 
+                // A recording can be live here (e.g. started with the
+                // shortcut registered during setup); never hide its Stop.
+                if recorder.isRecording {
+                    Button("Stop Recording") {
+                        recorder.stop()
+                    }
+                }
+
                 Divider()
 
                 Button("Quit BlackBox") {

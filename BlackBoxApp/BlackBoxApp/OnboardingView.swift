@@ -272,7 +272,12 @@ struct OnboardingView: View {
     private func skipOnboarding() {
         // DOLL-344: the default is the in-container directory — no
         // security-scoped bookmark, and useDefaultOutputDir creates it.
-        recorder.switchOutputDir(to: nil)
+        // A stored bookmark means the user already picked a folder (this is
+        // "Run Setup Again"); Skip keeps it rather than silently moving
+        // their recordings back to the default.
+        if UserDefaults.standard.data(forKey: SettingsKeys.outputDirBookmark) == nil {
+            recorder.switchOutputDir(to: nil)
+        }
 
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: SettingsKeys.continuousMode)

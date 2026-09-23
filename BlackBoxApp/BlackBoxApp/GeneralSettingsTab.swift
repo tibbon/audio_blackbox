@@ -157,9 +157,20 @@ struct GeneralSettingsTab: View {
                 openWindow(id: "onboarding")
             }
             .accessibilityHint("Re-run the initial setup wizard")
-            Text("Re-run the setup wizard to change your output directory or recording mode.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // While setup is incomplete the menu bar menu shows only the
+            // setup items, which would hide the Stop control of a live
+            // recording; and setup changes the folder and mode that
+            // recording is using.
+            .disabled(recorder.isRecording)
+            Group {
+                if recorder.isRecording {
+                    Text("Stop recording to run the setup wizard again.")
+                } else {
+                    Text("Re-run the setup wizard to change your output directory or recording mode.")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             Button("Reset All Settings\u{2026}") {
                 confirmResetAllSettings()
