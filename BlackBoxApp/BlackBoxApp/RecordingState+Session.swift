@@ -84,12 +84,6 @@ extension RecordingState {
         // hitting UserDefaults 5-7 times per second.
         configSnapshot = captureConfigSnapshot()
 
-        // DOLL-220: warn before we kick off the engine if the math says
-        // the per-file size will blow past the 4 GiB WAV-header cap. The
-        // engine still proceeds, splitting the file at 4 GB, but the
-        // user gets notification and menu signal so they can adjust.
-        evaluatePreflightFileSizeWarning(isRestart: isRestart)
-
         // Stop monitoring first — recording will take over the audio stream
         if isMonitoring {
             stopMonitoring()
@@ -115,11 +109,14 @@ extension RecordingState {
             // recording begins; the just-started session is the new
             // "current," and the old summary is no longer relevant.
             lastRecordingDurationText = nil
-            // preflightSizeWarning is intentionally NOT cleared here —
-            // evaluatePreflightFileSizeWarning() runs just before
-            // bridge.startRecording() and already populates it (or nils
-            // it) for the current session. Clearing it here would wipe
-            // the warning the moment the engine acknowledged the start.
+            // DOLL-220: warn if the math says a file will pass the 4 GiB
+            // WAV-header cap. The engine proceeds, splitting the file at
+            // 4 GB. This runs only once the engine is running: it used to
+            // run before bridge.startRecording() and could show a modal
+            // alert, which left the engine stopped until the user clicked
+            // OK, with isRecording and isStartingRecording both false so a
+            // second start could race in.
+            evaluatePreflightFileSizeWarning(isRestart: isRestart)
             startTimer()
             beginPreventingSleep()
             refreshMeterChannelNumbers()
@@ -438,9 +435,13 @@ extension RecordingState {
     /// log line fire only on a fresh start, or on a restart whose projection
     /// changed: a device change or a setting applied mid-recording used to
     /// repeat the same notification every time.
-    /// DOLL-233: reads from the cached snapshot, populated immediately
-    /// before this method runs in startRecordingInternal.
-    private func evaluatePreflightFileSizeWarning(isRestart: Bool) {
+    /// DOLL-233: reads from the cached snapshot, populated by
+    /// startRecordingInternal before the engine starts.
+    ///
+    /// The announcement is a notification plus the menu banner, never a
+    /// modal: it is information about a session that is already running,
+    /// and a modal on this path blocked the main actor mid-start.
+    func evaluatePreflightFileSizeWarning(isRestart: Bool) {
         let estimate = configSnapshot.flatMap { snapshot in
             SessionPolicy.preflightSizeEstimate(
                 rotationSeconds: snapshot.continuousMode ? snapshot.recordingCadence : nil,
@@ -473,9 +474,9 @@ extension RecordingState {
         preflightSizeWarning = msg
         guard announce else { return }
         Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
-        notifyUser(
+        postNotification(
             title: String(localized: "Large file warning"),
-            message: msg,
+            body: msg,
             identifier: "preflight-4gb-warning"
         )
     }

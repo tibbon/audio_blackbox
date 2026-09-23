@@ -156,6 +156,28 @@ nonisolated final class SessionPolicyTests: XCTestCase {
         )
     }
 
+    /// The warning lands in the menu banner and a notification, and the
+    /// call returns: it runs with the engine already recording, where a
+    /// modal alert (the old path when the app was active) would block the
+    /// main actor until the user clicked OK.
+    @MainActor
+    func testPreflightWarningSetsTheBannerWithoutBlocking() {
+        let recorder = RecordingState()
+        recorder.sampleRate = 48_000
+        recorder.configSnapshot = RecordingState.RecordingConfigSnapshot(
+            continuousMode: true,
+            recordingCadence: 7200,
+            channelCount: 8,
+            bitDepth: 24,
+            outputMode: "single"
+        )
+
+        recorder.evaluatePreflightFileSizeWarning(isRestart: false)
+
+        XCTAssertNotNil(recorder.preflightSizeWarning)
+        XCTAssertEqual(recorder.lastPreflightEstimate, largeEstimate())
+    }
+
     func testNoWarningNeverAnnounces() {
         XCTAssertFalse(SessionPolicy.shouldAnnouncePreflightWarning(current: nil, previous: nil, isRestart: false))
         XCTAssertFalse(
