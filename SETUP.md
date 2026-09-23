@@ -16,8 +16,8 @@ The app is Apple Silicon only (`ARCHS = arm64`) and needs macOS 15 or later.
 | Rust | [rustup](https://rustup.rs) | Edition 2024. Keep `stable` current (`rustup update`); CI's clippy runs on stable. |
 | Rust 1.98 (MSRV) | `rustup toolchain install 1.98.1` | `make check` runs the same MSRV check CI does. |
 | XcodeGen | `brew install xcodegen` | Regenerates the `.xcodeproj` from `project.yml`. CI pins 2.46.0 and fails if they differ. |
-| SwiftLint | `brew install swiftlint` | Runs with `--strict`. `swift format` ships with Xcode. |
-| cargo-deny, cargo-machete | `cargo install cargo-deny cargo-machete --locked` | Dependency advisories, licenses, unused deps. |
+| SwiftLint | `brew install swiftlint` | Runs with `--strict`. CI pins 0.65.1 and `make check` warns on a different version. `swift format` ships with Xcode. |
+| cargo-deny, cargo-machete | `cargo install cargo-deny@0.20.2 cargo-machete@0.9.2 --locked` | Dependency advisories, licenses, unused deps. CI pins these versions. |
 | Node.js | `brew install node` | `make check` tests the Claude workflow scripts. |
 | GitHub CLI | `brew install gh` | PRs and release dispatch. |
 

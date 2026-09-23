@@ -186,7 +186,7 @@ jobs:
     - name: Install cargo-deny
       uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
       with:
-        tool: cargo-deny
+        tool: cargo-deny@0.20.2  # same pin as rust.yml and scripts/check.sh
 
     - name: cargo deny check
       run: cargo deny check

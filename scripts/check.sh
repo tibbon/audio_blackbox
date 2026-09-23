@@ -20,6 +20,14 @@
 # Missing optional tools are reported and skipped, never silently ignored:
 #   brew install swiftlint            cargo install cargo-deny cargo-machete --locked
 #   rustup toolchain install 1.98.1   (MSRV tests; must match rust-version in Cargo.toml)
+#
+# Lint tool versions CI pins (a different local version can disagree with CI;
+# bump these here and in the workflows together):
+#   SwiftLint     0.65.1   rust.yml Swift lane (downloaded, sha256-checked)
+#   cargo-deny    0.20.2   rust.yml Security audit, release.yml Test gate
+#   cargo-machete 0.9.2    rust.yml Clippy lane
+#   XcodeGen      2.46.0   rust.yml Swift lane
+SWIFTLINT_VERSION="0.65.1"
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -116,7 +124,14 @@ check_swift_lint() {
   swift format lint --strict --recursive "${SWIFT_DIRS[@]}"
 
   step "swiftlint --strict ('swiftlint --fix' autocorrects the mechanical rules)"
-  if have swiftlint; then swiftlint lint --strict --quiet; else skip "swiftlint not installed (brew install swiftlint)"; fi
+  if have swiftlint; then
+    if [[ "$(swiftlint version)" != "$SWIFTLINT_VERSION" ]]; then
+      echo "   warning: swiftlint $(swiftlint version) is installed; CI pins $SWIFTLINT_VERSION, so results may differ"
+    fi
+    swiftlint lint --strict --quiet
+  else
+    skip "swiftlint not installed (brew install swiftlint)"
+  fi
 }
 
 check_swift() {
