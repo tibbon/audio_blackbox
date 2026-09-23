@@ -142,6 +142,8 @@ struct GeneralSettingsTab: View {
     private var diagnosticsSection: some View {
         Section("Diagnostics") {
             Toggle("Enable debug logging", isOn: $debugLogging)
+                // Also fires for Reset All Settings, which turns it off.
+                .onChange(of: debugLogging) { recorder.reloadDebugLogging() }
                 .accessibilityHint("Log detailed info to macOS Console")
             Text("Logs are visible in Console.app. Filter by \"com.dollhousemediatech.blackbox\".")
                 .font(.caption)

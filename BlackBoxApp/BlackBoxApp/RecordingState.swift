@@ -420,11 +420,18 @@ final class RecordingState {
 
     // MARK: - Settings Persistence
 
+    /// Pick up the saved "Enable debug logging" setting. The Settings toggle
+    /// calls this when it changes, so verbose logging turns on or off at
+    /// once; the cached value used to be read only at launch.
+    func reloadDebugLogging() {
+        debugLogging = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
+    }
+
     /// Restore all saved audio settings from UserDefaults and push to Rust engine.
     /// Called once at init, before auto-record fires.
     private func restoreSavedSettings() {
         let config = SavedEngineConfig.restore(from: UserDefaults.standard)
-        debugLogging = UserDefaults.standard.bool(forKey: SettingsKeys.debugLogging)
+        reloadDebugLogging()
 
         if !config.isEmpty {
             bridge.setConfig(config)

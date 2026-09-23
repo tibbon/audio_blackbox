@@ -81,6 +81,22 @@ nonisolated final class SessionPolicyTests: StandardDefaultsTestCase {
         XCTAssertEqual(applied, 1)
     }
 
+    // MARK: - Debug logging
+
+    /// The Settings toggle's change reaches the cached flag the meter poll
+    /// reads, without a relaunch.
+    @MainActor
+    func testDebugLoggingFollowsTheSavedSetting() {
+        let recorder = RecordingState()
+        UserDefaults.standard.set(true, forKey: SettingsKeys.debugLogging)
+        recorder.reloadDebugLogging()
+        XCTAssertTrue(recorder.debugLogging)
+
+        UserDefaults.standard.set(false, forKey: SettingsKeys.debugLogging)
+        recorder.reloadDebugLogging()
+        XCTAssertFalse(recorder.debugLogging)
+    }
+
     // MARK: - startAndWait and the launch restore
 
     /// A start right at launch waits for the bookmark-restore Task (folder
