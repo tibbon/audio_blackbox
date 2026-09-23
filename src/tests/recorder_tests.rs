@@ -282,3 +282,39 @@ fn test_recorder_split_mode_wav_files_valid() {
         },
     );
 }
+
+/// The start-of-recording log must describe what the CLI will do: continuous
+/// mode ignores `duration`, so it must not be logged as the length.
+#[test]
+fn duration_label_matches_what_the_cli_does() {
+    let continuous = AppConfig {
+        continuous_mode: Some(true),
+        duration: Some(30),
+        recording_cadence: Some(60),
+        ..AppConfig::default()
+    };
+    let label = crate::audio_recorder::duration_label(&continuous);
+    assert!(label.starts_with("unlimited"), "{label}");
+    assert!(label.contains("60 seconds"), "{label}");
+    assert!(
+        !label.contains("30"),
+        "the ignored duration must not appear: {label}"
+    );
+
+    let timed = AppConfig {
+        continuous_mode: Some(false),
+        duration: Some(30),
+        ..AppConfig::default()
+    };
+    assert_eq!(crate::audio_recorder::duration_label(&timed), "30 seconds");
+
+    let unlimited = AppConfig {
+        continuous_mode: Some(false),
+        duration: Some(0),
+        ..AppConfig::default()
+    };
+    assert_eq!(
+        crate::audio_recorder::duration_label(&unlimited),
+        "unlimited"
+    );
+}

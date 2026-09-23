@@ -32,6 +32,23 @@ impl<P: AudioProcessor> fmt::Debug for AudioRecorder<P> {
     }
 }
 
+/// How long the CLI will record, as logged at start. Continuous mode runs
+/// until stopped and ignores `duration` (the CLI's run loop treats it as
+/// unlimited), so logging the configured duration there was misleading.
+pub(crate) fn duration_label(config: &AppConfig) -> String {
+    if config.get_continuous_mode() {
+        format!(
+            "unlimited (continuous mode, new file every {} seconds; duration is ignored)",
+            config.get_recording_cadence()
+        )
+    } else {
+        match config.get_duration() {
+            0 => "unlimited".to_owned(),
+            secs => format!("{secs} seconds"),
+        }
+    }
+}
+
 impl<P: AudioProcessor> AudioRecorder<P> {
     /// Create a new `AudioRecorder` with the given processor.
     pub fn new(processor: P) -> Self {
@@ -88,8 +105,7 @@ impl<P: AudioProcessor> AudioRecorder<P> {
         info!("  Channels: {channels:?}");
         info!("  Debug: {debug}");
 
-        let duration = self.config.get_duration();
-        info!("  Duration: {duration} seconds");
+        info!("  Duration: {}", duration_label(&self.config));
 
         info!("  Output Mode: {output_mode}");
 
