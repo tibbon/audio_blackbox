@@ -115,17 +115,21 @@ extension RecordingState {
 /// Handles notification action responses (e.g. "Restart Recording" button).
 /// Separate class because UNUserNotificationCenterDelegate requires NSObject conformance.
 class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    /// The recorder the "Restart Recording" action starts. Set by
+    /// `RecordingState.init`, which owns this delegate (hence weak). It used
+    /// to be found through `NSApp.delegate as? AppDelegate`, but under
+    /// `@NSApplicationDelegateAdaptor` `NSApp.delegate` is SwiftUI's own
+    /// delegate object, so the cast failed and the action did nothing.
+    weak var recorder: RecordingState?
+
     func userNotificationCenter(
         _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler handler: @escaping () -> Void
     ) {
         if response.actionIdentifier == "restart-recording" {
-            Task { @MainActor in
-                // Find the RecordingState — it's the source of truth for the app
-                if let app = NSApp.delegate as? AppDelegate, let recorder = app.recorder {
-                    recorder.start()
-                }
+            Task { @MainActor [weak self] in
+                self?.recorder?.start()
             }
         }
         handler()

@@ -277,6 +277,15 @@ nonisolated final class SleepWakeGuardTests: StandardDefaultsTestCase {
         XCTAssertTrue(recorder.isRecording)
     }
 
+    /// The "Restart Recording" notification action needs a path to the
+    /// recorder; `NSApp.delegate` is not our AppDelegate under
+    /// `@NSApplicationDelegateAdaptor`, so the recorder wires itself in.
+    @MainActor
+    func testNotificationDelegateReachesItsRecorder() {
+        let recorder = RecordingState()
+        XCTAssertIdentical(recorder.notificationDelegate.recorder, recorder)
+    }
+
     /// DOLL-448: the engine-side teardown helper clears the recording UI
     /// state (and releases the sleep-prevention activity token; with no
     /// real session that release is a guarded no-op).

@@ -301,6 +301,7 @@ final class RecordingState {
 
     init() {
         bridge = RustBridge()
+        notificationDelegate.recorder = self
         guard !Self.isTesting else { return }
         refreshDevices()
         // DOLL-114: defer bookmark restoration off the launch path. The
