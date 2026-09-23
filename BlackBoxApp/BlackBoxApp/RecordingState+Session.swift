@@ -424,8 +424,9 @@ extension RecordingState {
     // MARK: - Pre-flight 4 GiB warning (DOLL-220)
 
     /// WAV header `data` chunk is `u32`, so a single file maxes out at
-    /// 4 GiB - 1. DOLL-204 catches this on finalize and logs / clamps;
-    /// DOLL-220 catches it before we burn through hours of recording.
+    /// 4 GiB - 1. The engine now starts a new file before a WAV reaches that
+    /// size; DOLL-220 still tells the user up front that a rotation will be
+    /// split into 4 GB files.
     private static let wavMaxFileBytes = Int64(UInt32.max)
 
     /// Inspect the current configuration and set `preflightSizeWarning`
@@ -472,7 +473,7 @@ extension RecordingState {
         let gbText = gigabytes.formatted(.number.precision(.fractionLength(1)))
         let msg = String(
             localized:
-                "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth."
+                "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB, so BlackBox will start a new file each time one reaches 4 GB. Shorten the rotation interval if you want evenly sized files."
         )
         preflightSizeWarning = msg
         Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")

@@ -110,6 +110,7 @@
     "Disabled" : {},
     "Disk Space" : {},
     "Each rotation will produce roughly %@ GB%@. WAV files are capped at 4 GB — players may fail to import or truncate. Reduce the rotation interval, sample rate, channels, or bit depth." : {},
+    "Each rotation will produce roughly %@ GB%@. WAV files are capped at 4 GB, so BlackBox will start a new file each time one reaches 4 GB. Shorten the rotation interval if you want evenly sized files." : {},
     "Elapsed " : {},
     "Enable continuous recording" : {},
     "Enable debug logging" : {},
