@@ -250,8 +250,13 @@ extension RecordingState {
     /// before the new session starts — the one window in which it is safe to
     /// release something the old session was using (the output folder's
     /// security scope).
-    func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) {
-        guard isRecording else { return }
+    ///
+    /// Returns whether a recording is running afterwards: `false` when there
+    /// was none to restart or the new session failed to start (the failure
+    /// is already surfaced through `setTransientError`).
+    @discardableResult
+    func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) -> Bool {
+        guard isRecording else { return false }
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
         stopTimer()
         _ = bridge.stopRecording()
@@ -274,6 +279,7 @@ extension RecordingState {
         // the threshold can fire fresh.
         batteryCheckTick = 0
         startRecordingInternal()
+        return isRecording
     }
 
     /// Engine-side session teardown (DOLL-448): the engine has already

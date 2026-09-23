@@ -139,7 +139,19 @@ extension RecordingState {
 
     private func restartForSampleRateChange() {
         Self.log.warning("Sample rate changed on device — finalizing and restarting")
-        restartIfRecording(reason: "sample rate changed")
+        guard restartIfRecording(reason: "sample rate changed") else {
+            // The restart failed (startRecordingInternal already set the
+            // error): say the recording stopped, not that it was restarted.
+            let msg = String(
+                localized: """
+                    Your audio device's sample rate changed and recording could not be restarted. \
+                    Check the device and start recording again.
+                    """
+            )
+            Self.log.error("Restart after sample-rate change failed")
+            notifyUser(title: String(localized: "Recording Stopped"), message: msg)
+            return
+        }
         notifyUser(
             title: String(localized: "Sample Rate Changed"),
             message: String(

@@ -299,6 +299,7 @@
     "Your audio device changed. Recording continued on the next available device." : {},
     "Your audio device keeps failing. Recording stopped — check the device and try again." : {},
     "Your audio device was disconnected and no alternative is available. Check your connections and try again." : {},
+    "Your audio device's sample rate changed and recording could not be restarted. Check the device and start recording again." : {},
     "Your audio device's sample rate changed. Recording was restarted automatically." : {},
     "Your disk is almost full. Free up space and try again." : {},
     "bit depth" : {},
