@@ -57,7 +57,9 @@ extension RecordingState {
         return isRecording
     }
 
-    private func startRecordingInternal() {
+    /// `isRestart`: this continues a live session (restartIfRecording)
+    /// rather than starting a new one.
+    private func startRecordingInternal(isRestart: Bool = false) {
         // DOLL-459: defense in depth — re-check after the permission await.
         // The guard in start() ran before the suspension; if a session began
         // through another path while the dialog was up, a second
@@ -80,9 +82,9 @@ extension RecordingState {
 
         // DOLL-220: warn before we kick off the engine if the math says
         // the per-file size will blow past the 4 GiB WAV-header cap. The
-        // engine still proceeds — the file just gets clamped — but the
+        // engine still proceeds, splitting the file at 4 GB, but the
         // user gets notification and menu signal so they can adjust.
-        evaluatePreflightFileSizeWarning()
+        evaluatePreflightFileSizeWarning(isRestart: isRestart)
 
         // Stop monitoring first — recording will take over the audio stream
         if isMonitoring {
@@ -279,7 +281,7 @@ extension RecordingState {
         // state is unchanged. Reset notification so a future cross of
         // the threshold can fire fresh.
         batteryCheckTick = 0
-        startRecordingInternal()
+        startRecordingInternal(isRestart: true)
         return isRecording
     }
 
@@ -423,59 +425,49 @@ extension RecordingState {
 
     // MARK: - Pre-flight 4 GiB warning (DOLL-220)
 
-    /// WAV header `data` chunk is `u32`, so a single file maxes out at
-    /// 4 GiB - 1. The engine now starts a new file before a WAV reaches that
-    /// size; DOLL-220 still tells the user up front that a rotation will be
-    /// split into 4 GB files.
-    private static let wavMaxFileBytes = Int64(UInt32.max)
-
-    /// Inspect the current configuration and set `preflightSizeWarning`
-    /// (plus a notification + log line) when the projected per-file
-    /// bytes-per-rotation exceeds the 4 GiB WAV cap. Only meaningful for
-    /// continuous mode — single mode has no rotation interval to bound
-    /// the file with, so we leave it alone there.
+    /// Set `preflightSizeWarning` when the projected per-file bytes per
+    /// rotation exceed the 4 GiB WAV cap. The engine starts a new file
+    /// before a WAV reaches that size; this tells the user up front that a
+    /// rotation will be split into 4 GB files.
+    ///
+    /// The menu warning is recomputed every time, but the notification and
+    /// log line fire only on a fresh start, or on a restart whose projection
+    /// changed: a device change or a setting applied mid-recording used to
+    /// repeat the same notification every time.
     /// DOLL-233: reads from the cached snapshot, populated immediately
     /// before this method runs in startRecordingInternal.
-    private func evaluatePreflightFileSizeWarning() {
-        preflightSizeWarning = nil
+    private func evaluatePreflightFileSizeWarning(isRestart: Bool) {
+        let estimate = configSnapshot.flatMap { snapshot in
+            SessionPolicy.preflightSizeEstimate(
+                rotationSeconds: snapshot.continuousMode ? snapshot.recordingCadence : nil,
+                channelCount: snapshot.channelCount,
+                bitDepth: snapshot.bitDepth,
+                splitOutput: snapshot.outputMode == "split",
+                sampleRate: sampleRate
+            )
+        }
+        let announce = SessionPolicy.shouldAnnouncePreflightWarning(
+            current: estimate,
+            previous: lastPreflightEstimate,
+            isRestart: isRestart
+        )
+        lastPreflightEstimate = estimate
 
-        guard let snapshot = configSnapshot, snapshot.continuousMode else { return }
-        let cadence = snapshot.recordingCadence
-        guard cadence > 0 else { return }
-        let channels = snapshot.channelCount
-        guard channels > 0 else { return }
-
-        let bytesPerSample = snapshot.bitDepth / 8
-        // In split mode each file holds one channel; in single mode all
-        // channels share a file. The cap applies per-file, so we project
-        // for the most populated file we'll create.
-        let channelsPerFile = snapshot.outputMode == "split" ? 1 : channels
-
-        // No reliable sample-rate signal until cpal connects, so fall
-        // back to 48 kHz when we haven't seen a session yet. This biases
-        // the warning toward false negatives — we'd rather under-warn
-        // than spook users about hypothetical hi-res setups they don't
-        // actually have.
-        let estSampleRate = sampleRate > 0 ? sampleRate : 48_000
-
-        let bytesPerFile =
-            Int64(channelsPerFile)
-            * Int64(bytesPerSample)
-            * Int64(estSampleRate)
-            * Int64(cadence)
-
-        guard bytesPerFile > Self.wavMaxFileBytes else { return }
-
-        let gigabytes = Double(bytesPerFile) / 1_073_741_824.0
+        guard let estimate else {
+            preflightSizeWarning = nil
+            return
+        }
+        let gigabytes = Double(estimate.bytesPerFile) / 1_073_741_824.0
         // DOLL-439/#40: localizable + locale-aware decimal (the GB value is
         // pre-formatted so the String Catalog key carries a %@, not a "."-only %.1f).
-        let rateNote = sampleRate > 0 ? "" : String(localized: " (estimated at 48 kHz)")
+        let rateNote = estimate.sampleRateKnown ? "" : String(localized: " (estimated at 48 kHz)")
         let gbText = gigabytes.formatted(.number.precision(.fractionLength(1)))
         let msg = String(
             localized:
                 "Each rotation will produce roughly \(gbText) GB\(rateNote). WAV files are capped at 4 GB, so BlackBox will start a new file each time one reaches 4 GB. Shorten the rotation interval if you want evenly sized files."
         )
         preflightSizeWarning = msg
+        guard announce else { return }
         Self.log.warning("Pre-flight 4 GiB cap warning: \(msg)")
         notifyUser(
             title: String(localized: "Large file warning"),

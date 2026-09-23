@@ -184,6 +184,10 @@ final class RecordingState {
     /// when a fresh recording starts with safe settings.
     var preflightSizeWarning: String?
 
+    /// The projection behind the last pre-flight evaluation, so a restart
+    /// of a live session re-announces the warning only when it changed.
+    @ObservationIgnored var lastPreflightEstimate: SessionPolicy.PreflightSizeEstimate?
+
     /// Wall-clock date the *current* file's rotation cycle ends —
     /// `recordingStartTime + ceil(elapsed / cadence) × cadence` — for the
     /// menu's `Text(_, style: .timer)` countdown (DOLL-214 v2). Computed
