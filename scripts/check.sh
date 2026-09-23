@@ -6,7 +6,8 @@
 #                                       tests, bench smoke, deny, machete, MSRV, FFI header,
 #                                       attribution
 #         scripts/check.sh swift        Swift only: swift-format, swiftlint, xcodebuild test,
-#                                       swiftlint analyze, string-catalog sync
+#                                       swiftlint analyze, string-catalog sync, pbxproj parity,
+#                                       Release-configuration build
 #         scripts/check.sh tooling      Claude workflow scripts parse and pass their mocked scenarios (fast)
 #         scripts/check.sh sanitize     Swift tests under TSan, then ASan+UBSan (slow; local only)
 #         scripts/check.sh all          rust + swift + sanitize
@@ -148,6 +149,11 @@ check_swift() {
   else
     skip "xcodegen not installed (brew install xcodegen)"
   fi
+
+  # CI's Swift lane ends with this build: Release turns on whole-module
+  # optimization and drops DEBUG-only code, so it can fail where Debug passes.
+  step "xcodebuild build (Release configuration, as the CI Swift lane does)"
+  xcb -configuration Release build 2>&1 | pretty
 }
 
 # ---------------------------------------------------------------- Claude workflows (local only)
