@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- App Store description: claims now match the engine. A crash costs up to
+  ~10 s of audio rather than "always valid" files; the ring buffer absorbs
+  disk stalls rather than guaranteeing "no dropped samples"; channel support
+  is "tested to 64, up to 255". Adds sleep/wake resume to the feature list.
+- Repo ships `blackbox.example.toml` instead of a tracked `blackbox.toml`
+  (now gitignored); a test keeps the example in sync with the defaults.
+
 ## [1.5.0] — 2026-09-21
 
 A maintenance and hardening release: ~70 commits of internal refactoring,
