@@ -746,8 +746,16 @@ impl WriterThreadState {
                 // the signal onset isn't lost. Last batch wins; clear+extend
                 // reuses the allocation. Bounded by the caller's batch size
                 // (`WRITER_THREAD_READ_CHUNK` in production).
+                //
+                // Once an earlier slice has tripped the gate, append instead:
+                // `read_available` calls this twice when a read wraps the
+                // ring, and the gate only opens after both slices, so the
+                // second slice must not replace the onset. That bounds the
+                // pre-roll at one read (both slices).
                 if self.gate_enabled && !self.monitor_only && self.gate_state == GateState::Idle {
-                    gate_preroll.clear();
+                    if !self.gate_pending_open {
+                        gate_preroll.clear();
+                    }
                     gate_preroll.extend_from_slice(frame_data);
                 }
                 0
@@ -1000,9 +1008,17 @@ impl WriterThreadState {
             // live samples resume. take() empties the field first so the
             // re-entrant write_samples (gate is now Recording) can't
             // re-save or double-write it.
+            //
+            // The pre-roll is whole frames; a trailing partial frame of the
+            // idle batch sits in `frame_remainder` and comes *after* it in
+            // time. Set it aside for the replay, or write_samples would
+            // prepend it and write the onset shifted by a partial frame
+            // (channels rotated). It is restored for the next live batch.
             let mut preroll = std::mem::take(&mut self.gate_preroll);
             if !preroll.is_empty() {
+                let remainder = std::mem::take(&mut self.frame_remainder);
                 self.write_samples(&preroll);
+                self.frame_remainder = remainder;
                 // Hand the allocation back for the next idle period.
                 preroll.clear();
                 self.gate_preroll = preroll;

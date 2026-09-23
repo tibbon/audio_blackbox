@@ -583,3 +583,111 @@ fn test_gate_open_failure_latches_write_failed() {
         assert!(state.pending_files.is_empty());
     });
 }
+
+/// Stereo gate state (single interleaved file), 16-bit, threshold 0.01.
+fn make_stereo_gate_state(dir: &str) -> WriterThreadState {
+    let mut state = WriterThreadState::new(
+        dir,
+        48000,
+        &[0, 1],
+        OutputMode::Single,
+        0.01,
+        Arc::new(AtomicU64::new(0)),
+        0,
+        Arc::new(AtomicBool::new(false)),
+        16,
+        Arc::from([CacheAlignedPeak::new(0), CacheAlignedPeak::new(0)]),
+        true,
+        5,
+    )
+    .unwrap();
+    state.total_device_channels = 2;
+    state
+}
+
+/// All samples of the single finalized WAV in `dir`.
+fn read_only_wav(dir: &std::path::Path) -> Vec<i32> {
+    let files = wav_files_in(dir);
+    assert_eq!(files.len(), 1, "expected exactly one finalized WAV");
+    let reader = hound::WavReader::open(&files[0]).expect("valid WAV");
+    reader.into_samples::<i32>().map(Result::unwrap).collect()
+}
+
+/// DOLL-465 follow-up: the idle batch that trips the gate can end mid-frame.
+/// Its trailing partial frame waits in `frame_remainder`, and it comes *after*
+/// the pre-roll in time. The replay used to write it first, shifting the onset
+/// by one sample so left and right swapped for the replayed frames.
+#[test]
+fn test_gate_preroll_replay_keeps_channel_order_with_partial_frame() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = make_stereo_gate_state(dir);
+
+        // Three L/R frames plus the left half of a fourth.
+        let mut trigger: Vec<f32> = [0.5_f32, -0.5].repeat(3);
+        trigger.push(0.5);
+        state.write_samples(&trigger);
+        state.process_gate_open();
+        assert_eq!(state.gate_state, GateState::Recording);
+
+        // The right half of frame four, then two more frames.
+        let mut live = vec![-0.5_f32];
+        live.extend([0.5_f32, -0.5].repeat(2));
+        state.write_samples(&live);
+        state.finalize_all().unwrap();
+        crate::test_utils::drain_silence_checks();
+
+        let samples = read_only_wav(temp_dir.path());
+        assert_eq!(samples.len(), 12, "six whole stereo frames");
+        for (i, &[left, right]) in samples.as_chunks::<2>().0.iter().enumerate() {
+            assert!(
+                left > 0 && right < 0,
+                "frame {i} has swapped channels: [{left}, {right}]"
+            );
+        }
+    });
+}
+
+/// DOLL-465 follow-up: when a read wraps the ring, `read_available` calls
+/// `write_samples` twice. If the first slice trips the gate, the second slice
+/// (the gate is still Idle until the main loop opens it) must extend the
+/// pre-roll, not replace it, or the onset is lost.
+#[test]
+fn test_gate_preroll_survives_ring_wrap() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = make_gate_state(dir, true, 5, 0.01);
+
+        // Advance the read cursor to slot 6 of 8 with idle silence.
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
+        producer.push_entire_slice(&[0.0; 6]).unwrap();
+        assert_eq!(
+            crate::writer_thread::read_available(&mut consumer, &mut state),
+            6
+        );
+        assert!(!state.gate_pending_open);
+
+        // The next read wraps: slots 6..8 hold the loud onset, 0..6 silence.
+        let mut batch = vec![0.5_f32; 2];
+        batch.extend([0.0_f32; 6]);
+        producer.push_entire_slice(&batch).unwrap();
+        assert_eq!(
+            crate::writer_thread::read_available(&mut consumer, &mut state),
+            8
+        );
+        assert!(state.gate_pending_open);
+        state.process_gate_open();
+        state.finalize_all().unwrap();
+        crate::test_utils::drain_silence_checks();
+
+        let samples = read_only_wav(temp_dir.path());
+        assert_eq!(samples.len(), 8, "both slices of the tripping read");
+        let expected = 16_384; // 0.5 x 32767, rounded; ±1 LSB TPDF dither
+        assert!(
+            samples[..2].iter().all(|&s| (s - expected).abs() <= 1),
+            "the onset from the first slice must be kept: {samples:?}"
+        );
+    });
+}
