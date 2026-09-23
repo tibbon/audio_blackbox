@@ -161,7 +161,12 @@ fn rotation_threshold_samples(
     total_channels: usize,
     recording_cadence_secs: u64,
 ) -> u64 {
-    u64::from(sample_rate) * total_channels as u64 * recording_cadence_secs
+    // Saturating as a backstop: `get_recording_cadence` already caps the
+    // cadence so this can't overflow, and a saturated threshold only means
+    // "never rotate" rather than a wrapped, tiny one.
+    u64::from(sample_rate)
+        .saturating_mul(total_channels as u64)
+        .saturating_mul(recording_cadence_secs)
 }
 
 /// Advance the rotation counter by one callback batch of `batch_len`

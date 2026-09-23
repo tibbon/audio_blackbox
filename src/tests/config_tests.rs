@@ -684,3 +684,108 @@ fn example_config_sets_every_key_to_its_default() {
     // Left commented out on purpose: unset means the system default input.
     assert_eq!(config.input_device, None);
 }
+
+/// A cadence so large that `sample_rate * channels * cadence` overflows u64
+/// is rejected like 0: the wrapped rotation threshold was arbitrary (often
+/// tiny, a rotation storm). The largest accepted cadence cannot overflow
+/// even at `u32::MAX` Hz with `MAX_CHANNELS` channels.
+#[test]
+fn recording_cadence_rejects_overflowing_values() {
+    for bad in [MAX_RECORDING_CADENCE + 1, u64::MAX / 2, u64::MAX] {
+        let config = AppConfig {
+            recording_cadence: Some(bad),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            config.get_recording_cadence(),
+            DEFAULT_RECORDING_CADENCE,
+            "cadence {bad} must fall back to the default"
+        );
+    }
+    let max = AppConfig {
+        recording_cadence: Some(MAX_RECORDING_CADENCE),
+        ..AppConfig::default()
+    };
+    assert_eq!(max.get_recording_cadence(), MAX_RECORDING_CADENCE);
+    assert!(
+        u64::from(u32::MAX)
+            .checked_mul(MAX_CHANNELS as u64)
+            .and_then(|v| v.checked_mul(MAX_RECORDING_CADENCE))
+            .is_some(),
+        "the largest accepted cadence must not overflow the threshold"
+    );
+}
+
+/// A zero gate timeout would close the gate after the first silent batch and
+/// split a take at every pause; it falls back to the default.
+#[test]
+fn silence_gate_timeout_rejects_zero() {
+    let zero = AppConfig {
+        silence_gate_timeout_secs: Some(0),
+        ..AppConfig::default()
+    };
+    assert_eq!(
+        zero.get_silence_gate_timeout_secs(),
+        DEFAULT_SILENCE_GATE_TIMEOUT_SECS
+    );
+    for good in [1, 5, 300, 86_400] {
+        let config = AppConfig {
+            silence_gate_timeout_secs: Some(good),
+            ..AppConfig::default()
+        };
+        assert_eq!(config.get_silence_gate_timeout_secs(), good);
+    }
+}
+
+/// Misspelled keys in the TOML file are reported (the file still loads).
+#[test]
+fn unknown_toml_keys_are_detected() {
+    let content = "recording_cadance = 60\nduration = 10\n[extra]\nx = 1\n";
+    assert_eq!(
+        crate::config::unknown_config_keys(content),
+        vec!["extra".to_owned(), "recording_cadance".to_owned()]
+    );
+    let parsed: AppConfig = toml::from_str(content).expect("unknown keys stay non-fatal");
+    assert_eq!(parsed.duration, Some(10));
+    assert!(crate::config::unknown_config_keys("not [[[ toml").is_empty());
+    assert!(
+        crate::config::unknown_config_keys(include_str!("../../blackbox.example.toml")).is_empty(),
+        "the example config must use only known keys"
+    );
+    assert!(crate::config::unknown_config_keys(&AppConfig::generate_sample_config()).is_empty());
+}
+
+/// `CONFIG_KEYS` lists exactly the fields `AppConfig` serializes, so a new
+/// field can't be flagged as unknown (or a removed one kept as known).
+#[test]
+fn config_keys_match_the_struct() {
+    let full = AppConfig {
+        input_device: Some("mic".to_owned()),
+        ..AppConfig::default()
+    };
+    let table: toml::Table = toml::from_str(&toml::to_string(&full).unwrap()).unwrap();
+    let mut from_struct: Vec<&str> = table.keys().map(String::as_str).collect();
+    let mut listed = crate::config::CONFIG_KEYS.to_vec();
+    from_struct.sort_unstable();
+    listed.sort_unstable();
+    assert_eq!(from_struct, listed);
+}
+
+/// The unknown-key warning comes from `AppConfig::load` on a real file, and
+/// the rest of the file still applies.
+#[test]
+fn load_keeps_known_keys_when_one_is_misspelled() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("typo.toml");
+    fs::write(&path, "duraton = 5\nduration = 7\n").unwrap();
+    temp_env::with_vars(
+        vec![
+            ("BLACKBOX_CONFIG", Some(path.to_str().unwrap())),
+            ("BLACKBOX_DURATION", None),
+            ("RECORD_DURATION", None),
+        ],
+        || {
+            assert_eq!(AppConfig::load().get_duration(), 7);
+        },
+    );
+}

@@ -416,7 +416,9 @@ impl WriterThreadState {
             },
             output_mode,
             write_errors,
-            gate_timeout_frames: u64::from(sample_rate) * gate_timeout_secs,
+            // Saturating: a huge timeout means "never close", not a wrapped
+            // (possibly tiny) frame count.
+            gate_timeout_frames: u64::from(sample_rate).saturating_mul(gate_timeout_secs),
             gate_idle: Arc::new(AtomicBool::new(gate_enabled)),
             output_dir: output_dir.to_owned(),
             #[cfg(unix)]

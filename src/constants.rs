@@ -23,6 +23,12 @@ pub(crate) const MAX_CHANNELS: usize = 255;
 // Constants for continuous recording mode
 pub(crate) const DEFAULT_CONTINUOUS_MODE: bool = false;
 pub(crate) const DEFAULT_RECORDING_CADENCE: u64 = 300; // 5 minutes
+/// Longest accepted rotation cadence in seconds (about 195 days). The RT
+/// rotation threshold is `sample_rate * channels * cadence` in a `u64`; this
+/// is the largest cadence for which that product can't overflow for any
+/// `u32` rate and up to `MAX_CHANNELS` channels. A wrapped product used to
+/// give a tiny threshold and a rotation storm.
+pub(crate) const MAX_RECORDING_CADENCE: u64 = u64::MAX / (u32::MAX as u64 * MAX_CHANNELS as u64);
 pub(crate) const DEFAULT_OUTPUT_DIR: &str = "recordings";
 pub(crate) const DEFAULT_PERFORMANCE_LOGGING: bool = false;
 pub(crate) const DEFAULT_BITS_PER_SAMPLE: u16 = 24;

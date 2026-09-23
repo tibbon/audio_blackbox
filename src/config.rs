@@ -23,7 +23,8 @@ use crate::constants::{
     DEFAULT_BITS_PER_SAMPLE, DEFAULT_CHANNELS, DEFAULT_CONTINUOUS_MODE, DEFAULT_DEBUG,
     DEFAULT_DURATION, DEFAULT_MIN_DISK_SPACE_MB, DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_MODE,
     DEFAULT_PERFORMANCE_LOGGING, DEFAULT_RECORDING_CADENCE, DEFAULT_SILENCE_GATE_ENABLED,
-    DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD, OutputMode,
+    DEFAULT_SILENCE_GATE_TIMEOUT_SECS, DEFAULT_SILENCE_THRESHOLD, MAX_RECORDING_CADENCE,
+    OutputMode,
 };
 use crate::error::BlackboxError;
 
@@ -66,8 +67,9 @@ pub struct AppConfig {
     /// File-rotation cadence in seconds (continuous mode only). Must be
     /// at least 1: `0` is rejected by `get_recording_cadence` and falls
     /// back to `DEFAULT_RECORDING_CADENCE` (300, i.e. 5 min) — a zero
-    /// cadence would rotate on every audio callback (DOLL-458). `None`
-    /// falls back the same way.
+    /// cadence would rotate on every audio callback (DOLL-458). So is
+    /// anything above `MAX_RECORDING_CADENCE` (about 195 days), which would
+    /// overflow the rotation threshold. `None` falls back the same way.
     pub recording_cadence: Option<u64>,
     /// Output directory for WAV files. Relative paths are resolved
     /// against the working directory. `None` falls back to
@@ -94,8 +96,9 @@ pub struct AppConfig {
     /// `DEFAULT_SILENCE_GATE_ENABLED` (true).
     pub silence_gate_enabled: Option<bool>,
     /// Seconds of silence before the gate closes and finalizes the
-    /// current open file. Must be > 0. `None` falls back to
-    /// `DEFAULT_SILENCE_GATE_TIMEOUT_SECS` (300).
+    /// current open file. Must be > 0: `0` is rejected by
+    /// `get_silence_gate_timeout_secs` and falls back to the default, like
+    /// `None` does: `DEFAULT_SILENCE_GATE_TIMEOUT_SECS` (300).
     pub silence_gate_timeout_secs: Option<u64>,
 }
 
@@ -185,6 +188,16 @@ impl AppConfig {
                 Ok(content) => match toml::from_str::<Self>(&content) {
                     Ok(file_config) => {
                         info!("Loaded configuration from {}", config_path.display());
+                        // Forgiving like the rest of loading: an unknown key
+                        // is ignored, but say so, since it is usually a typo
+                        // that leaves the intended setting at its default.
+                        for key in unknown_config_keys(&content) {
+                            warn!(
+                                "Unknown key `{key}` in {} ignored (misspelled?); known keys: {}",
+                                config_path.display(),
+                                CONFIG_KEYS.join(", ")
+                            );
+                        }
                         // Merge with defaults
                         config.merge(file_config);
                     }
@@ -374,7 +387,7 @@ silence_threshold = {}
 continuous_mode = {}
 
 # Recording cadence in seconds (how often to rotate files in continuous mode).
-# Must be >= 1; 0 falls back to the default.
+# Must be 1 to {MAX_RECORDING_CADENCE}; other values fall back to the default.
 # Default: {DEFAULT_RECORDING_CADENCE}
 recording_cadence = {}
 
@@ -395,7 +408,8 @@ bits_per_sample = {}
 # Default: {DEFAULT_SILENCE_GATE_ENABLED}
 silence_gate_enabled = {}
 
-# Seconds of silence before the gate closes and finalizes files
+# Seconds of silence before the gate closes and finalizes files.
+# Must be >= 1; 0 falls back to the default.
 # Default: {DEFAULT_SILENCE_GATE_TIMEOUT_SECS}
 silence_gate_timeout_secs = {}
 
@@ -519,9 +533,19 @@ silence_gate_timeout_secs = {}
         // the threshold on EVERY callback: a rotation storm creating
         // hundreds of near-empty WAVs per second (DOLL-458). Same
         // getter-side validation style as get_bits_per_sample.
-        match self.recording_cadence.unwrap_or(DEFAULT_RECORDING_CADENCE) {
-            0 => DEFAULT_RECORDING_CADENCE,
-            v => v,
+        //
+        // Also reject a cadence so large that `sample_rate * channels *
+        // cadence` overflows u64: the wrapped threshold was arbitrary, often
+        // tiny, which is the same storm.
+        let cadence = self.recording_cadence.unwrap_or(DEFAULT_RECORDING_CADENCE);
+        if (1..=MAX_RECORDING_CADENCE).contains(&cadence) {
+            cadence
+        } else {
+            warn!(
+                "recording_cadence = {cadence} is outside 1..={MAX_RECORDING_CADENCE} seconds; \
+                 using the default ({DEFAULT_RECORDING_CADENCE})"
+            );
+            DEFAULT_RECORDING_CADENCE
         }
     }
 
@@ -586,12 +610,62 @@ silence_gate_timeout_secs = {}
             .unwrap_or(DEFAULT_SILENCE_GATE_ENABLED)
     }
 
-    /// Seconds of silence before the gate closes; `BLACKBOX_SILENCE_GATE_TIMEOUT_SECS`.
+    /// Seconds of silence before the gate closes;
+    /// `BLACKBOX_SILENCE_GATE_TIMEOUT_SECS`. `0` falls back to the default.
     #[must_use]
     pub fn get_silence_gate_timeout_secs(&self) -> u64 {
-        self.silence_gate_timeout_secs
+        // Reject 0: the gate would close after the first silent batch and
+        // reopen on the next sound, splitting a take at every pause into a
+        // stream of tiny files. Same fallback as a zero recording_cadence.
+        match self
+            .silence_gate_timeout_secs
             .unwrap_or(DEFAULT_SILENCE_GATE_TIMEOUT_SECS)
+        {
+            0 => {
+                warn!(
+                    "silence_gate_timeout_secs = 0 is invalid; \
+                     using the default ({DEFAULT_SILENCE_GATE_TIMEOUT_SECS})"
+                );
+                DEFAULT_SILENCE_GATE_TIMEOUT_SECS
+            }
+            v => v,
+        }
     }
+}
+
+/// Every key a configuration file can set: the `AppConfig` field names.
+/// `config_keys_match_the_struct` keeps this in step with the struct.
+pub(crate) const CONFIG_KEYS: [&str; 14] = [
+    "audio_channels",
+    "debug",
+    "duration",
+    "output_mode",
+    "silence_threshold",
+    "continuous_mode",
+    "recording_cadence",
+    "output_dir",
+    "performance_logging",
+    "input_device",
+    "min_disk_space_mb",
+    "bits_per_sample",
+    "silence_gate_enabled",
+    "silence_gate_timeout_secs",
+];
+
+/// Top-level keys in the TOML document `content` that `AppConfig` doesn't
+/// know, sorted by name. Empty if `content` isn't a TOML table (the
+/// caller reports parse errors separately).
+pub(crate) fn unknown_config_keys(content: &str) -> Vec<String> {
+    content.parse::<toml::Table>().map_or_else(
+        |_| Vec::new(),
+        |table| {
+            table
+                .keys()
+                .filter(|k| !CONFIG_KEYS.contains(&k.as_str()))
+                .cloned()
+                .collect()
+        },
+    )
 }
 
 /// The `name` variable parsed with `parse`, else the `legacy` variable parsed
