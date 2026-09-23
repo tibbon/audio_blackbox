@@ -459,6 +459,33 @@ nonisolated final class SettingsKeysTests: XCTestCase {
     }
 }
 
+// MARK: - Plural strings
+
+/// Counted messages pick the singular from the catalog's plural variations
+/// instead of "recording(s)" or an English-only branch.
+nonisolated final class PluralStringTests: XCTestCase {
+    func testDroppedSamplesArePluralAware() {
+        let count = 1
+        XCTAssertEqual(String(localized: "\(count) samples dropped"), "1 sample dropped")
+        XCTAssertEqual(
+            String(localized: "Warning: \(count) samples dropped during this recording"),
+            "Warning: 1 sample dropped during this recording"
+        )
+    }
+
+    func testRecoveredRecordingsArePluralAware() {
+        for (count, noun) in [(1, "recording that was"), (3, "recordings that were")] {
+            XCTAssertEqual(
+                String(
+                    localized:
+                        "BlackBox finished \(count) recordings that were interrupted by a crash or power loss."
+                ),
+                "BlackBox finished \(count) \(noun) interrupted by a crash or power loss."
+            )
+        }
+    }
+}
+
 // MARK: - Rotation Cadence Presets
 
 nonisolated final class CadencePresetsTests: XCTestCase {
@@ -470,6 +497,15 @@ nonisolated final class CadencePresetsTests: XCTestCase {
         }
         XCTAssertEqual(CadencePresets.selection(for: 30), 30)
         XCTAssertEqual(CadencePresets.selection(for: 60), 60)
+    }
+
+    /// Whole hours and minutes come from the catalog's plural variations.
+    @MainActor
+    func testCustomCadenceDescriptionIsPluralAware() {
+        XCTAssertEqual(CustomCadenceField.cadenceDescription(3600), "1 hour")
+        XCTAssertEqual(CustomCadenceField.cadenceDescription(7200), "2 hours")
+        XCTAssertEqual(CustomCadenceField.cadenceDescription(60), "1 minute")
+        XCTAssertEqual(CustomCadenceField.cadenceDescription(900), "15 minutes")
     }
 
     func testOtherValuesAreCustom() {

@@ -78,6 +78,7 @@ struct MenuStatusSection: View {
             // on color. macOS 27 hides menu-item icons unless the label asks
             // for them, hence `.labelStyle(.titleAndIcon)` on every warning
             // row here.
+            // Both strings have plural variations in the catalog ("1 sample").
             Label("\(recorder.writeErrorsCount) samples dropped", systemImage: "exclamationmark.triangle.fill")
                 .labelStyle(.titleAndIcon)
                 .font(.caption)

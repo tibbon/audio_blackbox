@@ -210,7 +210,8 @@ extension RecordingState {
                 title: String(localized: "Recordings Recovered"),
                 body: String(
                     localized:
-                        "BlackBox finished \(Int(code)) recording(s) that were interrupted by a crash or power loss."
+                        "BlackBox finished \(Int(code)) recordings that were interrupted by a crash or power loss.",
+                    comment: "Crash-recovery notification; plural variations in the catalog"
                 )
             )
         } else if code < 0 {

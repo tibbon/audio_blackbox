@@ -44,22 +44,23 @@ struct CustomCadenceField: View {
         }
     }
 
-    private var cadenceDescription: String {
+    private var cadenceDescription: String { Self.cadenceDescription(recordingCadence) }
+
+    /// A readable duration for a rotation interval in seconds. Whole hours
+    /// and minutes use the catalog's plural variations ("1 hour", "2 hours")
+    /// rather than an English-only singular/plural branch.
+    static func cadenceDescription(_ recordingCadence: Int) -> String {
         let hours = recordingCadence / 3600
         let minutes = (recordingCadence % 3600) / 60
         let seconds = recordingCadence % 60
         if hours > 0 && minutes == 0 && seconds == 0 {
-            return hours == 1
-                ? String(localized: "1 hour")
-                : String(localized: "\(hours) hours")
+            return String(localized: "\(hours) hours", comment: "A whole number of hours; plural variations")
         }
         if hours > 0 {
             return String(localized: "\(hours)h \(minutes)m")
         }
         if minutes > 0 && seconds == 0 {
-            return minutes == 1
-                ? String(localized: "1 minute")
-                : String(localized: "\(minutes) minutes")
+            return String(localized: "\(minutes) minutes", comment: "A whole number of minutes; plural variations")
         }
         if minutes > 0 {
             return String(localized: "\(minutes)m \(seconds)s")

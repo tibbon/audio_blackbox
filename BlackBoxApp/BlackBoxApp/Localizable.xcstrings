@@ -39,12 +39,77 @@
         }
       }
     },
-    "%lld hours" : {},
+    "%lld hours" : {
+      "comment" : "A whole number of hours; plural variations",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hours"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld kHz" : {},
-    "%lld minutes" : {},
+    "%lld minutes" : {
+      "comment" : "A whole number of minutes; plural variations",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld of %lld channels selected" : {},
     "%lld of %lld selected" : {},
-    "%lld samples dropped" : {},
+    "%lld samples dropped" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sample dropped"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld samples dropped"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld seconds" : {},
     "%lld-bit" : {},
     "%lldh %lldm" : {},
@@ -91,7 +156,29 @@
     "BlackBox Audio Recorder" : {},
     "BlackBox Support" : {},
     "BlackBox can no longer access \"%@\". Please select a new output directory, or use the default location." : {},
-    "BlackBox finished %lld recording(s) that were interrupted by a crash or power loss." : {},
+    "BlackBox finished %lld recordings that were interrupted by a crash or power loss." : {
+      "comment" : "Crash-recovery notification; plural variations in the catalog",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "BlackBox finished %lld recording that was interrupted by a crash or power loss."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "BlackBox finished %lld recordings that were interrupted by a crash or power loss."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "BlackBox is currently recording. Do you want to stop recording and quit?" : {},
     "BlackBox is recording on battery (%lld%%). Plug in soon to avoid an unexpected stop." : {},
     "BlackBox lives in your menu bar at the top of your screen. Click the icon above to start recording." : {},
@@ -315,7 +402,28 @@
     "View real-time audio input levels per channel during recording." : {},
     "Want a key combination that starts and stops recording? It works system-wide, so it replaces that combination in every app while BlackBox is running. Optional — skip this and set one later." : {},
     "Warning: %@" : {},
-    "Warning: %lld samples dropped during this recording" : {},
+    "Warning: %lld samples dropped during this recording" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Warning: %lld sample dropped during this recording"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Warning: %lld samples dropped during this recording"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Warning: battery low, plug in to avoid an unexpected stop" : {},
     "Welcome to BlackBox" : {},
     "When Mac sleeps during recording:" : {},
