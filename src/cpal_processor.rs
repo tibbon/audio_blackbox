@@ -164,13 +164,22 @@ fn rotation_threshold_samples(
 
 /// Advance the rotation counter by one callback batch of `batch_len`
 /// interleaved samples. Returns true when the counter crossed `threshold`
-/// (a rotation is due), resetting the counter to 0. Alloc/lock-free —
-/// called from the real-time cpal callback.
+/// (a rotation is due). Alloc/lock-free — called from the real-time cpal
+/// callback.
+///
+/// The overshoot past `threshold` is carried into the next period rather
+/// than dropped. Callbacks rarely land exactly on the threshold, so resetting
+/// to 0 made every period up to one callback longer than the cadence and file
+/// boundaries crept later over a long session (a 512-frame callback at
+/// 48 kHz adds up to ~10 ms per rotation). Carrying keeps rotation `n` within
+/// one callback of `n * cadence`. The remainder is taken modulo `threshold`,
+/// so a callback longer than a whole period flags one rotation instead of
+/// queueing catch-up rotations; a zero threshold leaves the counter at 0.
 #[inline]
 fn advance_rotation_counter(counter: &mut u64, batch_len: usize, threshold: u64) -> bool {
-    *counter += batch_len as u64;
+    *counter = counter.saturating_add(batch_len as u64);
     if *counter >= threshold {
-        *counter = 0;
+        *counter = counter.checked_rem(threshold).unwrap_or(0);
         true
     } else {
         false
@@ -1179,9 +1188,10 @@ mod rotation_tests {
     }
 
     /// Counter accumulates across batches, returns false below the threshold,
-    /// fires exactly when crossing it, and resets to zero afterwards.
+    /// fires exactly when crossing it, and carries the overshoot into the
+    /// next period.
     #[test]
-    fn counter_accumulates_fires_and_resets() {
+    fn counter_accumulates_fires_and_carries_overshoot() {
         let threshold = 1_000_u64;
         let mut counter = 0_u64;
 
@@ -1193,11 +1203,48 @@ mod rotation_tests {
             advance_rotation_counter(&mut counter, 400, threshold),
             "crossing the threshold must signal a rotation"
         );
-        assert_eq!(counter, 0, "counter must reset after firing");
+        assert_eq!(counter, 200, "the 200-sample overshoot must carry over");
 
-        // The next period needs a full threshold's worth again.
-        assert!(!advance_rotation_counter(&mut counter, 999, threshold));
+        // The next period is shortened by the carried overshoot.
+        assert!(!advance_rotation_counter(&mut counter, 799, threshold));
         assert!(advance_rotation_counter(&mut counter, 1, threshold));
+        assert_eq!(counter, 0, "landing exactly on the threshold carries 0");
+    }
+
+    /// Rotation `n` must land within one callback of `n * threshold`
+    /// samples, however many periods have passed. Resetting to 0 on fire
+    /// dropped each period's overshoot: with 300-sample callbacks and a
+    /// 1000-sample threshold every period became 1200 samples, so the 100th
+    /// boundary sat 20,000 samples (67 callbacks) late.
+    #[test]
+    fn rotation_boundaries_do_not_drift() {
+        let threshold = 1_000_u64;
+        let batch = 300_usize;
+        let mut counter = 0_u64;
+        let mut consumed = 0_u64;
+        let mut rotations = 0_u64;
+        while rotations < 100 {
+            consumed += batch as u64;
+            if advance_rotation_counter(&mut counter, batch, threshold) {
+                rotations += 1;
+                let ideal = rotations * threshold;
+                assert!(
+                    consumed >= ideal && consumed - ideal < batch as u64,
+                    "rotation {rotations} fired after {consumed} samples, \
+                     more than one callback past {ideal}"
+                );
+            }
+        }
+    }
+
+    /// A callback longer than a whole period flags one rotation and keeps
+    /// only the sub-period remainder, instead of a backlog of rotations.
+    #[test]
+    fn oversized_batch_fires_once_and_keeps_phase() {
+        let mut counter = 0_u64;
+        assert!(advance_rotation_counter(&mut counter, 2_500, 1_000));
+        assert_eq!(counter, 500);
+        assert!(!advance_rotation_counter(&mut counter, 400, 1_000));
     }
 
     /// Wall-clock equivalence: with the threshold derived from the channel
@@ -1246,6 +1293,7 @@ mod rotation_tests {
         let mut counter = 0_u64;
         assert!(advance_rotation_counter(&mut counter, 512, threshold));
         assert!(advance_rotation_counter(&mut counter, 512, threshold));
+        assert_eq!(counter, 0, "a zero threshold must not accumulate");
     }
 }
 
