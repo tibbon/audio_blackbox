@@ -99,6 +99,9 @@ const ZERO_CHUNK: [u8; 1020] = [0; 1020];
 
 impl RawWavWriter {
     /// Create a new WAV file at `path` with the given spec.
+    ///
+    /// Fails with `AlreadyExists` if `path` exists; an existing file is
+    /// never opened over.
     pub(crate) fn create(path: &str, spec: WavSpec) -> io::Result<Self> {
         // `write_sample` slices `byte_width` bytes out of an i32, so only whole
         // bytes from 1 to 4 work. Reject anything else before creating the
@@ -117,7 +120,10 @@ impl RawWavWriter {
                 ));
             }
         };
-        let file = File::create(path)?;
+        // `create_new`: never truncate an existing file. A take a crash left
+        // under this temp name would otherwise be wiped; the caller picks
+        // another name on `AlreadyExists`.
+        let file = File::create_new(path)?;
         lock_while_open(&file, path);
         let mut writer = BufWriter::with_capacity(WAV_BUF_CAPACITY, file);
 

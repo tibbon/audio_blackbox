@@ -582,9 +582,16 @@ fn test_gate_open_failure_latches_write_failed() {
         state.set_timestamp_fn(clock.as_timestamp_fn());
         let write_failed = Arc::clone(&state.write_failed);
 
-        // A directory where the second channel's temp file would go makes its
-        // create fail. File names count from 1, so device channel 1 is -ch2.
-        std::fs::create_dir_all(temp_dir.path().join("tick-000-ch2.recording.wav")).unwrap();
+        // A dangling symlink where the second channel's temp file would go
+        // makes its create fail: the name looks free, so no other name is
+        // picked, but `create_new` refuses it. (A directory there used to be
+        // enough; now a taken temp name is skipped for a free one.) File
+        // names count from 1, so device channel 1 is -ch2.
+        std::os::unix::fs::symlink(
+            temp_dir.path().join("missing"),
+            temp_dir.path().join("tick-000-ch2.recording.wav"),
+        )
+        .unwrap();
 
         state.write_samples(&vec![0.5_f32; 4_800]);
         assert!(state.gate_pending_open);
@@ -753,5 +760,35 @@ fn test_rotation_skipped_when_gate_close_is_pending() {
         assert_eq!(files.len(), 1, "only the take itself, got {files:?}");
         let reader = hound::WavReader::open(&files[0]).expect("valid WAV");
         assert!(reader.len() > 0, "the take keeps its audio");
+    });
+}
+
+/// A leftover `.recording.wav` under the name a new file would use is never
+/// opened over: the new take gets the next free name, and the old file
+/// keeps its bytes. Temp files used to be created with `File::create`, which
+/// truncated a crashed, not yet recovered take with the same timestamp.
+#[test]
+fn test_existing_temp_file_is_not_truncated() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = make_gate_state(dir, true, 5, 0.01);
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+        let leftover = temp_dir.path().join("tick-000.recording.wav");
+        std::fs::write(&leftover, b"a crashed take").unwrap();
+
+        state.write_samples(&vec![0.5_f32; 4_800]);
+        state.process_gate_open();
+        assert_eq!(state.gate_state, GateState::Recording);
+        state.finalize_all().unwrap();
+
+        assert_eq!(std::fs::read(&leftover).unwrap(), b"a crashed take");
+        assert!(
+            !temp_dir.path().join("tick-000.wav").exists(),
+            "the leftover's final name stays free for its recovery"
+        );
+        let take = temp_dir.path().join("tick-000-1.wav");
+        assert_eq!(hound::WavReader::open(&take).unwrap().len(), 4_800);
     });
 }

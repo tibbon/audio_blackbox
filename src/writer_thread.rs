@@ -60,7 +60,27 @@ fn tmp_wav_path(final_path: &str) -> String {
 /// colliding original — never silently overwrite an existing recording
 /// (DOLL-268).
 pub(crate) fn disambiguate_path(final_path: &str) -> String {
-    if !Path::new(final_path).exists() {
+    first_free_path(final_path, |p| !Path::new(p).exists())
+}
+
+/// A final path for a new recording whose final `.wav` name and temporary
+/// `.recording.wav` name are both free.
+///
+/// The temp name has to be free too: a take a crash left under that name,
+/// not yet recovered (or skipped by recovery because another recorder holds
+/// it), would otherwise be opened over. The temp file is created with
+/// `create_new`, so a name taken between this check and the create fails
+/// instead of truncating; `open_pending_writer` then picks again.
+fn disambiguate_recording_path(final_path: &str) -> String {
+    first_free_path(final_path, |p| {
+        !Path::new(p).exists() && !Path::new(&tmp_wav_path(p)).exists()
+    })
+}
+
+/// `final_path` if `is_free` accepts it, else the first of `-1` to `-999`
+/// it accepts, else a nanosecond suffix (see `disambiguate_path`).
+fn first_free_path(final_path: &str, is_free: impl Fn(&str) -> bool) -> String {
+    if is_free(final_path) {
         return final_path.to_owned();
     }
     // Match `.wav` only as the literal lowercase suffix our writer
@@ -72,7 +92,7 @@ pub(crate) fn disambiguate_path(final_path: &str) -> String {
         .map_or((final_path, ""), |stem| (stem, ".wav"));
     for n in 1..1000 {
         let candidate = format!("{stem}-{n}{ext}");
-        if !Path::new(&candidate).exists() {
+        if is_free(&candidate) {
             return candidate;
         }
     }
@@ -89,17 +109,6 @@ pub(crate) fn disambiguate_path(final_path: &str) -> String {
         "Path disambiguation exhausted (>1000 collisions) for {final_path}; using {candidate}"
     );
     candidate
-}
-
-/// Create a WAV writer using our direct-write `RawWavWriter`.
-fn create_wav_writer(
-    path: &str,
-    spec: crate::raw_wav_writer::WavSpec,
-) -> Result<RawWavWriter, BlackboxError> {
-    RawWavWriter::create(path, spec).map_err(|e| BlackboxError::WavSource {
-        context: format!("Failed to create WAV file at {path}"),
-        source: Box::new(e),
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -601,9 +610,10 @@ impl WriterThreadState {
         Ok(())
     }
 
-    /// `<output_dir>/<date_str><suffix>.wav`, made unique if that file exists.
+    /// `<output_dir>/<date_str><suffix>.wav`, made unique if that file or
+    /// its `.recording.wav` temp file exists.
     fn period_path(&self, date_str: &str, suffix: &str) -> String {
-        disambiguate_path(&format!("{}/{date_str}{suffix}.wav", self.output_dir))
+        disambiguate_recording_path(&format!("{}/{date_str}{suffix}.wav", self.output_dir))
     }
 
     /// Spec of one per-channel file in split mode.
@@ -626,17 +636,47 @@ impl WriterThreadState {
 
     /// Create the temp-file writer for `final_path` and record the pending
     /// tmp → final rename, logging `Created {what}: {final_path}`.
+    ///
+    /// The temp file is created with `create_new`. If its name was taken
+    /// after `period_path` checked it, another free name is picked, up to a
+    /// few times, rather than opening over the existing file.
     fn open_pending_writer(
         &mut self,
         final_path: String,
         spec: crate::raw_wav_writer::WavSpec,
         what: &str,
     ) -> Result<RawWavWriter, BlackboxError> {
-        let tmp_path = tmp_wav_path(&final_path);
-        let writer = create_wav_writer(&tmp_path, spec)?;
-        info!("Created {what}: {final_path}");
-        self.pending_files.push((tmp_path, final_path));
-        Ok(writer)
+        let mut final_path = final_path;
+        let mut attempts = 0;
+        loop {
+            let tmp_path = tmp_wav_path(&final_path);
+            match RawWavWriter::create(&tmp_path, spec) {
+                Ok(writer) => {
+                    info!("Created {what}: {final_path}");
+                    self.pending_files.push((tmp_path, final_path));
+                    return Ok(writer);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempts < 8 => {
+                    attempts += 1;
+                    let next = disambiguate_recording_path(&final_path);
+                    if next == final_path {
+                        // Looks free but can't be created (a dangling
+                        // symlink, say): no other name to try.
+                        return Err(BlackboxError::WavSource {
+                            context: format!("Failed to create WAV file at {tmp_path}"),
+                            source: Box::new(e),
+                        });
+                    }
+                    final_path = next;
+                }
+                Err(e) => {
+                    return Err(BlackboxError::WavSource {
+                        context: format!("Failed to create WAV file at {tmp_path}"),
+                        source: Box::new(e),
+                    });
+                }
+            }
+        }
     }
 
     /// Check available disk space and stop writing if below threshold.
