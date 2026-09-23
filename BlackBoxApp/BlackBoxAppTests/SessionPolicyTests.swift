@@ -25,4 +25,43 @@ nonisolated final class SessionPolicyTests: XCTestCase {
             .stillRecording
         )
     }
+
+    // MARK: - shouldStartMonitoring
+
+    func testMonitoringStartsForAnOpenIdleMeter() {
+        XCTAssertTrue(
+            SessionPolicy.shouldStartMonitoring(
+                meterWindowOpen: true,
+                isRecording: false,
+                isStartingRecording: false,
+                isMonitoring: false
+            )
+        )
+    }
+
+    /// The meter window closed while the permission prompt was up: starting
+    /// now would leave a stream running that nothing will stop.
+    func testMonitoringDoesNotStartAfterTheMeterClosed() {
+        XCTAssertFalse(
+            SessionPolicy.shouldStartMonitoring(
+                meterWindowOpen: false,
+                isRecording: false,
+                isStartingRecording: false,
+                isMonitoring: false
+            )
+        )
+    }
+
+    func testMonitoringNeverTakesTheStreamFromARecording() {
+        for (recording, starting) in [(true, false), (false, true)] {
+            XCTAssertFalse(
+                SessionPolicy.shouldStartMonitoring(
+                    meterWindowOpen: true,
+                    isRecording: recording,
+                    isStartingRecording: starting,
+                    isMonitoring: false
+                )
+            )
+        }
+    }
 }

@@ -25,4 +25,18 @@ nonisolated enum SessionPolicy {
         if stopSucceeded { return .stopped }
         return engineStillRecording ? .stillRecording : .stoppedWithError
     }
+
+    /// Whether the level meter's monitoring stream should start, checked
+    /// after the microphone-permission await, which can suspend for as long
+    /// as the permission dialog is up. Monitoring exists only for an open
+    /// meter window (it is tied to window-open, not occlusion, DOLL-348), and
+    /// never takes the stream from a live or starting recording (DOLL-459).
+    static func shouldStartMonitoring(
+        meterWindowOpen: Bool,
+        isRecording: Bool,
+        isStartingRecording: Bool,
+        isMonitoring: Bool
+    ) -> Bool {
+        meterWindowOpen && !isRecording && !isStartingRecording && !isMonitoring
+    }
 }

@@ -13,8 +13,18 @@ extension RecordingState {
             // DOLL-459: the permission await can suspend across user
             // interaction; re-check the record/monitor mutual exclusion
             // afterwards so a stale monitor task doesn't grab the audio
-            // stream out from under an active (or in-flight) recording.
-            guard !self.isRecording, !self.isStartingRecording, !self.isMonitoring else { return }
+            // stream out from under an active (or in-flight) recording. The
+            // meter window may also have closed meanwhile; starting then
+            // left a monitoring stream (and the mic indicator) running with
+            // no window to stop it.
+            guard
+                SessionPolicy.shouldStartMonitoring(
+                    meterWindowOpen: self.isMeterWindowOpen,
+                    isRecording: self.isRecording,
+                    isStartingRecording: self.isStartingRecording,
+                    isMonitoring: self.isMonitoring
+                )
+            else { return }
             let result = self.bridge.startMonitoring()
             if result.isSuccess {
                 self.isMonitoring = true
