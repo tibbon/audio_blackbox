@@ -131,7 +131,9 @@ fn main() -> ExitCode {
 /// Create the processor and recorder and start recording. Logs and returns
 /// `None` on failure.
 fn start_recorder(config: &AppConfig) -> Option<AudioRecorder<CpalAudioProcessor>> {
-    let processor = match CpalAudioProcessor::new() {
+    // `with_config`, not `new`: `new` loads the configuration again, which
+    // logs twice and could read a file edited since startup.
+    let processor = match CpalAudioProcessor::with_config(config) {
         Ok(p) => p,
         Err(e) => {
             error!("Failed to create audio processor: {e}");
