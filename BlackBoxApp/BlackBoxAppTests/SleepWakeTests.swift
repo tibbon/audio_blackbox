@@ -217,6 +217,30 @@ nonisolated final class SleepWakeGuardTests: StandardDefaultsTestCase {
         XCTAssertFalse(recorder.isRecording)
     }
 
+    /// DOLL-182: the wake handler consumes `wasSleepInterrupted` when it
+    /// schedules the deferred resume, so a user who starts and then stops
+    /// inside the 1.5 s window must cancel the scheduled resume itself —
+    /// checking only `!isRecording` after the delay resurrected the recording.
+    @MainActor
+    func testUserStopInsideResumeWindowCancelsTheResume() throws {
+        UserDefaults.standard.set("resume", forKey: SettingsKeys.sleepBehavior)
+        let recorder = RecordingState()
+        recorder.isRecording = true
+        recorder.handleWillSleep()
+        XCTAssertTrue(recorder.wasSleepInterrupted)
+
+        recorder.handleDidWake()
+        let pending = try XCTUnwrap(recorder.pendingResumeTask, "wake must schedule a resume")
+        XCTAssertFalse(recorder.wasSleepInterrupted)
+
+        // The user starts and stops a recording before the resume fires.
+        recorder.isRecording = true
+        recorder.stop()
+
+        XCTAssertTrue(pending.isCancelled)
+        XCTAssertNil(recorder.pendingResumeTask)
+    }
+
     /// DOLL-443: an already-active recording short-circuits `startAndWait`
     /// and reports success — the resume callers branch on this result, so
     /// a redundant start attempt must not read as "Resume Failed".

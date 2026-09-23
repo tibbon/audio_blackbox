@@ -122,11 +122,10 @@ The Mac App Store-shipped product is a SwiftUI menu-bar app (`BlackBoxApp/BlackB
 | `sessionDidBecomeActive` | `wasSleepInterrupted` set | deferred `start()`, same as `didWake` |
 | `willPowerOff` | any | set `explicitQuit`, then `recorder?.stop()` (DOLL-183) |
 
-`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop(reason: .user)` (DOLL-182). The willSleep / sessionResign handlers stop with `reason: .sleepInterruption`, which preserves the flag they just set — `stop()` clearing it unconditionally made resume-on-wake dead code (DOLL-442).
+`wasSleepInterrupted` is cleared by `didWake`, `sessionDidBecomeActive`, AND `stop(reason: .user)` (DOLL-182). The wake handlers consume the flag when they schedule the deferred start, so the pending resume is held as `pendingResumeTask`, which a user `stop(reason: .user)` or `start()` cancels: a start-then-stop inside the 1.5 s window is not resumed. The willSleep / sessionResign handlers stop with `reason: .sleepInterruption`, which preserves the flag they just set — `stop()` clearing it unconditionally made resume-on-wake dead code (DOLL-442).
 
 Known gaps against this intent:
 
-- **DOLL-182 does not hold.** `handleDidWake` and `handleSessionDidBecomeActive` clear the flag *before* scheduling the 1.5 s Task, and the Task checks only `!isRecording`. A user who starts and then stops within that window still gets the recording resumed.
 - **`willPowerOff` is not synchronous.** Since DOLL-652 the observers are `for await` Tasks, so the handler runs on a later main-actor turn rather than inside the notification post. DOLL-183 assumed it drained directly.
 
 ### Security-scoped bookmark lifecycle

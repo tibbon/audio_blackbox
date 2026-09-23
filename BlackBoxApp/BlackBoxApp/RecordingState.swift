@@ -242,6 +242,9 @@ final class RecordingState {
     var meterPollTotalNs: UInt64 = 0
     var activityToken: (any NSObjectProtocol)?
     var wasSleepInterrupted = false
+    /// The deferred resume scheduled by a wake / session-active handler;
+    /// cancelled by a user stop or start (DOLL-182).
+    var pendingResumeTask: Task<Void, Never>?
 
     /// Bookmark-restore Task (DOLL-181). Stored so auto-record can `await`
     /// it before starting, preventing a race where auto-record fires with

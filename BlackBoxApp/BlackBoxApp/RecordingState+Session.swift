@@ -21,6 +21,8 @@ extension RecordingState {
     /// cooperation, so no explicit Task.cancel is required from
     /// applicationShouldTerminate.
     func start() {
+        // A deliberate start supersedes a pending resume-on-wake (DOLL-182).
+        cancelPendingResume()
         Task { @MainActor in
             await self.startAndWait()
         }
@@ -218,6 +220,9 @@ extension RecordingState {
         // resume-on-wake dead code (DOLL-442).
         if SleepWakePolicy.stopCancelsPendingResume(reason) {
             wasSleepInterrupted = false
+            // The flag is already consumed once the wake handler has run;
+            // the resume it scheduled must be cancelled too.
+            cancelPendingResume()
         }
         Self.log.info("Recording stopped")
         NSAccessibility.post(
