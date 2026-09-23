@@ -153,60 +153,88 @@ extension RecordingState {
         let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
         let result = bridge.stopRecording()
-        endPreventingSleep()
-        if result.isSuccess {
-            isRecording = false
-            recordingStartTime = nil
-            peakLevels = []
-            errorMessage = nil
-            statusText = String(localized: "Ready")
-            // DOLL-351: a clean stop clears any flapping-restart bookkeeping.
-            streamRestartCount = 0
-            lastStreamRestart = nil
-            // DOLL-213: surface a transient "last recording" summary for
-            // 30 s so the user gets confirmation of what just finished.
-            // Captured here (before the durations resets to 0) and
-            // displayed as a menu block with a Show in Finder button.
-            showLastRecordingSummary(sessionDuration: sessionDuration)
-            writeErrorsCount = 0
-            isLowBatteryWarning = false
-            batteryNotificationFired = false
-            batteryCheckTick = 0
-            preflightSizeWarning = nil
-            currentFileSizeText = nil
-            configSnapshot = nil
-            wasGateIdle = false
-            // DOLL-182: a user stop cancels any pending resume-on-wake.
-            // Without this, a manual stop within the 1.5s deferred-resume
-            // window after sleep/wake or session resign/activate would let
-            // the deferred start() resurrect a recording the user
-            // explicitly stopped. The sleep-interruption stop is exempt —
-            // it just SET the flag, and clearing it here made
-            // resume-on-wake dead code (DOLL-442).
-            if SleepWakePolicy.stopCancelsPendingResume(reason) {
-                wasSleepInterrupted = false
-            }
-            Self.log.info("Recording stopped")
-            NSAccessibility.post(
-                element: NSApp as Any,
-                notification: .announcementRequested,
-                userInfo: [.announcement: String(localized: "Recording stopped")]
-            )
+        // The FFI takes the recorder out of the handle before finalizing, so an
+        // error from stopRecording usually means the engine stopped anyway and
+        // only the finalize failed. Ask the engine instead of assuming it is
+        // still running: treating every error as "still recording" left the
+        // UI on "Recording" with no status poll, and resume-on-wake then
+        // restarted it (for example onto a full disk).
+        let outcome = SessionPolicy.stopOutcome(
+            stopSucceeded: result.isSuccess,
+            engineStillRecording: !result.isSuccess && bridge.isRecording
+        )
+        let failure = result.isSuccess ? nil : bridge.lastError ?? String(localized: "Failed to stop recording")
+        if let failure {
+            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(failure)")
+        }
+        switch outcome {
+        case .stillRecording:
+            // Keep the session's timer (and with it the status poll) and its
+            // sleep prevention: the engine is still writing.
+            startTimer()
+            setTransientError(failure ?? String(localized: "Failed to stop recording"))
 
-            // Track successful sessions >5 min for App Store review prompt
-            if sessionDuration > 300 {
-                let key = SettingsKeys.successfulRecordingSessions
-                UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
-            }
+        case .stopped, .stoppedWithError:
+            endPreventingSleep()
+            finishStoppedSession(reason: reason, sessionDuration: sessionDuration, succeeded: outcome == .stopped)
+            if let failure { setTransientError(failure) }
+        }
+    }
 
-            // Resume monitoring if the meter window is still open
-            if isMeterWindowOpen {
-                startMonitoring()
-            }
-        } else {
-            let err = bridge.lastError ?? String(localized: "Failed to stop recording")
-            setTransientError(err)
-            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(err)")
+    /// UI and bookkeeping teardown once the engine has stopped, whether or
+    /// not its final flush succeeded.
+    private func finishStoppedSession(
+        reason: SleepWakePolicy.StopReason,
+        sessionDuration: TimeInterval,
+        succeeded: Bool
+    ) {
+        isRecording = false
+        recordingStartTime = nil
+        peakLevels = []
+        errorMessage = nil
+        statusText = String(localized: "Ready")
+        // DOLL-351: a clean stop clears any flapping-restart bookkeeping.
+        streamRestartCount = 0
+        lastStreamRestart = nil
+        // DOLL-213: surface a transient "last recording" summary for
+        // 30 s so the user gets confirmation of what just finished.
+        // Captured here (before the durations resets to 0) and
+        // displayed as a menu block with a Show in Finder button.
+        showLastRecordingSummary(sessionDuration: sessionDuration)
+        writeErrorsCount = 0
+        isLowBatteryWarning = false
+        batteryNotificationFired = false
+        batteryCheckTick = 0
+        preflightSizeWarning = nil
+        currentFileSizeText = nil
+        configSnapshot = nil
+        wasGateIdle = false
+        // DOLL-182: a user stop cancels any pending resume-on-wake.
+        // Without this, a manual stop within the 1.5s deferred-resume
+        // window after sleep/wake or session resign/activate would let
+        // the deferred start() resurrect a recording the user
+        // explicitly stopped. The sleep-interruption stop is exempt —
+        // it just SET the flag, and clearing it here made
+        // resume-on-wake dead code (DOLL-442).
+        if SleepWakePolicy.stopCancelsPendingResume(reason) {
+            wasSleepInterrupted = false
+        }
+        Self.log.info("Recording stopped")
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: String(localized: "Recording stopped")]
+        )
+
+        // Track successful sessions >5 min for App Store review prompt
+        if succeeded, sessionDuration > 300 {
+            let key = SettingsKeys.successfulRecordingSessions
+            UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
+        }
+
+        // Resume monitoring if the meter window is still open
+        if isMeterWindowOpen {
+            startMonitoring()
         }
     }
 
