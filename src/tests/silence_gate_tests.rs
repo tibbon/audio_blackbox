@@ -117,6 +117,35 @@ fn test_gate_opens_on_signal() {
     });
 }
 
+/// A gate open asks the capture callback to restart its cadence counter, so
+/// in continuous mode the first file after the open runs a full cadence
+/// instead of ending wherever the idle-period counter had got to. A pending
+/// restart also makes the writer ignore a rotation flagged before it.
+#[test]
+fn test_gate_open_requests_cadence_restart() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+
+        let mut state = make_gate_state(dir, true, 5, 0.01);
+        assert!(!state.rotation_restart.load(Ordering::Relaxed));
+
+        state.write_samples(&[0.5_f32; 480]);
+        state.process_gate_open();
+        assert_eq!(state.gate_state, GateState::Recording);
+        assert!(
+            state.rotation_restart.load(Ordering::Relaxed),
+            "opening the gate must request a cadence restart"
+        );
+
+        let stale = AtomicBool::new(true);
+        assert!(
+            !crate::writer_thread::take_due_rotation(&stale, &state.rotation_restart),
+            "a rotation flagged before the restart must not cut the new file short"
+        );
+    });
+}
+
 // ===========================================================================
 // Test 3: Gate closes after timeout of silence
 // ===========================================================================

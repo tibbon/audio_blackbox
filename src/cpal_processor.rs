@@ -522,6 +522,7 @@ impl CpalAudioProcessor {
         // DOLL-437: wire the shared write-failure flag into the writer state so
         // a persistent-write-failure stop is visible to the FFI status poll.
         state.write_failed = Arc::clone(&self.write_failed);
+        let rotation_restart = Arc::clone(&state.rotation_restart);
 
         let ring_size = sample_rate as usize * total_channels * RING_BUFFER_SECONDS;
         let pipeline = spawn_writer_pipeline("blackbox-writer", "writer", ring_size, state)?;
@@ -537,7 +538,10 @@ impl CpalAudioProcessor {
         let callback = recording_callback(
             pipeline.producer,
             Arc::clone(&self.write_errors),
-            pipeline.rotation_needed,
+            RotationFlags {
+                needed: pipeline.rotation_needed,
+                restart: rotation_restart,
+            },
             self.continuous_mode,
             rotation_threshold_samples(sample_rate, total_channels, self.recording_cadence),
             total_channels,
@@ -668,12 +672,39 @@ fn spawn_writer_pipeline(
     })
 }
 
+/// The rotation flags shared between the recording callback and the writer.
+struct RotationFlags {
+    /// Raised by the callback when a cadence period has elapsed.
+    needed: Arc<AtomicBool>,
+    /// Raised by the writer when the silence gate opens; the callback
+    /// restarts its cadence counter and clears it.
+    restart: Arc<AtomicBool>,
+}
+
+/// Restart the cadence clock if the writer asked for it (silence gate just
+/// opened): zero the counter, drop a rotation flagged in the old period, then
+/// clear `restart` with a Release store so the writer's Acquire load in
+/// `take_due_rotation` also sees the cleared `rotation_needed`.
+///
+/// RT-safe: one atomic load, and two atomic stores only when a restart is
+/// pending. A second restart request landing between the load and the clear
+/// would be lost, but gate opens are at least one gate timeout (>= 1 s)
+/// apart, far longer than one callback.
+#[inline]
+fn apply_rotation_restart(restart: &AtomicBool, counter: &mut u64, rotation_needed: &AtomicBool) {
+    if restart.load(Ordering::Relaxed) {
+        *counter = 0;
+        rotation_needed.store(false, Ordering::Relaxed);
+        restart.store(false, Ordering::Release);
+    }
+}
+
 /// The recording stream's data callback: flag a rotation once a cadence
 /// period of samples has arrived, then push the batch into the ring.
 fn recording_callback(
     mut producer: rtrb::Producer<f32>,
     write_errors: Arc<AtomicU64>,
-    rotation_needed: Arc<AtomicBool>,
+    rotation: RotationFlags,
     continuous_mode: bool,
     rotation_threshold: u64,
     frame_size: usize,
@@ -686,6 +717,12 @@ fn recording_callback(
         // is a real-time-safety violation that causes audio
         // dropouts. Sample-count signals belong on the writer
         // thread (see `write_errors` atomic).
+
+        apply_rotation_restart(
+            &rotation.restart,
+            &mut rotation_sample_counter,
+            &rotation.needed,
+        );
 
         // Check rotation via sample counter (zero syscalls)
         if continuous_mode
@@ -701,7 +738,7 @@ fn recording_callback(
             // Relaxed suffices and is marginally cheaper
             // on the RT thread (DOLL-391). Matches the
             // other RT status flags in this file.
-            rotation_needed.store(true, Ordering::Relaxed);
+            rotation.needed.store(true, Ordering::Relaxed);
         }
 
         push_samples_with_overflow_count(&mut producer, data, frame_size, &write_errors);
@@ -1169,7 +1206,65 @@ impl CpalAudioProcessor {
 
 #[cfg(test)]
 mod rotation_tests {
-    use super::{advance_rotation_counter, rotation_threshold_samples};
+    use super::{advance_rotation_counter, apply_rotation_restart, rotation_threshold_samples};
+    use crate::writer_thread::take_due_rotation;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// A silence-gate open restarts the cadence: the counter's progress
+    /// from the idle period is discarded, a rotation flagged in that period
+    /// is dropped, and the next rotation needs a full threshold of samples.
+    /// Without the restart the first file after an open ended wherever the
+    /// idle-period counter happened to be (arbitrarily short).
+    #[test]
+    fn gate_open_restarts_the_cadence() {
+        let threshold = 1_000_u64;
+        let needed = AtomicBool::new(false);
+        let restart = AtomicBool::new(false);
+        let mut counter = 0_u64;
+
+        // Idle period: the counter runs to 900 and a stale rotation is flagged.
+        assert!(!advance_rotation_counter(&mut counter, 900, threshold));
+        needed.store(true, Ordering::Relaxed);
+
+        // The writer opens the gate; until the callback runs, the stale
+        // flag must not trigger a rotation.
+        restart.store(true, Ordering::Relaxed);
+        assert!(
+            !take_due_rotation(&needed, &restart),
+            "a flag from before the restart must be ignored"
+        );
+        needed.store(true, Ordering::Relaxed);
+
+        // Next callback applies the restart.
+        apply_rotation_restart(&restart, &mut counter, &needed);
+        assert_eq!(counter, 0);
+        assert!(!restart.load(Ordering::Relaxed));
+        assert!(
+            !needed.load(Ordering::Relaxed),
+            "the restart must drop the old period's flag"
+        );
+
+        // 900 more samples would have crossed the old threshold; now they don't.
+        assert!(!advance_rotation_counter(&mut counter, 900, threshold));
+        assert!(advance_rotation_counter(&mut counter, 100, threshold));
+        needed.store(true, Ordering::Relaxed);
+        assert!(
+            take_due_rotation(&needed, &restart),
+            "a flag from the restarted counter must rotate"
+        );
+        assert!(!needed.load(Ordering::Relaxed), "the flag is consumed");
+    }
+
+    /// With no restart pending, the callback helper is a no-op.
+    #[test]
+    fn no_restart_leaves_counter_alone() {
+        let needed = AtomicBool::new(true);
+        let restart = AtomicBool::new(false);
+        let mut counter = 700_u64;
+        apply_rotation_restart(&restart, &mut counter, &needed);
+        assert_eq!(counter, 700);
+        assert!(needed.load(Ordering::Relaxed));
+    }
 
     /// DOLL-453: the threshold must scale with the device's TOTAL channel
     /// count, because the RT callback counts interleaved samples across all

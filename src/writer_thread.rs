@@ -225,6 +225,16 @@ pub(crate) struct WriterThreadState {
     /// (`MAX_WAV_DATA_BYTES`; tests lower it). WAV sizes are `u32`, so a file
     /// past 4 GiB would carry a saturated header that players truncate.
     pub(crate) max_data_bytes: u64,
+    /// Set when the silence gate opens, to restart the cadence clock. The
+    /// RT callback's rotation counter kept running while the gate was idle,
+    /// so the first file after an open used to end at whatever point of the
+    /// cadence period the counter had reached. The callback sees this flag,
+    /// zeroes its counter, drops any rotation it had already flagged, and
+    /// clears it (see `cpal_processor::apply_rotation_restart`); until then
+    /// `take_due_rotation` ignores `rotation_needed`. The first file after
+    /// an open therefore runs one full cadence from the open, plus the
+    /// replayed pre-roll.
+    pub(crate) rotation_restart: Arc<AtomicBool>,
 
     // --- Cold fields: only accessed during setup, rotation, or shutdown ---
     pub output_dir: String,
@@ -491,6 +501,7 @@ impl WriterThreadState {
             gate_idle: Arc::new(AtomicBool::new(false)),
             gate_preroll: Vec::new(),
             max_data_bytes: MAX_WAV_DATA_BYTES,
+            rotation_restart: Arc::new(AtomicBool::new(false)),
             output_dir: String::new(),
             #[cfg(unix)]
             output_dir_cstr: None, // Monitor mode doesn't check disk space
@@ -1014,6 +1025,10 @@ impl WriterThreadState {
             self.gate_state = GateState::Recording;
             // Status flag only; no synchronizes-with relationship.
             self.gate_idle.store(false, Ordering::Relaxed);
+            // Restart the cadence clock so this file gets a full period
+            // (see `rotation_restart`). Relaxed: the RT side's Release clear
+            // is what `take_due_rotation` synchronizes with.
+            self.rotation_restart.store(true, Ordering::Relaxed);
             // DOLL-465: replay the retained idle batch — the signal onset
             // that tripped the gate — into the just-opened writers before
             // live samples resume. take() empties the field first so the
@@ -1368,6 +1383,21 @@ pub(crate) fn check_and_delete_silent_files(files: &[String], threshold: f32) {
     }
 }
 
+/// Consume the RT callback's rotation flag and say whether to rotate now.
+///
+/// While `restart` is still set the callback has not yet restarted its
+/// cadence counter after a gate open, so any flag it raised belongs to the
+/// period before the open: it is cleared and ignored. The callback clears
+/// `rotation_needed` before its Release store of `restart = false`; the
+/// Acquire load here means a `false` observation also sees that clear, so a
+/// flag read afterwards was raised by the restarted counter.
+pub(crate) fn take_due_rotation(rotation_needed: &AtomicBool, restart: &AtomicBool) -> bool {
+    let restart_pending = restart.load(Ordering::Acquire);
+    // Relaxed: status flag only, no companion data to acquire (DOLL-391).
+    let due = rotation_needed.swap(false, Ordering::Relaxed);
+    due && !restart_pending
+}
+
 fn drain_remaining(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) {
     loop {
         if read_available(consumer, state) == 0 {
@@ -1437,7 +1467,7 @@ pub(crate) fn writer_thread_main(
 
         // 3. Check rotation flag (set by RT callback via AtomicBool).
         // Relaxed: status flag only, no companion data to acquire (DOLL-391).
-        if rotation_needed.swap(false, Ordering::Relaxed) {
+        if take_due_rotation(rotation_needed, &state.rotation_restart) {
             state.rotate_files();
         }
 
