@@ -24,6 +24,17 @@ concurrency:
 
 permissions: {}
 
+# No actions/cache in this workflow. Every job here builds from a clean
+# cargo registry and target/ so a release can never restore a cache that a
+# PR, a manual run or another workflow wrote. The old shared key
+# (`<os>-cargo-<lockhash>`, restore prefix `<os>-cargo-`) matched caches from
+# codeql.yml, ignored-tests.yml and every rust.yml lane, built with other
+# toolchains and features. Releases are rare, so the few extra minutes of a
+# cold build are worth a release built only from the tagged source.
+# ruby/setup-ruby's bundler-cache stays: no other workflow uses setup-ruby,
+# so only release runs write that cache, and it holds only the fastlane gems
+# pinned in Gemfile.lock.
+
 jobs:
   # ── Test gate ─────────────────────────────────────────────────────
   # Re-run the Rust quality checks on the tag's exact SHA before any
@@ -65,17 +76,6 @@ jobs:
       uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
       with:
         components: clippy, rustfmt
-
-    - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
 
     # DOLL-462: version alignment was previously enforced only via
     # `make release` — a plain `git tag && git push` bypassed the gate
@@ -182,17 +182,6 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
 
-    - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-
     - name: Build CLI release
       run: cargo build --release
 
@@ -238,17 +227,6 @@ jobs:
     # stable, so the TestFlight build is reproducible (DOLL-260).
     - name: Install Rust
       uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e  # 1.98
-
-    - name: Cache Rust dependencies
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
 
     - name: Extract version (tag or Info.plist fallback)
       id: version
