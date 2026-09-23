@@ -21,16 +21,11 @@ struct OnboardingView: View {
     @State private var outputDir: String = ""
     @State private var chosenURL: URL?
     @State private var dirChangedByUser = false
-    // DOLL-209: bindings for the keyboard-shortcut step.
-    // Mirror the trio the existing ShortcutRecorderButton in SettingsView
-    // takes (label / isRecording / error). The step is opt-in, so there is
-    // no default to offer and nothing to remember between visits.
+    // DOLL-209: state for the keyboard-shortcut step (see ShortcutStepModel).
     // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
-    @State private var shortcutLabel = String(localized: "None")
+    @State private var shortcutStep = ShortcutStepModel()
     // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var isRecordingShortcut: Bool = false
-    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
-    @State private var shortcutError: String?
 
     // DOLL-344: the default lives inside the app's sandbox container so it's
     // writable out of the box. Single source of truth on RecordingState.
@@ -148,11 +143,7 @@ struct OnboardingView: View {
             )
 
         case 4:
-            KeyboardShortcutStep(
-                shortcutLabel: $shortcutLabel,
-                isRecordingShortcut: $isRecordingShortcut,
-                shortcutError: $shortcutError
-            )
+            KeyboardShortcutStep(model: $shortcutStep, isRecordingShortcut: $isRecordingShortcut)
 
         default:
             MenuBarDiscoveryStep()
@@ -279,7 +270,7 @@ struct OnboardingView: View {
         // "Run Setup Again"); Skip keeps it rather than silently moving
         // their recordings back to the default.
         let switchesFolder = UserDefaults.standard.data(forKey: SettingsKeys.outputDirBookmark) == nil
-        applySetup(folder: switchesFolder ? .useDefault : .keep) {
+        Self.applySetup(to: recorder, folder: switchesFolder ? .useDefault : .keep) {
             OnboardingSettings.applySkip(to: UserDefaults.standard)
         }
 
@@ -307,7 +298,7 @@ struct OnboardingView: View {
 
         // Save recording mode choice (keeping a rotation interval the user
         // already chose).
-        applySetup(folder: folder) {
+        Self.applySetup(to: recorder, folder: folder) {
             OnboardingSettings.applyRecordingMode(
                 continuous: continuousMode,
                 silenceGate: silenceGateEnabled,
@@ -320,15 +311,15 @@ struct OnboardingView: View {
     }
 
     /// What finishing the wizard does with the output folder.
-    private enum FolderChoice {
+    enum FolderChoice {
         case keep
         /// The in-container default, which needs no bookmark.
         case useDefault
         case use(URL)
     }
 
-    /// Apply the wizard's choices. `applyMode` saves the recording mode and
-    /// returns its engine config.
+    /// Apply the wizard's choices, for Finish and Skip (and the tests).
+    /// `applyMode` saves the recording mode and returns its engine config.
     ///
     /// A recording can be running here (started from the hotkey while the
     /// wizard was open). The mode goes to the engine first, then the live
@@ -337,7 +328,7 @@ struct OnboardingView: View {
     /// the mode changed. The mode used to be applied after the folder
     /// switch's restart, or with no restart at all, leaving the live session
     /// on the old mode.
-    private func applySetup(folder: FolderChoice, applyMode: () -> [String: Any]) {
+    static func applySetup(to recorder: RecordingState, folder: FolderChoice, applyMode: () -> [String: Any]) {
         let configBefore = recorder.bridge.getConfig() ?? [:]
         recorder.bridge.setConfig(applyMode())
         let modeChanged = OnboardingSettings.recordingModeChanged(

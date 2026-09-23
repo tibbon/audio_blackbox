@@ -1,16 +1,56 @@
 import SwiftUI
 
 extension OnboardingView {
-    // DOLL-209: optional global-hotkey step. Opt-in: appearing, Continue,
-    // Back and finishing onboarding register and save nothing. A shortcut
-    // exists only after the user clicks "Use ⌘⇧R" or records their own,
-    // because a global hotkey takes the combination over in every app and
-    // ⌘⇧R is also the browsers' hard reload. The shortcut state lives on
-    // OnboardingView because this view is removed when the user moves on.
+    /// The shortcut step's state and every action it takes on the global
+    /// hotkey, kept out of the view so the tests run the same code the step
+    /// runs. It lives on OnboardingView because the step's view is removed
+    /// when the user moves on.
+    ///
+    /// DOLL-209: the step is opt-in. Appearing, Continue, Back and finishing
+    /// onboarding register and save nothing. A shortcut exists only after
+    /// the user clicks "Use ⌘⇧R" or records their own, because a global
+    /// hotkey takes the combination over in every app and ⌘⇧R is also the
+    /// browsers' hard reload.
+    struct ShortcutStepModel {
+        /// The button's label: the shortcut, or "None".
+        var label = String(localized: "None")
+        var error: String?
+
+        var hasShortcut: Bool { label != String(localized: "None") }
+
+        /// Appearing shows a shortcut saved earlier (a "Run Setup Again"
+        /// user keeps theirs). Reads defaults only: nothing is registered.
+        mutating func appear() {
+            label = GlobalHotkeyManager.shared.loadSaved()?.displayString ?? String(localized: "None")
+        }
+
+        /// The "Use ⌘⇧R" action: register the suggested shortcut and save
+        /// it for launch restore, through the same path as the Settings
+        /// recorder. Saves nothing if another app owns it.
+        mutating func useSuggested() {
+            let suggested = GlobalHotkeyManager.suggestedShortcut
+            if GlobalHotkeyManager.shared.registerAndSave(suggested) {
+                label = suggested.displayString
+                error = nil
+            } else {
+                error = String(
+                    localized: "\(suggested.displayString) is already in use. Record a different combination instead."
+                )
+            }
+        }
+
+        /// The "Clear shortcut" action.
+        mutating func clear() {
+            GlobalHotkeyManager.shared.unregister()
+            GlobalHotkeyManager.shared.save(nil)
+            label = String(localized: "None")
+            error = nil
+        }
+    }
+
     struct KeyboardShortcutStep: View {
-        @Binding var shortcutLabel: String
+        @Binding var model: ShortcutStepModel
         @Binding var isRecordingShortcut: Bool
-        @Binding var shortcutError: String?
 
         var body: some View {
             VStack(spacing: 16) {
@@ -46,18 +86,16 @@ extension OnboardingView {
                 ChangeLaterCaption()
             }
             .padding(.horizontal, 32)
-            // Show a shortcut saved earlier (a "Run Setup Again" user keeps
-            // theirs). Reading only: nothing is registered here.
-            .onAppear { shortcutLabel = Self.savedShortcutLabel() }
+            .onAppear { model.appear() }
         }
 
         /// One-click opt-in to the suggested ⌘⇧R, with the trade-off spelled
         /// out next to it. Hidden once any shortcut is set.
         @ViewBuilder private var suggestedShortcutButton: some View {
-            if shortcutLabel == String(localized: "None") {
+            if !model.hasShortcut {
                 VStack(spacing: 6) {
                     Button("Use \(GlobalHotkeyManager.suggestedShortcut.displayString)") {
-                        useSuggestedShortcut()
+                        model.useSuggested()
                     }
                     .accessibilityHint("Sets Command-Shift-R as the shortcut for starting and stopping recording")
 
@@ -80,17 +118,15 @@ extension OnboardingView {
                 Text("Toggle Recording:")
                 Spacer()
                 ShortcutRecorderButton(
-                    shortcutLabel: $shortcutLabel,
+                    shortcutLabel: $model.label,
                     isRecording: $isRecordingShortcut,
-                    error: $shortcutError
+                    error: $model.error
                 )
             }
             .frame(maxWidth: 360)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Global keyboard shortcut for toggling recording")
-            .accessibilityValue(
-                shortcutLabel == String(localized: "None") ? String(localized: "No shortcut set") : shortcutLabel
-            )
+            .accessibilityValue(model.hasShortcut ? model.label : String(localized: "No shortcut set"))
             .accessibilityHint(
                 isRecordingShortcut
                     ? String(localized: "Press a key combination, or Escape to cancel")
@@ -99,12 +135,9 @@ extension OnboardingView {
         }
 
         @ViewBuilder private var clearButton: some View {
-            if shortcutLabel != String(localized: "None") {
+            if model.hasShortcut {
                 Button("Clear shortcut") {
-                    GlobalHotkeyManager.shared.unregister()
-                    GlobalHotkeyManager.shared.save(nil)
-                    shortcutLabel = String(localized: "None")
-                    shortcutError = nil
+                    model.clear()
                 }
                 .font(.caption)
                 .accessibilityHint("Removes the current keyboard shortcut")
@@ -112,9 +145,9 @@ extension OnboardingView {
         }
 
         @ViewBuilder private var errorLabel: some View {
-            if let shortcutError {
+            if let error = model.error {
                 Label {
-                    Text(shortcutError)
+                    Text(error)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .accessibilityHidden(true)
@@ -123,31 +156,6 @@ extension OnboardingView {
                 .foregroundStyle(Color(nsColor: .systemOrange))
                 .frame(maxWidth: 360)
             }
-        }
-
-        private func useSuggestedShortcut() {
-            let suggested = GlobalHotkeyManager.suggestedShortcut
-            if Self.chooseSuggestedShortcut() {
-                shortcutLabel = suggested.displayString
-                shortcutError = nil
-            } else {
-                shortcutError = String(
-                    localized: "\(suggested.displayString) is already in use. Record a different combination instead."
-                )
-            }
-        }
-
-        /// Label for the saved shortcut, or "None". Reads defaults only, so
-        /// reaching this step never registers or saves a shortcut.
-        static func savedShortcutLabel() -> String {
-            GlobalHotkeyManager.shared.loadSaved()?.displayString ?? String(localized: "None")
-        }
-
-        /// The "Use ⌘⇧R" action: register the suggested shortcut and save it
-        /// for launch restore, through the same path as the Settings
-        /// recorder. Returns `false` (and saves nothing) if another app owns it.
-        static func chooseSuggestedShortcut() -> Bool {
-            GlobalHotkeyManager.shared.registerAndSave(GlobalHotkeyManager.suggestedShortcut)
         }
     }
 }

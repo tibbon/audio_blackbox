@@ -160,20 +160,33 @@ nonisolated final class ShortcutRecorderTests: StandardDefaultsTestCase {
 nonisolated final class OnboardingShortcutTests: StandardDefaultsTestCase {
     private static let hyper = UInt32(cmdKey | optionKey | controlKey | shiftKey)
 
+    /// "Start Using BlackBox" and "Skip Setup": the view's own completion
+    /// code, with the folder left alone.
+    @MainActor
+    private func finishOnboarding(_ recorder: RecordingState) {
+        OnboardingView.applySetup(to: recorder, folder: .keep) {
+            OnboardingSettings.applyRecordingMode(continuous: true, silenceGate: true, to: .standard)
+        }
+        OnboardingView.applySetup(to: recorder, folder: .keep) {
+            OnboardingSettings.applySkip(to: .standard)
+        }
+    }
+
     /// Reaching the step and finishing (or skipping) onboarding without
     /// choosing leaves no global shortcut. The step used to register and
-    /// save ⌘⇧R as soon as it appeared.
+    /// save ⌘⇧R as soon as it appeared. This runs the step's appear action
+    /// and the wizard's completion code, so a registration added to either
+    /// fails here. (Continue and Back only change the step index.)
     @MainActor
     func testFinishingOnboardingWithoutChoosingSetsNoShortcut() {
         let manager = GlobalHotkeyManager.shared
         manager.save(nil)
         manager.unregister()
 
-        // What the step does when it appears.
-        XCTAssertEqual(OnboardingView.KeyboardShortcutStep.savedShortcutLabel(), String(localized: "None"))
-        // What "Start Using BlackBox" and "Skip Setup" write.
-        _ = OnboardingSettings.applyRecordingMode(continuous: true, silenceGate: true, to: .standard)
-        _ = OnboardingSettings.applySkip(to: .standard)
+        var step = OnboardingView.ShortcutStepModel()
+        step.appear()
+        XCTAssertFalse(step.hasShortcut)
+        finishOnboarding(RecordingState())
 
         XCTAssertNil(manager.currentShortcut, "no hotkey may be registered")
         XCTAssertNil(manager.loadSaved(), "no hotkey may be saved for launch restore")
@@ -186,13 +199,15 @@ nonisolated final class OnboardingShortcutTests: StandardDefaultsTestCase {
         let saved = GlobalHotkeyManager.Shortcut(keyCode: UInt32(kVK_F13), carbonModifiers: Self.hyper)
         manager.save(saved)
 
-        XCTAssertEqual(OnboardingView.KeyboardShortcutStep.savedShortcutLabel(), saved.displayString)
-        _ = OnboardingSettings.applyRecordingMode(continuous: true, silenceGate: true, to: .standard)
+        var step = OnboardingView.ShortcutStepModel()
+        step.appear()
+        XCTAssertEqual(step.label, saved.displayString)
+        finishOnboarding(RecordingState())
         XCTAssertEqual(manager.loadSaved(), saved)
     }
 
     /// Clicking "Use ⌘⇧R" registers it and saves it so launch restore
-    /// brings it back.
+    /// brings it back; "Clear shortcut" removes it again.
     @MainActor
     func testChoosingTheSuggestedShortcutRegistersAndSavesIt() throws {
         let manager = GlobalHotkeyManager.shared
@@ -202,11 +217,19 @@ nonisolated final class OnboardingShortcutTests: StandardDefaultsTestCase {
 
         let suggested = GlobalHotkeyManager.suggestedShortcut
         XCTAssertEqual(suggested.displayString, "⇧⌘R")
-        let chosen = OnboardingView.KeyboardShortcutStep.chooseSuggestedShortcut()
-        try XCTSkipUnless(chosen, "\(suggested.displayString) is owned by another app on this machine")
+        var step = OnboardingView.ShortcutStepModel()
+        step.appear()
+        step.useSuggested()
+        try XCTSkipIf(step.error != nil, "\(suggested.displayString) is owned by another app on this machine")
 
+        XCTAssertEqual(step.label, suggested.displayString)
         XCTAssertEqual(manager.currentShortcut, suggested)
         XCTAssertEqual(manager.loadSaved(), suggested)
+
+        step.clear()
+        XCTAssertFalse(step.hasShortcut)
+        XCTAssertNil(manager.currentShortcut)
+        XCTAssertNil(manager.loadSaved())
     }
 
     /// A combination that can't be registered is not saved: it would never
