@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   channel's file is `...-ch1.wav` (was `...-ch0.wav`). The number is still
   the device channel, so recording channels 2 and 4 writes `-ch2` and `-ch4`.
   CLI `audio_channels` stays 0-based. Existing files are not renamed.
+- Onboarding asks before setting a global shortcut instead of claiming ⌘⇧R
+  (the browsers' hard reload) on its own. No shortcut is set unless you
+  click "Use ⇧⌘R" or record one; a shortcut you already saved is kept.
 
 ### Added
 - Crash recovery: recordings a crash or power cut left as `.recording.wav`

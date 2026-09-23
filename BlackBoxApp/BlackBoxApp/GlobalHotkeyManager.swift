@@ -4,7 +4,8 @@ import Foundation
 import os.log
 
 /// Manages a single system-wide keyboard shortcut using the Carbon Events API.
-/// Works in sandboxed apps. No default shortcut — user configures in Settings.
+/// Works in sandboxed apps. Nothing is registered until the user picks a
+/// shortcut, in Settings or in onboarding's opt-in shortcut step.
 ///
 /// Main-actor-isolated: registration, unregistration, and action dispatch
 /// all run on the main thread. The Carbon Events API delivers hotkey events
@@ -32,6 +33,14 @@ final class GlobalHotkeyManager {
             return parts.joined()
         }
     }
+
+    /// The combination onboarding offers. Never registered on its own: the
+    /// user has to click "Use ⌘⇧R", because it is also the browsers'
+    /// hard-reload shortcut and a global hotkey takes it over everywhere.
+    static let suggestedShortcut = Shortcut(
+        keyCode: UInt32(kVK_ANSI_R),
+        carbonModifiers: UInt32(cmdKey | shiftKey)
+    )
 
     private var hotkeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
@@ -62,6 +71,17 @@ final class GlobalHotkeyManager {
             }
             return false
         }
+        return true
+    }
+
+    /// Register `shortcut` and, only if that worked, save it so launch
+    /// restore picks it up. The one path both Settings' recorder and
+    /// onboarding use when the user chooses a shortcut. A combination that
+    /// can't be registered is not saved: it would never fire.
+    @discardableResult
+    func registerAndSave(_ shortcut: Shortcut) -> Bool {
+        guard register(shortcut) else { return false }
+        save(shortcut)
         return true
     }
 

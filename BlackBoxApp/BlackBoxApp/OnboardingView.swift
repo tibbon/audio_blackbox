@@ -23,19 +23,14 @@ struct OnboardingView: View {
     @State private var dirChangedByUser = false
     // DOLL-209: bindings for the keyboard-shortcut step.
     // Mirror the trio the existing ShortcutRecorderButton in SettingsView
-    // takes (label / isRecording / error). `didOfferDefaultShortcut`
-    // is a one-shot flag scoped to the OnboardingView lifecycle so the
-    // suggested ⌘⇧R only gets auto-registered once per onboarding run
-    // — if the user clears it and navigates Back→Continue, we won't
-    // silently re-register the default they just rejected.
+    // takes (label / isRecording / error). The step is opt-in, so there is
+    // no default to offer and nothing to remember between visits.
     // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var shortcutLabel = String(localized: "None")
     // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var isRecordingShortcut: Bool = false
     // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
     @State private var shortcutError: String?
-    // swiftlint:disable:next unused_declaration - read only as a $binding for KeyboardShortcutStep, which Xcode 27's SourceKit doesn't count as a reference
-    @State private var didOfferDefaultShortcut = false
 
     // DOLL-344: the default lives inside the app's sandbox container so it's
     // writable out of the box. Single source of truth on RecordingState.
@@ -156,8 +151,7 @@ struct OnboardingView: View {
             KeyboardShortcutStep(
                 shortcutLabel: $shortcutLabel,
                 isRecordingShortcut: $isRecordingShortcut,
-                shortcutError: $shortcutError,
-                didOfferDefaultShortcut: $didOfferDefaultShortcut
+                shortcutError: $shortcutError
             )
 
         default:

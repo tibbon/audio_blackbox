@@ -100,10 +100,8 @@ struct ShortcutRecorderButton: NSViewRepresentable {
             // Register and save. If registration fails (e.g. combo already
             // claimed by macOS or another app), surface that and don't persist
             // a shortcut that won't actually fire.
-            let manager = GlobalHotkeyManager.shared
-            if manager.register(shortcut) {
+            if GlobalHotkeyManager.shared.registerAndSave(shortcut) {
                 parent.error = nil
-                manager.save(shortcut)
                 parent.shortcutLabel = shortcut.displayString
             } else {
                 parent.error = String(

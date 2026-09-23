@@ -1,18 +1,16 @@
-import Carbon
 import SwiftUI
 
 extension OnboardingView {
-    // DOLL-209: optional global-hotkey configuration step. Suggests
-    // ⌘⇧R as a default the user can keep, change, or clear. Auto-register
-    // is one-shot per onboarding session via `didOfferDefaultShortcut`,
-    // so navigating Back→Continue won't silently re-bind a combo the
-    // user already cleared. That flag and the shortcut state live on
+    // DOLL-209: optional global-hotkey step. Opt-in: appearing, Continue,
+    // Back and finishing onboarding register and save nothing. A shortcut
+    // exists only after the user clicks "Use ⌘⇧R" or records their own,
+    // because a global hotkey takes the combination over in every app and
+    // ⌘⇧R is also the browsers' hard reload. The shortcut state lives on
     // OnboardingView because this view is removed when the user moves on.
     struct KeyboardShortcutStep: View {
         @Binding var shortcutLabel: String
         @Binding var isRecordingShortcut: Bool
         @Binding var shortcutError: String?
-        @Binding var didOfferDefaultShortcut: Bool
 
         var body: some View {
             VStack(spacing: 16) {
@@ -27,13 +25,17 @@ extension OnboardingView {
 
                 Text(
                     """
-                    Toggle recording from any app with a key combination. \
-                    Optional — you can skip this and set one later.
+                    Want a key combination that starts and stops recording? \
+                    It works system-wide, so it replaces that combination in \
+                    every app while BlackBox is running. Optional — skip this \
+                    and set one later.
                     """
                 )
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 360)
+
+                suggestedShortcutButton
 
                 recorderRow
 
@@ -44,7 +46,33 @@ extension OnboardingView {
                 ChangeLaterCaption()
             }
             .padding(.horizontal, 32)
-            .onAppear { offerDefaultShortcutIfNeeded() }
+            // Show a shortcut saved earlier (a "Run Setup Again" user keeps
+            // theirs). Reading only: nothing is registered here.
+            .onAppear { shortcutLabel = Self.savedShortcutLabel() }
+        }
+
+        /// One-click opt-in to the suggested ⌘⇧R, with the trade-off spelled
+        /// out next to it. Hidden once any shortcut is set.
+        @ViewBuilder private var suggestedShortcutButton: some View {
+            if shortcutLabel == String(localized: "None") {
+                VStack(spacing: 6) {
+                    Button("Use \(GlobalHotkeyManager.suggestedShortcut.displayString)") {
+                        useSuggestedShortcut()
+                    }
+                    .accessibilityHint("Sets Command-Shift-R as the shortcut for starting and stopping recording")
+
+                    Text(
+                        """
+                        \(GlobalHotkeyManager.suggestedShortcut.displayString) is also your browser's \
+                        hard reload. BlackBox takes it over while running.
+                        """
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+                }
+            }
         }
 
         private var recorderRow: some View {
@@ -97,36 +125,29 @@ extension OnboardingView {
             }
         }
 
-        /// Try to register ⌘⇧R as a suggested default when the user first
-        /// reaches the hotkey step and no shortcut is already saved. If the
-        /// combo is taken by another app, surface a hint instead of a hard
-        /// error so the user picks their own.
-        private func offerDefaultShortcutIfNeeded() {
-            // Already saved (re-run onboarding, or user came back to this step)
-            if let saved = GlobalHotkeyManager.shared.loadSaved() {
-                shortcutLabel = saved.displayString
-                return
-            }
-            // Already attempted this session — respect the user's intent if
-            // they cleared it.
-            guard !didOfferDefaultShortcut else { return }
-            didOfferDefaultShortcut = true
-
-            let suggested = GlobalHotkeyManager.Shortcut(
-                keyCode: UInt32(kVK_ANSI_R),
-                carbonModifiers: UInt32(cmdKey | shiftKey)
-            )
-            if GlobalHotkeyManager.shared.register(suggested) {
-                GlobalHotkeyManager.shared.save(suggested)
+        private func useSuggestedShortcut() {
+            let suggested = GlobalHotkeyManager.suggestedShortcut
+            if Self.chooseSuggestedShortcut() {
                 shortcutLabel = suggested.displayString
+                shortcutError = nil
             } else {
                 shortcutError = String(
-                    localized: """
-                        \u{2318}\u{21E7}R is already in use \u{2014} \
-                        click the button to choose a different combination.
-                        """
+                    localized: "\(suggested.displayString) is already in use. Record a different combination instead."
                 )
             }
+        }
+
+        /// Label for the saved shortcut, or "None". Reads defaults only, so
+        /// reaching this step never registers or saves a shortcut.
+        static func savedShortcutLabel() -> String {
+            GlobalHotkeyManager.shared.loadSaved()?.displayString ?? String(localized: "None")
+        }
+
+        /// The "Use ⌘⇧R" action: register the suggested shortcut and save it
+        /// for launch restore, through the same path as the Settings
+        /// recorder. Returns `false` (and saves nothing) if another app owns it.
+        static func chooseSuggestedShortcut() -> Bool {
+            GlobalHotkeyManager.shared.registerAndSave(GlobalHotkeyManager.suggestedShortcut)
         }
     }
 }
