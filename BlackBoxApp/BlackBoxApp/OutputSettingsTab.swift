@@ -13,6 +13,11 @@ struct OutputSettingsTab: View {
     @State private var outputDir: String = "recordings"
     @State private var cadenceSelection: Int = 300
     @State private var prevOutputMode: String = "split"
+    /// The values last pushed to the engine. A control whose value equals
+    /// its applied value has nothing to apply, which is how the `onChange`
+    /// after a Cancel revert (or the initial picker sync) is told apart
+    /// from a user edit.
+    @State private var applied = AppliedOutputSettings()
 
     var body: some View {
         Form {
@@ -25,6 +30,7 @@ struct OutputSettingsTab: View {
         .onAppear {
             loadOutputDir()
             syncCadenceSelection()
+            applied = currentSettings
             migrateStalePickerValues()
             prevOutputMode = outputMode
         }
@@ -96,7 +102,12 @@ struct OutputSettingsTab: View {
     private var continuousRecordingSection: some View {
         Section("Continuous Recording") {
             Toggle("Enable continuous recording", isOn: $continuousMode)
-                .onChange(of: continuousMode) { applyConfig() }
+                .onChange(of: continuousMode) {
+                    guard continuousMode != applied.continuousMode else { return }
+                    applyOrRevert(String(localized: "continuous recording")) {
+                        continuousMode = applied.continuousMode
+                    }
+                }
                 .accessibilityHint("Automatically rotate files at regular intervals")
             Text(
                 """
@@ -130,9 +141,13 @@ struct OutputSettingsTab: View {
             Text("Custom").tag(-1)
         }
         .onChange(of: cadenceSelection) {
-            if cadenceSelection > 0 {
-                recordingCadence = cadenceSelection
-                applyConfig()
+            // "Custom" (-1) only reveals the field; its commit applies.
+            guard cadenceSelection > 0 else { return }
+            recordingCadence = cadenceSelection
+            guard recordingCadence != applied.recordingCadence else { return }
+            applyOrRevert(String(localized: "the rotation interval")) {
+                recordingCadence = applied.recordingCadence
+                syncCadenceSelection()
             }
         }
         .accessibilityLabel("Rotation interval")
@@ -158,7 +173,12 @@ struct OutputSettingsTab: View {
                 Text("5 GB").tag(5000)
                 Text("10 GB").tag(10_000)
             }
-            .onChange(of: minDiskSpaceMB) { applyConfig() }
+            .onChange(of: minDiskSpaceMB) {
+                guard minDiskSpaceMB != applied.minDiskSpaceMB else { return }
+                applyOrRevert(String(localized: "the minimum free space")) {
+                    minDiskSpaceMB = applied.minDiskSpaceMB
+                }
+            }
             .accessibilityLabel("Minimum free disk space")
             Text("Recording stops automatically when free disk space drops below this threshold.")
                 .font(.caption)
@@ -200,6 +220,9 @@ struct OutputSettingsTab: View {
             minDiskSpaceMB =
                 minDiskSpacePresets.min(by: { abs($0 - original) < abs($1 - original) })
                 ?? 500
+            // Not a user edit: push it without asking to restart a live
+            // recording (it takes effect next session).
+            applyConfig()
         }
 
         let outputModePresets: Set<String> = ["single", "split"]
@@ -217,6 +240,73 @@ struct OutputSettingsTab: View {
         return outputDir
     }
 
+    private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]
+
+    private func syncCadenceSelection() {
+        cadenceSelection = Self.cadencePresets.contains(recordingCadence) ? recordingCadence : -1
+    }
+
+    /// Commit the custom-cadence TextField on focus loss / Return.
+    /// DOLL-196: validation happens once here instead of on every
+    /// keystroke; a user typing "60" no longer sees the field jump to
+    /// 1 mid-typing.
+    private func commitCustomCadence() {
+        if recordingCadence < 1 {
+            recordingCadence = 1
+        } else if recordingCadence > 86_400 {
+            recordingCadence = 86_400
+        }
+        guard recordingCadence != applied.recordingCadence else { return }
+        applyOrRevert(String(localized: "the rotation interval")) {
+            recordingCadence = applied.recordingCadence
+        }
+    }
+
+    /// Apply an edit to a setting the engine reads only at session start,
+    /// asking first to restart a live recording; on Cancel, `revert` puts
+    /// the control back to its applied value.
+    private func applyOrRevert(_ reason: String, revert: () -> Void) {
+        if !applySessionSetting(recorder: recorder, reason: reason, apply: applyConfig) {
+            revert()
+        }
+    }
+
+    private var currentSettings: AppliedOutputSettings {
+        AppliedOutputSettings(
+            continuousMode: continuousMode,
+            recordingCadence: recordingCadence,
+            minDiskSpaceMB: minDiskSpaceMB
+        )
+    }
+
+    private func loadOutputDir() {
+        if let config = recorder.bridge.getConfig() {
+            outputDir = config["output_dir"] as? String ?? "recordings"
+        }
+    }
+
+    private func applyConfig() {
+        let config: [String: Any] = [
+            "output_mode": outputMode,
+            "continuous_mode": continuousMode,
+            "recording_cadence": recordingCadence,
+            "min_disk_space_mb": minDiskSpaceMB,
+        ]
+        recorder.bridge.setConfig(config)
+        applied = currentSettings
+    }
+}
+
+/// The Output tab settings that only take effect when a session starts, as
+/// last pushed to the engine.
+private struct AppliedOutputSettings {
+    var continuousMode = false
+    var recordingCadence = 300
+    var minDiskSpaceMB = 500
+}
+
+// Helpers kept out of the struct body (type_body_length).
+extension OutputSettingsTab {
     private var channelCount: Int {
         countChannels(channelSpec)
     }
@@ -245,41 +335,6 @@ struct OutputSettingsTab: View {
         // DOLL-377: locale-aware binary byte formatting (honors the user's
         // decimal separator / unit labels) instead of a hardcoded "%.1f GB".
         Int64(bytes).formatted(.byteCount(style: .binary))
-    }
-
-    private static let cadencePresets: Set<Int> = [300, 900, 1800, 3600, 7200]
-
-    private func syncCadenceSelection() {
-        cadenceSelection = Self.cadencePresets.contains(recordingCadence) ? recordingCadence : -1
-    }
-
-    /// Commit the custom-cadence TextField on focus loss / Return.
-    /// DOLL-196: validation happens once here instead of on every
-    /// keystroke; a user typing "60" no longer sees the field jump to
-    /// 1 mid-typing.
-    private func commitCustomCadence() {
-        if recordingCadence < 1 {
-            recordingCadence = 1
-        } else if recordingCadence > 86_400 {
-            recordingCadence = 86_400
-        }
-        applyConfig()
-    }
-
-    private func loadOutputDir() {
-        if let config = recorder.bridge.getConfig() {
-            outputDir = config["output_dir"] as? String ?? "recordings"
-        }
-    }
-
-    private func applyConfig() {
-        let config: [String: Any] = [
-            "output_mode": outputMode,
-            "continuous_mode": continuousMode,
-            "recording_cadence": recordingCadence,
-            "min_disk_space_mb": minDiskSpaceMB,
-        ]
-        recorder.bridge.setConfig(config)
     }
 
     private func chooseDirectory() {

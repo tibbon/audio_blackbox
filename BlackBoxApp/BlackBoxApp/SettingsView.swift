@@ -98,4 +98,26 @@ func confirmSettingsChange(
     }
 }
 
+/// Apply a setting the engine only reads when a session starts (the
+/// recorder holds a copy of the config): immediately when idle, and while
+/// recording only after the user confirms a restart, which finalizes the
+/// current file and starts a new one with the change. Pushing the config
+/// alone mid-recording silently did nothing until the next session.
+///
+/// Returns `false` when the user cancelled; the caller reverts its control.
+@discardableResult
+func applySessionSetting(recorder: RecordingState, reason: String, apply: () -> Void) -> Bool {
+    guard recorder.isRecording else {
+        apply()
+        return true
+    }
+    var confirmed = false
+    confirmSettingsChange(reason: reason) {
+        apply()
+        recorder.restartIfRecording(reason: "\(reason) changed")
+        confirmed = true
+    }
+    return confirmed
+}
+
 // SettingsKeys moved to SettingsKeys.swift (DOLL-203).

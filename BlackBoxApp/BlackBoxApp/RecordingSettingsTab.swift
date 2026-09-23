@@ -23,6 +23,9 @@ struct RecordingSettingsTab: View {
     @State private var selectedChannels: Set<Int> = [1]
     @State private var prevBitDepth: Int = 24
     @State private var prevChannelSpec: String = "1"
+    /// The silence settings last pushed to the engine (see
+    /// SilenceDetectionSection).
+    @State private var appliedSilence = SilenceSettings()
 
     var body: some View {
         Form {
@@ -51,13 +54,17 @@ struct RecordingSettingsTab: View {
                 silenceThreshold: $silenceThreshold,
                 silenceGateEnabled: $silenceGateEnabled,
                 silenceGateTimeout: $silenceGateTimeout,
-                applyConfig: applyConfig
+                applied: appliedSilence,
+                applySetting: { reason in
+                    applySessionSetting(recorder: recorder, reason: reason, apply: applyConfig)
+                }
             )
 
             monitoringSection
         }
         .formStyle(.grouped)
         .onAppear {
+            appliedSilence = currentSilenceSettings
             syncCheckboxesFromChannelSpec()  // Load saved spec FIRST
             refreshChannelCount()  // Then clamp to device capabilities
             migrateStalePickerValues()  // DOLL-197
@@ -271,5 +278,15 @@ struct RecordingSettingsTab: View {
             config["input_device"] = selectedDevice
         }
         recorder.bridge.setConfig(config)
+        appliedSilence = currentSilenceSettings
+    }
+
+    private var currentSilenceSettings: SilenceSettings {
+        SilenceSettings(
+            enabled: silenceEnabled,
+            threshold: silenceThreshold,
+            gateEnabled: silenceGateEnabled,
+            gateTimeout: silenceGateTimeout
+        )
     }
 }

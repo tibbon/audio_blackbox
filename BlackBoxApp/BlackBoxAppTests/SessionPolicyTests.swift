@@ -52,6 +52,19 @@ nonisolated final class SessionPolicyTests: XCTestCase {
         )
     }
 
+    // MARK: - applySessionSetting
+
+    /// Idle: a session-start setting is applied at once, with no prompt.
+    /// (While recording it asks to restart first, which needs a modal.)
+    @MainActor
+    func testSessionSettingAppliesImmediatelyWhenIdle() {
+        let recorder = RecordingState()
+        var applied = 0
+        let result = applySessionSetting(recorder: recorder, reason: "test") { applied += 1 }
+        XCTAssertTrue(result)
+        XCTAssertEqual(applied, 1)
+    }
+
     func testMonitoringNeverTakesTheStreamFromARecording() {
         for (recording, starting) in [(true, false), (false, true)] {
             XCTAssertFalse(

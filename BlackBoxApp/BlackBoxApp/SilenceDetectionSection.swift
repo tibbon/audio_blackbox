@@ -1,15 +1,29 @@
 import SwiftUI
 
+/// The Silence Detection settings as last pushed to the engine.
+struct SilenceSettings {
+    var enabled = true
+    var threshold = 0.01
+    var gateEnabled = true
+    var gateTimeout = 300
+}
+
 /// The Recording tab's Silence Detection section: delete-silent-recordings
 /// with its threshold slider, and the auto-split silence gate with its
-/// timeout. The values are the tab's `@AppStorage` settings; `applyConfig`
-/// pushes the tab's whole config to the engine.
+/// timeout. The values are the tab's `@AppStorage` settings.
+///
+/// The engine reads these only when a session starts, so an edit goes
+/// through `applySetting`, which asks to restart a live recording and
+/// returns `false` on Cancel; the control then goes back to its `applied`
+/// value. A control already at its applied value has nothing to apply,
+/// which is what keeps that revert from asking again.
 struct SilenceDetectionSection: View {
     @Binding var silenceEnabled: Bool
     @Binding var silenceThreshold: Double
     @Binding var silenceGateEnabled: Bool
     @Binding var silenceGateTimeout: Int
-    let applyConfig: @MainActor () -> Void
+    let applied: SilenceSettings
+    let applySetting: @MainActor (_ reason: String) -> Bool
 
     /// Trailing debounce for the silence-threshold slider (DOLL-195).
     /// Slider's `onChange` fires per drag tick; without this, every
@@ -21,7 +35,12 @@ struct SilenceDetectionSection: View {
     var body: some View {
         Section("Silence Detection") {
             Toggle("Enable silence detection", isOn: $silenceEnabled)
-                .onChange(of: silenceEnabled) { applyConfig() }
+                .onChange(of: silenceEnabled) {
+                    guard silenceEnabled != applied.enabled else { return }
+                    if !applySetting(String(localized: "silence detection")) {
+                        silenceEnabled = applied.enabled
+                    }
+                }
                 .accessibilityHint("Automatically delete silent recordings")
             Text("Recordings that contain only silence are automatically deleted when complete.")
                 .font(.caption)
@@ -36,7 +55,12 @@ struct SilenceDetectionSection: View {
             // the current file and opens a new one on the next signal.
             // "Auto-split on silence" describes the real behavior.
             Toggle("Auto-split on silence", isOn: $silenceGateEnabled)
-                .onChange(of: silenceGateEnabled) { applyConfig() }
+                .onChange(of: silenceGateEnabled) {
+                    guard silenceGateEnabled != applied.gateEnabled else { return }
+                    if !applySetting(String(localized: "auto-split on silence")) {
+                        silenceGateEnabled = applied.gateEnabled
+                    }
+                }
                 .accessibilityHint(
                     "Finalize the current file when audio goes silent and start a new one on the next signal"
                 )
@@ -59,8 +83,10 @@ struct SilenceDetectionSection: View {
                 thresholdDebounceTask?.cancel()
                 thresholdDebounceTask = Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(150))
-                    guard !Task.isCancelled else { return }
-                    applyConfig()
+                    guard !Task.isCancelled, silenceThreshold != applied.threshold else { return }
+                    if !applySetting(String(localized: "the silence threshold")) {
+                        silenceThreshold = applied.threshold
+                    }
                 }
             }
             .accessibilityLabel("Silence threshold")
@@ -83,8 +109,8 @@ struct SilenceDetectionSection: View {
 
         if abs(silenceThreshold - 0.01) > 0.001 {
             Button("Reset to Default") {
+                // Applied through the slider's onChange, like a drag.
                 silenceThreshold = 0.01
-                applyConfig()
             }
             .font(.caption)
         }
@@ -98,7 +124,12 @@ struct SilenceDetectionSection: View {
             Text("10 minutes").tag(600)
             Text("30 minutes").tag(1800)
         }
-        .onChange(of: silenceGateTimeout) { applyConfig() }
+        .onChange(of: silenceGateTimeout) {
+            guard silenceGateTimeout != applied.gateTimeout else { return }
+            if !applySetting(String(localized: "the silence gate timeout")) {
+                silenceGateTimeout = applied.gateTimeout
+            }
+        }
         .accessibilityLabel("Silence gate timeout")
 
         Text(
