@@ -70,6 +70,23 @@ jobs:
     - name: Check version alignment across manifests
       run: ./scripts/check-versions.sh
 
+    # check-versions.sh only compares the manifests with each other, and the
+    # Fastfile overwrites the marketing version from the tag — so a tag that
+    # disagrees with the committed version would ship a build whose binary
+    # reports one version and the App Store another. Tag runs only: a
+    # workflow_dispatch run has no tag to compare.
+    - name: Check tag matches Cargo.toml version
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        set -euo pipefail
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+        CARGO_VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "blackbox") | .version')"
+        if [[ "$TAG_VERSION" != "$CARGO_VERSION" ]]; then
+          echo "::error::Tag v${TAG_VERSION} does not match Cargo.toml version ${CARGO_VERSION} — bump with scripts/bump-version.sh or retag."
+          exit 1
+        fi
+        echo "Tag v${TAG_VERSION} matches Cargo.toml"
+
     # DOLL-462: a tagged release must have a CHANGELOG.md heading for the
     # version being released (Keep-a-Changelog style: "## [X.Y.Z] — date"),
     # so release notes can't silently lag the release.
