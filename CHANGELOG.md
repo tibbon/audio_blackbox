@@ -14,6 +14,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is "tested to 64, up to 255". Adds sleep/wake resume to the feature list.
 - Repo ships `blackbox.example.toml` instead of a tracked `blackbox.toml`
   (now gitignored); a test keeps the example in sync with the defaults.
+- 24/32-bit and multichannel WAVs are written with a `WAVE_FORMAT_EXTENSIBLE`
+  header, which strict readers expect for those formats. 16-bit mono and
+  stereo files keep the classic 44-byte header.
+- In continuous mode with the silence gate on, the rotation clock restarts
+  when the gate opens, so the first file after a gate open is a full cadence.
+- The recording caption in the menu reads "2 channels" instead of "2 ch",
+  and the menu's remaining strings are localizable.
+- The CLI warns about unknown keys in `blackbox.toml`, and rejects a zero
+  silence-gate timeout or a rotation cadence long enough to overflow.
+
+### Added
+- Crash recovery: recordings a crash or power cut left as `.recording.wav`
+  are repaired and renamed to ordinary WAVs at the next launch (app and CLI).
+
+### Fixed
+- Rotation boundaries no longer drift over long sessions.
+- A full disk at sample rates above 48 kHz is reported as a write failure,
+  not as heavy load.
+- The sample-rate listener watches the device actually recording, even if
+  the default input changes during start.
+- The 30 s and 1 min rotation presets reopen as themselves, not "Custom".
+- The 4 GB file-size warning no longer repeats when a recording restarts
+  internally.
+- Quitting from Activity Monitor, an installer or AppleScript finalizes the
+  recording and quits, instead of being cancelled.
+- The CLI exits promptly with performance logging on.
 
 ## [1.5.0] — 2026-09-21
 
