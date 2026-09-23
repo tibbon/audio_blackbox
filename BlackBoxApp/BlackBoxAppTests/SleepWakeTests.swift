@@ -184,37 +184,61 @@ nonisolated final class SleepWakeGuardTests: StandardDefaultsTestCase {
         XCTAssertFalse(recorder.isRecording)
     }
 
-    /// Verify that "stop" behavior does NOT set wasSleepInterrupted, so
-    /// handleDidWake is a no-op afterward.
+    /// "Stop" behavior ends a live recording on sleep without marking it
+    /// for resume, so the following wake schedules nothing.
     @MainActor
     func testStopBehaviorDoesNotResumeOnWake() {
-        let recorder = RecordingState()
         UserDefaults.standard.set("stop", forKey: SettingsKeys.sleepBehavior)
-        // Simulate sleep when not recording — should be a no-op
-        recorder.handleWillSleep()
-        // Now simulate wake — should also be a no-op (wasSleepInterrupted is false)
-        recorder.handleDidWake()
-        XCTAssertFalse(recorder.isRecording)
-    }
-
-    /// Verify that calling handleDidWake twice (e.g. session + sleep overlap)
-    /// does not crash or produce unexpected state.
-    @MainActor
-    func testDoubleWakeIsHarmless() {
         let recorder = RecordingState()
+        recorder.isRecording = true
+
+        recorder.handleWillSleep()
+        XCTAssertFalse(recorder.isRecording, "sleep must stop the recording")
+        XCTAssertFalse(recorder.wasSleepInterrupted, "stop behavior must not mark it for resume")
+
         recorder.handleDidWake()
-        recorder.handleDidWake()
+        XCTAssertNil(recorder.pendingResumeTask, "wake must not schedule a resume")
         XCTAssertFalse(recorder.isRecording)
     }
 
-    /// Verify that handleWillSleep followed by handleSessionDidResignActive
-    /// (stacked interrupts) does not crash.
+    /// Two wakes in a row (e.g. session + sleep overlap) schedule exactly one
+    /// resume: the first consumes the flag, the second is a no-op.
+    @MainActor
+    func testDoubleWakeIsHarmless() throws {
+        UserDefaults.standard.set("resume", forKey: SettingsKeys.sleepBehavior)
+        let recorder = RecordingState()
+        recorder.isRecording = true
+        recorder.handleWillSleep()
+        XCTAssertTrue(recorder.wasSleepInterrupted)
+
+        recorder.handleDidWake()
+        let first = try XCTUnwrap(recorder.pendingResumeTask, "the first wake must schedule a resume")
+        recorder.handleDidWake()
+        let second = try XCTUnwrap(recorder.pendingResumeTask)
+
+        XCTAssertEqual(first, second, "the second wake must not schedule another resume")
+        XCTAssertFalse(first.isCancelled)
+        XCTAssertFalse(recorder.wasSleepInterrupted)
+        recorder.cancelPendingResume()  // don't let the resume start a real session
+    }
+
+    /// Sleep then session-resign (stacked interrupts): sleep pauses the live
+    /// recording for resume; the resign that follows finds nothing recording
+    /// and must leave the pending resume mark alone.
     @MainActor
     func testSleepAndSessionResignStackedNoOp() {
+        UserDefaults.standard.set("resume", forKey: SettingsKeys.sleepBehavior)
         let recorder = RecordingState()
+        recorder.isRecording = true
+
         recorder.handleWillSleep()
+        XCTAssertFalse(recorder.isRecording)
+        XCTAssertTrue(recorder.wasSleepInterrupted)
+
         recorder.handleSessionDidResignActive()
         XCTAssertFalse(recorder.isRecording)
+        XCTAssertTrue(recorder.wasSleepInterrupted, "the stacked resign must keep the resume mark")
+        XCTAssertNil(recorder.pendingResumeTask)
     }
 
     /// DOLL-182: the wake handler consumes `wasSleepInterrupted` when it
