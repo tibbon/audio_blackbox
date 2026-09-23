@@ -34,6 +34,14 @@ pub(crate) struct RawWavWriter {
     /// Length of the header `create` wrote: where the audio starts
     /// (`PCM_HEADER_LEN` or `EXTENSIBLE_HEADER_LEN`).
     header_len: u64,
+    /// Frames that failed to write and are still owed as silence, so this
+    /// file stays in step with its sibling files in split mode (see
+    /// `write_frame_in_step`). Always 0 for writers that use `write_frame`.
+    owed_frames: u64,
+    /// Test-only failure injection: the next this-many `write_frame` calls
+    /// fail without writing anything, then writes succeed again.
+    #[cfg(test)]
+    fail_next_writes: u32,
 }
 
 /// Header length for plain `WAVE_FORMAT_PCM` (16-byte `fmt ` chunk).
@@ -77,7 +85,17 @@ pub(crate) const fn channel_mask(channels: u16) -> u32 {
 }
 
 /// 64 KB write buffer — same as the constant in `writer_thread.rs`.
+///
+/// `write_frame` relies on every frame being smaller than this: `BufWriter`
+/// either copies such a write into its buffer whole or, when making room
+/// fails, returns the error before taking any of it, so a failed frame
+/// leaves nothing behind. The largest frame is `MAX_CHANNELS` (255) 32-bit
+/// samples, 1020 bytes.
 const WAV_BUF_CAPACITY: usize = 65_536;
+
+/// Zero bytes `write_frame_in_step` pays owed frames from. 1020 is a
+/// multiple of every sample width (1 to 4 bytes) and is the largest frame.
+const ZERO_CHUNK: [u8; 1020] = [0; 1020];
 
 impl RawWavWriter {
     /// Create a new WAV file at `path` with the given spec.
@@ -160,6 +178,9 @@ impl RawWavWriter {
             } else {
                 PCM_HEADER_LEN
             },
+            owed_frames: 0,
+            #[cfg(test)]
+            fail_next_writes: 0,
         })
     }
 
@@ -181,7 +202,16 @@ impl RawWavWriter {
             byte_width: 3,
             block_align: 3,
             header_len: EXTENSIBLE_HEADER_LEN,
+            owed_frames: 0,
+            fail_next_writes: 0,
         }
+    }
+
+    /// Test-only: make the next `n` `write_frame` calls fail without writing
+    /// anything, as a transient I/O error would, after which writes succeed.
+    #[cfg(test)]
+    pub(crate) const fn fail_next_writes(&mut self, n: u32) {
+        self.fail_next_writes = n;
     }
 
     /// Audio data bytes written so far (excluding the header).
@@ -197,13 +227,71 @@ impl RawWavWriter {
     /// Write a single i32 sample as little-endian bytes.
     ///
     /// For 24-bit: writes the low 3 bytes.  For 16-bit: low 2 bytes.
-    /// For 32-bit: all 4 bytes.  No match — the slice length is constant
-    /// per writer instance and the compiler optimises accordingly.
-    #[inline]
+    /// For 32-bit: all 4 bytes. Test helper for writing fixtures: the
+    /// writer thread writes whole frames with `write_frame`, so a failed
+    /// write can never leave part of a frame behind.
+    #[cfg(test)]
     pub(crate) fn write_sample(&mut self, sample: i32) -> io::Result<()> {
         let bytes = sample.to_le_bytes();
         self.writer.write_all(&bytes[..self.byte_width as usize])?;
         self.data_bytes_written += u64::from(self.byte_width);
+        Ok(())
+    }
+
+    /// Bytes per sample: 2, 3 or 4 (1 for 8-bit).
+    pub(crate) const fn byte_width(&self) -> u8 {
+        self.byte_width
+    }
+
+    /// Write one whole frame of already-encoded little-endian samples.
+    ///
+    /// The frame is written with a single `write_all`, so it either reaches
+    /// the buffer whole or not at all (see `WAV_BUF_CAPACITY`). A transient
+    /// error therefore drops a whole frame and the file stays frame-aligned;
+    /// writing sample by sample used to skip just the failed sample, which
+    /// shifted every later frame by one channel.
+    #[inline]
+    pub(crate) fn write_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        #[cfg(test)]
+        if self.fail_next_writes > 0 {
+            self.fail_next_writes -= 1;
+            return Err(io::Error::from(io::ErrorKind::Other));
+        }
+        self.writer.write_all(frame)?;
+        self.data_bytes_written += frame.len() as u64;
+        Ok(())
+    }
+
+    /// Write one frame, first paying any frames earlier calls failed to
+    /// write as silence. For split mode, where each channel has its own
+    /// file: a frame that fails on one channel's file is owed and written
+    /// as zeros once that file accepts writes again, so every channel file
+    /// keeps the same length and sample `n` of each is the same instant.
+    /// If a failure never clears, that file ends short by the frames owed.
+    #[inline]
+    pub(crate) fn write_frame_in_step(&mut self, frame: &[u8]) -> io::Result<()> {
+        let result = self
+            .pay_owed_frames()
+            .and_then(|()| self.write_frame(frame));
+        if result.is_err() {
+            self.owed_frames = self.owed_frames.saturating_add(1);
+        }
+        result
+    }
+
+    /// Write the owed frames as zeros, in chunks of at most `ZERO_CHUNK`.
+    fn pay_owed_frames(&mut self) -> io::Result<()> {
+        let frame_len = usize::from(self.block_align.max(1));
+        // At least one frame per chunk: no frame is longer than ZERO_CHUNK.
+        let per_chunk = (ZERO_CHUNK.len() / frame_len).max(1);
+        while self.owed_frames > 0 {
+            let frames = usize::try_from(self.owed_frames)
+                .unwrap_or(usize::MAX)
+                .min(per_chunk);
+            let len = (frames * frame_len).min(ZERO_CHUNK.len());
+            self.write_frame(&ZERO_CHUNK[..len])?;
+            self.owed_frames -= frames as u64;
+        }
         Ok(())
     }
 

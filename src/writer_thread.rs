@@ -16,6 +16,11 @@ use crate::utils::{available_disk_space_mb, is_silent};
 
 use chrono::prelude::*;
 
+/// Bytes in the largest interleaved frame: `MAX_CHANNELS` samples of up to
+/// 4 bytes. `write_single_frames` encodes each frame into a stack buffer this
+/// size.
+const FRAME_BUF_LEN: usize = MAX_CHANNELS * 4;
+
 // ---------------------------------------------------------------------------
 // File-rotation helpers — timestamp formatting and tmp/.wav path derivation.
 // ---------------------------------------------------------------------------
@@ -870,6 +875,11 @@ impl WriterThreadState {
 
     /// Split mode: write each active channel of a batch to its own file and
     /// track peaks. Returns how many samples failed to write (DOLL-349).
+    ///
+    /// Each channel file gets one `write_frame_in_step` per frame: a sample
+    /// that fails on one file is owed and paid as silence once that file
+    /// accepts writes again, so the channel files stay the same length and
+    /// time-aligned with each other.
     #[inline]
     fn write_split_frames(&mut self, frame_data: &[f32], frame_size: usize) -> u64 {
         let scale = self.sample_scale;
@@ -890,12 +900,12 @@ impl WriterThreadState {
                 if s.is_finite() {
                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                 }
-                if let Some(w) = &mut self.multichannel_writers[idx]
-                    && w.write_sample(convert_sample(s, scale, dither, &mut rng))
-                        .is_err()
-                {
-                    write_failures += 1;
-                }
+                let failed = self.multichannel_writers[idx].as_mut().is_some_and(|w| {
+                    let bytes = convert_sample(s, scale, dither, &mut rng).to_le_bytes();
+                    let width = usize::from(w.byte_width());
+                    w.write_frame_in_step(&bytes[..width]).is_err()
+                });
+                write_failures += u64::from(failed);
             }
         }
         self.dither_rng = rng;
@@ -904,6 +914,12 @@ impl WriterThreadState {
 
     /// Single mode: write a batch's active channels interleaved into one file
     /// and track peaks. Returns how many samples failed to write (DOLL-349).
+    ///
+    /// Each frame is encoded into a stack buffer and written with one
+    /// `write_frame`, so a write error drops the whole frame (all its
+    /// samples count as failed) and the file stays frame-aligned. Writing
+    /// sample by sample used to skip only the failed sample, which rotated
+    /// the channels of every later frame.
     #[inline]
     fn write_single_frames(&mut self, frame_data: &[f32], frame_size: usize) -> u64 {
         let Some(w) = self.writer.as_mut() else {
@@ -914,9 +930,12 @@ impl WriterThreadState {
         let dither = self.bits_per_sample == 16;
         let mut rng = self.dither_rng;
         let mut write_failures = 0_u64;
+        let width = usize::from(w.byte_width());
         let ch_slice = &self.channels[..self.channel_count as usize];
         let active_idx_slice = &self.active_indices[..self.active_count];
+        let mut frame_buf = [0_u8; FRAME_BUF_LEN];
         for frame in frame_data.chunks_exact(frame_size) {
+            let mut len = 0_usize;
             for &active_idx in active_idx_slice {
                 let idx = active_idx as usize;
                 let channel = ch_slice[idx] as usize;
@@ -925,11 +944,13 @@ impl WriterThreadState {
                 if s.is_finite() {
                     self.peak_scratch[idx] = self.peak_scratch[idx].max(s.abs());
                 }
-                if w.write_sample(convert_sample(s, scale, dither, &mut rng))
-                    .is_err()
-                {
-                    write_failures += 1;
-                }
+                let bytes = convert_sample(s, scale, dither, &mut rng).to_le_bytes();
+                // At most MAX_CHANNELS samples of at most 4 bytes: in bounds.
+                frame_buf[len..len + width].copy_from_slice(&bytes[..width]);
+                len += width;
+            }
+            if w.write_frame(&frame_buf[..len]).is_err() {
+                write_failures += active_idx_slice.len() as u64;
             }
         }
         self.dither_rng = rng;

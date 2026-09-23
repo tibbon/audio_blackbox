@@ -684,3 +684,120 @@ fn failed_finalize_is_kept_out_of_the_silence_check() {
         );
     });
 }
+
+/// Every sample of the WAV at `path`, as integers.
+fn read_samples(path: &str) -> Vec<i32> {
+    hound::WavReader::open(path)
+        .expect("open wav")
+        .samples::<i32>()
+        .map(|s| s.expect("decode sample"))
+        .collect()
+}
+
+/// `value` as the 24-bit integer the writer stores (no dither at 24 bits).
+fn pcm24(value: f32) -> i32 {
+    crate::writer_thread::f32_to_wav_sample(value, 24)
+}
+
+/// A write error that clears mid-stream drops whole frames, so the
+/// interleaved file stays aligned. The writer used to write sample by
+/// sample: a failed sample was skipped while the rest of its frame was
+/// written, which shifted every later frame by one channel for the rest of
+/// the file, and left `data_bytes` off the frame grid.
+#[test]
+fn transient_write_failure_keeps_single_file_channels_aligned() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = WriterThreadState::new(
+            dir,
+            48_000,
+            &[0, 1, 2],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            24,
+            Arc::from([
+                CacheAlignedPeak::new(0),
+                CacheAlignedPeak::new(0),
+                CacheAlignedPeak::new(0),
+            ]),
+            false,
+            0,
+        )
+        .expect("construct 3-channel writer state");
+        state.total_device_channels = 3;
+        let final_path = state.pending_files[0].1.clone();
+        let batch: Vec<f32> = [0.1_f32, 0.2, 0.3].repeat(10);
+
+        // The first write call fails, then writes succeed again.
+        state.writer.as_mut().unwrap().fail_next_writes(1);
+        state.write_samples(&batch);
+        assert_eq!(
+            state.writer.as_ref().unwrap().data_bytes() % 9,
+            0,
+            "data_bytes must stay a whole number of 3-byte x 3-channel frames"
+        );
+        // A clean batch ends the streak and settles it into write_errors.
+        state.write_samples(&batch);
+        assert_eq!(
+            state.write_errors.load(Ordering::Relaxed),
+            3,
+            "a failed frame counts all of its samples"
+        );
+        state.finalize_all().expect("finalize");
+
+        let samples = read_samples(&final_path);
+        assert_eq!(samples.len(), 19 * 3, "exactly one frame is lost");
+        let expected = [pcm24(0.1), pcm24(0.2), pcm24(0.3)];
+        for (n, frame) in samples.as_chunks::<3>().0.iter().enumerate() {
+            assert_eq!(*frame, expected, "frame {n} has its channels shifted");
+        }
+    });
+}
+
+/// Split mode: a write error on one channel's file that clears mid-stream is
+/// paid back as silence, so every channel file keeps the same length and
+/// sample `n` of each file is the same instant.
+#[test]
+fn transient_write_failure_keeps_split_files_in_step() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = split_state(dir);
+        let ch0_path = state.pending_files[0].1.clone();
+        let ch1_path = state.pending_files[1].1.clone();
+        let ramp: Vec<f32> = (1..=10_u8).map(|i| f32::from(i) / 100.0).collect();
+        let batch: Vec<f32> = ramp.iter().flat_map(|&v| [v, v]).collect();
+
+        // Channel 1's file fails its next two writes (frame 0, then the
+        // attempt to pay frame 0 back before frame 1), then recovers.
+        state.multichannel_writers[1]
+            .as_mut()
+            .unwrap()
+            .fail_next_writes(2);
+        state.write_samples(&batch);
+        state.write_samples(&batch);
+        assert_eq!(state.write_errors.load(Ordering::Relaxed), 2);
+        state.finalize_all().expect("finalize");
+
+        let ch0 = read_samples(&ch0_path);
+        let ch1 = read_samples(&ch1_path);
+        assert_eq!(ch0.len(), 20);
+        assert_eq!(
+            ch1.len(),
+            ch0.len(),
+            "channel files must stay the same length"
+        );
+        let mut expected: Vec<i32> = ramp.iter().chain(&ramp).map(|&v| pcm24(v)).collect();
+        assert_eq!(ch0, expected);
+        expected[0] = 0;
+        expected[1] = 0;
+        assert_eq!(
+            ch1, expected,
+            "the two lost samples are silence at their own positions"
+        );
+    });
+}
