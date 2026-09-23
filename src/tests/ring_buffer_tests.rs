@@ -980,3 +980,53 @@ fn test_writer_rotates_before_file_outgrows_wav_size_limit() {
         );
     });
 }
+
+/// Run the writer thread on `state` with `samples` already in the ring and a
+/// Shutdown already queued, so everything is written by the shutdown drain.
+fn run_shutdown_drain(state: WriterThreadState, samples: &[f32]) {
+    let (mut producer, consumer) = rtrb::RingBuffer::new(samples.len().max(1));
+    producer.push_entire_slice(samples).unwrap();
+    let rotation_needed = AtomicBool::new(false);
+    let (command_tx, command_rx) = std::sync::mpsc::sync_channel::<WriterCommand>(1);
+    let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+    command_tx.send(WriterCommand::Shutdown(reply_tx)).unwrap();
+    writer_thread_main(consumer, &rotation_needed, &command_rx, state);
+    reply_rx.recv().unwrap().unwrap();
+}
+
+/// Audio still in the ring at stop that trips the silence gate is written:
+/// the shutdown drain opens the gate. It used to only fill the pre-roll,
+/// which `finalize_all` then dropped, so a take that started just before
+/// stop was lost.
+#[test]
+fn test_shutdown_drain_opens_the_silence_gate() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = WriterThreadState::new(
+            dir,
+            48_000,
+            &[0],
+            OutputMode::Single,
+            0.01,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::from([CacheAlignedPeak::new(0)]),
+            true, // gate enabled: starts idle, no files
+            5,
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+        let signal: Vec<f32> = (0_u16..4_800)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
+
+        run_shutdown_drain(state, &signal);
+
+        let files = wav_files_in(temp_dir.path());
+        assert_eq!(files.len(), 1, "the drained signal must become a take");
+        assert_eq!(read_wav(&files[0]).1.len(), 4_800);
+    });
+}

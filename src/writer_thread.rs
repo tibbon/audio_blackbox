@@ -1468,8 +1468,15 @@ pub(crate) fn take_due_rotation(rotation_needed: &AtomicBool, restart: &AtomicBo
     due && !restart_pending
 }
 
+/// Write out what is left in the ring before the files are finalized.
+///
+/// Runs the same per-read steps as the main loop that apply to a final
+/// drain: a gate open that is pending (from the loop's last read or from a
+/// batch read here) opens the writers, so audio that arrives at stop is
+/// written instead of held in the pre-roll and dropped.
 fn drain_remaining(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) {
     loop {
+        state.process_gate_open();
         if read_available(consumer, state) == 0 {
             break;
         }
