@@ -622,14 +622,22 @@ impl WriterThreadState {
     /// Returns true if writing should continue, false if disk is low.
     ///
     /// Uses an iteration counter to amortize the cost: only performs the actual
-    /// `statvfs` syscall every 10,000 calls (~4 seconds at typical throughput),
-    /// avoiding a `clock_gettime` syscall on every writer thread loop iteration.
+    /// `statvfs` syscall every 10,000 calls, avoiding a `clock_gettime`
+    /// syscall on every writer thread loop iteration.
+    ///
+    /// The counter ticks once per writer-loop iteration, not per unit of
+    /// audio, so the interval is set by the loop's idle backoff (1-5 ms per
+    /// empty poll, see `writer_thread_main`). With ~10 ms capture callbacks
+    /// the loop makes about five iterations per callback, so a check runs
+    /// roughly every 20 s; with no audio arriving (5 ms polls) about every
+    /// 50 s. Only a writer that never goes idle checks more often. The
+    /// `min_disk_space_mb` floor has to absorb that much recording.
     pub(crate) fn check_disk_space(&mut self) -> bool {
         if self.monitor_only || self.min_disk_space_mb == 0 || self.disk_stopped {
             return !self.disk_stopped;
         }
 
-        // Check every 10,000 iterations (~4 seconds at typical throughput)
+        // Check every 10,000 loop iterations (roughly 20-50 s, see above)
         // instead of calling Instant::now() every iteration.
         self.disk_check_counter += 1;
         if self.disk_check_counter < 10_000 {
