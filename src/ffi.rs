@@ -235,6 +235,19 @@ impl BlackboxHandle {
         }
     }
 
+    /// Test-only: overwrite the magic word and return the old one, so a test
+    /// can present a live handle that fails validation and then restore it.
+    ///
+    /// This is the only non-null invalid handle a test can pass soundly.
+    /// `validate_handle` reads the magic through `&BlackboxHandle`, so the
+    /// pointer must address a live `BlackboxHandle`; a pointer to freed
+    /// memory or to some other object would make the test itself undefined
+    /// behavior, which is exactly what the FFI contract forbids callers.
+    #[cfg(test)]
+    pub(crate) fn test_swap_magic(&self, magic: u64) -> u64 {
+        self.magic.swap(magic, Ordering::AcqRel)
+    }
+
     fn set_error(&self, msg: String) {
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(msg);

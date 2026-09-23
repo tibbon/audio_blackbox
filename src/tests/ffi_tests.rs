@@ -195,6 +195,78 @@ fn test_null_handle_error_returns() {
     );
 }
 
+/// A non-null handle whose magic word doesn't match is rejected by every
+/// handle-taking function: an error code, `false`, or null, and no state is
+/// touched. `blackbox_destroy` leaves it alone rather than freeing it.
+///
+/// The handle is a live `blackbox_create` handle with its magic word
+/// overwritten, then restored so it can be destroyed normally. That is the
+/// only sound way to build one: `validate_handle` reads through
+/// `&BlackboxHandle`, so a dangling or foreign pointer would make this test
+/// itself undefined behavior.
+#[test]
+fn test_non_null_invalid_handle_is_rejected() {
+    let handle = blackbox_create(std::ptr::null());
+    // SAFETY: `handle` was just returned by `blackbox_create` and is not
+    // destroyed until the end of this test, so it points at a live
+    // `BlackboxHandle` for as long as `live` is used.
+    let live = unsafe { &*handle };
+    let magic = live.test_swap_magic(0xDEAD_BEEF_DEAD_BEEF);
+
+    assert_eq!(
+        blackbox_start_recording(handle),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert_eq!(blackbox_stop_recording(handle), BLACKBOX_ERR_INVALID_HANDLE);
+    assert_eq!(
+        blackbox_start_monitoring(handle),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert_eq!(
+        blackbox_stop_monitoring(handle),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert!(!blackbox_is_recording(handle));
+    assert!(!blackbox_is_monitoring(handle));
+
+    let mut flags = std::mem::MaybeUninit::<StatusFlags>::uninit();
+    assert_eq!(
+        blackbox_get_status_flags(handle, flags.as_mut_ptr()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    let mut peaks = [99.0_f32; 4];
+    assert_eq!(
+        blackbox_get_peak_levels(handle, peaks.as_mut_ptr(), 4),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert_eq!(peaks, [99.0; 4], "an invalid handle must not write peaks");
+
+    let patch = CString::new(r#"{"duration": 1234}"#).unwrap();
+    assert_eq!(
+        blackbox_set_config_json(handle, patch.as_ptr()),
+        BLACKBOX_ERR_INVALID_HANDLE
+    );
+    assert!(blackbox_get_config_json(handle).is_null());
+    assert!(blackbox_get_last_error(handle).is_null());
+
+    // Destroy must refuse too (its CAS on the magic fails), leaving the
+    // allocation live; restoring the magic below would otherwise be a UAF.
+    blackbox_destroy(handle);
+
+    assert_eq!(live.test_swap_magic(magic), 0xDEAD_BEEF_DEAD_BEEF);
+    // The rejected calls changed nothing: the config patch was not applied
+    // and no error was recorded.
+    // SAFETY: `blackbox_get_config_json` returns null or a caller-owned
+    // NUL-terminated string, freed exactly once by `read_and_free`.
+    let config = unsafe { read_and_free(blackbox_get_config_json(handle)) }.unwrap();
+    assert!(
+        !config.contains("1234"),
+        "rejected patch was applied: {config}"
+    );
+    assert!(blackbox_get_last_error(handle).is_null());
+    blackbox_destroy(handle);
+}
+
 #[test]
 fn test_get_config_json_roundtrip() {
     let json = CString::new(r#"{"debug": true, "duration": 60}"#).unwrap();
