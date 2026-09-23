@@ -1030,3 +1030,45 @@ fn test_shutdown_drain_opens_the_silence_gate() {
         assert_eq!(read_wav(&files[0]).1.len(), 4_800);
     });
 }
+
+/// The shutdown drain rotates a file that reaches the size limit, like the
+/// main loop. It used to write everything left in the ring into the open
+/// file, so a take close to the limit at stop could pass the 4 GiB the WAV
+/// header can describe. The limit is lowered to 1000 bytes; the drain reads
+/// the 20,000 samples in two reads (`WRITER_THREAD_READ_CHUNK` at a time).
+#[test]
+fn test_shutdown_drain_rotates_a_full_file() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = WriterThreadState::new(
+            dir,
+            44100,
+            &[0],
+            OutputMode::Single,
+            0.0,
+            Arc::new(AtomicU64::new(0)),
+            0,
+            Arc::new(AtomicBool::new(false)),
+            16,
+            Arc::from([CacheAlignedPeak::new(0)]),
+            false,
+            0,
+        )
+        .unwrap();
+        state.total_device_channels = 1;
+        state.max_data_bytes = 1_000;
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+
+        run_shutdown_drain(state, &vec![0.25_f32; 20_000]);
+
+        let mut lengths: Vec<usize> = wav_files_in(temp_dir.path())
+            .iter()
+            .map(|f| read_wav(f).1.len())
+            .collect();
+        lengths.sort_unstable();
+        let first = crate::constants::WRITER_THREAD_READ_CHUNK;
+        assert_eq!(lengths, [20_000 - first, first]);
+    });
+}

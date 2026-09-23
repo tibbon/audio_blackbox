@@ -1473,10 +1473,18 @@ pub(crate) fn take_due_rotation(rotation_needed: &AtomicBool, restart: &AtomicBo
 /// Runs the same per-read steps as the main loop that apply to a final
 /// drain: a gate open that is pending (from the loop's last read or from a
 /// batch read here) opens the writers, so audio that arrives at stop is
-/// written instead of held in the pre-roll and dropped.
+/// written instead of held in the pre-roll and dropped; and a file that
+/// reaches the size limit is rotated, since a full ring (5 s of up to 255
+/// channels) can hold far more than the limit's margin. The size check runs
+/// only when there is more to read, so the drain never opens a file that
+/// is finalized empty; one read stays well inside the margin.
 fn drain_remaining(consumer: &mut rtrb::Consumer<f32>, state: &mut WriterThreadState) {
     loop {
         state.process_gate_open();
+        if consumer.is_empty() {
+            break;
+        }
+        state.rotate_if_file_full();
         if read_available(consumer, state) == 0 {
             break;
         }
