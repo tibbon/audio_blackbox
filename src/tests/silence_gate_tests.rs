@@ -721,3 +721,37 @@ fn test_gate_preroll_survives_ring_wrap() {
         );
     });
 }
+
+/// A rotation that comes due in the same writer-loop pass as a gate close
+/// is dropped: the close finalizes the take. The loop rotates first, so the
+/// rotation used to open the next period's file only for the close to
+/// finalize it with no audio, leaving a header-only WAV beside the take.
+#[test]
+fn test_rotation_skipped_when_gate_close_is_pending() {
+    temp_env::with_vars(test_env_no_silence(), || {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().to_str().unwrap();
+        let mut state = make_gate_state(dir, true, 1, 0.0);
+        state.silence_threshold = 0.01;
+        let clock = crate::test_utils::MockClock::new();
+        state.set_timestamp_fn(clock.as_timestamp_fn());
+
+        let signal: Vec<f32> = (0_u16..4800)
+            .map(|i| (f32::from(i) * 0.1).sin() * 0.5)
+            .collect();
+        state.write_samples(&signal);
+        state.process_gate_open();
+        state.write_samples(&vec![0.0_f32; 96_000]);
+        assert!(state.gate_pending_close, "the silence must trip the close");
+
+        // One loop pass: a due rotation, then the pending close.
+        clock.advance();
+        state.rotate_files();
+        state.process_gate_close();
+
+        let files = all_wav_like_files(temp_dir.path());
+        assert_eq!(files.len(), 1, "only the take itself, got {files:?}");
+        let reader = hound::WavReader::open(&files[0]).expect("valid WAV");
+        assert!(reader.len() > 0, "the take keeps its audio");
+    });
+}

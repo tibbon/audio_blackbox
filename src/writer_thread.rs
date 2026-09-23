@@ -1206,6 +1206,13 @@ impl WriterThreadState {
         if self.gate_enabled && self.gate_state == GateState::Idle {
             return;
         }
+        // A gate close is already due and will finalize these files. The
+        // main loop runs rotation first, so rotating here would open the
+        // next period's files only for the close to finalize them empty,
+        // leaving a header-only WAV next to the take.
+        if self.gate_pending_close {
+            return;
+        }
         info!("Rotating recording files...");
 
         // Errors are logged inside; rotation carries on with the next period.
