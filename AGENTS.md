@@ -76,7 +76,7 @@ Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compat
 
 ## Releases
 
-Tag-driven via the release workflow; see [SETUP.md](SETUP.md#releasing). Tag with `make release VERSION=X.Y.Z`, not a bare `git tag`: the Makefile checks the version against `Cargo.toml` before tagging, and the workflow does not. `scripts/check-versions.sh` enforces alignment between `Cargo.toml`, the `Makefile`, `project.yml`, and `Info.plist`. Fastlane handles TestFlight + App Store submission using ASC API key auth (key path is `~/Library/Application Support/com.dollhousemediatech.blackbox/keys/AuthKey_*.p8` — outside the repo, see DOLL-155).
+Tag-driven via the release workflow; see [SETUP.md](SETUP.md#releasing). Tag with `make release VERSION=X.Y.Z`, not a bare `git tag`. The workflow re-checks the tag against `Cargo.toml`, but only `make release` also checks for a clean tree and `HEAD` == `origin/main` before the tag exists. `scripts/check-versions.sh` enforces alignment between `Cargo.toml`, the `Makefile`, `project.yml`, and `Info.plist`. Fastlane handles TestFlight + App Store submission using ASC API key auth (key path is `~/Library/Application Support/com.dollhousemediatech.blackbox/keys/AuthKey_*.p8` — outside the repo, see DOLL-155).
 
 ## Style
 
