@@ -272,7 +272,7 @@ struct OnboardingView: View {
     private func skipOnboarding() {
         // DOLL-344: the default is the in-container directory — no
         // security-scoped bookmark, and useDefaultOutputDir creates it.
-        recorder.useDefaultOutputDir()
+        recorder.switchOutputDir(to: nil)
 
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: SettingsKeys.continuousMode)
@@ -305,9 +305,9 @@ struct OnboardingView: View {
             // DOLL-344: the in-container default needs no security-scoped
             // bookmark; only a user-picked folder (outside the container) does.
             if url.standardizedFileURL == RecordingState.defaultOutputDir.standardizedFileURL {
-                recorder.useDefaultOutputDir()
+                recorder.switchOutputDir(to: nil)
             } else {
-                recorder.saveOutputDirBookmark(for: url)
+                recorder.switchOutputDir(to: url)
             }
         }
 

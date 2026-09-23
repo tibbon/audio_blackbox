@@ -33,6 +33,28 @@ extension RecordingState {
 
     // MARK: - Security-Scoped Bookmarks
 
+    /// Switch recordings to `url` (a folder the user picked), or to the
+    /// in-container default when `url` is nil. The engine keeps writing to
+    /// the folder its session started with, and switching releases that
+    /// folder's security scope, so a live recording is finalized first, the
+    /// folders are swapped while the engine is stopped, and the recording
+    /// restarts in the new folder. Access is never dropped under a live
+    /// session. Callers ask the user before switching mid-recording.
+    func switchOutputDir(to url: URL?) {
+        let swap = { [self] in
+            if let url {
+                saveOutputDirBookmark(for: url)
+            } else {
+                useDefaultOutputDir()
+            }
+        }
+        if isRecording {
+            restartIfRecording(reason: "output folder changed", whileStopped: swap)
+        } else {
+            swap()
+        }
+    }
+
     /// Point recording at the in-container default directory
     /// (`Self.defaultOutputDir`). The container is always writable, so —
     /// unlike a user-selected folder — it needs no security-scoped bookmark;

@@ -133,12 +133,12 @@ Known gaps against this intent:
 
 The user-picked output directory is persisted as a security-scoped bookmark in UserDefaults. Lifecycle:
 
-1. **Save**: `RecordingState.saveOutputDirBookmark(for:)`, called from the folder pickers in onboarding and `OutputSettingsTab`; `URL.bookmarkData(options: .withSecurityScope)`. It stops access on the previous URL before storing the new one. The in-container default folder needs no bookmark (`useDefaultOutputDir()`, DOLL-344).
+1. **Save**: `RecordingState.saveOutputDirBookmark(for:)`, reached from the folder pickers in onboarding and `OutputSettingsTab` through `switchOutputDir(to:)`; `URL.bookmarkData(options: .withSecurityScope)`. It stops access on the previous URL before storing the new one. The in-container default folder needs no bookmark (`useDefaultOutputDir()`, DOLL-344).
 2. **Restore on launch**: a deferred `Task` (`bookmarkRestoreTask`, DOLL-114) resolves the bookmark, calls `startAccessingSecurityScopedResource`, and pushes the path into the Rust engine. Auto-record waits on this Task (DOLL-181), which includes the re-pick prompt below, so auto-record never starts before the user has answered it.
 3. **Hold during runtime**: the URL stays scoped until it is replaced or released.
 4. **Release**: `releaseOutputDirAccess()` runs on quit (from `applicationShouldTerminate`, after `stop()`) and when switching to the default folder.
 
-If the bookmark can't be resolved or access fails, the bookmark is dropped and the user is asked to pick again via `promptToReselectOutputDir` (DOLL-379). A bookmark that resolves but is marked stale is refreshed silently by rewriting only the stored bookmark data (`storeOutputDirBookmark(for:)`); it does not go through `saveOutputDirBookmark(for:)`, which would stop access on the URL it was just granted. **Known gap:** nothing stops a recording from continuing into a folder whose access was just released by picking a new one.
+If the bookmark can't be resolved or access fails, the bookmark is dropped and the user is asked to pick again via `promptToReselectOutputDir` (DOLL-379). A bookmark that resolves but is marked stale is refreshed silently by rewriting only the stored bookmark data (`storeOutputDirBookmark(for:)`); it does not go through `saveOutputDirBookmark(for:)`, which would stop access on the URL it was just granted. Switching folders mid-recording goes through `switchOutputDir(to:)`: the Settings picker first asks to restart (the bit-depth/channels prompt), then the live session is finalized, the old folder's access is released while the engine is stopped, and recording restarts in the new folder, so access is never released under a live session.
 
 ### Carbon hotkey lifecycle
 

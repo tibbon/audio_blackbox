@@ -290,9 +290,17 @@ struct OutputSettingsTab: View {
         panel.prompt = String(localized: "Select")
         panel.message = String(localized: "Select output directory for recordings")
 
-        if panel.runModal() == .OK, let url = panel.url {
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard recorder.isRecording else {
             outputDir = url.path
-            recorder.saveOutputDirBookmark(for: url)
+            recorder.switchOutputDir(to: url)
+            return
+        }
+        // The live session keeps writing to the old folder until it restarts;
+        // switchOutputDir finalizes it before releasing that folder's access.
+        confirmSettingsChange(reason: String(localized: "the output folder")) {
+            outputDir = url.path
+            recorder.switchOutputDir(to: url)
         }
     }
 }

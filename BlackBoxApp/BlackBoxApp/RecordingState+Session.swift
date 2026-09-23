@@ -212,11 +212,17 @@ extension RecordingState {
 
     /// Finalize current WAV files and immediately start a new recording session
     /// with the updated config. No-op if not currently recording.
-    func restartIfRecording(reason: String) {
+    ///
+    /// `whileStopped` runs after the engine has finalized its files and
+    /// before the new session starts — the one window in which it is safe to
+    /// release something the old session was using (the output folder's
+    /// security scope).
+    func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) {
         guard isRecording else { return }
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
         stopTimer()
         _ = bridge.stopRecording()
+        whileStopped?()
         // The engine is stopped; reflect it before startRecordingInternal,
         // whose double-start guard (DOLL-459) would otherwise see the stale
         // true and return without restarting — leaving the engine stopped
