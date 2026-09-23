@@ -15,6 +15,7 @@
 		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
 		314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */; };
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
+		40CD3063B06EE5120F8A461D /* EngineStatusPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCE2CDF0FF6C12C8D2F0664 /* EngineStatusPolicy.swift */; };
 		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
 		4600E03701AFEF6D356EECC2 /* OnboardingView+ShortcutStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */; };
 		4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */; };
@@ -23,6 +24,7 @@
 		5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98679487F91174C239180404 /* RecordingState+Notifications.swift */; };
 		5F36321926F2474499725EE2 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3868EB3B5B085E587D3126F3 /* RecordingState.swift */; };
 		6948821D570B742FB31B0301 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */; };
+		749B9C7A6A540CB18A5B7A06 /* EngineStatusPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */; };
 		77D74B483BA578380B42071A /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E0C5F4C53E67679886A7C1 /* RustBridge.swift */; };
 		8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */; };
 		8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */ = {isa = PBXBuildFile; fileRef = CABDBB4ADB98586777721416 /* CustomCadenceField.swift */; };
@@ -80,6 +82,7 @@
 		7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+ShortcutStep.swift"; sourceTree = "<group>"; };
 		833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSelectionGrid.swift; sourceTree = "<group>"; };
 		8C24474EAC1E91E318CAF5CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8CCE2CDF0FF6C12C8D2F0664 /* EngineStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStatusPolicy.swift; sourceTree = "<group>"; };
 		924678D133EB74205F702B27 /* OutputSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputSettingsTab.swift; sourceTree = "<group>"; };
 		98679487F91174C239180404 /* RecordingState+Notifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Notifications.swift"; sourceTree = "<group>"; };
 		98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+OutputDirectory.swift"; sourceTree = "<group>"; };
@@ -99,6 +102,7 @@
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		CABDBB4ADB98586777721416 /* CustomCadenceField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomCadenceField.swift; sourceTree = "<group>"; };
 		CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetectionSection.swift; sourceTree = "<group>"; };
+		EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStatusPolicyTests.swift; sourceTree = "<group>"; };
 		EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+SleepWake.swift"; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
 		F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuStatusSection.swift; sourceTree = "<group>"; };
@@ -113,6 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
+				EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */,
 				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
 				C303713C77B1900DC615925B /* SessionPolicyTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
@@ -151,6 +156,7 @@
 				833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */,
 				72C8B317B7C306370E48F169 /* ChannelSpec.swift */,
 				CABDBB4ADB98586777721416 /* CustomCadenceField.swift */,
+				8CCE2CDF0FF6C12C8D2F0664 /* EngineStatusPolicy.swift */,
 				BF014E01A272096E9292D845 /* GeneralSettingsTab.swift */,
 				3C0D406FB2823A8C75535437 /* GlobalHotkeyManager.swift */,
 				AD9C1C02E9A69022ECF95ABE /* Info.plist */,
@@ -285,6 +291,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
+				749B9C7A6A540CB18A5B7A06 /* EngineStatusPolicyTests.swift in Sources */,
 				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
 				A6DE84B5EABEF1DF0D426B9F /* SessionPolicyTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
@@ -303,6 +310,7 @@
 				DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */,
 				901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */,
 				8433EF86C8E2EC4F95865AA9 /* CustomCadenceField.swift in Sources */,
+				40CD3063B06EE5120F8A461D /* EngineStatusPolicy.swift in Sources */,
 				B37E1AC67BACBE9D8170A4D6 /* GeneralSettingsTab.swift in Sources */,
 				F9ADF43C93705EBCE8457A57 /* GlobalHotkeyManager.swift in Sources */,
 				00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */,

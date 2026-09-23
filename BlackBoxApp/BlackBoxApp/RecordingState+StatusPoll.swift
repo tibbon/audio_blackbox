@@ -5,11 +5,6 @@ import IOKit.ps
 import struct os.Logger
 
 extension RecordingState {
-    // DOLL-351: the flapping-device cap for recoverFromStreamError (the
-    // counters themselves are stored on RecordingState).
-    private static let maxConsecutiveStreamRestarts = 3
-    private static let streamRestartWindow: TimeInterval = 10
-
     // MARK: - Duration Timer
 
     func startTimer() {
@@ -58,69 +53,61 @@ extension RecordingState {
         }
     }
 
-    /// Act on one engine status poll. The checks run in priority order and
-    /// each terminal condition (unexpected stop, sample-rate change, stream
-    /// error, write failure, low disk, excessive drops) ends the tick.
+    /// Act on one engine status poll. `EngineStatusPolicy.action` picks at
+    /// most one terminal condition, in priority order (unexpected stop,
+    /// sample-rate change, stream error, write failure, low disk, excessive
+    /// drops); otherwise the tick publishes the counters.
     private func applyEngineStatus(_ status: StatusFlags) {
-        // Check if Rust engine stopped recording unexpectedly (device disconnect, etc.)
-        if isRecording && !status.is_recording {
+        let action = EngineStatusPolicy.action(isRecording: isRecording, status: status)
+        if action == .handleUnexpectedStop {
             handleUnexpectedEngineStop()
             return
         }
         updateGateIdleStatus(status.gate_idle)
-
-        // Sample rate changed on the audio device — restart to pick up new rate
-        // so the WAV header matches the actual audio data.
-        if status.sample_rate_changed {
-            restartForSampleRateChange()
-            return
-        }
-
-        // Audio stream error — device disconnected or driver failure.
-        // Finalize current files, then try to restart on the next available device.
-        if status.stream_error {
-            recoverFromStreamError()
-            return
-        }
-        // DOLL-437: persistent write failure (disk full mid-write, or the
-        // output directory became unwritable). Checked before disk_space_low
-        // so the cause is reported accurately rather than as a pre-emptive
-        // low-space warning or as CPU "heavy load" from the shared counter.
-        if status.write_failed {
-            stopForWriteFailure()
-            return
-        }
-        // Disk space low — stop recording gracefully
-        if status.disk_space_low {
-            stopForLowDiskSpace()
-            return
-        }
-        // Write errors — cumulative counter from Rust engine
+        // DOLL-223: publish for UI even below the thresholds that warn or
+        // stop, so sub-500-sample drops don't happen invisibly.
         let writeErrors = Int(status.write_errors)
-        let newDrops = writeErrors - lastReportedWriteErrors
-        // DOLL-223: publish for UI even when below the threshold the
-        // existing logic warns at. Otherwise sub-500-sample drops
-        // happen invisibly.
         writeErrorsCount = writeErrors
 
-        if writeErrors > 48_000 {
+        switch action {
+        case .handleUnexpectedStop:
+            return  // handled above, before the gate-idle update
+
+        case .restartForSampleRateChange:
+            restartForSampleRateChange()
+
+        case .recoverFromStreamError:
+            recoverFromStreamError()
+
+        case .stopForWriteFailure:
+            stopForWriteFailure()
+
+        case .stopForLowDiskSpace:
+            stopForLowDiskSpace()
+
+        case .stopForExcessiveWriteErrors:
             stopForExcessiveWriteErrors(writeErrors)
-            return
-        }
-        if newDrops > 0 {
-            // Only log/display when NEW drops occur (counter is cumulative)
-            lastReportedWriteErrors = writeErrors
-            Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
-            if writeErrors > 500 {
-                errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
+
+        case .keepRecording:
+            reportNewWriteErrors(writeErrors)
+            // Sample rate — update for file size estimates in settings
+            let rate = Int(status.sample_rate)
+            if rate > 0, rate != sampleRate {
+                sampleRate = rate
+                UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
             }
         }
+    }
 
-        // Sample rate — update for file size estimates in settings
-        let rate = Int(status.sample_rate)
-        if rate > 0, rate != sampleRate {
-            sampleRate = rate
-            UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
+    /// Log and surface dropped samples, only when new drops occurred (the
+    /// engine counter is cumulative).
+    private func reportNewWriteErrors(_ writeErrors: Int) {
+        let newDrops = writeErrors - lastReportedWriteErrors
+        guard newDrops > 0 else { return }
+        lastReportedWriteErrors = writeErrors
+        Self.log.warning("Write errors: \(newDrops) new samples dropped (\(writeErrors) total)")
+        if writeErrors > 500 {
+            errorMessage = String(localized: "Audio quality degraded \u{2014} some data was lost")
         }
     }
 
@@ -221,14 +208,15 @@ extension RecordingState {
         // looping. The 1 Hz status poll naturally spaces attempts ~1s
         // apart, which is the effective backoff.
         let now = Date()
-        if let last = lastStreamRestart, now.timeIntervalSince(last) < Self.streamRestartWindow {
-            streamRestartCount += 1
-        } else {
-            streamRestartCount = 1
-        }
+        let restart = EngineStatusPolicy.streamRestart(
+            previousCount: streamRestartCount,
+            lastRestart: lastStreamRestart,
+            now: now
+        )
+        streamRestartCount = restart.count
         lastStreamRestart = now
 
-        if streamRestartCount > Self.maxConsecutiveStreamRestarts {
+        if !restart.isAllowed {
             stopAfterRepeatedStreamErrors()
             return
         }
