@@ -50,6 +50,41 @@ nonisolated final class OnboardingSettingsTests: XCTestCase {
         XCTAssertEqual(config["silence_gate_enabled"] as? Bool, false)
     }
 
+    // MARK: - recordingModeChanged (restart a live recording only on a change)
+
+    /// Apply the wizard's mode to a real engine config, the way finishing
+    /// onboarding does, and report whether the engine's mode changed.
+    private func applyModeToEngine(_ bridge: RustBridge, continuous: Bool, silenceGate: Bool) -> Bool {
+        let before = bridge.getConfig() ?? [:]
+        bridge.setConfig(
+            OnboardingSettings.applyRecordingMode(continuous: continuous, silenceGate: silenceGate, to: defaults)
+        )
+        return OnboardingSettings.recordingModeChanged(from: before, to: bridge.getConfig() ?? [:])
+    }
+
+    /// Finishing the wizard with the mode the engine already has changes
+    /// nothing, so a live recording is not restarted for it.
+    func testReapplyingTheEngineModeIsNotAChange() {
+        let bridge = RustBridge()
+        XCTAssertNotNil(OnboardingSettings.EngineRecordingMode(config: bridge.getConfig() ?? [:]))
+        _ = applyModeToEngine(bridge, continuous: true, silenceGate: false)
+        XCTAssertFalse(applyModeToEngine(bridge, continuous: true, silenceGate: false))
+    }
+
+    /// A different mode is a change: the live recording must restart to
+    /// record with it. The mode used to reach the engine after the restart,
+    /// or with none, so the live session kept the old one.
+    func testChangingTheEngineModeIsAChange() {
+        let bridge = RustBridge()
+        _ = applyModeToEngine(bridge, continuous: false, silenceGate: true)
+        XCTAssertTrue(applyModeToEngine(bridge, continuous: true, silenceGate: true))
+        XCTAssertTrue(applyModeToEngine(bridge, continuous: true, silenceGate: false))
+    }
+
+    func testAnUnreadableConfigCountsAsAChange() {
+        XCTAssertTrue(OnboardingSettings.recordingModeChanged(from: [:], to: RustBridge().getConfig() ?? [:]))
+    }
+
     func testFirstRunSkipAppliesTheRecommendation() {
         let config = OnboardingSettings.applySkip(to: defaults)
         XCTAssertTrue(defaults.bool(forKey: SettingsKeys.continuousMode))

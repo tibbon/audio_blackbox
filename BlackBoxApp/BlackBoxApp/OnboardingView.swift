@@ -278,11 +278,10 @@ struct OnboardingView: View {
         // A stored bookmark means the user already picked a folder (this is
         // "Run Setup Again"); Skip keeps it rather than silently moving
         // their recordings back to the default.
-        if UserDefaults.standard.data(forKey: SettingsKeys.outputDirBookmark) == nil {
-            recorder.switchOutputDir(to: nil)
+        let switchesFolder = UserDefaults.standard.data(forKey: SettingsKeys.outputDirBookmark) == nil
+        applySetup(folder: switchesFolder ? .useDefault : .keep) {
+            OnboardingSettings.applySkip(to: UserDefaults.standard)
         }
-
-        recorder.bridge.setConfig(OnboardingSettings.applySkip(to: UserDefaults.standard))
 
         // Warn if mic permission hasn't been granted yet
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -301,28 +300,62 @@ struct OnboardingView: View {
 
         // Only update the bookmark if the user explicitly picked a new directory.
         // Re-running onboarding without changing the dir preserves the existing bookmark.
-        if dirChangedByUser {
-            // DOLL-344: the in-container default needs no security-scoped
-            // bookmark; only a user-picked folder (outside the container) does.
-            if url.standardizedFileURL == RecordingState.defaultOutputDir.standardizedFileURL {
-                recorder.switchOutputDir(to: nil)
-            } else {
-                recorder.switchOutputDir(to: url)
-            }
-        }
+        // DOLL-344: the in-container default needs no security-scoped
+        // bookmark (nil); only a user-picked folder (outside the container) does.
+        let isDefault = url.standardizedFileURL == RecordingState.defaultOutputDir.standardizedFileURL
+        let folder: FolderChoice = !dirChangedByUser ? .keep : isDefault ? .useDefault : .use(url)
 
         // Save recording mode choice (keeping a rotation interval the user
         // already chose).
-        recorder.bridge.setConfig(
+        applySetup(folder: folder) {
             OnboardingSettings.applyRecordingMode(
                 continuous: continuousMode,
                 silenceGate: silenceGateEnabled,
                 to: UserDefaults.standard
             )
-        )
+        }
 
         hasCompletedOnboarding = true
         dismiss()
+    }
+
+    /// What finishing the wizard does with the output folder.
+    private enum FolderChoice {
+        case keep
+        /// The in-container default, which needs no bookmark.
+        case useDefault
+        case use(URL)
+    }
+
+    /// Apply the wizard's choices. `applyMode` saves the recording mode and
+    /// returns its engine config.
+    ///
+    /// A recording can be running here (started from the hotkey while the
+    /// wizard was open). The mode goes to the engine first, then the live
+    /// session restarts once so it picks up both: through the folder switch
+    /// when the folder changes, which restarts it, or on its own when only
+    /// the mode changed. The mode used to be applied after the folder
+    /// switch's restart, or with no restart at all, leaving the live session
+    /// on the old mode.
+    private func applySetup(folder: FolderChoice, applyMode: () -> [String: Any]) {
+        let configBefore = recorder.bridge.getConfig() ?? [:]
+        recorder.bridge.setConfig(applyMode())
+        let modeChanged = OnboardingSettings.recordingModeChanged(
+            from: configBefore,
+            to: recorder.bridge.getConfig() ?? [:]
+        )
+        switch folder {
+        case .useDefault:
+            recorder.switchOutputDir(to: nil)
+
+        case .use(let url):
+            recorder.switchOutputDir(to: url)
+
+        case .keep:
+            if modeChanged {
+                recorder.restartIfRecording(reason: "recording mode changed")
+            }
+        }
     }
 }
 

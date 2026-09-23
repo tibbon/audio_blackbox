@@ -47,6 +47,37 @@ nonisolated enum OnboardingSettings {
         ]
     }
 
+    /// The recording mode in an engine config (`RustBridge.getConfig()`):
+    /// the settings the wizard's recording-mode step changes.
+    struct EngineRecordingMode: Equatable {
+        var continuous: Bool
+        var cadenceSecs: Int
+        var silenceGate: Bool
+
+        init?(config: [String: Any]) {
+            guard
+                let continuous = config["continuous_mode"] as? Bool,
+                let cadenceSecs = config["recording_cadence"] as? Int,
+                let silenceGate = config["silence_gate_enabled"] as? Bool
+            else { return nil }
+            self.continuous = continuous
+            self.cadenceSecs = cadenceSecs
+            self.silenceGate = silenceGate
+        }
+    }
+
+    /// Whether applying the wizard's choices changed the engine's recording
+    /// mode, so a live recording must restart to record with it. Takes the
+    /// engine configs read before and after (empty when unreadable); one
+    /// without a mode counts as a change, since an unneeded restart only
+    /// starts a new file.
+    static func recordingModeChanged(from before: [String: Any], to after: [String: Any]) -> Bool {
+        guard let old = EngineRecordingMode(config: before), let new = EngineRecordingMode(config: after) else {
+            return true
+        }
+        return old != new
+    }
+
     /// "Skip Setup": the recommended setup on the first run, and on a re-run
     /// whatever is already saved (Skip must not reset it).
     static func applySkip(to defaults: UserDefaults) -> [String: Any] {
