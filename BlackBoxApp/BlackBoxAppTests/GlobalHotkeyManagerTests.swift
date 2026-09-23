@@ -1,4 +1,5 @@
 import Carbon
+import SwiftUI
 import XCTest
 
 @testable import BlackBox_Audio_Recorder
@@ -35,6 +36,42 @@ nonisolated final class GlobalHotkeyManagerTests: XCTestCase {
         try XCTSkipIf(rebound, "Carbon accepted a duplicate registration, so the failure can't be provoked here")
 
         XCTAssertEqual(manager.currentShortcut, working, "the previous shortcut must be registered again")
+    }
+}
+
+/// The Settings / onboarding shortcut recorder's capture lifecycle.
+nonisolated final class ShortcutRecorderTests: StandardDefaultsTestCase {
+    /// Backing storage for the recorder's bindings, as a view's @State would be.
+    @MainActor
+    final class Bindings {
+        var label = "None"
+        var isRecording = false
+        var error: String?
+
+        func recorder() -> ShortcutRecorderButton {
+            ShortcutRecorderButton(
+                shortcutLabel: Binding(get: { self.label }, set: { self.label = $0 }),
+                isRecording: Binding(get: { self.isRecording }, set: { self.isRecording = $0 }),
+                error: Binding(get: { self.error }, set: { self.error = $0 })
+            )
+        }
+    }
+
+    /// Tearing the button down mid-capture (the onboarding step swapped out,
+    /// the Settings window closed) ends the capture. It used to only remove
+    /// the key monitor, leaving the binding true, so the button came back
+    /// stuck on "Press shortcut…".
+    @MainActor
+    func testDismantlingMidCaptureEndsTheCapture() {
+        let state = Bindings()
+        let coordinator = ShortcutRecorderButton.Coordinator(parent: state.recorder())
+        coordinator.startRecording()
+        XCTAssertTrue(state.isRecording)
+
+        ShortcutRecorderButton.dismantleNSView(ShortcutRecorderNSButton(), coordinator: coordinator)
+
+        XCTAssertFalse(state.isRecording)
+        XCTAssertNil(coordinator.localMonitor)
     }
 }
 

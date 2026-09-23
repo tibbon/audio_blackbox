@@ -29,8 +29,13 @@ struct ShortcutRecorderButton: NSViewRepresentable {
     /// SwiftUI's main-actor teardown hook, called before the coordinator is
     /// released. It replaces a `deinit` cleanup: the monitor token is not
     /// Sendable, so a nonisolated deinit can't touch it under Swift 6.
+    ///
+    /// Ends the capture, not just the monitor: the `isRecording` binding
+    /// usually outlives this view (onboarding keeps it on OnboardingView
+    /// while the shortcut step is swapped out), and left `true` it brought
+    /// the button back stuck on "Press shortcut…".
     static func dismantleNSView(_: ShortcutRecorderNSButton, coordinator: Coordinator) {
-        coordinator.removeMonitor()
+        coordinator.stopRecording()
     }
 
     @MainActor
@@ -56,9 +61,10 @@ struct ShortcutRecorderButton: NSViewRepresentable {
             removeMonitor()
         }
 
-        /// Uninstall the key monitor if one is active. Also the teardown path
-        /// (via `dismantleNSView`), so a window closed mid-capture can't leave
-        /// a monitor swallowing every keyDown in the app.
+        /// Uninstall the key monitor if one is active. Part of the teardown
+        /// path too (`stopRecording`, via `dismantleNSView`), so a window
+        /// closed mid-capture can't leave a monitor swallowing every keyDown
+        /// in the app.
         func removeMonitor() {
             if let monitor = localMonitor {
                 NSEvent.removeMonitor(monitor)
