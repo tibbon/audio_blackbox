@@ -116,6 +116,12 @@ extension RecordingState {
             // alert, which left the engine stopped until the user clicked
             // OK, with isRecording and isStartingRecording both false so a
             // second start could race in.
+            //
+            // The estimate needs the rate this stream opened at. The engine
+            // publishes it during startRecording(); the status poll only
+            // picks it up a second later, so after a sample-rate-change
+            // restart the estimate used the old device rate.
+            adoptEngineSampleRate()
             evaluatePreflightFileSizeWarning(isRestart: isRestart)
             startTimer()
             beginPreventingSleep()

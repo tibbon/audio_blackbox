@@ -90,13 +90,25 @@ extension RecordingState {
 
         case .keepRecording:
             reportNewWriteErrors(writeErrors)
-            // Sample rate — update for file size estimates in settings
-            let rate = Int(status.sample_rate)
-            if rate > 0, rate != sampleRate {
-                sampleRate = rate
-                UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
-            }
+            adoptReportedSampleRate(Int(status.sample_rate))
         }
+    }
+
+    /// Ask the engine for the running stream's rate and record it; see
+    /// `adoptReportedSampleRate`.
+    func adoptEngineSampleRate() {
+        if let status = bridge.getStatusFlags() {
+            adoptReportedSampleRate(Int(status.sample_rate))
+        }
+    }
+
+    /// Record the rate the engine reports for the running stream, for the
+    /// file-size estimates and the meter grid. 0 means the engine has no
+    /// stream yet and is ignored.
+    func adoptReportedSampleRate(_ rate: Int) {
+        guard rate > 0, rate != sampleRate else { return }
+        sampleRate = rate
+        UserDefaults.standard.set(rate, forKey: SettingsKeys.lastSampleRate)
     }
 
     /// Log and surface dropped samples, only when new drops occurred (the

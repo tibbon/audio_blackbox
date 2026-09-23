@@ -2,7 +2,7 @@ import XCTest
 
 @testable import BlackBox_Audio_Recorder
 
-nonisolated final class SessionPolicyTests: XCTestCase {
+nonisolated final class SessionPolicyTests: StandardDefaultsTestCase {
     // MARK: - stopOutcome
 
     func testSuccessfulStopIsStopped() {
@@ -192,6 +192,40 @@ nonisolated final class SessionPolicyTests: XCTestCase {
 
         XCTAssertNotNil(recorder.preflightSizeWarning)
         XCTAssertEqual(recorder.lastPreflightEstimate, largeEstimate())
+    }
+
+    /// The order startRecordingInternal uses after a sample-rate-change
+    /// restart: adopt the rate the new stream reports, then evaluate. The
+    /// estimate must be the new rate's, so the changed projection is
+    /// announced; with the stale 48 kHz it matched the old one and stayed
+    /// silent.
+    @MainActor
+    func testRestartAtANewSampleRateEstimatesWithTheNewRate() {
+        let recorder = RecordingState()
+        recorder.sampleRate = 48_000
+        recorder.configSnapshot = RecordingState.RecordingConfigSnapshot(
+            continuousMode: true,
+            recordingCadence: 7200,
+            channelCount: 8,
+            bitDepth: 24,
+            outputMode: "single"
+        )
+        recorder.evaluatePreflightFileSizeWarning(isRestart: false)
+
+        recorder.adoptReportedSampleRate(96_000)
+        recorder.evaluatePreflightFileSizeWarning(isRestart: true)
+
+        XCTAssertEqual(recorder.sampleRate, 96_000)
+        XCTAssertEqual(recorder.lastPreflightEstimate, largeEstimate(sampleRate: 96_000))
+    }
+
+    /// 0 means the engine has no stream yet; the last known rate stays.
+    @MainActor
+    func testAnUnreportedSampleRateKeepsTheLastOne() {
+        let recorder = RecordingState()
+        recorder.sampleRate = 44_100
+        recorder.adoptReportedSampleRate(0)
+        XCTAssertEqual(recorder.sampleRate, 44_100)
     }
 
     func testNoWarningNeverAnnounces() {
