@@ -358,10 +358,17 @@ jobs:
         DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         RELEASE_VERSION: ${{ steps.version.outputs.version }}
         SKIP_RUST_BUILD: "true"
+        # Through env, not interpolated into the script: an expression pasted
+        # into `run:` becomes shell source before bash parses it. The input is
+        # a choice today, but the rule costs nothing and survives a later
+        # switch to free text.
+        LANE: ${{ github.event.inputs.lane || 'beta' }}
       run: |
+        set -euo pipefail
         # Decode base64 key content for Fastlane API auth
-        export ASC_KEY_CONTENT=$(echo "$ASC_KEY_CONTENT" | base64 --decode)
-        bundle exec fastlane "${{ github.event.inputs.lane || 'beta' }}"
+        ASC_KEY_CONTENT="$(echo "$ASC_KEY_CONTENT" | base64 --decode)"
+        export ASC_KEY_CONTENT
+        bundle exec fastlane "$LANE"
 
     - name: Clean up secrets
       if: always()
