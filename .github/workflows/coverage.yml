@@ -41,8 +41,11 @@ jobs:
       # there's no unpinned/guessed action SHA on the supply-chain surface.
       run: command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 
+    # --test-threads=1 as in every other lane: the zero-allocation tests read a
+    # process-wide allocation counter, so a test allocating on another thread
+    # in parallel would fail them.
     - name: Rust line-coverage summary
-      run: cargo llvm-cov --no-default-features --summary-only
+      run: cargo llvm-cov --no-default-features --summary-only -- --test-threads=1
 
   swift-coverage:
     name: Swift coverage (xccov)

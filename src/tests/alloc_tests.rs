@@ -1,15 +1,21 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tempfile::tempdir;
 
 use crate::alloc_counter;
 use crate::constants::{CacheAlignedPeak, OutputMode};
+use crate::cpal_processor::push_samples_with_overflow_count;
 use crate::writer_thread::WriterThreadState;
 
 // Test helper consolidated to `crate::test_utils` (DOLL-118).
 use crate::numeric::{count_to_f64, len_to_f32};
 use crate::test_utils::test_env_no_silence;
+
+// These run in the normal suite: they take about a second in a debug build.
+// The allocation counter is process-wide, so they depend on `--test-threads=1`
+// (every lane and scripts/check.sh pass it) — a test allocating on another
+// thread during the measured loop would fail them.
 
 /// Generate interleaved f32 test data.
 fn generate_data(total_channels: usize, frames: usize) -> Vec<f32> {
@@ -34,7 +40,6 @@ fn zero_peaks(ch_count: usize) -> Arc<[CacheAlignedPeak]> {
 // ===========================================================================
 
 #[test]
-#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_monitor() {
     let sample_rate: u32 = 48000;
     let ch_count: usize = 2;
@@ -139,7 +144,6 @@ fn recording_allocs(output_mode: OutputMode, bits_per_sample: u16) -> u64 {
 }
 
 #[test]
-#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_recording() {
     temp_env::with_vars(test_env_no_silence(), || {
         assert_eq!(
@@ -152,7 +156,6 @@ fn test_write_samples_zero_alloc_recording() {
 
 /// Single mode at 16 bits runs the TPDF dither (DOLL-373) on every sample.
 #[test]
-#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_recording_dithered() {
     temp_env::with_vars(test_env_no_silence(), || {
         assert_eq!(
@@ -165,7 +168,6 @@ fn test_write_samples_zero_alloc_recording_dithered() {
 
 /// Split mode writes each channel through its own writer (`write_split_frames`).
 #[test]
-#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_split() {
     temp_env::with_vars(test_env_no_silence(), || {
         assert_eq!(
@@ -186,7 +188,6 @@ fn test_write_samples_zero_alloc_split() {
 // ===========================================================================
 
 #[test]
-#[ignore = "allocation test — run with: cargo test --release alloc -- --ignored --nocapture --test-threads=1"]
 fn test_write_samples_zero_alloc_partial_frames() {
     let sample_rate: u32 = 48000;
     let ch_count: usize = 2;
@@ -249,6 +250,66 @@ fn test_write_samples_zero_alloc_partial_frames() {
             "write_samples() with partial frames should have zero allocations after warmup"
         );
     });
+}
+
+// ===========================================================================
+// Allocation counting: the cpal callback's ring-buffer push (RT thread)
+// ===========================================================================
+
+/// The cpal input callback runs on the CoreAudio real-time thread and does
+/// nothing but `push_samples_with_overflow_count`, so this is the proof that
+/// the RT side of the pipeline allocates nothing — both when the ring buffer
+/// has room and when it is full and the rejected samples are counted.
+#[test]
+fn test_rt_push_zero_alloc() {
+    const CALLBACK_SAMPLES: usize = 512;
+    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(2 * CALLBACK_SAMPLES);
+    let write_errors = AtomicU64::new(0);
+    let data = generate_data(2, CALLBACK_SAMPLES / 2);
+
+    // One round: two callbacks fill the buffer exactly, the third overflows
+    // whole, then the writer side drains everything.
+    let mut round = || {
+        for _ in 0..3 {
+            push_samples_with_overflow_count(&mut producer, &data, &write_errors);
+        }
+        let queued = consumer.slots();
+        consumer
+            .read_chunk(queued)
+            .expect("slots() reported these as readable")
+            .commit_all();
+    };
+
+    // Warmup, for symmetry with the writer tests (rtrb allocates only in new()).
+    for _ in 0..10 {
+        round();
+    }
+    write_errors.store(0, Ordering::Relaxed);
+
+    let iterations: u32 = 1000;
+    let before = alloc_counter::snapshot();
+    for _ in 0..iterations {
+        round();
+    }
+    let after = alloc_counter::snapshot();
+    let allocs = after - before;
+
+    println!(
+        "\n  RT push (512 samples, 1 in 3 overflowing): {allocs} allocations across {} callbacks",
+        3 * iterations
+    );
+
+    // The overflow branch must actually have run, or this proves only the
+    // happy path: one whole rejected callback per round.
+    assert_eq!(
+        write_errors.load(Ordering::Relaxed),
+        u64::from(iterations) * CALLBACK_SAMPLES as u64,
+        "every third push should be rejected and counted in write_errors"
+    );
+    assert_eq!(
+        allocs, 0,
+        "push_samples_with_overflow_count() runs on the RT thread and must never allocate"
+    );
 }
 
 // ===========================================================================

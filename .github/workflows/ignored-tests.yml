@@ -1,6 +1,6 @@
 name: Ignored tests
 
-# Long-running benchmark / performance / allocation tests are marked
+# Long-running benchmark / performance tests are marked
 # `#[ignore]` so they don't run on the per-PR `cargo test` lane (DOLL-131).
 # They still exercise real code paths; this lane runs them on a cadence
 # so they don't silently rot as production evolves.
@@ -57,7 +57,7 @@ jobs:
       # the flag they never even compiled here, so the lane created to
       # stop ignored tests from "silently passing without executing"
       # (DOLL-83) was itself silently skipping them. The feature is
-      # additive: the alloc + benchmark ignored tests run exactly as
+      # additive: the benchmark ignored tests run exactly as
       # before. (Profile stays dev — these 7 are functional tracker
       # tests, not perf floors; the bench smoke lane owns release-mode
       # throughput assertions.)
