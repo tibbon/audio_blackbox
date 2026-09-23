@@ -870,6 +870,10 @@ impl AudioProcessor for CpalAudioProcessor {
         self.disk_space_low.load(Ordering::Relaxed)
     }
 
+    fn write_failed(&self) -> bool {
+        self.write_failed.load(Ordering::Relaxed)
+    }
+
     fn stream_error(&self) -> bool {
         self.stream_error.load(Ordering::Relaxed)
     }

@@ -89,6 +89,13 @@ pub trait AudioProcessor {
         false
     }
 
+    /// Whether writing stopped because the output kept failing (disk full or
+    /// the output directory became unwritable), as opposed to the low-space
+    /// pre-check behind [`disk_space_low`](Self::disk_space_low).
+    fn write_failed(&self) -> bool {
+        false
+    }
+
     /// Whether the audio stream has encountered an error (e.g., device disconnected).
     fn stream_error(&self) -> bool {
         false

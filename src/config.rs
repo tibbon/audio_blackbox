@@ -127,8 +127,11 @@ impl AppConfig {
         Self::default()
     }
 
-    /// Find the configuration file path
-    fn find_config_file() -> Option<PathBuf> {
+    /// Find the configuration file [`load`](Self::load) reads: the
+    /// `BLACKBOX_CONFIG` path if that file exists, else the first existing
+    /// file in the search order below. `None` when there is none.
+    #[must_use]
+    pub fn find_config_file() -> Option<PathBuf> {
         // First check if a config file path is specified in the environment
         if let Ok(config_path) = env::var("BLACKBOX_CONFIG") {
             let path = Path::new(&config_path);

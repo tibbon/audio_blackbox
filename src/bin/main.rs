@@ -1,16 +1,22 @@
 //! `blackbox` — CLI entry point.
 //!
 //! Distinct from the `SwiftUI` app (which calls Rust via FFI). The CLI:
-//! 1. Loads `blackbox.toml` (creates a default if missing), applies
-//!    `BLACKBOX_*` env overrides on top.
+//! 1. Loads the configuration file (`BLACKBOX_CONFIG`, else the search order
+//!    in `AppConfig::find_config_file`; creates a default if there is none),
+//!    applies `BLACKBOX_*` env overrides on top.
 //! 2. Installs a Ctrl-C / SIGTERM / SIGHUP handler with a debounce
 //!    so double-tap doesn't fan out work.
 //! 3. Creates a `CpalAudioProcessor`, wraps it in an `AudioRecorder`,
-//!    and runs until duration expires or Ctrl-C fires.
+//!    and runs until duration expires, a signal arrives, or the engine
+//!    reports a failure (disk full, write failure, stream error).
 //! 4. Finalizes the recording explicitly before exit.
+//!
+//! Exits with status 0 only when the recording ran and finalized cleanly;
+//! any failure exits non-zero so scripts and service managers can tell.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -25,11 +31,11 @@ use blackbox::CpalAudioProcessor;
 #[cfg(feature = "benchmarking")]
 use blackbox::PerformanceTracker;
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
 
     let Some(config) = load_config() else {
-        return;
+        return ExitCode::FAILURE;
     };
 
     // Set up performance monitoring using the real PerformanceTracker
@@ -44,32 +50,9 @@ fn main() {
 
     let running = install_shutdown_handler();
 
-    // Create processor and recorder
-    let processor = match CpalAudioProcessor::new() {
-        Ok(p) => p,
-        Err(e) => {
-            error!("Failed to create audio processor: {e}");
-            return;
-        }
+    let Some(mut recorder) = start_recorder(&config) else {
+        return ExitCode::FAILURE;
     };
-
-    let mut recorder = AudioRecorder::with_config(processor, config.clone());
-
-    // Start recording
-    let mode_label = if config.get_continuous_mode() {
-        "continuous"
-    } else {
-        "single"
-    };
-    info!("Starting {mode_label} recording");
-
-    match recorder.start_recording() {
-        Ok(_) => info!("Recording started!"),
-        Err(e) => {
-            error!("Failed to start recording: {e}");
-            return;
-        }
-    }
 
     // Main recording loop
     info!("Press Ctrl+C to stop recording");
@@ -83,20 +66,30 @@ fn main() {
         info!("Recording for {duration_secs} seconds...");
     }
 
-    run_until_stopped(&running, duration_secs, || {
+    let loop_failure = run_until_stopped(&running, duration_secs, || {
         // Check system resources if performance monitoring is enabled
         #[cfg(feature = "benchmarking")]
         if let Some(tracker) = &perf_tracker {
             warn_on_high_usage(tracker);
         }
+        engine_failure(recorder.get_processor())
     });
 
     // Stop recording
     info!("Stopping recording...");
 
     // Finalize the recording
-    if let Err(e) = recorder.processor_mut().finalize() {
-        error!("Error finalizing recording: {e}");
+    let finalized = match recorder.processor_mut().finalize() {
+        Ok(()) => true,
+        Err(e) => {
+            error!("Error finalizing recording: {e}");
+            false
+        }
+    };
+    // A flag can trip between the last check and the stop.
+    let failure = loop_failure.or_else(|| engine_failure(recorder.get_processor()));
+    if let Some(reason) = failure {
+        error!("Recording stopped early: {reason}");
     }
 
     // Stopping doesn't wait for silence checks (the app must not block its
@@ -114,31 +107,88 @@ fn main() {
         tracker.stop();
     }
 
-    info!("Recording finished!");
-    // DOLL-205: return normally instead of `std::process::exit(0)`, so
+    // DOLL-205: return normally instead of `std::process::exit`, so
     // destructors on the stack-rooted `recorder` run.
+    if finalized && failure.is_none() {
+        info!("Recording finished!");
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Create the processor and recorder and start recording. Logs and returns
+/// `None` on failure.
+fn start_recorder(config: &AppConfig) -> Option<AudioRecorder<CpalAudioProcessor>> {
+    let processor = match CpalAudioProcessor::new() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to create audio processor: {e}");
+            return None;
+        }
+    };
+
+    let mut recorder = AudioRecorder::with_config(processor, config.clone());
+
+    let mode_label = if config.get_continuous_mode() {
+        "continuous"
+    } else {
+        "single"
+    };
+    info!("Starting {mode_label} recording");
+
+    match recorder.start_recording() {
+        Ok(_) => {
+            info!("Recording started!");
+            Some(recorder)
+        }
+        Err(e) => {
+            error!("Failed to start recording: {e}");
+            None
+        }
+    }
 }
 
 /// How long the CLI waits on exit for queued silence checks. A check
 /// decodes a silent file to its end, so a long silent take needs a while.
 const SILENCE_CHECK_WAIT: Duration = Duration::from_secs(600);
 
-/// Create `blackbox.toml` if it's missing, load the configuration, and create
-/// its output directory. Logs and returns `None` if either file step fails.
+/// Load the configuration, creating a default file first if none exists, and
+/// create its output directory. Logs and returns `None` if either file step
+/// fails.
+///
+/// The default goes where `BLACKBOX_CONFIG` points, or `./blackbox.toml`
+/// when it is unset. A config found through `BLACKBOX_CONFIG` or the search
+/// order is never shadowed by a new `./blackbox.toml`.
 fn load_config() -> Option<AppConfig> {
-    let config_path = Path::new("blackbox.toml");
-    if !config_path.exists() {
-        info!("Configuration file not found, creating default at blackbox.toml");
-        let default_config = AppConfig::default();
-        if let Err(e) = default_config.create_config_file("blackbox.toml") {
+    let requested = std::env::var_os("BLACKBOX_CONFIG").map(PathBuf::from);
+    if AppConfig::find_config_file().is_none() {
+        let path = requested.unwrap_or_else(|| PathBuf::from("blackbox.toml"));
+        info!(
+            "Configuration file not found, creating default at {}",
+            path.display()
+        );
+        let created = path.to_str().map_or_else(
+            || Err(format!("{} is not valid UTF-8", path.display())),
+            |p| {
+                AppConfig::default()
+                    .create_config_file(p)
+                    .map_err(|e| e.to_string())
+            },
+        );
+        if let Err(e) = created {
             error!("Failed to create configuration file: {e}");
             return None;
         }
+    } else if let Some(path) = requested.filter(|p| !p.exists()) {
+        warn!(
+            "BLACKBOX_CONFIG={} does not exist; using the next configuration file found",
+            path.display()
+        );
     }
 
-    // Load configuration once at startup
+    // Load configuration once at startup; `load` logs which file it read.
     let config = AppConfig::load();
-    info!("Loaded configuration from {}", config_path.display());
 
     // Create output directory if it doesn't exist
     let output_dir = config.get_output_dir();
@@ -177,12 +227,36 @@ fn install_shutdown_handler() -> Arc<AtomicBool> {
     running
 }
 
-/// Tick once a second until Ctrl-C clears `running` or `duration_secs`
-/// elapse (0 = unlimited), calling `on_tick` every second and logging the
-/// time left every 5 seconds.
-fn run_until_stopped(running: &AtomicBool, duration_secs: u64, mut on_tick: impl FnMut()) {
+/// Why the engine can no longer record, if it can't: the flags the app's
+/// status poll turns into a stop and a notification.
+fn engine_failure(processor: &impl AudioProcessor) -> Option<&'static str> {
+    if processor.write_failed() {
+        Some("writing to disk kept failing (disk full or output directory unwritable)")
+    } else if processor.disk_space_low() {
+        Some("free disk space fell below min_disk_space_mb")
+    } else if processor.stream_error() {
+        Some("the audio stream reported an error (device disconnected?)")
+    } else {
+        None
+    }
+}
+
+/// Tick once a second until a signal clears `running`, `duration_secs`
+/// elapse (0 = unlimited), or `check` reports a failure, which is returned.
+/// `check` runs before every tick; the time left is logged every 5 seconds.
+fn run_until_stopped(
+    running: &AtomicBool,
+    duration_secs: u64,
+    mut check: impl FnMut() -> Option<&'static str>,
+) -> Option<&'static str> {
     let mut elapsed: u64 = 0;
     while running.load(Ordering::Relaxed) {
+        if let Some(reason) = check() {
+            return Some(reason);
+        }
+        if duration_secs > 0 && elapsed >= duration_secs {
+            break;
+        }
         #[expect(
             clippy::disallowed_methods,
             reason = "CLI status loop ticks once per second; there is nothing to wait on but the clock"
@@ -190,19 +264,12 @@ fn run_until_stopped(running: &AtomicBool, duration_secs: u64, mut on_tick: impl
         thread::sleep(Duration::from_secs(1));
         elapsed += 1;
 
-        on_tick();
-
-        // For fixed-duration mode, check if time is up and print remaining
-        if duration_secs > 0 {
-            if elapsed >= duration_secs {
-                break;
-            }
-            let remaining = duration_secs - elapsed;
-            if remaining > 0 && remaining.is_multiple_of(5) {
-                info!("{remaining} seconds remaining...");
-            }
+        let remaining = duration_secs.saturating_sub(elapsed);
+        if remaining > 0 && remaining.is_multiple_of(5) {
+            info!("{remaining} seconds remaining...");
         }
     }
+    None
 }
 
 /// Warn when the process is using more than 80% of CPU or memory.
@@ -215,5 +282,92 @@ fn warn_on_high_usage(tracker: &PerformanceTracker) {
         if metrics.memory_percent > 80.0 {
             warn!("High memory usage: {:.1}%", metrics.memory_percent);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{engine_failure, run_until_stopped};
+    use blackbox::{AppConfig, AudioProcessor, BlackboxError, OutputMode};
+    use std::sync::atomic::AtomicBool;
+
+    /// A processor that only reports status flags.
+    #[derive(Default)]
+    struct Flags {
+        write_failed: bool,
+        disk_space_low: bool,
+        stream_error: bool,
+    }
+
+    impl AudioProcessor for Flags {
+        fn process_audio(
+            &mut self,
+            _: &[usize],
+            _: OutputMode,
+            _: bool,
+            _: &AppConfig,
+        ) -> Result<(), BlackboxError> {
+            Ok(())
+        }
+        fn finalize(&mut self) -> Result<(), BlackboxError> {
+            Ok(())
+        }
+        fn start_recording(&mut self, _: &AppConfig) -> Result<(), BlackboxError> {
+            Ok(())
+        }
+        fn stop_recording(&mut self) -> Result<(), BlackboxError> {
+            Ok(())
+        }
+        fn is_recording(&self) -> bool {
+            true
+        }
+        fn write_failed(&self) -> bool {
+            self.write_failed
+        }
+        fn disk_space_low(&self) -> bool {
+            self.disk_space_low
+        }
+        fn stream_error(&self) -> bool {
+            self.stream_error
+        }
+    }
+
+    /// Each flag the app treats as "recording stopped" is a CLI failure.
+    #[test]
+    fn engine_failure_reports_each_flag() {
+        assert_eq!(engine_failure(&Flags::default()), None);
+        for flags in [
+            Flags {
+                write_failed: true,
+                ..Flags::default()
+            },
+            Flags {
+                disk_space_low: true,
+                ..Flags::default()
+            },
+            Flags {
+                stream_error: true,
+                ..Flags::default()
+            },
+        ] {
+            assert!(engine_failure(&flags).is_some());
+        }
+    }
+
+    /// A failure ends the loop at once (before the first one-second tick)
+    /// and is returned so `main` exits non-zero. Previously the loop only
+    /// watched the signal flag and the timer.
+    #[test]
+    fn run_until_stopped_returns_the_failure() {
+        let running = AtomicBool::new(true);
+        let reason = run_until_stopped(&running, 0, || Some("disk full"));
+        assert_eq!(reason, Some("disk full"));
+    }
+
+    /// A signal (flag cleared) is a clean stop.
+    #[test]
+    fn run_until_stopped_is_clean_after_a_signal() {
+        let running = AtomicBool::new(false);
+        assert_eq!(run_until_stopped(&running, 0, || None), None);
     }
 }
