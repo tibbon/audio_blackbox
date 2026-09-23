@@ -60,10 +60,15 @@ final class RecordingState {
     var errorMessage: String?
 
     /// Names of input devices CoreAudio currently exposes. Populated by
-    /// `refreshDevices()` at init and on user-triggered "Refresh Devices".
-    /// Empty until refresh completes; the menu shows "No Input Devices"
-    /// in that case.
+    /// `refreshDevices()` at init, whenever CoreAudio reports a device-list
+    /// or default-input change, and on "Refresh Devices". Empty until
+    /// refresh completes; the menu shows "No Input Devices" in that case.
     var availableDevices: [String] = []
+
+    /// Refreshes `availableDevices` when devices come and go.
+    var deviceListObserver: AudioDeviceListObserver?
+    /// Coalesces a burst of device notifications into one refresh.
+    var deviceRefreshTask: Task<Void, Never>?
 
     /// The actual device the system default resolves to (e.g. "MacBook
     /// Pro Microphone"), refreshed alongside `availableDevices`. nil if
@@ -309,6 +314,9 @@ final class RecordingState {
         notificationDelegate.recorder = self
         guard !Self.isTesting else { return }
         refreshDevices()
+        deviceListObserver = AudioDeviceListObserver { [weak self] in
+            self?.scheduleDeviceRefresh()
+        }
         // DOLL-114: defer bookmark restoration off the launch path. The
         // synchronous URL+startAccessingSecurityScopedResource+setConfig
         // chain hit disk / IPC and delayed first menu-bar appearance.

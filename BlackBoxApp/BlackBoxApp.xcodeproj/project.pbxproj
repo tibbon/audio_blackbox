@@ -13,6 +13,8 @@
 		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
 		0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924678D133EB74205F702B27 /* OutputSettingsTab.swift */; };
 		161E7DB85D3F18C624DCE363 /* StandardDefaultsTestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B839F748365F3BDC85FE234 /* StandardDefaultsTestCase.swift */; };
+		19D7541B0BF65CFDFAC89895 /* InputDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA21E165DD9AD6BD7666156F /* InputDeviceTests.swift */; };
+		215117ED5A39A73D3899D1BD /* AudioDeviceListObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5975F3E40B38C9398E3E85DA /* AudioDeviceListObserver.swift */; };
 		2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4713B5D81249F6C8AF904AE /* AboutView.swift */; };
 		314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */; };
 		3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */; };
@@ -77,6 +79,7 @@
 		3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuInputDeviceSection.swift; sourceTree = "<group>"; };
 		4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+Steps.swift"; sourceTree = "<group>"; };
 		51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+StatusPoll.swift"; sourceTree = "<group>"; };
+		5975F3E40B38C9398E3E85DA /* AudioDeviceListObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceListObserver.swift; sourceTree = "<group>"; };
 		5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+DirectoryStep.swift"; sourceTree = "<group>"; };
 		64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutDisplayStringTests.swift; sourceTree = "<group>"; };
 		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -114,6 +117,7 @@
 		F2706718A21DC8E1B2668050 /* MenuStatusSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuStatusSection.swift; sourceTree = "<group>"; };
 		F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSettingsTab.swift; sourceTree = "<group>"; };
+		FA21E165DD9AD6BD7666156F /* InputDeviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDeviceTests.swift; sourceTree = "<group>"; };
 		FCAA96D336F9106E336A98A7 /* MeterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeterView.swift; sourceTree = "<group>"; };
 		FD293BB00932B1C1871E349D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -125,6 +129,7 @@
 				7A3E06870571E2C3D34F75C6 /* CoreTests.swift */,
 				EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */,
 				B05557FAD356D8C445ADAA0E /* GlobalHotkeyManagerTests.swift */,
+				FA21E165DD9AD6BD7666156F /* InputDeviceTests.swift */,
 				26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */,
 				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
 				C303713C77B1900DC615925B /* SessionPolicyTests.swift */,
@@ -160,6 +165,7 @@
 				B4713B5D81249F6C8AF904AE /* AboutView.swift */,
 				F3BF6B5FE9F8B3E4D8B2E85E /* AppDelegate.swift */,
 				8C24474EAC1E91E318CAF5CE /* Assets.xcassets */,
+				5975F3E40B38C9398E3E85DA /* AudioDeviceListObserver.swift */,
 				EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */,
 				833578CE6753D4E24A739BDA /* ChannelSelectionGrid.swift */,
 				72C8B317B7C306370E48F169 /* ChannelSpec.swift */,
@@ -302,6 +308,7 @@
 				BE185DA077E00152905E3845 /* CoreTests.swift in Sources */,
 				749B9C7A6A540CB18A5B7A06 /* EngineStatusPolicyTests.swift in Sources */,
 				CA6EF4FDEC7D13BFB6C6D47D /* GlobalHotkeyManagerTests.swift in Sources */,
+				19D7541B0BF65CFDFAC89895 /* InputDeviceTests.swift in Sources */,
 				09A9830DE02F1E761E06161D /* OnboardingSettingsTests.swift in Sources */,
 				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
 				A6DE84B5EABEF1DF0D426B9F /* SessionPolicyTests.swift in Sources */,
@@ -317,6 +324,7 @@
 			files = (
 				2DE721FCF4BB3EC08C3CDB71 /* AboutView.swift in Sources */,
 				6948821D570B742FB31B0301 /* AppDelegate.swift in Sources */,
+				215117ED5A39A73D3899D1BD /* AudioDeviceListObserver.swift in Sources */,
 				3236FC8E36270F4528303E27 /* BlackBoxApp.swift in Sources */,
 				DA035E16B2FA26D384A9E0F3 /* ChannelSelectionGrid.swift in Sources */,
 				901E702973AFAD7AE71F8439 /* ChannelSpec.swift in Sources */,

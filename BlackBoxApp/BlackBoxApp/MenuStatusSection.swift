@@ -52,10 +52,14 @@ struct MenuStatusSection: View {
         // show the resolved system default name (e.g. "MacBook Pro
         // Microphone") instead of the literal "System Default" so the
         // user knows what's actually recording.
+        // A chosen device that is no longer connected is not what's
+        // recording: the engine fell back to the system default.
         let device =
-            selectedDevice.isEmpty
-            ? (recorder.systemDefaultDeviceName ?? "System Default")
-            : selectedDevice
+            resolvedInputDeviceName(
+                selected: selectedDevice,
+                available: recorder.availableDevices,
+                systemDefault: recorder.systemDefaultDeviceName
+            ) ?? "System Default"
         let chCount = countChannels(channelSpec)
         Text("\(device) \u{00B7} \(chCount) ch")
             .font(.caption)

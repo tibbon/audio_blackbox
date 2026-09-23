@@ -140,10 +140,14 @@ struct BlackBoxApp: App {
         // (and changing settings while recording isn't a flow we want
         // to encourage here).
         if !recorder.isRecording {
+            // The device a start would use: the engine falls back to the
+            // system default when the chosen one is not connected.
             let device =
-                selectedDevice.isEmpty
-                ? (recorder.systemDefaultDeviceName ?? "System Default")
-                : selectedDevice
+                resolvedInputDeviceName(
+                    selected: selectedDevice,
+                    available: recorder.availableDevices,
+                    systemDefault: recorder.systemDefaultDeviceName
+                ) ?? "System Default"
             let chCount = countChannels(channelSpec)
             let chLabel = chCount == 1 ? "1 channel" : "\(chCount) channels"
 
@@ -152,6 +156,13 @@ struct BlackBoxApp: App {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if !selectedDevice.isEmpty, !recorder.availableDevices.contains(selectedDevice) {
+                Text("\(selectedDevice) is not connected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             Text("Format: \(bitDepth)-bit \u{00B7} \(chLabel)")
                 .font(.caption)
                 .foregroundStyle(.secondary)

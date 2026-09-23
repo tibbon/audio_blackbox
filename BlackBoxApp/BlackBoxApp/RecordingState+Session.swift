@@ -337,6 +337,18 @@ extension RecordingState {
         systemDefaultDeviceName = RustBridge.defaultInputDeviceName()
     }
 
+    /// CoreAudio posts several notifications for one plug or unplug (the
+    /// device list, the default input); refresh once they settle.
+    func scheduleDeviceRefresh() {
+        deviceRefreshTask?.cancel()
+        deviceRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            deviceRefreshTask = nil
+            refreshDevices()
+        }
+    }
+
     func selectDevice(_ name: String) {
         UserDefaults.standard.set(name, forKey: SettingsKeys.inputDevice)
         bridge.setConfig(["input_device": name])

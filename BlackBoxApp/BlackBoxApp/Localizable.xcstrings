@@ -8,6 +8,7 @@
     "%@  %@" : {},
     "%@ %@ at %@, %lld bits per sample" : {},
     "%@ couldn't be registered — try a different combination" : {},
+    "%@ is not connected" : {},
     "%@ is reserved by macOS" : {},
     "%@ kHz" : {},
     "%@ per file (%@ total across %lld files)%@" : {},
