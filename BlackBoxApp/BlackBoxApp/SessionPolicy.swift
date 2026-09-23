@@ -26,6 +26,13 @@ nonisolated enum SessionPolicy {
         return engineStillRecording ? .stillRecording : .stoppedWithError
     }
 
+    /// Whether `restartIfRecording` may go on after stopping the old
+    /// session: only once the engine has stopped. A session that is still
+    /// recording keeps its folder and its UI state, and is not restarted.
+    static func restartProceeds(after outcome: StopOutcome) -> Bool {
+        outcome != .stillRecording
+    }
+
     /// Whether the level meter's monitoring stream should start, checked
     /// after the microphone-permission await, which can suspend for as long
     /// as the permission dialog is up. Monitoring exists only for an open

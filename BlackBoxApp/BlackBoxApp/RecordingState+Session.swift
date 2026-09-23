@@ -255,15 +255,36 @@ extension RecordingState {
     /// release something the old session was using (the output folder's
     /// security scope).
     ///
-    /// Returns whether a recording is running afterwards: `false` when there
-    /// was none to restart or the new session failed to start (the failure
-    /// is already surfaced through `setTransientError`).
+    /// Returns whether a new session is running afterwards: `false` when
+    /// there was none to restart, the new session failed to start, or the
+    /// old one could not be stopped (each failure is already surfaced
+    /// through `setTransientError`). In that last case `isRecording` stays
+    /// `true`: the old session is still live, so `whileStopped` does not run.
     @discardableResult
     func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) -> Bool {
         guard isRecording else { return false }
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
         stopTimer()
-        _ = bridge.stopRecording()
+        let result = bridge.stopRecording()
+        // Classified like stop(): a failed stop usually means the engine
+        // stopped and only the finalize failed, but if it is still
+        // recording, running whileStopped would release the live folder's
+        // security scope under it, and the restart would then fail and
+        // show an idle UI over a running engine.
+        let outcome = SessionPolicy.stopOutcome(
+            stopSucceeded: result.isSuccess,
+            engineStillRecording: !result.isSuccess && bridge.isRecording
+        )
+        if !result.isSuccess {
+            let failure = bridge.lastError ?? String(localized: "Failed to stop recording")
+            Self.log.error("Failed to stop recording for a restart (code \(result.rawValue)): \(failure)")
+            setTransientError(failure)
+        }
+        guard SessionPolicy.restartProceeds(after: outcome) else {
+            // Keep the session's timer, and with it the status poll.
+            startTimer()
+            return false
+        }
         whileStopped?()
         // The engine is stopped; reflect it before startRecordingInternal,
         // whose double-start guard (DOLL-459) would otherwise see the stale

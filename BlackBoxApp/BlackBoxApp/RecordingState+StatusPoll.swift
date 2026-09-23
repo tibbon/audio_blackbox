@@ -140,6 +140,10 @@ extension RecordingState {
     private func restartForSampleRateChange() {
         Self.log.warning("Sample rate changed on device — finalizing and restarting")
         guard restartIfRecording(reason: "sample rate changed") else {
+            // The old session could not be stopped and is still recording
+            // (the error is already shown): nothing stopped, so say nothing
+            // more. The next poll sees the flag again and retries.
+            if isRecording { return }
             // The restart failed (startRecordingInternal already set the
             // error): say the recording stopped, not that it was restarted.
             let msg = String(

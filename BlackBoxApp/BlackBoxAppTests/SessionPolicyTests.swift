@@ -26,6 +26,22 @@ nonisolated final class SessionPolicyTests: XCTestCase {
         )
     }
 
+    // MARK: - restartProceeds
+
+    /// A restart whose stop failed with the engine still recording must not
+    /// swap folders or start again: that released the live folder's scope
+    /// and left the UI idle over a running engine.
+    func testRestartStopsWhenTheOldSessionIsStillRecording() {
+        XCTAssertFalse(SessionPolicy.restartProceeds(after: .stillRecording))
+    }
+
+    /// Once the engine has stopped, even with a finalize error, the restart
+    /// goes ahead.
+    func testRestartProceedsOnceTheEngineStopped() {
+        XCTAssertTrue(SessionPolicy.restartProceeds(after: .stopped))
+        XCTAssertTrue(SessionPolicy.restartProceeds(after: .stoppedWithError))
+    }
+
     // MARK: - shouldStartMonitoring
 
     func testMonitoringStartsForAnOpenIdleMeter() {
