@@ -6,10 +6,11 @@ import AppKit
 /// Also prevents SwiftUI from terminating the app when the last Window scene closes,
 /// which is a known issue with MenuBarExtra + Window combinations.
 ///
-/// Main-actor-isolated: each notification below is consumed by a main-actor
+/// Main-actor-isolated. Most notifications below are consumed by a main-actor
 /// Task (`for await` over `NotificationCenter.notifications(named:)`), so the
-/// handlers are compiler-proven main-actor code rather than relying on a
-/// `queue: .main` delivery convention the type checker can't see.
+/// handlers are compiler-proven main-actor code. `willPowerOff` and
+/// `willSleep` are the exception: they must be handled inside the post
+/// (see `observeSynchronously`).
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var recorder: RecordingState?
@@ -22,15 +23,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// so the observations end with the app instead of outliving the delegate.
     private var notificationTasks: [Task<Void, Never>] = []
 
+    /// Block-based observers for the notifications handled synchronously,
+    /// removed in `applicationWillTerminate`.
+    private var synchronousObservers: [(center: NotificationCenter, token: any NSObjectProtocol)] = []
+
     func applicationDidFinishLaunching(_: Notification) {
         // Ensure we start as an accessory app (menu bar only, no Dock icon).
         NSApp.setActivationPolicy(.accessory)
+        installSystemObservers(
+            workspaceCenter: NSWorkspace.shared.notificationCenter,
+            appCenter: NotificationCenter.default
+        )
+    }
 
+    /// Subscribe to the power, sleep, session and activation notifications.
+    /// Separate from `applicationDidFinishLaunching` so tests can drive it
+    /// with private notification centers.
+    func installSystemObservers(workspaceCenter wsnc: NotificationCenter, appCenter: NotificationCenter) {
         // System shutdown/logout fires willPowerOff before applicationShouldTerminate.
         // Mark it as explicit so we cooperate with the system instead of blocking.
-        let wsnc = NSWorkspace.shared.notificationCenter
-
-        observe(NSWorkspace.willPowerOffNotification, on: wsnc) { [weak self] in
+        observeSynchronously(NSWorkspace.willPowerOffNotification, on: wsnc) { [weak self] in
             // DOLL-183: drain the recording directly here, not in the later
             // applicationShouldTerminate dispatch. macOS gives ~5s for
             // shutdown; if SwiftUI is slow to deliver
@@ -45,7 +57,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        observe(NSWorkspace.willSleepNotification, on: wsnc) { [weak self] in
+        // Synchronous for the same reason: the system can sleep as soon as
+        // the post returns, before a later main-actor turn would stop and
+        // finalize the recording.
+        observeSynchronously(NSWorkspace.willSleepNotification, on: wsnc) { [weak self] in
             self?.recorder?.handleWillSleep()
         }
 
@@ -66,7 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // fires when the user clicks back into the app after granting
         // permission in System Settings, so the recorder picks up the
         // new state without a relaunch.
-        observe(NSApplication.didBecomeActiveNotification, on: NotificationCenter.default) { [weak self] in
+        observe(NSApplication.didBecomeActiveNotification, on: appCenter) { [weak self] in
             self?.recorder?.refreshNotificationAuthorization()
         }
     }
@@ -76,6 +91,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             task.cancel()
         }
         notificationTasks.removeAll()
+        for observer in synchronousObservers {
+            observer.center.removeObserver(observer.token)
+        }
+        synchronousObservers.removeAll()
     }
 
     /// Run `handler` on the main actor each time `name` is posted to `center`.
@@ -91,6 +110,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         )
+    }
+
+    /// Run `handler` inside the notification post itself, before the poster
+    /// continues. An `observe` Task runs its handler on a later main-actor
+    /// turn: for willPowerOff that turn can come after AppKit has already
+    /// asked `applicationShouldTerminate`, which then sees
+    /// `explicitQuit == false` and vetoes the logout or shutdown; for
+    /// willSleep the Mac can be asleep before the recording is finalized.
+    private func observeSynchronously(
+        _ name: Notification.Name,
+        on center: NotificationCenter,
+        handler: @escaping @MainActor () -> Void
+    ) {
+        // queue: nil runs the block synchronously on the posting thread.
+        let token = center.addObserver(forName: name, object: nil, queue: nil) { _ in
+            guard Thread.isMainThread else {
+                // Not expected (NSWorkspace posts these on the main thread),
+                // but never assume isolation we don't have: fall back to a hop.
+                Task { @MainActor in handler() }
+                return
+            }
+            // SAFETY: the guard above proves this block is running on the main
+            // thread, which is the main actor's executor, so running the
+            // main-actor handler here cannot race main-actor state.
+            // swiftlint:disable:next assume_isolated - checked Thread.isMainThread on the line above; the post must be handled before it returns
+            MainActor.assumeIsolated { handler() }
+        }
+        synchronousObservers.append((center, token))
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {

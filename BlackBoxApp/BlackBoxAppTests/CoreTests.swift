@@ -312,6 +312,40 @@ nonisolated final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(reply, .terminateCancel)
     }
 
+    /// willPowerOff must set explicitQuit inside the post: AppKit can ask
+    /// applicationShouldTerminate before a later main-actor turn, and a
+    /// deferred handler then vetoed logout / shutdown.
+    @MainActor
+    func testWillPowerOffAllowsTerminationBeforeThePostReturns() {
+        let delegate = AppDelegate()
+        let workspace = NotificationCenter()
+        delegate.installSystemObservers(workspaceCenter: workspace, appCenter: NotificationCenter())
+
+        workspace.post(name: NSWorkspace.willPowerOffNotification, object: nil)
+
+        XCTAssertTrue(delegate.explicitQuit)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    }
+
+    /// willSleep must stop (finalize) the recording before the post returns;
+    /// the Mac can be asleep before a later main-actor turn.
+    @MainActor
+    func testWillSleepStopsTheRecordingBeforeThePostReturns() {
+        let delegate = AppDelegate()
+        let recorder = RecordingState()
+        delegate.recorder = recorder
+        let workspace = NotificationCenter()
+        delegate.installSystemObservers(workspaceCenter: workspace, appCenter: NotificationCenter())
+        recorder.isRecording = true
+
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+
+        XCTAssertFalse(recorder.isRecording)
+        recorder.cancelPendingResume()
+        delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    }
+
     @MainActor
     func testTerminateAllowedWithExplicitQuit() {
         let delegate = AppDelegate()
