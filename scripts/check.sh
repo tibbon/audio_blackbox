@@ -93,6 +93,8 @@ check_rust() {
   msrv_toolchain="$(rustup toolchain list | awk -v m="$MSRV." 'index($1, m) == 1 { print $1; exit }')"
   if [[ -n "$msrv_toolchain" ]]; then
     rustup run "$msrv_toolchain" cargo test --no-default-features -- --test-threads=1
+    # The app links the ffi build, compiled with this toolchain for release.
+    rustup run "$msrv_toolchain" cargo test --features ffi ffi_tests -- --test-threads=1
   else
     skip "toolchain $MSRV not installed (rustup toolchain install $MSRV.0)"
   fi

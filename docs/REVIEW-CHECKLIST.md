@@ -134,8 +134,8 @@ until review converges (AGENTS.md "Workflow").
 
 ### 1.8 Dependencies and build
 - `cargo deny check` (advisories, licenses, bans, sources) and `cargo machete` are clean.
-- MSRV is `rust-version` in `Cargo.toml`; CI pins it, runs the tests on it (releases are built
-  with it), and `scripts/check.sh` does the same when the toolchain is installed. Bump it deliberately, in its own commit, with the CI ref.
+- MSRV is `rust-version` in `Cargo.toml`; CI pins it, runs the tests and the `ffi` tests on it
+  (releases are built with it), and `scripts/check.sh` does the same when the toolchain is installed. Bump it deliberately, in its own commit, with the CI ref.
 - The app is arm64-only by decision (DOLL-463); do not add universal builds.
 - `panic = "abort"` in release is an invariant (DOLL-90).
 

@@ -127,6 +127,14 @@ jobs:
     - name: cargo test (MSRV)
       run: cargo test --no-default-features -- --test-threads=1
 
+    # The app links the `ffi` build of the library, compiled with this
+    # toolchain in release.yml, but the run above leaves the feature off and
+    # cargo features are not additive for the test binary. Scoped to
+    # ffi_tests like the FFI lane: the rest of the binary is what the run
+    # above already tested.
+    - name: cargo test --features ffi (MSRV)
+      run: cargo test --features ffi ffi_tests -- --test-threads=1
+
   # ── Tests ──────────────────────────────────────────────────────────
   # macOS-only — the shipped product is Mac App Store; Ubuntu added cost
   # without adding signal for the SwiftUI / CoreAudio surface (DOLL-153).
