@@ -4,11 +4,15 @@
 
 **Set-and-forget continuous audio recording for macOS.** Captures from any input device — built-in mic, USB interface, multichannel audio interface — and never loses a take when the app, the Mac, or the power decides otherwise. Designed for audio engineers, podcasters, and field recorders who want a quiet menu-bar utility that just runs.
 
+**[Download on the Mac App Store](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12)**
+
+<!-- TODO: hero screenshot of the menu bar dropdown with live meters -->
+
 > Built around a lock-free real-time audio pipeline so the recording thread never blocks on disk I/O, mutex locks, or allocations — captures are clean even on heavy-load systems.
 
 ## Install
 
-**Mac App Store:** see the [App Store listing](https://apps.apple.com/app/blackbox-audio-recorder/id6502949317) (or search "BlackBox Audio Recorder"). The shipped product is the SwiftUI menu-bar app — settings, level meter, onboarding, and security-scoped output-folder picker included.
+**Mac App Store:** [BlackBox Audio Recorder](https://apps.apple.com/us/app/blackbox-audio-recorder/id6759437659?mt=12), or search "BlackBox Audio Recorder" in the Mac App Store.
 
 **Build from source** (CLI binary, or for development):
 
@@ -24,7 +28,7 @@ Prerequisites: Rust stable toolchain (edition 2024). macOS users also need Xcode
 
 ## Features
 
-- **Multi-channel recording** — 1 to 64+ channels simultaneously.
+- **Multi-channel recording** — tested to 64 channels, supports up to 255 simultaneously.
 - **Configurable bit depth** — 16-bit, 24-bit (default, pro standard), or 32-bit WAV.
 - **Two output modes** — `single` (one file, automatically multichannel for 3+ channels) or `split` (one file per channel).
 - **Continuous recording** — automatic file rotation at configurable intervals with crash-safe WAV writes.
