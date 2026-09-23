@@ -398,10 +398,13 @@ nonisolated final class AppDelegateTests: XCTestCase {
     }
 
     /// A quit Apple event (Activity Monitor, an installer, osascript) is a
-    /// real request to quit: finalize the recording and terminate instead of
-    /// treating it as SwiftUI's last-window terminate and cancelling it.
+    /// real request to quit: stop the recording session and terminate
+    /// instead of treating it as SwiftUI's last-window terminate and
+    /// cancelling it. No engine runs here (the session is faked with
+    /// isRecording), so this checks that the delegate stops the session
+    /// before allowing termination, not that WAV files get finalized.
     @MainActor
-    func testQuitAppleEventFinalizesTheRecordingAndTerminates() {
+    func testQuitAppleEventStopsTheSessionAndTerminates() {
         let delegate = AppDelegate()
         let recorder = RecordingState()
         delegate.recorder = recorder
