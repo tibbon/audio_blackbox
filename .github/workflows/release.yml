@@ -131,11 +131,17 @@ jobs:
     - name: Check Cargo.lock is up-to-date
       run: cargo update --locked --dry-run
 
-    - name: Install cargo-audit
-      uses: taiki-e/install-action@45472d76f4b8b7996b14d7dcd5f5f35784b9dd1d  # cargo-audit
+    # Same tool and config as rust.yml's Security audit lane and check.sh
+    # (DOLL-652): cargo audit ignored deny.toml, so an advisory exempted there
+    # with a rationale would still block the release, and the license/bans/
+    # sources policy was never re-checked on the tag SHA.
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      with:
+        tool: cargo-deny
 
-    - name: Run audit
-      run: cargo audit --deny warnings
+    - name: cargo deny check
+      run: cargo deny check
 
   # ── GitHub Release binaries ───────────────────────────────────────
   # macOS-only — DOLL-153 dropped the Linux CLI artifact since the
