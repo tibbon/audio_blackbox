@@ -16,7 +16,7 @@ By hand, the same steps:
 1. Pick or file a ticket in the Linear [Audio Blackbox project](https://linear.app/cyberdyne-systems/project/audio-blackbox-fdadb8f8be42). Title and description are the source of truth — paste any context the PR needs.
 2. Branch off `main` as `tibbon/doll-N-short-slug`. The Linear branch button generates this name verbatim.
 3. Review the branch against [docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md), then open a PR. Mention the ticket in the body (`Closes DOLL-N.`) and list what checklist §6.4 asks for.
-4. Run `make check` before opening the PR (DOLL-652). It is the same gate CI runs — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, `cargo deny`, `cargo machete`, MSRV, FFI header parity, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze, plus the local-only Claude workflow tests (needs `node`) — and Actions minutes are scarce, so green locally first. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
+4. Run `make check` before opening the PR (DOLL-652). It runs the CI gates locally — fmt, clippy on all three feature sets with `-D warnings`, rustdoc, tests, the benchmark smoke floors, `Cargo.lock` freshness, `cargo deny`, `cargo machete`, MSRV, FFI header parity, ACKNOWLEDGMENTS drift, swift-format, swiftlint `--strict`, xcodebuild test under Swift 6 strict concurrency with warnings as errors, swiftlint analyze, String Catalog sync, pbxproj parity, plus the local-only Claude workflow tests (needs `node`) — and Actions minutes are scarce, so green locally first. One gap: CI's Swift lane also does a Release-configuration build, which `make check` does not. `make check-rust` / `make check-swift` run one half; `make fmt` autoformats both languages.
 5. CI must be fully green before merge. Lanes: Format, Clippy (+ rustdoc, machete), MSRV (1.98), Test, FFI, Security audit (cargo deny), Benchmark smoke test, Swift app (+ swift-format, swiftlint, analyze).
 6. Merge via `gh pr merge <num> --rebase --admin` (linear history; keeps GitHub UI bright green for solo branches).
 7. Mark the Linear ticket Done with the PR URL attached.
@@ -28,7 +28,7 @@ By hand, the same steps:
 - **Never silence a lint.** Rust: `#[expect(lint, reason = "...")]`, never `#[allow]` (it is a compile error). Package-wide policy lives in `Cargo.toml [lints]` with a comment; a lint that must be parked goes in its backlog block with a site count and a ticket (empty since DOLL-653). Swift: `// swiftlint:disable:next rule - reason`, never `disable all`.
 - **Never weaken a test** to make a change pass; fix the test in its own commit and say so.
 - **`unsafe`, FFI, `@unchecked Sendable`, `assumeIsolated`, `Task.detached`** each carry a `// SAFETY:` comment stating the invariant. If you cannot state it, the code is not ready.
-- **Hard bans with reasons** are in `clippy.toml` (`thread::sleep`, `home_dir`, `partial_cmp`) and `.swiftlint.yml` custom rules (`print`, GCD hops, deprecated SwiftUI API). The diagnostic tells you the alternative.
+- **Hard bans with reasons** are in `clippy.toml` (`thread::sleep`, `home_dir`, `partial_cmp`, `env::set_var`/`remove_var`) and `.swiftlint.yml` custom rules (`print`, GCD hops, deprecated SwiftUI API, unbalanced security-scoped access, and more). The diagnostic tells you the alternative.
 - **Swift 6 strict concurrency with `MainActor` default isolation** is on (`BlackBoxApp/Guardrails.xcconfig`, applied through `project.yml`). Types that run off the main actor say so explicitly.
 
 ## Invariants
@@ -50,7 +50,7 @@ For a map of `DOLL-N` ticket references scattered through code and comments, see
 
 ## Environment variables (DOLL-198)
 
-Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compatibility most also accept an unprefixed legacy name. `BLACKBOX_*` always wins when both are set.
+Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compatibility most also accept an unprefixed legacy name. `BLACKBOX_*` wins when both are set and it parses; a `BLACKBOX_*` value that fails to parse falls through to the legacy name (`env_override` in `src/config.rs`).
 
 | Field | `BLACKBOX_*` | Legacy alias | Notes |
 |-------|------------|-------------|-------|
@@ -70,13 +70,13 @@ Every `AppConfig` field has a `BLACKBOX_*` env-var override; for backward compat
 | `silence_gate_enabled` | `BLACKBOX_SILENCE_GATE_ENABLED` | `SILENCE_GATE_ENABLED` | `true`/`false`. |
 | `silence_gate_timeout_secs` | `BLACKBOX_SILENCE_GATE_TIMEOUT_SECS` | `SILENCE_GATE_TIMEOUT_SECS` | Seconds before gate closes. |
 
-**Precedence**: env > TOML > built-in defaults (`src/constants.rs::DEFAULT_*`). Inside env, `BLACKBOX_*` > unprefixed legacy.
+**Precedence**: env > TOML > built-in defaults (`src/constants.rs::DEFAULT_*`). Inside env, a parseable `BLACKBOX_*` > unprefixed legacy. This applies to the CLI; the app configures the engine through the FFI (`blackbox_set_config_json`), which never reads env or TOML.
 
 **Validation policy**: forgiving — unparseable env values log and fall back rather than error (see `src/config.rs` module doc).
 
 ## Releases
 
-Tag-driven via the release workflow. `scripts/check-versions.sh` enforces alignment between `Cargo.toml`, `project.yml`, and `Info.plist`. Fastlane handles TestFlight + App Store submission using ASC API key auth (key path is `~/Library/Application Support/com.dollhousemediatech.blackbox/keys/AuthKey_*.p8` — outside the repo, see DOLL-155).
+Tag-driven via the release workflow; see [SETUP.md](SETUP.md#releasing). Tag with `make release VERSION=X.Y.Z`, not a bare `git tag`: the Makefile checks the version against `Cargo.toml` before tagging, and the workflow does not. `scripts/check-versions.sh` enforces alignment between `Cargo.toml`, the `Makefile`, `project.yml`, and `Info.plist`. Fastlane handles TestFlight + App Store submission using ASC API key auth (key path is `~/Library/Application Support/com.dollhousemediatech.blackbox/keys/AuthKey_*.p8` — outside the repo, see DOLL-155).
 
 ## Style
 
