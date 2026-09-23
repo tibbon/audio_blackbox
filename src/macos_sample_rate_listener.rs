@@ -26,8 +26,10 @@ struct PropAddr {
 // CoreAudio FourCC constants
 const SYSTEM_OBJECT: AudioObjectID = 1;
 const SEL_DEVICES: u32 = u32::from_be_bytes(*b"dev#");
+#[cfg(test)]
 const SEL_DEFAULT_INPUT: u32 = u32::from_be_bytes(*b"dIn ");
 const SEL_NAME: u32 = u32::from_be_bytes(*b"lnam");
+const SEL_UID: u32 = u32::from_be_bytes(*b"uid ");
 const SEL_NOMINAL_RATE: u32 = u32::from_be_bytes(*b"nsrt");
 const SCOPE_GLOBAL: u32 = u32::from_be_bytes(*b"glob");
 const ELEMENT_MAIN: u32 = 0;
@@ -99,10 +101,30 @@ pub(crate) struct SampleRateListener {
 unsafe impl Send for SampleRateListener {}
 
 impl SampleRateListener {
-    /// Register a CoreAudio listener for sample rate changes on the given device.
-    /// Returns `None` if the device can't be found or registration fails.
-    pub(crate) fn new(device_name: Option<&str>, flag: Arc<AtomicBool>) -> Option<Self> {
-        let device_id = find_device_id(device_name)?;
+    /// Register a CoreAudio listener for sample rate changes on `device`, the
+    /// device the input stream was actually opened on.
+    ///
+    /// The listener used to look the device up again from the configured
+    /// name, falling back to the *current* system default. If the default
+    /// input changed between opening the stream and registering (or the
+    /// configured device had vanished and cpal fell back), it watched a
+    /// different device than the one recording, and a rate change on the
+    /// recording device went unnoticed. The device is now resolved from the
+    /// cpal device's CoreAudio UID, and when that can't be read, from its
+    /// name; there is no fallback to the default device.
+    ///
+    /// Returns `None` if the device can't be resolved or registration fails.
+    pub(crate) fn for_device(device: &cpal::Device, flag: Arc<AtomicBool>) -> Option<Self> {
+        let Some(device_id) = resolve_cpal_device(device) else {
+            warn!("Could not resolve the recording device; sample rate changes won't be detected");
+            return None;
+        };
+        Self::new(device_id, flag)
+    }
+
+    /// Register a CoreAudio listener for sample rate changes on `device_id`.
+    /// Returns `None` if registration fails.
+    fn new(device_id: AudioObjectID, flag: Arc<AtomicBool>) -> Option<Self> {
         // One strong count is handed to CoreAudio as the callback's client
         // data; it is reclaimed only on the failure path below (see Drop for
         // why the success path never reclaims it).
@@ -219,13 +241,22 @@ unsafe extern "C" fn on_rate_changed(
 
 // --- Device lookup helpers ---
 
-fn find_device_id(name: Option<&str>) -> Option<AudioObjectID> {
-    match name {
-        Some(n) if !n.is_empty() => device_by_name(n).or_else(default_input_device),
-        _ => default_input_device(),
+/// The CoreAudio object for a cpal device: by UID (cpal's device id on
+/// CoreAudio is the device's `kAudioDevicePropertyDeviceUID`), else by name.
+fn resolve_cpal_device(device: &cpal::Device) -> Option<AudioObjectID> {
+    use cpal::traits::DeviceTrait;
+    if let Ok(id) = device.id()
+        && let Some(found) = device_by_string_property(SEL_UID, id.id())
+    {
+        return Some(found);
     }
+    let desc = device.description().ok()?;
+    device_by_string_property(SEL_NAME, desc.name())
 }
 
+/// The system default input device. Tests only: production resolves the
+/// device the stream opened (`resolve_cpal_device`), never the default.
+#[cfg(test)]
 fn default_input_device() -> Option<AudioObjectID> {
     let addr = PropAddr {
         selector: SEL_DEFAULT_INPUT,
@@ -251,7 +282,9 @@ fn default_input_device() -> Option<AudioObjectID> {
     (status == 0 && device_id != 0).then_some(device_id)
 }
 
-fn device_by_name(name: &str) -> Option<AudioObjectID> {
+/// The first device whose string property `selector` (`SEL_UID`, `SEL_NAME`)
+/// equals `value`.
+fn device_by_string_property(selector: u32, value: &str) -> Option<AudioObjectID> {
     let addr = PropAddr {
         selector: SEL_DEVICES,
         scope: SCOPE_GLOBAL,
@@ -296,12 +329,13 @@ fn device_by_name(name: &str) -> Option<AudioObjectID> {
 
     ids.iter()
         .copied()
-        .find(|&id| device_name(id).is_some_and(|n| n == name))
+        .find(|&id| device_string_property(id, selector).is_some_and(|v| v == value))
 }
 
-fn device_name(device_id: AudioObjectID) -> Option<String> {
+/// A device's `CFString` property (`SEL_UID` or `SEL_NAME`).
+fn device_string_property(device_id: AudioObjectID, selector: u32) -> Option<String> {
     let addr = PropAddr {
-        selector: SEL_NAME,
+        selector,
         scope: SCOPE_GLOBAL,
         element: ELEMENT_MAIN,
     };
@@ -325,8 +359,9 @@ fn device_name(device_id: AudioObjectID) -> Option<String> {
     }
 
     // SAFETY: `name_ref` was just verified non-null. CoreAudio's
-    // `kAudioObjectPropertyName` is documented to return a +1
-    // retained CFStringRef; `wrap_under_create_rule` consumes that
+    // `kAudioObjectPropertyName` and `kAudioDevicePropertyDeviceUID` are
+    // documented to return a +1 retained CFStringRef (cpal wraps the UID
+    // the same way); `wrap_under_create_rule` consumes that
     // retain count without re-retaining, so the wrapper drops it
     // exactly once.
     let cf = unsafe { CFString::wrap_under_create_rule(name_ref) };
@@ -428,11 +463,11 @@ mod tests {
     /// double-freeing. Skipped on headless CI runners with no input device.
     #[test]
     fn real_listener_lifecycle_when_device_present() {
-        if default_input_device().is_none() {
+        let Some(device_id) = default_input_device() else {
             return; // no audio hardware (e.g. headless CI) — nothing to exercise
-        }
+        };
         let flag = Arc::new(AtomicBool::new(false));
-        let listener = SampleRateListener::new(None, Arc::clone(&flag));
+        let listener = SampleRateListener::new(device_id, Arc::clone(&flag));
         assert!(
             listener.is_some(),
             "registration should succeed when a default input device exists"
@@ -440,5 +475,43 @@ mod tests {
         // Real `AudioObjectRemovePropertyListener` on a registered listener;
         // must not crash or double-free.
         drop(listener);
+    }
+
+    /// The listener must watch the device the stream opened, identified by
+    /// the cpal device itself rather than looked up again by name or as the
+    /// current default. Every cpal input device must resolve to the
+    /// CoreAudio object with the same UID, and a device obtained from cpal's
+    /// default must resolve to CoreAudio's default input object. Skipped
+    /// without audio hardware.
+    #[test]
+    fn cpal_devices_resolve_to_their_own_coreaudio_object() {
+        use cpal::traits::{DeviceTrait, HostTrait};
+        let host = cpal::default_host();
+        if let Ok(devices) = host.input_devices() {
+            for device in devices {
+                let Ok(uid) = device.id() else { continue };
+                let resolved = resolve_cpal_device(&device)
+                    .unwrap_or_else(|| panic!("input device {uid} must resolve"));
+                assert_eq!(
+                    device_string_property(resolved, SEL_UID).as_deref(),
+                    Some(uid.id()),
+                    "resolved object must carry the stream device's UID"
+                );
+            }
+        }
+        if let (Some(device), Some(default_id)) =
+            (host.default_input_device(), default_input_device())
+        {
+            assert_eq!(resolve_cpal_device(&device), Some(default_id));
+        }
+    }
+
+    /// An unknown UID resolves to nothing rather than to some other device.
+    #[test]
+    fn unknown_uid_does_not_resolve() {
+        assert_eq!(
+            device_by_string_property(SEL_UID, "blackbox-test-no-such-device-uid"),
+            None
+        );
     }
 }

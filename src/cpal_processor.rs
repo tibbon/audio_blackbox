@@ -551,11 +551,13 @@ impl CpalAudioProcessor {
         let stream = start_f32_input_stream(&device, config, callback, err_fn)?;
         self.stream = Some(Box::new(stream));
 
-        // Register sample rate change listener (macOS only)
+        // Register the sample rate change listener (macOS only) on the device
+        // the stream was opened on, not a fresh lookup by configured name or
+        // default, which can name a different device by now.
         #[cfg(target_os = "macos")]
         {
-            self.rate_listener = crate::macos_sample_rate_listener::SampleRateListener::new(
-                app_config.get_input_device().as_deref(),
+            self.rate_listener = crate::macos_sample_rate_listener::SampleRateListener::for_device(
+                &device,
                 Arc::clone(&self.sample_rate_changed),
             );
         }
