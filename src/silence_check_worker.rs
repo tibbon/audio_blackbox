@@ -63,6 +63,20 @@ impl PendingBatches {
 
 static PENDING: PendingBatches = PendingBatches::new();
 
+/// Marks one batch finished when dropped. The worker holds one per batch,
+/// so a scan that panics (tests and debug builds unwind; release aborts)
+/// still releases [`wait_for_silence_checks`]. Without it the count stayed
+/// above zero for the rest of the process, and every later wait timed out:
+/// one failing test showed up as a run of unrelated silence-check failures
+/// (DOLL-664).
+struct FinishOnDrop<'a>(&'a PendingBatches);
+
+impl Drop for FinishOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
 /// Block until every file submitted for a silence check so far has been
 /// checked (and deleted if silent), or `timeout` elapses.
 ///
@@ -106,8 +120,8 @@ impl SilenceCheckWorker {
                 // Ends when the owning worker is dropped (channel closed)
                 // and the queue is drained.
                 while let Ok(files) = rx.recv() {
+                    let _finished = FinishOnDrop(&PENDING);
                     check_and_delete_silent_files(&files, threshold);
-                    PENDING.finish();
                 }
             });
         match spawned {
@@ -177,7 +191,7 @@ impl Drop for SilenceCheckWorker {
 
 #[cfg(test)]
 mod tests {
-    use super::{SilenceCheckWorker, wait_for_silence_checks};
+    use super::{FinishOnDrop, PendingBatches, SilenceCheckWorker, wait_for_silence_checks};
     use hound::{SampleFormat, WavSpec, WavWriter};
     use std::time::Duration;
     use tempfile::tempdir;
@@ -245,5 +259,23 @@ mod tests {
         dropper.join().unwrap();
         assert!(returned, "dropping the worker waited for the scan");
         assert!(wait_for_silence_checks(Duration::from_secs(10)));
+    }
+
+    /// A batch whose scan panics still counts as finished, so one failure
+    /// can't leave every later wait for silence checks timing out (DOLL-664).
+    /// Uses a private counter so it can't disturb the process-wide one.
+    #[test]
+    fn a_panicking_batch_still_counts_as_finished() {
+        let pending = PendingBatches::new();
+        pending.add();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _finished = FinishOnDrop(&pending);
+            panic!("scan failed");
+        }));
+        assert!(result.is_err(), "the scan should have panicked");
+        assert!(
+            pending.wait_idle(Duration::ZERO),
+            "a panicking batch left the pending count above zero"
+        );
     }
 }
