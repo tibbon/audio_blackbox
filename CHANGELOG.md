@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CLI creates a default `blackbox.toml` only when no config file exists,
   at `BLACKBOX_CONFIG` if that is set, and logs the file it actually loaded.
   In continuous mode it logs the duration as "unlimited".
+- The CLI refuses to start when the configured input device isn't present,
+  instead of recording from the default microphone. One invalid value in
+  `blackbox.toml` now skips just that key, not the whole file, and an empty
+  `BLACKBOX_CONFIG` counts as unset.
+- The 4 GB file-size warning is a notification, never a dialog, and appears
+  after recording has started.
+- Recordings are synced to disk at each 10 s header refresh, so a power cut
+  loses at most about 10 s.
 
 ### Added
 - Crash recovery: recordings a crash or power cut left as `.recording.wav`
@@ -112,6 +120,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range can no longer make every later recording fail to start.
 - The menu's warning icons (errors, dropped samples, low battery, 4 GB) show
   on macOS 27.
+- A disk write error that clears no longer shifts channels for the rest of
+  the file; in split mode, frames a channel file missed are filled with
+  silence so the files stay aligned.
+- Crash recovery skips files another running recorder still has open, and
+  cleans up empty leftovers instead of warning about them at every launch.
+- Stopping right as the silence gate opens keeps the start of the take, the
+  shutdown drain respects the 4 GB limit, and a rotation that coincides with
+  a gate close no longer leaves an empty WAV.
+- A new recording never truncates an existing temp file with the same name.
+- A sample-rate change during start is detected instead of producing a file
+  that plays at the wrong speed.
+- A restart that can't stop the engine keeps the live recording controllable
+  instead of showing it as idle.
+- Finishing onboarding while recording applies the chosen recording mode to
+  the live session.
+- The 4 GB estimate after a sample-rate change uses the new rate.
+- The menu names the device the recording opened, even after devices change.
+- Picking a device from the menu with Settings open restarts once, not twice.
+- Recording a new shortcut no longer triggers the current one, and the
+  shortcut button can't get stuck on "Press shortcut…".
+- Counted messages ("1 sample dropped", recovered recordings, rotation
+  intervals) use proper plural forms.
+- The debug logging toggle takes effect without a relaunch.
+- A second Ctrl-C ends the CLI's wait for silence checks.
 
 ## [1.5.0] — 2026-09-21
 
