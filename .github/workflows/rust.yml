@@ -81,7 +81,7 @@ jobs:
       run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
 
     - name: Install cargo-machete
-      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5  # v2
       with:
         tool: cargo-machete@0.9.2  # keep in step with scripts/check.sh's header
 
@@ -233,7 +233,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Install cargo-deny
-      uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375  # v2
+      uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5  # v2
       with:
         tool: cargo-deny@0.20.2  # keep in step with scripts/check.sh's header
 
