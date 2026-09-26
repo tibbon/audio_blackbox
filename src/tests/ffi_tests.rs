@@ -308,6 +308,38 @@ fn test_set_config_json() {
     blackbox_destroy(handle);
 }
 
+/// A misspelled key still applies the known ones and returns OK, but is
+/// reported in `last_error` instead of vanishing.
+#[test]
+fn test_set_config_json_reports_unknown_keys() {
+    let handle = blackbox_create(std::ptr::null());
+
+    let update = CString::new(r#"{"duration": 90, "durration": 5}"#).unwrap();
+    assert_eq!(
+        blackbox_set_config_json(handle, update.as_ptr()),
+        BLACKBOX_OK
+    );
+
+    let err_ptr = blackbox_get_last_error(handle);
+    // SAFETY: `err_ptr` was just returned by `blackbox_get_last_error`,
+    // which yields null or a NUL-terminated string owned by the caller and
+    // freed exactly once by `read_and_free`.
+    let err = unsafe { read_and_free(err_ptr) }.expect("unknown key should be reported");
+    assert!(err.contains("durration"), "last_error was: {err}");
+    assert!(
+        !err.contains("duration,"),
+        "known keys must not be reported: {err}"
+    );
+
+    let config_ptr = blackbox_get_config_json(handle);
+    // SAFETY: as above, for `blackbox_get_config_json`.
+    let config_str = unsafe { read_and_free(config_ptr) }.expect("config should be readable");
+    let parsed: serde_json::Value = serde_json::from_str(&config_str).expect("valid JSON");
+    assert_eq!(parsed["duration"], 90);
+
+    blackbox_destroy(handle);
+}
+
 #[test]
 fn test_set_config_json_null_json() {
     let handle = blackbox_create(std::ptr::null());

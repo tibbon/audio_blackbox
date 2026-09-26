@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::audio_processor::AudioProcessor;
 use crate::audio_recorder::AudioRecorder;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CONFIG_KEYS};
 use crate::cpal_processor::{CpalAudioProcessor, ProcessorStatus};
 use crate::error::BlackboxError;
 
@@ -789,6 +789,24 @@ pub extern "C" fn blackbox_set_config_json(
             return BLACKBOX_ERR_CONFIG;
         }
     };
+
+    // serde ignores unknown fields, so a misspelled key from the app would
+    // otherwise vanish silently. Still OK (the known keys applied), but log
+    // it and leave it in last_error so a caller can see it.
+    let unknown: Vec<String> =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(json_str)
+            .map(|map| {
+                map.keys()
+                    .filter(|k| !CONFIG_KEYS.contains(&k.as_str()))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+    if !unknown.is_empty() {
+        let msg = format!("Unknown config keys ignored: {}", unknown.join(", "));
+        log::warn!("{msg}");
+        handle.set_error(msg);
+    }
 
     match handle.config.lock() {
         Ok(mut guard) => {
