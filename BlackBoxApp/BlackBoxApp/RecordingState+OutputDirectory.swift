@@ -40,7 +40,7 @@ extension RecordingState {
     /// folders are swapped while the engine is stopped, and the recording
     /// restarts in the new folder. Access is never dropped under a live
     /// session. Callers ask the user before switching mid-recording.
-    func switchOutputDir(to url: URL?) {
+    func switchOutputDir(to url: URL?) async {
         let swap = { [self] in
             if let url {
                 saveOutputDirBookmark(for: url)
@@ -48,9 +48,26 @@ extension RecordingState {
                 useDefaultOutputDir()
             }
         }
-        if isRecording {
-            restartIfRecording(reason: "output folder changed", whileStopped: swap)
-        } else {
+        // A start or stop in flight (DOLL-659) may be about to open or
+        // close files in the current folder: switch only once it has
+        // settled.
+        await waitForSessionToSettle()
+        guard isRecording else {
+            swap()
+            return
+        }
+        var swapped = false
+        await restartIfRecording(reason: "output folder changed") {
+            swapped = true
+            swap()
+        }
+        guard !swapped else { return }
+        // Stop was pressed during the restart, before the old session had
+        // stopped. Once that stop finishes nothing uses the old folder, so
+        // switch then. If the old session could not be stopped it is still
+        // live, and the folder stays (the error is already shown).
+        await waitForSessionToSettle()
+        if !isRecording {
             swap()
         }
     }

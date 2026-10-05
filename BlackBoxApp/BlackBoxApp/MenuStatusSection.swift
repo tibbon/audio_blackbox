@@ -14,7 +14,7 @@ struct MenuStatusSection: View {
         // The menu now shows a stable status string only; the live timer
         // moved to the meter window header where the window class
         // doesn't have the highlight-reset problem.
-        Text(recorder.statusText)
+        Text(recorder.displayedStatusText)
             .font(.headline)
             .monospacedDigit()
 

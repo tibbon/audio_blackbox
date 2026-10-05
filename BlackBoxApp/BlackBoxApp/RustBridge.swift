@@ -24,6 +24,7 @@ enum BlackBoxError: Int32, Error {
     var isSuccess: Bool { self == .ok }
 }
 
+// swiftlint:disable unchecked_sendable_needs_reason - the SAFETY note below states the invariant
 /// Swift wrapper around the BlackBox Rust FFI, providing safe memory management
 /// and Swift-native types.
 ///
@@ -31,13 +32,16 @@ enum BlackBoxError: Int32, Error {
 /// `handle` (an `OpaquePointer`, which is not `Sendable`) without an isolation
 /// hop.
 ///
-/// SAFETY: every FFI entry point takes the handle's own mutexes (`BlackboxHandle`
-/// in `src/ffi.rs`), so calls are safe from any thread. The one FFI requirement —
-/// `blackbox_destroy` must not run concurrently with another call on the same
-/// handle — holds because this class is not `Sendable`: a reference never crosses
-/// an isolation domain, and `deinit` runs only after the last reference is gone.
-nonisolated final class RustBridge {
-    private var handle: OpaquePointer?
+/// SAFETY: `handle` is set once in `init` and never changes, and every FFI entry
+/// point takes the handle's own mutexes (`BlackboxHandle` in `src/ffi.rs`), so
+/// calls are safe from any thread; start and stop run off the main actor
+/// (DOLL-659). The one FFI requirement — `blackbox_destroy` must not run
+/// concurrently with another call on the same handle — holds because `deinit`
+/// runs only after the last reference is gone, and every call, on any thread,
+/// is made through a reference its caller holds until the call returns.
+nonisolated final class RustBridge: @unchecked Sendable {
+    // swiftlint:enable unchecked_sendable_needs_reason
+    private let handle: OpaquePointer?
 
     // swiftlint:disable discouraged_optional_collection - nil means blackbox_create(NULL), the engine's own defaults, not an empty override
     /// Create a bridge with the given configuration dictionary.

@@ -150,13 +150,13 @@ struct RecordingSettingsTab: View {
         let old = prevBitDepth
         guard bitDepth != old else { return }
         prevBitDepth = bitDepth
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             return
         }
         confirmSettingsChange(reason: String(localized: "bit depth")) {
             applyConfig()
-            recorder.restartIfRecording(reason: "bit depth changed")
+            Task { await recorder.restartIfRecording(reason: "bit depth changed") }
         } onCancel: {
             prevBitDepth = old
             bitDepth = old
@@ -225,14 +225,14 @@ struct RecordingSettingsTab: View {
         guard newSpec != old else { return }
         channelSpec = newSpec
         prevChannelSpec = newSpec
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             recorder.restartMonitoring()
             return
         }
         confirmSettingsChange(reason: String(localized: "channels")) {
             applyConfig()
-            recorder.restartIfRecording(reason: "channels changed")
+            Task { await recorder.restartIfRecording(reason: "channels changed") }
         } onCancel: {
             prevChannelSpec = old
             channelSpec = old

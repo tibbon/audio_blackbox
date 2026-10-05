@@ -6,11 +6,21 @@ import struct os.Logger
 extension RecordingState {
     // MARK: - Actions
 
+    /// The menu button and the hotkey. Stop pressed while a start (or a
+    /// restart) is still in flight ends the session as soon as the engine
+    /// returns from the start; it used to reach here as a second start,
+    /// which the in-flight guard dropped (DOLL-659). Pressed while a stop
+    /// is running, it does nothing.
     func toggle() {
-        if isRecording {
-            stop()
-        } else {
+        switch sessionPhase {
+        case .idle:
             start()
+
+        case .starting, .recording:
+            stop()
+
+        case .stopping:
+            break
         }
     }
 
@@ -48,6 +58,9 @@ extension RecordingState {
         isStartingRecording = true
         errorMessage = nil
         defer { isStartingRecording = false }
+        // Taken now so a stop pressed while this start waits below (on the
+        // restore, the permission dialog or the engine) ends it.
+        let generation = sessionGeneration
         // A start from the menu or hotkey right at launch must not beat the
         // restore Task: it would record into the default folder, and crash
         // recovery would finalize this session's live .recording.wav.
@@ -56,7 +69,7 @@ extension RecordingState {
         // to the permission prompt and the engine.
         guard !Task.isCancelled else { return isRecording }
         if await checkMicrophonePermission() {
-            startRecordingInternal()
+            await startRecordingInternal(generation: generation)
         } else {
             errorMessage = String(localized: "Microphone access denied. Open System Settings to allow access.")
             statusText = String(localized: "Error")
@@ -65,14 +78,16 @@ extension RecordingState {
     }
 
     /// `isRestart`: this continues a live session (restartIfRecording)
-    /// rather than starting a new one.
-    private func startRecordingInternal(isRestart: Bool = false) {
+    /// rather than starting a new one. `generation`: the
+    /// `sessionGeneration` the caller started from; a stop since then
+    /// ended this session, and the start backs out.
+    private func startRecordingInternal(generation: Int, isRestart: Bool = false) async {
         // DOLL-459: defense in depth — re-check after the permission await.
         // The guard in start() ran before the suspension; if a session began
         // through another path while the dialog was up, a second
         // bridge.startRecording() would fail and its error branch would mark
         // the LIVE recording as idle (unstoppable from the UI).
-        guard !isRecording else { return }
+        guard !isRecording, generation == sessionGeneration else { return }
 
         // DOLL-464: for first-launch users (onboarding incomplete at init,
         // so the eager request was skipped) this is the in-context moment
@@ -92,82 +107,177 @@ extension RecordingState {
             stopMonitoring()
         }
 
-        let result = bridge.startRecording()
+        // nil: a stop ended this session while the engine was starting, and
+        // that stop has already torn the session down.
+        guard let result = await startEngine(generation: generation) else { return }
         if result.isSuccess {
-            isRecording = true
-            recordingStartTime = Date()
-            // "Recording" (no trailing ellipsis or M:SS) is now a stable
-            // string — the live elapsed time is rendered separately via
-            // Text(_, style: .timer) so this value only changes on a
-            // gate-idle transition. Keeps the menu from re-rendering
-            // every second and resetting hover state.
-            statusText = String(localized: "Recording")
-            wasGateIdle = false
-            lastReportedWriteErrors = 0
-            writeErrorsCount = 0
-            isLowBatteryWarning = false
-            batteryNotificationFired = false
-            batteryCheckTick = 0
-            // DOLL-213: clear any stale post-Stop summary when a new
-            // recording begins; the just-started session is the new
-            // "current," and the old summary is no longer relevant.
-            lastRecordingDurationText = nil
-            // DOLL-220: warn if the math says a file will pass the 4 GiB
-            // WAV-header cap. The engine proceeds, splitting the file at
-            // 4 GB. This runs only once the engine is running: it used to
-            // run before bridge.startRecording() and could show a modal
-            // alert, which left the engine stopped until the user clicked
-            // OK, with isRecording and isStartingRecording both false so a
-            // second start could race in.
-            //
-            // The estimate needs the rate this stream opened at. The engine
-            // publishes it during startRecording(); the status poll only
-            // picks it up a second later, so after a sample-rate-change
-            // restart the estimate used the old device rate.
-            adoptEngineSampleRate()
-            evaluatePreflightFileSizeWarning(isRestart: isRestart)
-            startTimer()
-            beginPreventingSleep()
-            refreshMeterChannelNumbers()
-            Self.log.info("Recording started")
-            NSAccessibility.post(
-                element: NSApp as Any,
-                notification: .announcementRequested,
-                userInfo: [.announcement: String(localized: "Recording started")]
-            )
+            beginStartedSession(isRestart: isRestart)
         } else {
-            // DOLL-448: release sleep prevention if this start was a
-            // restart of a live session (restartIfRecording) — the token
-            // from the original beginPreventingSleep would otherwise leak.
-            // No-op on a fresh start (no token yet).
-            endPreventingSleep()
-            isRecording = false
-            recordingStartTime = nil
-            let detail = bridge.lastError
-            let err: String
-            switch result {
-            case .audioDevice:
-                err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
-
-            case .config:
-                let reason = detail ?? String(localized: "invalid settings")
-                err = String(localized: "Configuration error: \(reason)")
-
-            case .io:
-                err = String(localized: "Recording failed: disk error")
-
-            default:
-                err = detail ?? String(localized: "Failed to start recording")
-            }
-            setTransientError(err)
-            Self.log.error("Failed to start recording (code \(result.rawValue)): \(err)")
+            reportFailedStart(result)
         }
     }
 
+    /// The engine is recording: set the session up around it.
+    private func beginStartedSession(isRestart: Bool) {
+        isRecording = true
+        recordingStartTime = Date()
+        // "Recording" (no trailing ellipsis or M:SS) is now a stable
+        // string — the live elapsed time is rendered separately via
+        // Text(_, style: .timer) so this value only changes on a
+        // gate-idle transition. Keeps the menu from re-rendering
+        // every second and resetting hover state.
+        statusText = String(localized: "Recording")
+        wasGateIdle = false
+        lastReportedWriteErrors = 0
+        writeErrorsCount = 0
+        isLowBatteryWarning = false
+        batteryNotificationFired = false
+        batteryCheckTick = 0
+        // DOLL-213: clear any stale post-Stop summary when a new
+        // recording begins; the just-started session is the new
+        // "current," and the old summary is no longer relevant.
+        lastRecordingDurationText = nil
+        // DOLL-220: warn if the math says a file will pass the 4 GiB
+        // WAV-header cap. The engine proceeds, splitting the file at
+        // 4 GB. This runs only once the engine is running: it used to
+        // run before bridge.startRecording() and could show a modal
+        // alert, which left the engine stopped until the user clicked
+        // OK, with isRecording and isStartingRecording both false so a
+        // second start could race in.
+        //
+        // The estimate needs the rate this stream opened at. The engine
+        // publishes it during startRecording(); the status poll only
+        // picks it up a second later, so after a sample-rate-change
+        // restart the estimate used the old device rate.
+        adoptEngineSampleRate()
+        evaluatePreflightFileSizeWarning(isRestart: isRestart)
+        startTimer()
+        beginPreventingSleep()
+        refreshMeterChannelNumbers()
+        Self.log.info("Recording started")
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [.announcement: String(localized: "Recording started")]
+        )
+    }
+
+    /// The engine refused to start: clear the session and say why.
+    private func reportFailedStart(_ result: EngineOutcome) {
+        // DOLL-448: release sleep prevention if this start was a
+        // restart of a live session (restartIfRecording) — the token
+        // from the original beginPreventingSleep would otherwise leak.
+        // No-op on a fresh start (no token yet).
+        endPreventingSleep()
+        isRecording = false
+        recordingStartTime = nil
+        let detail = result.detail
+        let err: String
+        switch result.code {
+        case .audioDevice:
+            err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
+
+        case .config:
+            let reason = detail ?? String(localized: "invalid settings")
+            err = String(localized: "Configuration error: \(reason)")
+
+        case .io:
+            err = String(localized: "Recording failed: disk error")
+
+        default:
+            err = detail ?? String(localized: "Failed to start recording")
+        }
+        setTransientError(err)
+        Self.log.error("Failed to start recording (code \(result.code.rawValue)): \(err)")
+    }
+
+    /// Fire-and-forget stop for the menu, the hotkey and the other
+    /// synchronous callers. It returns at once; the engine finalizes the
+    /// files off the main actor while the menu shows "Stopping…"
+    /// (DOLL-659). Paths that must not return before the files are
+    /// finalized use `stopSynchronously`; async ones `stopAndWait`.
     func stop(reason: SleepWakePolicy.StopReason = .user) {
+        guard let pending = beginStop(reason: reason) else { return }
+        Task { await self.completeStop(pending) }
+    }
+
+    /// Stop and return once the engine has finalized the files.
+    func stopAndWait(reason: SleepWakePolicy.StopReason = .user) async {
+        guard let pending = beginStop(reason: reason) else { return }
+        await completeStop(pending)
+    }
+
+    /// Stop on the main thread, returning only once the engine has
+    /// finalized the files: for sleep, power off and session switching,
+    /// where the system can suspend the app as soon as the handler returns.
+    /// A start in flight in the engine holds the engine's lock, so this
+    /// waits for it and stops what it started; a start that reaches the
+    /// engine after this stops itself when it returns (the generation
+    /// check in `startEngine`). A stop already running off the main actor
+    /// is superseded: this one does the teardown.
+    func stopSynchronously(reason: SleepWakePolicy.StopReason = .user) {
+        cancelResumeIfUserStop(reason)
         let sessionDuration = recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
         stopTimer()
-        let result = bridge.stopRecording()
+        _ = endSessionGeneration()
+        applyStopResult(engineCalls.stop(), sessionDuration: sessionDuration)
+    }
+
+    /// A stop that has ended the session's generation and is waiting for
+    /// the engine.
+    struct PendingStop {
+        let generation: Int
+        let sessionDuration: TimeInterval
+    }
+
+    /// The synchronous half of an async stop: record the intent at once, so
+    /// a second stop and a pending resume both see it, and end the
+    /// session's generation so a start in flight backs out. `nil` when a
+    /// stop is already running.
+    private func beginStop(reason: SleepWakePolicy.StopReason) -> PendingStop? {
+        cancelResumeIfUserStop(reason)
+        guard !isStoppingRecording else { return nil }
+        isStoppingRecording = true
+        stopTimer()
+        return PendingStop(
+            generation: endSessionGeneration(),
+            sessionDuration: recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        )
+    }
+
+    private func completeStop(_ pending: PendingStop) async {
+        let result = await runEngine(engineCalls.stop)
+        isStoppingRecording = false
+        guard pending.generation == sessionGeneration else {
+            // A synchronous stop (sleep) ran meanwhile and did the teardown,
+            // against an engine this stop had already stopped. Only this
+            // stop saw how the finalize went.
+            if !result.isSuccess {
+                let failure = result.detail ?? String(localized: "Failed to stop recording")
+                Self.log.error("Failed to stop recording (code \(result.code.rawValue)): \(failure)")
+                setTransientError(failure)
+            }
+            return
+        }
+        applyStopResult(result, sessionDuration: pending.sessionDuration)
+    }
+
+    /// DOLL-182: a user stop cancels any pending resume-on-wake. Without
+    /// this, a manual stop within the 1.5s deferred-resume window after
+    /// sleep/wake or session resign/activate would let the deferred start()
+    /// resurrect a recording the user explicitly stopped. The
+    /// sleep-interruption stop is exempt — its caller just SET the flag,
+    /// and clearing it made resume-on-wake dead code (DOLL-442). Done when
+    /// the stop is asked for, not when the engine returns from it.
+    private func cancelResumeIfUserStop(_ reason: SleepWakePolicy.StopReason) {
+        guard SleepWakePolicy.stopCancelsPendingResume(reason) else { return }
+        wasSleepInterrupted = false
+        // The flag is already consumed once the wake handler has run;
+        // the resume it scheduled must be cancelled too.
+        cancelPendingResume()
+    }
+
+    private func applyStopResult(_ result: EngineOutcome, sessionDuration: TimeInterval) {
         // The FFI takes the recorder out of the handle before finalizing, so an
         // error from stopRecording usually means the engine stopped anyway and
         // only the finalize failed. Ask the engine instead of assuming it is
@@ -178,9 +288,9 @@ extension RecordingState {
             stopSucceeded: result.isSuccess,
             engineStillRecording: !result.isSuccess && bridge.isRecording
         )
-        let failure = result.isSuccess ? nil : bridge.lastError ?? String(localized: "Failed to stop recording")
+        let failure = result.isSuccess ? nil : result.detail ?? String(localized: "Failed to stop recording")
         if let failure {
-            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(failure)")
+            Self.log.error("Failed to stop recording (code \(result.code.rawValue)): \(failure)")
         }
         switch outcome {
         case .stillRecording:
@@ -191,18 +301,14 @@ extension RecordingState {
 
         case .stopped, .stoppedWithError:
             endPreventingSleep()
-            finishStoppedSession(reason: reason, sessionDuration: sessionDuration, succeeded: outcome == .stopped)
+            finishStoppedSession(sessionDuration: sessionDuration, succeeded: outcome == .stopped)
             if let failure { setTransientError(failure) }
         }
     }
 
     /// UI and bookkeeping teardown once the engine has stopped, whether or
     /// not its final flush succeeded.
-    private func finishStoppedSession(
-        reason: SleepWakePolicy.StopReason,
-        sessionDuration: TimeInterval,
-        succeeded: Bool
-    ) {
+    private func finishStoppedSession(sessionDuration: TimeInterval, succeeded: Bool) {
         isRecording = false
         recordingStartTime = nil
         peakLevels = []
@@ -224,19 +330,6 @@ extension RecordingState {
         currentFileSizeText = nil
         configSnapshot = nil
         wasGateIdle = false
-        // DOLL-182: a user stop cancels any pending resume-on-wake.
-        // Without this, a manual stop within the 1.5s deferred-resume
-        // window after sleep/wake or session resign/activate would let
-        // the deferred start() resurrect a recording the user
-        // explicitly stopped. The sleep-interruption stop is exempt —
-        // it just SET the flag, and clearing it here made
-        // resume-on-wake dead code (DOLL-442).
-        if SleepWakePolicy.stopCancelsPendingResume(reason) {
-            wasSleepInterrupted = false
-            // The flag is already consumed once the wake handler has run;
-            // the resume it scheduled must be cancelled too.
-            cancelPendingResume()
-        }
         Self.log.info("Recording stopped")
         NSAccessibility.post(
             element: NSApp as Any,
@@ -264,17 +357,33 @@ extension RecordingState {
     /// release something the old session was using (the output folder's
     /// security scope).
     ///
+    /// A start, stop or restart already in flight is waited for first, so a
+    /// setting changed while the engine is starting is not lost: the start
+    /// read the old config, and this restart picks up the new one.
+    ///
     /// Returns whether a new session is running afterwards: `false` when
-    /// there was none to restart, the new session failed to start, or the
-    /// old one could not be stopped (each failure is already surfaced
-    /// through `setTransientError`). In that last case `isRecording` stays
-    /// `true`: the old session is still live, so `whileStopped` does not run.
+    /// there was none to restart, the new session failed to start, or the old one could not be stopped (each
+    /// failure is already surfaced through `setTransientError`). In that
+    /// last case `isRecording` stays `true`: the old session is still live,
+    /// so `whileStopped` does not run. A stop pressed during the restart
+    /// ends the session, and this returns `false` without running
+    /// `whileStopped` if the old session had not stopped yet.
     @discardableResult
-    func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) -> Bool {
-        guard isRecording else { return false }
+    func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) async -> Bool {
+        await waitForSessionToSettle()
+        // No suspension from here to setting isStartingRecording below, so
+        // another restart cannot slip in between.
+        guard sessionPhase == .recording else { return false }
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
+        // The whole restart reads as starting: Stop pressed during it ends
+        // the session (DOLL-659), and other starts and restarts wait.
+        isStartingRecording = true
+        defer { isStartingRecording = false }
+        let generation = sessionGeneration
         stopTimer()
-        let result = bridge.stopRecording()
+        let result = await runEngine(engineCalls.stop)
+        // A stop pressed meanwhile ended the session and does the teardown.
+        guard generation == sessionGeneration else { return false }
         // Classified like stop(): a failed stop usually means the engine
         // stopped and only the finalize failed, but if it is still
         // recording, running whileStopped would release the live folder's
@@ -285,8 +394,8 @@ extension RecordingState {
             engineStillRecording: !result.isSuccess && bridge.isRecording
         )
         if !result.isSuccess {
-            let failure = bridge.lastError ?? String(localized: "Failed to stop recording")
-            Self.log.error("Failed to stop recording for a restart (code \(result.rawValue)): \(failure)")
+            let failure = result.detail ?? String(localized: "Failed to stop recording")
+            Self.log.error("Failed to stop recording for a restart (code \(result.code.rawValue)): \(failure)")
             setTransientError(failure)
         }
         guard SessionPolicy.restartProceeds(after: outcome) else {
@@ -312,7 +421,7 @@ extension RecordingState {
         // state is unchanged. Reset notification so a future cross of
         // the threshold can fire fresh.
         batteryCheckTick = 0
-        startRecordingInternal(isRestart: true)
+        await startRecordingInternal(generation: generation, isRestart: true)
         return isRecording
     }
 
@@ -393,8 +502,9 @@ extension RecordingState {
         guard name != appliedInputDevice else { return false }
         appliedInputDevice = name
         bridge.setConfig(["input_device": name])
-        if isRecording {
-            restartIfRecording(reason: "device changed")
+        if sessionPhase != .idle {
+            // A start in flight read the old device; restart once it settles.
+            Task { await restartIfRecording(reason: "device changed") }
         } else if isMonitoring {
             restartMonitoring()
         }

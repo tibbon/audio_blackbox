@@ -50,7 +50,7 @@ A test-time `CountingAllocator` (`mod alloc_counter` in `src/lib.rs`) wraps the 
 
 ### Silence-check worker
 
-`silence_check_worker::SilenceCheckWorker` is a single thread fed via a bounded `mpsc::sync_channel`. Its `Drop` impl closes the sending side and does **not** join: the thread scans whatever is still queued and then exits on its own. A scan decodes a silent file to its end, which takes minutes for a long multichannel take, and the drop runs while stopping a recording — on the Swift main thread via `blackbox_stop_recording`, and before an automatic restart after a sample-rate change or stream error. Stop must not wait on it.
+`silence_check_worker::SilenceCheckWorker` is a single thread fed via a bounded `mpsc::sync_channel`. Its `Drop` impl closes the sending side and does **not** join: the thread scans whatever is still queued and then exits on its own. A scan decodes a silent file to its end, which takes minutes for a long multichannel take, and the drop runs while stopping a recording — via `blackbox_stop_recording` (off the Swift main actor since DOLL-659, but the menu still shows "Stopping…" until it returns), and before an automatic restart after a sample-rate change or stream error. Stop must not wait on it.
 
 The same goes for queueing: `finalize_all` submits with `try_submit`, so a full queue keeps those files unchecked instead of blocking the writer's shutdown reply. Rotation still uses the blocking `submit` (the back-pressure described above).
 
@@ -152,6 +152,12 @@ If the bookmark can't be resolved or access fails, the bookmark is dropped and t
 ### `@Observable RecordingState` pattern
 
 `RecordingState` is `@MainActor`-isolated and `@Observable` (Swift macro). Views hold it as a plain stored property (`var recorder: RecordingState`), not via `@Environment`; it's a class, so every view shares one instance, and SwiftUI's observation system propagates changes. View-model mutation off-main is a compile error because of `@MainActor`.
+
+### Engine start and stop off the main actor (DOLL-659)
+
+`blackbox_start_recording` probes and opens the device and `blackbox_stop_recording` finalizes the files, both under the handle's `recorder` lock, so either can take seconds. `RecordingState` runs them through `runEngine` (`RecordingState+Engine.swift`), which chains each call onto the previous one and runs it off the main actor, so they reach the engine in the order they were asked for. `RustBridge` is `@unchecked Sendable` for this; its SAFETY note gives the invariant. `sessionPhase` (idle / starting / recording / stopping) drives the menu's "Starting…" / "Stopping…".
+
+Every stop bumps `sessionGeneration`. A start compares it before and after its engine call; if a stop came in meanwhile, the start backs out, and stops the engine again if it reached the engine after the stop. Stop pressed during a start or restart therefore ends the session once the start returns. Sleep, power off and fast user switching call `stopSynchronously`, which stops on the main thread so the files are finalized before the handler returns; the engine lock makes it wait for a start already in the engine. Quit answers `.terminateLater`, stops off the main actor with a 10 s bound, then replies.
 
 ## Module map
 

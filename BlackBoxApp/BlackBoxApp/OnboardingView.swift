@@ -337,14 +337,14 @@ struct OnboardingView: View {
         )
         switch folder {
         case .useDefault:
-            recorder.switchOutputDir(to: nil)
+            Task { await recorder.switchOutputDir(to: nil) }
 
         case .use(let url):
-            recorder.switchOutputDir(to: url)
+            Task { await recorder.switchOutputDir(to: url) }
 
         case .keep:
             if modeChanged {
-                recorder.restartIfRecording(reason: "recording mode changed")
+                Task { await recorder.restartIfRecording(reason: "recording mode changed") }
             }
         }
     }

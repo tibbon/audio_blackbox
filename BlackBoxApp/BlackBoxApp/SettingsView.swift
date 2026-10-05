@@ -107,14 +107,14 @@ func confirmSettingsChange(
 /// Returns `false` when the user cancelled; the caller reverts its control.
 @discardableResult
 func applySessionSetting(recorder: RecordingState, reason: String, apply: () -> Void) -> Bool {
-    guard recorder.isRecording else {
+    guard recorder.sessionPhase != .idle else {
         apply()
         return true
     }
     var confirmed = false
     confirmSettingsChange(reason: reason) {
         apply()
-        recorder.restartIfRecording(reason: "\(reason) changed")
+        Task { await recorder.restartIfRecording(reason: "\(reason) changed") }
         confirmed = true
     }
     return confirmed
