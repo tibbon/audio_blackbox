@@ -18,7 +18,6 @@ struct CustomCadenceField: View {
     var body: some View {
         HStack {
             TextField("", value: $recordingCadence, format: .number)
-                .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
                 .focused($customCadenceFocused)
                 // DOLL-196: clamp + applyConfig on focus
