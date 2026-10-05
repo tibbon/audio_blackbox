@@ -361,6 +361,13 @@ custom_rules:
     message: "Single-parameter onChange(of:) is deprecated on macOS 14+. Use the two-parameter (old, new) or zero-parameter form."
     severity: warning
 
+  deprecated_roundedborder:
+    name: ".roundedBorder text field style"
+    regex: '\.roundedBorder\b'
+    excluded_match_kinds: [comment, doccomment, string]
+    message: "Soft-deprecated on macOS 27 (DOLL-662). Use the default text field style, which follows the system look."
+    severity: warning
+
   observableobject_in_new_code:
     name: "ObservableObject"
     regex: '\bObservableObject\b'

@@ -76,7 +76,6 @@ struct ChannelSelectionGrid: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TextField("e.g. 1-8, 16, 24-32", text: $specDraft)
-                .textFieldStyle(.roundedBorder)
                 .font(.caption)
                 .monospacedDigit()
                 .focused($specFieldFocused)
