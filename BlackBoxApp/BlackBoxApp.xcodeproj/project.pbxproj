@@ -379,7 +379,7 @@
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
 				INFOPLIST_FILE = BlackBoxApp/Info.plist;
@@ -391,7 +391,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",
@@ -469,7 +469,7 @@
 				CODE_SIGN_ENTITLEMENTS = BlackBox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_HARDENED_RUNTIME = YES;
 				IMPORT_PATHS = "$(SRCROOT)/bridge";
 				INFOPLIST_FILE = BlackBoxApp/Info.plist;
@@ -481,7 +481,7 @@
 					"$(SRCROOT)/../target/debug",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				OTHER_LDFLAGS = (
 					"-lblackbox",
 					"-framework",

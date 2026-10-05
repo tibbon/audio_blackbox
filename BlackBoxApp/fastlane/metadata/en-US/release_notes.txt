@@ -1,6 +1,6 @@
 Safer long recordings, and a round of reliability fixes.
 
-• Recordings cut short by a crash or power loss are repaired automatically the next time BlackBox opens.
+• Recordings cut short by a crash or power loss are repaired automatically the next time BlackBox opens, losing at most about 10 seconds.
 • Long takes start a new file before reaching the 4 GB WAV limit, so every file opens fully in any audio app.
 • The input device list updates when you plug in or unplug an audio interface.
 • Changing a recording setting while recording offers to restart, so the change takes effect right away. Choosing a new folder continues the recording there.
