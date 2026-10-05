@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-10-05
+
+A reliability release from the September 2026 review: crash recovery for
+interrupted recordings, files split before the 4 GB WAV limit, safer sleep,
+logout and quit handling, and many recording, CLI and settings fixes.
+
 ### Changed
 - App Store description: claims now match the engine. A crash costs up to
   ~10 s of audio rather than "always valid" files; the ring buffer absorbs
@@ -428,7 +434,9 @@ Initial Mac App Store release. CLI binary plus SwiftUI menu-bar app.
 - Privacy-respecting design: no network access, all recordings stay
   local.
 
-[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/tibbon/audio_blackbox/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/tibbon/audio_blackbox/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/tibbon/audio_blackbox/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/tibbon/audio_blackbox/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/tibbon/audio_blackbox/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/tibbon/audio_blackbox/compare/v1.1.0...v1.2.0
