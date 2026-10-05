@@ -114,7 +114,7 @@ func applySessionSetting(recorder: RecordingState, reason: String, apply: () -> 
     var confirmed = false
     confirmSettingsChange(reason: reason) {
         apply()
-        recorder.restartIfRecording(reason: "\(reason) changed")
+        Task { await recorder.restartIfRecording(reason: "\(reason) changed") }
         confirmed = true
     }
     return confirmed

@@ -39,7 +39,9 @@ final class RecordingState {
     }
 
     /// `true` from the moment `start()` passes its guard until the start
-    /// attempt resolves (success, failure, or permission denial).
+    /// attempt resolves (success, failure, or permission denial), including
+    /// the engine call running off the main actor (DOLL-659), and for the
+    /// whole of a restart (`restartIfRecording`, stream-error recovery).
     /// `isRecording` stays false across the mic-permission await inside
     /// `start()`'s Task — which can suspend for the entire user-facing
     /// permission dialog — so this in-flight flag is what blocks a second
@@ -47,6 +49,21 @@ final class RecordingState {
     /// enqueueing a second engine start whose failure path would mark the
     /// live recording as idle and make it unstoppable from the UI (DOLL-459).
     var isStartingRecording = false
+
+    /// `true` while a stop is running off the main actor (DOLL-659). The
+    /// session stays `isRecording` until the engine has finalized its files.
+    var isStoppingRecording = false
+
+    /// Bumped by every stop (`endSessionGeneration()`). A start compares it
+    /// before and after its engine call to tell whether the session it was
+    /// starting was stopped meanwhile.
+    @ObservationIgnored var sessionGeneration = 0
+
+    /// The last engine call queued by `runEngine`; the next one waits for it.
+    @ObservationIgnored var engineTail: Task<BlackBoxError, Never>?
+
+    /// The engine start and stop calls; tests replace them.
+    @ObservationIgnored var engineCalls: EngineCalls
 
     /// Short status string for the menu's headline row ("Ready",
     /// "Recording...", "Error", elapsed time during a session). Always
@@ -329,6 +346,7 @@ final class RecordingState {
 
     init() {
         bridge = RustBridge()
+        engineCalls = EngineCalls(bridge: bridge)
         notificationDelegate.recorder = self
         guard !Self.isTesting else { return }
         refreshDevices()

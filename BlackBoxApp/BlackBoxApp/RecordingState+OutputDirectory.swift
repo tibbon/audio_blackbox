@@ -40,7 +40,7 @@ extension RecordingState {
     /// folders are swapped while the engine is stopped, and the recording
     /// restarts in the new folder. Access is never dropped under a live
     /// session. Callers ask the user before switching mid-recording.
-    func switchOutputDir(to url: URL?) {
+    func switchOutputDir(to url: URL?) async {
         let swap = { [self] in
             if let url {
                 saveOutputDirBookmark(for: url)
@@ -48,8 +48,15 @@ extension RecordingState {
                 useDefaultOutputDir()
             }
         }
+        // A start or stop in flight (DOLL-659) may be about to open or
+        // close files in the current folder: switch only once it has
+        // settled. Polled, because a start can sit in the microphone
+        // permission dialog with no engine call to wait on.
+        while sessionPhase == .starting || sessionPhase == .stopping {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         if isRecording {
-            restartIfRecording(reason: "output folder changed", whileStopped: swap)
+            await restartIfRecording(reason: "output folder changed", whileStopped: swap)
         } else {
             swap()
         }

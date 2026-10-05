@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summary says when the chosen device is not connected.
 
 ### Fixed
+- Starting and stopping a recording no longer freezes the menu while the
+  device opens or the files are finalized; it shows "Starting…" or
+  "Stopping…" instead. Stop pressed while a recording is still starting now
+  stops it as soon as it has started, where before it was ignored.
 - Rotation boundaries no longer drift over long sessions.
 - A full disk at sample rates above 48 kHz is reported as a write failure,
   not as heavy load.

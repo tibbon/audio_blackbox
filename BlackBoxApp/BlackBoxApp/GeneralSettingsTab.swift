@@ -207,14 +207,14 @@ struct GeneralSettingsTab: View {
         alert.buttons.last?.keyEquivalent = "\r"
         NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
-            resetAllSettings()
+            Task { await resetAllSettings() }
         }
     }
 
-    private func resetAllSettings() {
+    private func resetAllSettings() async {
         // Stop recording first — we're about to change the engine config
-        if recorder.isRecording {
-            recorder.stop()
+        if recorder.sessionPhase != .idle {
+            await recorder.stopAndWait()
         }
 
         let defaults = UserDefaults.standard
@@ -235,7 +235,7 @@ struct GeneralSettingsTab: View {
         // Clear global shortcut
         clearShortcut()
         // Update launch-at-login to match (now off)
-        try? SMAppService.mainApp.unregister()
+        try? await SMAppService.mainApp.unregister()
         // Refresh local state
         launchAtLogin = false
         autoRecord = false
