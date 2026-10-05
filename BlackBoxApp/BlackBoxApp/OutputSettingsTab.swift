@@ -188,7 +188,7 @@ struct OutputSettingsTab: View {
         let old = prevOutputMode
         guard outputMode != old else { return }
         prevOutputMode = outputMode
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             return
         }
@@ -364,7 +364,7 @@ extension OutputSettingsTab {
         panel.message = String(localized: "Select output directory for recordings")
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             outputDir = url.path
             Task { await recorder.switchOutputDir(to: url) }
             return

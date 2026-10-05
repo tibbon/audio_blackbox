@@ -50,14 +50,24 @@ extension RecordingState {
         }
         // A start or stop in flight (DOLL-659) may be about to open or
         // close files in the current folder: switch only once it has
-        // settled. Polled, because a start can sit in the microphone
-        // permission dialog with no engine call to wait on.
-        while sessionPhase == .starting || sessionPhase == .stopping {
-            try? await Task.sleep(for: .milliseconds(100))
+        // settled.
+        await waitForSessionToSettle()
+        guard isRecording else {
+            swap()
+            return
         }
-        if isRecording {
-            await restartIfRecording(reason: "output folder changed", whileStopped: swap)
-        } else {
+        var swapped = false
+        await restartIfRecording(reason: "output folder changed") {
+            swapped = true
+            swap()
+        }
+        guard !swapped else { return }
+        // Stop was pressed during the restart, before the old session had
+        // stopped. Once that stop finishes nothing uses the old folder, so
+        // switch then. If the old session could not be stopped it is still
+        // live, and the folder stays (the error is already shown).
+        await waitForSessionToSettle()
+        if !isRecording {
             swap()
         }
     }

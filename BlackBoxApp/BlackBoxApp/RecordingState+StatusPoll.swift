@@ -79,23 +79,35 @@ extension RecordingState {
             return  // handled above, before the gate-idle update
 
         case .restartForSampleRateChange:
-            Task { await restartForSampleRateChange() }
+            runPollAction { await $0.restartForSampleRateChange() }
 
         case .recoverFromStreamError:
-            Task { await recoverFromStreamError() }
+            runPollAction { await $0.recoverFromStreamError() }
 
         case .stopForWriteFailure:
-            Task { await stopForWriteFailure() }
+            runPollAction { await $0.stopForWriteFailure() }
 
         case .stopForLowDiskSpace:
-            Task { await stopForLowDiskSpace() }
+            runPollAction { await $0.stopForLowDiskSpace() }
 
         case .stopForExcessiveWriteErrors:
-            Task { await stopForExcessiveWriteErrors(writeErrors) }
+            runPollAction { await $0.stopForExcessiveWriteErrors(writeErrors) }
 
         case .keepRecording:
             reportNewWriteErrors(writeErrors)
             adoptReportedSampleRate(Int(status.sample_rate))
+        }
+    }
+
+    /// Run a poll-triggered action on a later main-actor turn, unless the
+    /// session it was meant for has ended by then: a Stop handled in
+    /// between would otherwise be followed by a stream-error recovery that
+    /// restarts the engine under an idle UI.
+    private func runPollAction(_ action: @escaping (RecordingState) async -> Void) {
+        let generation = sessionGeneration
+        Task {
+            guard generation == sessionGeneration, sessionPhase == .recording else { return }
+            await action(self)
         }
     }
 
@@ -156,12 +168,13 @@ extension RecordingState {
 
     private func restartForSampleRateChange() async {
         Self.log.warning("Sample rate changed on device — finalizing and restarting")
+        let generation = sessionGeneration
         guard await restartIfRecording(reason: "sample rate changed") else {
             // The old session could not be stopped and is still recording
-            // (the error is already shown), or a user stop is finishing it:
-            // nothing more to say. The next poll sees the flag again and
-            // retries.
-            if isRecording { return }
+            // (the error is already shown; the next poll sees the flag again
+            // and retries), or the user stopped it during the restart:
+            // nothing more to say.
+            if isRecording || generation != sessionGeneration { return }
             // The restart failed (startRecordingInternal already set the
             // error): say the recording stopped, not that it was restarted.
             let msg = String(

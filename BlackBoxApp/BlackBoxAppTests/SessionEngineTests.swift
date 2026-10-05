@@ -4,14 +4,18 @@ import XCTest
 
 @testable import BlackBox_Audio_Recorder
 
-/// An engine stand-in that records every call in order and can hold a start
-/// or a stop until the test releases it. The calls run off the main actor,
-/// so a test that awaits while one is held also shows the main actor stays
-/// free: if the call ran on the main thread, the test could never release it.
+/// An engine stand-in that records every call in order and can hold the
+/// first start or the first stop until the test releases it; later calls
+/// pass straight through, so a synchronous stop on the main thread never
+/// waits on a gate. The calls run off the main actor, so a test that awaits
+/// while one is held also shows the main actor stays free: if the call ran
+/// on the main thread, the test could never release it. Unlike the real
+/// engine it has no lock, so a call can run while a held one is still in it.
 nonisolated final class FakeEngine: Sendable {
     private let log = Mutex<[String]>([])
     private let startGate: DispatchSemaphore?
     private let stopGate: DispatchSemaphore?
+    private let gatesUsed = Mutex<Set<String>>([])
 
     init(holdStart: Bool = false, holdStop: Bool = false) {
         startGate = holdStart ? DispatchSemaphore(value: 0) : nil
@@ -22,17 +26,17 @@ nonisolated final class FakeEngine: Sendable {
 
     var engineCalls: EngineCalls {
         EngineCalls(
-            start: { [self] in
-                log.withLock { $0.append("start") }
-                startGate?.wait()
-                return .ok
-            },
-            stop: { [self] in
-                log.withLock { $0.append("stop") }
-                stopGate?.wait()
-                return .ok
-            }
+            start: { [self] in call("start", gate: startGate) },
+            stop: { [self] in call("stop", gate: stopGate) }
         )
+    }
+
+    private func call(_ name: String, gate: DispatchSemaphore?) -> EngineOutcome {
+        log.withLock { $0.append(name) }
+        if gatesUsed.withLock({ $0.insert(name).inserted }) {
+            gate?.wait()
+        }
+        return .ok
     }
 
     func releaseStart() { startGate?.signal() }
@@ -143,11 +147,14 @@ nonisolated final class SessionEngineTests: StandardDefaultsTestCase {
         XCTAssertEqual(engine.calls.last, "stop")
     }
 
-    /// A synchronous stop (sleep, power off) while a start is in flight: the
-    /// session ends at once, and the start, reaching the engine after the
-    /// stop, stops the engine again when it returns.
+    /// A synchronous stop (sleep, power off) while a restart's start is in
+    /// the engine: the session ends at once, and the start returns into an
+    /// ended session, so it backs out and stops the engine again. (The fake
+    /// has no lock, so the stop runs while the start is held; the real
+    /// engine would make the stop wait for the start. Either way the start
+    /// returns after the session ended.)
     @MainActor
-    func testSynchronousStopDuringAStartStopsTheLateStart() async throws {
+    func testSynchronousStopDuringAStartBacksTheStartOut() async throws {
         let recorder = RecordingState()
         let engine = FakeEngine(holdStart: true)
         recorder.engineCalls = engine.engineCalls
@@ -167,5 +174,92 @@ nonisolated final class SessionEngineTests: StandardDefaultsTestCase {
         XCTAssertFalse(restarted)
         XCTAssertFalse(recorder.isRecording)
         XCTAssertEqual(engine.calls.last, "stop")
+    }
+
+    /// A start still queued (behind a running stop) when a synchronous stop
+    /// bypasses the queue never reaches the engine: it would otherwise open
+    /// the device as the Mac goes to sleep.
+    @MainActor
+    func testQueuedStartSkipsTheEngineAfterASynchronousStop() async throws {
+        let recorder = RecordingState()
+        let engine = FakeEngine(holdStop: true)
+        recorder.engineCalls = engine.engineCalls
+        recorder.isRecording = true
+
+        recorder.stop()
+        try await waitUntil("the stop reaches the engine") { engine.calls == ["stop"] }
+        let generation = recorder.sessionGeneration
+        let start = Task { await recorder.startEngine(generation: generation) }
+        await Task.yield()
+
+        recorder.stopSynchronously(reason: .sleepInterruption)
+        engine.releaseStop()
+        let outcome = await start.value
+
+        XCTAssertNil(outcome, "the queued start belongs to an ended session")
+        XCTAssertFalse(engine.calls.contains("start"), "the start must not reach the engine")
+    }
+
+    /// Sleep while a user stop is finalizing must not mark the session for
+    /// resume: wake would otherwise bring back a recording the user stopped.
+    @MainActor
+    func testSleepDuringAStopDoesNotResumeOnWake() async throws {
+        UserDefaults.standard.set("resume", forKey: SettingsKeys.sleepBehavior)
+        let recorder = RecordingState()
+        let engine = FakeEngine(holdStop: true)
+        recorder.engineCalls = engine.engineCalls
+        recorder.isRecording = true
+
+        recorder.stop()
+        try await waitUntil("the stop reaches the engine") { engine.calls == ["stop"] }
+        recorder.handleWillSleep()
+
+        XCTAssertFalse(recorder.wasSleepInterrupted, "a stopped session is not resumed")
+        XCTAssertFalse(recorder.isRecording, "sleep still finalizes before it returns")
+        engine.releaseStop()
+        try await waitUntil("the stop finishes") { recorder.sessionPhase == .idle }
+        recorder.handleDidWake()
+        XCTAssertNil(recorder.pendingResumeTask)
+    }
+
+    /// A setting changed while a restart is starting is not dropped: the
+    /// second restart waits for the first, then restarts again so the
+    /// engine picks up the change.
+    @MainActor
+    func testRestartRequestedDuringARestartRunsAfterIt() async throws {
+        let recorder = RecordingState()
+        let engine = FakeEngine(holdStart: true)
+        recorder.engineCalls = engine.engineCalls
+        recorder.isRecording = true
+
+        let first = Task { await recorder.restartIfRecording(reason: "first") }
+        try await waitUntil("the first restart's start reaches the engine") { engine.calls == ["stop", "start"] }
+        let second = Task { await recorder.restartIfRecording(reason: "second") }
+        engine.releaseStart()
+
+        let firstRestarted = await first.value
+        let secondRestarted = await second.value
+        XCTAssertTrue(firstRestarted)
+        XCTAssertTrue(secondRestarted, "the second restart must run, not be dropped")
+        XCTAssertEqual(engine.calls, ["stop", "start", "stop", "start"])
+        recorder.stopSynchronously()
+    }
+
+    /// Quit waits for the stop only up to its timeout: a finalize that hangs
+    /// must not keep the app from quitting.
+    @MainActor
+    func testQuitStopIsBoundedByItsTimeout() async throws {
+        let recorder = RecordingState()
+        let engine = FakeEngine(holdStop: true)
+        recorder.engineCalls = engine.engineCalls
+        recorder.isRecording = true
+
+        let began = ContinuousClock.now
+        await recorder.stopBeforeQuit(timeout: .milliseconds(100))
+
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(3), "quit must not wait for the held stop")
+        XCTAssertEqual(recorder.sessionPhase, .stopping)
+        engine.releaseStop()
+        try await waitUntil("the stop finishes") { recorder.sessionPhase == .idle }
     }
 }

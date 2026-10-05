@@ -150,7 +150,7 @@ struct RecordingSettingsTab: View {
         let old = prevBitDepth
         guard bitDepth != old else { return }
         prevBitDepth = bitDepth
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             return
         }
@@ -225,7 +225,7 @@ struct RecordingSettingsTab: View {
         guard newSpec != old else { return }
         channelSpec = newSpec
         prevChannelSpec = newSpec
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             recorder.restartMonitoring()
             return

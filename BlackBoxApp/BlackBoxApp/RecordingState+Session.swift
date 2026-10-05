@@ -163,7 +163,7 @@ extension RecordingState {
     }
 
     /// The engine refused to start: clear the session and say why.
-    private func reportFailedStart(_ result: BlackBoxError) {
+    private func reportFailedStart(_ result: EngineOutcome) {
         // DOLL-448: release sleep prevention if this start was a
         // restart of a live session (restartIfRecording) — the token
         // from the original beginPreventingSleep would otherwise leak.
@@ -171,9 +171,9 @@ extension RecordingState {
         endPreventingSleep()
         isRecording = false
         recordingStartTime = nil
-        let detail = bridge.lastError
+        let detail = result.detail
         let err: String
-        switch result {
+        switch result.code {
         case .audioDevice:
             err = String(localized: "No audio input device found. Check System Settings \u{203A} Sound.")
 
@@ -188,7 +188,7 @@ extension RecordingState {
             err = detail ?? String(localized: "Failed to start recording")
         }
         setTransientError(err)
-        Self.log.error("Failed to start recording (code \(result.rawValue)): \(err)")
+        Self.log.error("Failed to start recording (code \(result.code.rawValue)): \(err)")
     }
 
     /// Fire-and-forget stop for the menu, the hotkey and the other
@@ -248,8 +248,17 @@ extension RecordingState {
     private func completeStop(_ pending: PendingStop) async {
         let result = await runEngine(engineCalls.stop)
         isStoppingRecording = false
-        // A synchronous stop (sleep) ran meanwhile and did the teardown.
-        guard pending.generation == sessionGeneration else { return }
+        guard pending.generation == sessionGeneration else {
+            // A synchronous stop (sleep) ran meanwhile and did the teardown,
+            // against an engine this stop had already stopped. Only this
+            // stop saw how the finalize went.
+            if !result.isSuccess {
+                let failure = result.detail ?? String(localized: "Failed to stop recording")
+                Self.log.error("Failed to stop recording (code \(result.code.rawValue)): \(failure)")
+                setTransientError(failure)
+            }
+            return
+        }
         applyStopResult(result, sessionDuration: pending.sessionDuration)
     }
 
@@ -268,7 +277,7 @@ extension RecordingState {
         cancelPendingResume()
     }
 
-    private func applyStopResult(_ result: BlackBoxError, sessionDuration: TimeInterval) {
+    private func applyStopResult(_ result: EngineOutcome, sessionDuration: TimeInterval) {
         // The FFI takes the recorder out of the handle before finalizing, so an
         // error from stopRecording usually means the engine stopped anyway and
         // only the finalize failed. Ask the engine instead of assuming it is
@@ -279,9 +288,9 @@ extension RecordingState {
             stopSucceeded: result.isSuccess,
             engineStillRecording: !result.isSuccess && bridge.isRecording
         )
-        let failure = result.isSuccess ? nil : bridge.lastError ?? String(localized: "Failed to stop recording")
+        let failure = result.isSuccess ? nil : result.detail ?? String(localized: "Failed to stop recording")
         if let failure {
-            Self.log.error("Failed to stop recording (code \(result.rawValue)): \(failure)")
+            Self.log.error("Failed to stop recording (code \(result.code.rawValue)): \(failure)")
         }
         switch outcome {
         case .stillRecording:
@@ -348,9 +357,12 @@ extension RecordingState {
     /// release something the old session was using (the output folder's
     /// security scope).
     ///
+    /// A start, stop or restart already in flight is waited for first, so a
+    /// setting changed while the engine is starting is not lost: the start
+    /// read the old config, and this restart picks up the new one.
+    ///
     /// Returns whether a new session is running afterwards: `false` when
-    /// there was none to restart (or one was starting or stopping), the new
-    /// session failed to start, or the old one could not be stopped (each
+    /// there was none to restart, the new session failed to start, or the old one could not be stopped (each
     /// failure is already surfaced through `setTransientError`). In that
     /// last case `isRecording` stays `true`: the old session is still live,
     /// so `whileStopped` does not run. A stop pressed during the restart
@@ -358,6 +370,9 @@ extension RecordingState {
     /// `whileStopped` if the old session had not stopped yet.
     @discardableResult
     func restartIfRecording(reason: String, whileStopped: (() -> Void)? = nil) async -> Bool {
+        await waitForSessionToSettle()
+        // No suspension from here to setting isStartingRecording below, so
+        // another restart cannot slip in between.
         guard sessionPhase == .recording else { return false }
         Self.log.info("Config changed while recording (\(reason)) — finalizing and restarting")
         // The whole restart reads as starting: Stop pressed during it ends
@@ -379,8 +394,8 @@ extension RecordingState {
             engineStillRecording: !result.isSuccess && bridge.isRecording
         )
         if !result.isSuccess {
-            let failure = bridge.lastError ?? String(localized: "Failed to stop recording")
-            Self.log.error("Failed to stop recording for a restart (code \(result.rawValue)): \(failure)")
+            let failure = result.detail ?? String(localized: "Failed to stop recording")
+            Self.log.error("Failed to stop recording for a restart (code \(result.code.rawValue)): \(failure)")
             setTransientError(failure)
         }
         guard SessionPolicy.restartProceeds(after: outcome) else {
@@ -487,7 +502,8 @@ extension RecordingState {
         guard name != appliedInputDevice else { return false }
         appliedInputDevice = name
         bridge.setConfig(["input_device": name])
-        if isRecording {
+        if sessionPhase != .idle {
+            // A start in flight read the old device; restart once it settles.
             Task { await restartIfRecording(reason: "device changed") }
         } else if isMonitoring {
             restartMonitoring()

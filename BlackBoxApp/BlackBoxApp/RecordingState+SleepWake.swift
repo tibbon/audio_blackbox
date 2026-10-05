@@ -8,10 +8,20 @@ extension RecordingState {
     func handleWillSleep() {
         let behavior = UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior) ?? "resume"
         // A start in flight counts: left alone, it would finish while the
-        // Mac sleeps and record across the sleep without finalizing.
-        let action = SleepWakePolicy.sleepAction(isRecording: sessionPhase != .idle, behavior: behavior)
+        // Mac sleeps and record across the sleep without finalizing. A stop
+        // in flight does not: the user (or an error) ended that session,
+        // and marking it for resume would bring it back on wake.
+        let phase = sessionPhase
+        let action = SleepWakePolicy.sleepAction(
+            isRecording: phase == .recording || phase == .starting,
+            behavior: behavior
+        )
         switch action {
         case .ignore:
+            if phase == .stopping {
+                // Still finalize before the Mac sleeps.
+                stopSynchronously()
+            }
             return
 
         case .pauseForResume:
@@ -48,8 +58,13 @@ extension RecordingState {
     }
 
     func handleSessionDidResignActive() {
-        let action = SleepWakePolicy.sessionResignAction(isRecording: sessionPhase != .idle)
-        guard action == .pauseForResume else { return }
+        // As in handleWillSleep: a stop in flight is not resumed.
+        let phase = sessionPhase
+        let action = SleepWakePolicy.sessionResignAction(isRecording: phase == .recording || phase == .starting)
+        guard action == .pauseForResume else {
+            if phase == .stopping { stopSynchronously() }
+            return
+        }
         wasSleepInterrupted = true
         stopSynchronously(reason: .sleepInterruption)
         Self.log.info("Fast User Switch: stopped recording for resume on return")

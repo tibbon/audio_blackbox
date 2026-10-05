@@ -54,13 +54,11 @@ final class RecordingState {
     /// session stays `isRecording` until the engine has finalized its files.
     var isStoppingRecording = false
 
-    /// Bumped by every stop (`endSessionGeneration()`). A start compares it
-    /// before and after its engine call to tell whether the session it was
-    /// starting was stopped meanwhile.
-    @ObservationIgnored var sessionGeneration = 0
+    /// Backs `sessionGeneration` (see `RecordingState+Engine.swift`).
+    @ObservationIgnored let sessionEpoch = SessionEpoch()
 
     /// The last engine call queued by `runEngine`; the next one waits for it.
-    @ObservationIgnored var engineTail: Task<BlackBoxError, Never>?
+    @ObservationIgnored var engineTail: Task<EngineOutcome, Never>?
 
     /// The engine start and stop calls; tests replace them.
     @ObservationIgnored var engineCalls: EngineCalls
