@@ -221,7 +221,7 @@ fn test_performance_tracker_log_file() {
 
     let log_content = std::fs::read_to_string(&log_path)
         .expect("log file must exist and be readable after 2s of metrics collection");
-    assert!(!log_content.is_empty());
+    assert_ne!(log_content, "");
     assert!(log_content.contains("timestamp") || log_content.contains("cpu_usage"));
 
     tracker.stop();

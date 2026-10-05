@@ -747,12 +747,18 @@ fn unknown_toml_keys_are_detected() {
     );
     let parsed: AppConfig = toml::from_str(content).expect("unknown keys stay non-fatal");
     assert_eq!(parsed.duration, Some(10));
-    assert!(crate::config::unknown_config_keys("not [[[ toml").is_empty());
+    assert_eq!(
+        crate::config::unknown_config_keys("not [[[ toml"),
+        Vec::<String>::new()
+    );
     assert!(
         crate::config::unknown_config_keys(include_str!("../../blackbox.example.toml")).is_empty(),
         "the example config must use only known keys"
     );
-    assert!(crate::config::unknown_config_keys(&AppConfig::generate_sample_config()).is_empty());
+    assert_eq!(
+        crate::config::unknown_config_keys(&AppConfig::generate_sample_config()),
+        Vec::<String>::new()
+    );
 }
 
 /// `CONFIG_KEYS` lists exactly the fields `AppConfig` serializes, so a new

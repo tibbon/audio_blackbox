@@ -192,7 +192,7 @@ fn rotation_create_failure_latches_write_failed_and_stops() {
         );
         assert!(state.disk_stopped, "self-stop must latch disk_stopped");
         assert!(state.writer.is_none());
-        assert!(state.pending_files.is_empty());
+        assert_eq!(state.pending_files, []);
         assert!(
             Path::new(&final_path).exists(),
             "the finished period's audio must still land under its final name"
@@ -207,7 +207,7 @@ fn rotation_create_failure_latches_write_failed_and_stops() {
         // And further rotations stay no-ops (DOLL-350 guard).
         state.rotate_files();
         assert!(state.writer.is_none());
-        assert!(state.pending_files.is_empty());
+        assert_eq!(state.pending_files, []);
     });
 }
 
@@ -236,7 +236,7 @@ fn split_rotation_create_failure_latches_after_renaming_finished_files() {
         );
         assert!(state.disk_stopped);
         assert!(state.multichannel_writers.iter().all(Option::is_none));
-        assert!(state.pending_files.is_empty());
+        assert_eq!(state.pending_files, []);
         for f in &finals {
             assert!(
                 Path::new(f).exists(),

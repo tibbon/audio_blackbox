@@ -1055,7 +1055,13 @@ fn test_missing_required_input_device_fails_start() {
             "the error must name the device: {err}"
         );
         assert!(!processor.is_recording());
-        assert!(wav_files_in(temp_dir.path()).is_empty());
-        assert!(recording_wav_files_in(temp_dir.path()).is_empty());
+        assert_eq!(
+            wav_files_in(temp_dir.path()),
+            Vec::<std::path::PathBuf>::new()
+        );
+        assert_eq!(
+            recording_wav_files_in(temp_dir.path()),
+            Vec::<std::path::PathBuf>::new()
+        );
     });
 }

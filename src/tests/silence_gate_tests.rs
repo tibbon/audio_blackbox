@@ -371,10 +371,6 @@ fn test_peaks_tracked_while_gate_idle() {
 // ===========================================================================
 
 #[test]
-#[expect(
-    clippy::float_cmp,
-    reason = "exact 0.0 expected when all input samples are filtered"
-)]
 fn test_nan_sample_does_not_poison_peak_meter() {
     temp_env::with_vars(test_env_no_silence(), || {
         let temp_dir = tempdir().unwrap();
@@ -422,10 +418,6 @@ fn test_nan_does_not_block_silence_gate_open() {
 }
 
 #[test]
-#[expect(
-    clippy::float_cmp,
-    reason = "exact 0.0 expected when all input samples are filtered"
-)]
 fn test_inf_sample_clamps_peak_meter_to_one() {
     temp_env::with_vars(test_env_no_silence(), || {
         let temp_dir = tempdir().unwrap();
@@ -602,7 +594,7 @@ fn test_gate_open_failure_latches_write_failed() {
             "a failed gate open must latch write_failed"
         );
         assert!(state.disk_stopped, "the failed open must stop writing");
-        assert!(state.pending_files.is_empty());
+        assert_eq!(state.pending_files, []);
         assert!(state.multichannel_writers.iter().all(Option::is_none));
         let files: Vec<_> = all_wav_like_files(temp_dir.path())
             .into_iter()
@@ -617,7 +609,7 @@ fn test_gate_open_failure_latches_write_failed() {
         state.write_samples(&vec![0.5_f32; 4_800]);
         assert!(!state.gate_pending_open, "a stopped writer must not retry");
         state.process_gate_open();
-        assert!(state.pending_files.is_empty());
+        assert_eq!(state.pending_files, []);
     });
 }
 
