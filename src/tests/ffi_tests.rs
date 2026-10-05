@@ -1,9 +1,5 @@
 // DOLL-346: this suite is linted under the same pedantic/nursery config as
 // the rest of the crate.
-#![expect(
-    clippy::float_cmp,
-    reason = "assertions compare against exact sentinel values the FFI writes or leaves untouched (e.g. a 99.0 fill), where exactness is the point"
-)]
 
 use std::ffi::{CStr, CString};
 

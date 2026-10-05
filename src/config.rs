@@ -983,8 +983,8 @@ mod tests {
 
     #[test]
     #[expect(
-        clippy::float_cmp,
-        reason = "exact-value test: same literal in and out"
+        clippy::float_cmp_const,
+        reason = "exact-value test: the fallback is the default constant itself"
     )]
     fn test_silence_threshold_rejects_out_of_range() {
         // NaN, ±Inf, and negative values fall back to the default rather
