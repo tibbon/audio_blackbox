@@ -23,7 +23,10 @@ extension RecordingState {
     }
 
     private func updateDuration() {
-        guard let start = recordingStartTime else { return }
+        // A start, stop or restart in flight owns the session until it
+        // returns; a tick then would read a stopping engine as an
+        // unexpected stop (DOLL-659).
+        guard sessionPhase == .recording, let start = recordingStartTime else { return }
 
         // Menu-flicker fix: previously this method assigned a fresh
         // "Recording M:SS" to `statusText` every second, which is an
@@ -69,28 +72,42 @@ extension RecordingState {
         let writeErrors = Int(status.write_errors)
         writeErrorsCount = writeErrors
 
+        // The engine calls behind these run off the main actor (DOLL-659);
+        // each one stops the poll first.
         switch action {
         case .handleUnexpectedStop:
             return  // handled above, before the gate-idle update
 
         case .restartForSampleRateChange:
-            restartForSampleRateChange()
+            runPollAction { await $0.restartForSampleRateChange() }
 
         case .recoverFromStreamError:
-            recoverFromStreamError()
+            runPollAction { await $0.recoverFromStreamError() }
 
         case .stopForWriteFailure:
-            stopForWriteFailure()
+            runPollAction { await $0.stopForWriteFailure() }
 
         case .stopForLowDiskSpace:
-            stopForLowDiskSpace()
+            runPollAction { await $0.stopForLowDiskSpace() }
 
         case .stopForExcessiveWriteErrors:
-            stopForExcessiveWriteErrors(writeErrors)
+            runPollAction { await $0.stopForExcessiveWriteErrors(writeErrors) }
 
         case .keepRecording:
             reportNewWriteErrors(writeErrors)
             adoptReportedSampleRate(Int(status.sample_rate))
+        }
+    }
+
+    /// Run a poll-triggered action on a later main-actor turn, unless the
+    /// session it was meant for has ended by then: a Stop handled in
+    /// between would otherwise be followed by a stream-error recovery that
+    /// restarts the engine under an idle UI.
+    private func runPollAction(_ action: @escaping (RecordingState) async -> Void) {
+        let generation = sessionGeneration
+        Task {
+            guard generation == sessionGeneration, sessionPhase == .recording else { return }
+            await action(self)
         }
     }
 
@@ -149,13 +166,15 @@ extension RecordingState {
         }
     }
 
-    private func restartForSampleRateChange() {
+    private func restartForSampleRateChange() async {
         Self.log.warning("Sample rate changed on device — finalizing and restarting")
-        guard restartIfRecording(reason: "sample rate changed") else {
+        let generation = sessionGeneration
+        guard await restartIfRecording(reason: "sample rate changed") else {
             // The old session could not be stopped and is still recording
-            // (the error is already shown): nothing stopped, so say nothing
-            // more. The next poll sees the flag again and retries.
-            if isRecording { return }
+            // (the error is already shown; the next poll sees the flag again
+            // and retries), or the user stopped it during the restart:
+            // nothing more to say.
+            if isRecording || generation != sessionGeneration { return }
             // The restart failed (startRecordingInternal already set the
             // error): say the recording stopped, not that it was restarted.
             let msg = String(
@@ -177,8 +196,9 @@ extension RecordingState {
         )
     }
 
-    private func stopForWriteFailure() {
-        stop()
+    private func stopForWriteFailure() async {
+        // Waited for: the stop clears errorMessage, which would hide this one.
+        await stopAndWait()
         let msg = String(
             localized: """
                 Recording stopped: unable to write to disk. \
@@ -190,8 +210,9 @@ extension RecordingState {
         notifyUser(title: String(localized: "Recording Stopped"), message: msg)
     }
 
-    private func stopForLowDiskSpace() {
-        stop()
+    private func stopForLowDiskSpace() async {
+        // Waited for: the stop clears errorMessage, which would hide this one.
+        await stopAndWait()
         let msg = String(localized: "Your disk is almost full. Free up space and try again.")
         setTransientError(msg)
         Self.log.error("Disk space low, stopping recording")
@@ -199,8 +220,9 @@ extension RecordingState {
     }
 
     /// Auto-stop if excessive (>48000 samples dropped across all channels)
-    private func stopForExcessiveWriteErrors(_ writeErrors: Int) {
-        stop()
+    private func stopForExcessiveWriteErrors(_ writeErrors: Int) async {
+        // Waited for: the stop clears errorMessage, which would hide this one.
+        await stopAndWait()
         let msg = String(
             localized: """
                 Recording quality degraded \u{2014} your Mac may be under heavy load. \
@@ -216,10 +238,17 @@ extension RecordingState {
     /// the next available device — or stop for good once the DOLL-351
     /// flapping cap is hit. Split out of `updateDuration` so the 1 Hz status
     /// poll stays readable.
-    private func recoverFromStreamError() {
+    private func recoverFromStreamError() async {
         Self.log.error("Stream error detected — finalizing files and attempting restart")
+        // Reads as starting, like restartIfRecording: Stop pressed during
+        // the recovery ends the session (DOLL-659).
+        isStartingRecording = true
+        defer { isStartingRecording = false }
+        let generation = sessionGeneration
         stopTimer()
-        _ = bridge.stopRecording()
+        _ = await runEngine(engineCalls.stop)
+        // A stop pressed meanwhile ended the session and does the teardown.
+        guard generation == sessionGeneration else { return }
         peakLevels = []
         lastReportedWriteErrors = 0
         writeErrorsCount = 0
@@ -248,7 +277,7 @@ extension RecordingState {
             stopAfterRepeatedStreamErrors()
             return
         }
-        restartOnNextAvailableDevice()
+        await restartOnNextAvailableDevice(generation: generation)
     }
 
     /// The DOLL-351 cap was hit: end the session instead of restarting again.
@@ -267,8 +296,9 @@ extension RecordingState {
         notifyUser(title: String(localized: "Recording Stopped"), message: msg)
     }
 
-    private func restartOnNextAvailableDevice() {
-        if bridge.startRecording().isSuccess {
+    private func restartOnNextAvailableDevice(generation: Int) async {
+        guard let result = await startEngine(generation: generation) else { return }
+        if result.isSuccess {
             // Restarted successfully (e.g., System Default fell back to built-in mic)
             recordingStartTime = Date()
             // The session is on a different device now; name that one.

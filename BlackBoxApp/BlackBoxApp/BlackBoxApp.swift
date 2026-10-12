@@ -54,6 +54,7 @@ struct BlackBoxApp: App {
                     Button("Stop Recording") {
                         recorder.stop()
                     }
+                    .disabled(recorder.sessionPhase == .stopping)
                 }
 
                 Divider()
@@ -123,8 +124,7 @@ struct BlackBoxApp: App {
         } label: {
             // `Text(String)` shows its argument verbatim, so the label is
             // localized here rather than left to the Text.
-            let action =
-                recorder.isRecording ? String(localized: "Stop Recording") : String(localized: "Start Recording")
+            let action = recorder.primaryActionTitle
             if let shortcut = GlobalHotkeyManager.shared.currentShortcut {
                 Text("\(action)  \(shortcut.displayString)")
                     // DOLL-385: without this VoiceOver speaks the raw glyphs
@@ -136,13 +136,14 @@ struct BlackBoxApp: App {
                 Text(action)
             }
         }
+        .disabled(recorder.sessionPhase == .stopping)
 
         // DOLL-212: pre-flight summary so the user can verify what's
         // about to be recorded before pressing Start. Hidden mid-record
         // because the active-recording caption above already covers it
         // (and changing settings while recording isn't a flow we want
         // to encourage here).
-        if !recorder.isRecording {
+        if recorder.sessionPhase == .idle {
             // The device a start would use: the engine falls back to the
             // system default when the chosen one is not connected.
             let device =
@@ -294,10 +295,14 @@ struct BlackBoxApp: App {
             Image(systemName: "questionmark.circle")
         } else if recorder.errorMessage != nil {
             Image(systemName: "exclamationmark.circle")
-        } else if recorder.isRecording {
+        } else if recorder.sessionPhase == .recording {
             Image(systemName: "record.circle.fill")
                 .foregroundStyle(.red)
                 .symbolEffect(.pulse, options: .repeating, isActive: !prefersReducedMotion)
+        } else if recorder.sessionPhase != .idle {
+            // Starting or stopping (DOLL-659): filled, without the pulse that
+            // says the engine is writing.
+            Image(systemName: "record.circle.fill")
         } else {
             // DOLL-208: bounce the idle icon for ~3 hops when onboarding
             // completes, so the user notices where the app lives.
@@ -316,8 +321,8 @@ struct BlackBoxApp: App {
         if !hasCompletedOnboarding {
             return String(localized: "BlackBox — Setup required")
         }
-        if recorder.isRecording {
-            return String(localized: "BlackBox — \(recorder.statusText)")
+        if recorder.sessionPhase != .idle {
+            return String(localized: "BlackBox — \(recorder.displayedStatusText)")
         }
         return "BlackBox"
     }
@@ -329,14 +334,14 @@ struct BlackBoxApp: App {
         if let error = recorder.errorMessage {
             return String(localized: "BlackBox: Error \u{2014} \(error)")
         }
-        if recorder.isRecording {
-            return String(localized: "BlackBox: \(recorder.statusText)")
+        if recorder.sessionPhase != .idle {
+            return String(localized: "BlackBox: \(recorder.displayedStatusText)")
         }
         return String(localized: "BlackBox: Ready")
     }
 
     private func quitApp() {
-        if recorder.isRecording {
+        if recorder.sessionPhase != .idle {
             let alert = NSAlert()
             // DOLL-438: AppKit strings wrapped in String(localized:) for the catalog.
             alert.messageText = String(localized: "Recording in Progress")
@@ -355,9 +360,9 @@ struct BlackBoxApp: App {
             if alert.runModal() == .alertFirstButtonReturn {
                 return
             }
-            recorder.stop()
         }
-        recorder.releaseOutputDirAccess()
+        // AppDelegate.shouldTerminate stops the session (off the main actor,
+        // DOLL-659) and releases the output folder's access before quitting.
         appDelegate.explicitQuit = true
         NSApplication.shared.terminate(nil)
     }

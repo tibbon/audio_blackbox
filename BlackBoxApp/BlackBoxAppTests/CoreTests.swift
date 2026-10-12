@@ -402,18 +402,28 @@ nonisolated final class AppDelegateTests: XCTestCase {
     /// instead of treating it as SwiftUI's last-window terminate and
     /// cancelling it. No engine runs here (the session is faked with
     /// isRecording), so this checks that the delegate stops the session
-    /// before allowing termination, not that WAV files get finalized.
+    /// before allowing termination, not that WAV files get finalized. The
+    /// stop runs off the main actor (DOLL-659), so the delegate answers
+    /// `.terminateLater` and replies once the session has stopped.
     @MainActor
-    func testQuitAppleEventStopsTheSessionAndTerminates() {
+    func testQuitAppleEventStopsTheSessionAndTerminates() async {
         let delegate = AppDelegate()
         let recorder = RecordingState()
         delegate.recorder = recorder
         recorder.isRecording = true
+        let replied = expectation(description: "terminate reply")
+        var replies: [Bool] = []
+        delegate.replyToTerminate = { allowed in
+            replies.append(allowed)
+            replied.fulfill()
+        }
 
         let reply = delegate.shouldTerminate(currentAppleEvent: appleEvent(kCoreEventClass, kAEQuitApplication))
 
-        XCTAssertEqual(reply, .terminateNow)
-        XCTAssertFalse(recorder.isRecording)
+        XCTAssertEqual(reply, .terminateLater)
+        await fulfillment(of: [replied], timeout: 5)
+        XCTAssertEqual(replies, [true])
+        XCTAssertFalse(recorder.isRecording, "the session must be stopped before the reply")
     }
 
     /// Any other Apple event (or none, as for SwiftUI's own terminate call)

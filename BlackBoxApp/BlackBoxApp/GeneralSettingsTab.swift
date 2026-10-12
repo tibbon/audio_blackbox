@@ -163,9 +163,9 @@ struct GeneralSettingsTab: View {
             // setup items, which would hide the Stop control of a live
             // recording; and setup changes the folder and mode that
             // recording is using.
-            .disabled(recorder.isRecording)
+            .disabled(recorder.sessionPhase != .idle)
             Group {
-                if recorder.isRecording {
+                if recorder.sessionPhase != .idle {
                     Text("Stop recording to run the setup wizard again.")
                 } else {
                     Text("Re-run the setup wizard to change your output directory or recording mode.")
@@ -192,7 +192,7 @@ struct GeneralSettingsTab: View {
     private func confirmResetAllSettings() {
         let alert = NSAlert()
         alert.messageText = String(localized: "Reset All Settings?")
-        let recording = recorder.isRecording
+        let recording = recorder.sessionPhase != .idle
         alert.informativeText =
             String(localized: "This will restore all settings to their defaults. Your recordings will not be affected.")
             + (recording ? String(localized: " The current recording will be stopped.") : "")
@@ -207,14 +207,14 @@ struct GeneralSettingsTab: View {
         alert.buttons.last?.keyEquivalent = "\r"
         NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
-            resetAllSettings()
+            Task { await resetAllSettings() }
         }
     }
 
-    private func resetAllSettings() {
+    private func resetAllSettings() async {
         // Stop recording first — we're about to change the engine config
-        if recorder.isRecording {
-            recorder.stop()
+        if recorder.sessionPhase != .idle {
+            await recorder.stopAndWait()
         }
 
         let defaults = UserDefaults.standard
@@ -235,7 +235,7 @@ struct GeneralSettingsTab: View {
         // Clear global shortcut
         clearShortcut()
         // Update launch-at-login to match (now off)
-        try? SMAppService.mainApp.unregister()
+        try? await SMAppService.mainApp.unregister()
         // Refresh local state
         launchAtLogin = false
         autoRecord = false

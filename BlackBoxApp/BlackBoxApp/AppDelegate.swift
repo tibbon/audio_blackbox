@@ -20,6 +20,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Prevents SwiftUI's spurious terminate-on-last-window-close from killing the app.
     var explicitQuit = false
 
+    /// How long quit waits for the engine to finalize the files before it
+    /// terminates anyway (DOLL-659).
+    static let quitStopTimeout: Duration = .seconds(10)
+
+    /// Answers a `.terminateLater` from `shouldTerminate`; tests replace it.
+    var replyToTerminate: (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
+
     /// One Task per observed notification, cancelled in `applicationWillTerminate`
     /// so the observations end with the app instead of outliving the delegate.
     private var notificationTasks: [Task<Void, Never>] = []
@@ -50,11 +57,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // applicationShouldTerminate (other apps holding the run loop,
             // scene teardown), the recording can be killed before finalize
             // and the WAV header is left without correct RIFF/data sizes.
-            // stop() is fast and the subsequent applicationShouldTerminate
-            // will no-op on the already-stopped recorder.
+            // The stop is synchronous here (DOLL-659), and the subsequent
+            // applicationShouldTerminate will no-op on the already-stopped
+            // recorder.
             self?.explicitQuit = true
-            if let recorder = self?.recorder, recorder.isRecording {
-                recorder.stop()
+            if let recorder = self?.recorder, recorder.sessionPhase != .idle {
+                recorder.stopSynchronously()
             }
         }
 
@@ -164,13 +172,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Explicit quit (user, system or another app) — finalize recordings
-        // gracefully. stop() is synchronous: the files are finalized before
-        // this returns, so terminating now loses nothing.
-        if let recorder, recorder.isRecording {
-            recorder.stop()
+        // gracefully. The stop runs off the main actor (DOLL-659), so AppKit
+        // waits for the reply instead of this blocking the run loop; it is
+        // bounded so a stuck engine cannot keep the app from quitting.
+        guard let recorder, recorder.sessionPhase != .idle else {
+            recorder?.releaseOutputDirAccess()
+            return .terminateNow
         }
-        recorder?.releaseOutputDirAccess()
-        return .terminateNow
+        Task {
+            await recorder.stopBeforeQuit(timeout: Self.quitStopTimeout)
+            recorder.releaseOutputDirAccess()
+            replyToTerminate(true)
+        }
+        return .terminateLater
     }
 
     /// Whether `event` is the core `quit` Apple event ('aevt'/'quit'), which

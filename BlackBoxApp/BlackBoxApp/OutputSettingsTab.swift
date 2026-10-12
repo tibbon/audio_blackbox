@@ -188,13 +188,13 @@ struct OutputSettingsTab: View {
         let old = prevOutputMode
         guard outputMode != old else { return }
         prevOutputMode = outputMode
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             applyConfig()
             return
         }
         confirmSettingsChange(reason: String(localized: "output mode")) {
             applyConfig()
-            recorder.restartIfRecording(reason: "output mode changed")
+            Task { await recorder.restartIfRecording(reason: "output mode changed") }
         } onCancel: {
             prevOutputMode = old
             outputMode = old
@@ -364,16 +364,16 @@ extension OutputSettingsTab {
         panel.message = String(localized: "Select output directory for recordings")
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard recorder.isRecording else {
+        guard recorder.sessionPhase != .idle else {
             outputDir = url.path
-            recorder.switchOutputDir(to: url)
+            Task { await recorder.switchOutputDir(to: url) }
             return
         }
         // The live session keeps writing to the old folder until it restarts;
         // switchOutputDir finalizes it before releasing that folder's access.
         confirmSettingsChange(reason: String(localized: "the output folder")) {
             outputDir = url.path
-            recorder.switchOutputDir(to: url)
+            Task { await recorder.switchOutputDir(to: url) }
         }
     }
 }

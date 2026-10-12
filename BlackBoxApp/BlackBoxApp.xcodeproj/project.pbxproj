@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00D93648534207A94596706B /* MenuInputDeviceSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEFBB9A94F5C71065507C5B /* MenuInputDeviceSection.swift */; };
+		01DF5311A7E2B9EE2D340096 /* SessionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59B41D4261FF69A17B3B356B /* SessionEngineTests.swift */; };
 		03E4F2B1C3A66DD675F3BEFB /* SilenceDetectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */; };
 		09A9830DE02F1E761E06161D /* OnboardingSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */; };
 		0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */; };
@@ -22,6 +23,7 @@
 		427AB7560A6156556E501676 /* SettingsKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE10D00516431CD06B0874FE /* SettingsKeys.swift */; };
 		4600E03701AFEF6D356EECC2 /* OnboardingView+ShortcutStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C451D44A05190586EF62E55 /* OnboardingView+ShortcutStep.swift */; };
 		4B6AC6F7EB14609985FB00E2 /* RecordingState+SleepWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */; };
+		4CEFF99965C668AA049CA84A /* RecordingState+Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE027D7F0AD174435DCF0BFE /* RecordingState+Engine.swift */; };
 		5263A2B4F4544B5866A2EBC3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C24474EAC1E91E318CAF5CE /* Assets.xcassets */; };
 		5B347A12E5E26A5FDF4CB9E3 /* SleepWakePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0674B223253655522C4B25 /* SleepWakePolicy.swift */; };
 		5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98679487F91174C239180404 /* RecordingState+Notifications.swift */; };
@@ -80,6 +82,7 @@
 		4A552EA99155CFE2766237BA /* OnboardingView+Steps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+Steps.swift"; sourceTree = "<group>"; };
 		51FF5759D16D4F370C8BB366 /* RecordingState+StatusPoll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+StatusPoll.swift"; sourceTree = "<group>"; };
 		5975F3E40B38C9398E3E85DA /* AudioDeviceListObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceListObserver.swift; sourceTree = "<group>"; };
+		59B41D4261FF69A17B3B356B /* SessionEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEngineTests.swift; sourceTree = "<group>"; };
 		5DA8D80F2AB55189B580CBBA /* OnboardingView+DirectoryStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OnboardingView+DirectoryStep.swift"; sourceTree = "<group>"; };
 		64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutDisplayStringTests.swift; sourceTree = "<group>"; };
 		6F7288D5CEB63CC0FFCA0F1E /* BlackBoxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BlackBoxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -111,6 +114,7 @@
 		C515ABD54DB00D283F73A524 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		CABDBB4ADB98586777721416 /* CustomCadenceField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomCadenceField.swift; sourceTree = "<group>"; };
 		CCDF841FAFAAE1EFC945B0DB /* SilenceDetectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetectionSection.swift; sourceTree = "<group>"; };
+		DE027D7F0AD174435DCF0BFE /* RecordingState+Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+Engine.swift"; sourceTree = "<group>"; };
 		EAE174AB96A62D4A4D59473B /* EngineStatusPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStatusPolicyTests.swift; sourceTree = "<group>"; };
 		EED3812065BD88B47A3E3AF4 /* RecordingState+SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingState+SleepWake.swift"; sourceTree = "<group>"; };
 		EEE19386EBBB67EBC36FA86D /* BlackBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlackBoxApp.swift; sourceTree = "<group>"; };
@@ -132,6 +136,7 @@
 				FA21E165DD9AD6BD7666156F /* InputDeviceTests.swift */,
 				26B1B0B48D4372F29734CCAF /* OnboardingSettingsTests.swift */,
 				B6EF4B65B946566679B50FCB /* SavedEngineConfigTests.swift */,
+				59B41D4261FF69A17B3B356B /* SessionEngineTests.swift */,
 				C303713C77B1900DC615925B /* SessionPolicyTests.swift */,
 				64165C1FE8B587EE1A101E4C /* ShortcutDisplayStringTests.swift */,
 				0E8F8B081B5B6CAF9A27D845 /* SleepWakeTests.swift */,
@@ -187,6 +192,7 @@
 				9CC8C96BB242950BE0830332 /* PrivacyInfo.xcprivacy */,
 				F4E5026F7FF0CA9D730A70F5 /* RecordingSettingsTab.swift */,
 				3868EB3B5B085E587D3126F3 /* RecordingState.swift */,
+				DE027D7F0AD174435DCF0BFE /* RecordingState+Engine.swift */,
 				05E50DC3ACBDA70C84A6DF16 /* RecordingState+Monitoring.swift */,
 				98679487F91174C239180404 /* RecordingState+Notifications.swift */,
 				98EC0ABFBC4F499064024998 /* RecordingState+OutputDirectory.swift */,
@@ -311,6 +317,7 @@
 				19D7541B0BF65CFDFAC89895 /* InputDeviceTests.swift in Sources */,
 				09A9830DE02F1E761E06161D /* OnboardingSettingsTests.swift in Sources */,
 				ECBF2CF3C55989A1A54A0507 /* SavedEngineConfigTests.swift in Sources */,
+				01DF5311A7E2B9EE2D340096 /* SessionEngineTests.swift in Sources */,
 				A6DE84B5EABEF1DF0D426B9F /* SessionPolicyTests.swift in Sources */,
 				314C1DE302233A7D14A1E14D /* ShortcutDisplayStringTests.swift in Sources */,
 				F36390F571D46B84B00B4D1E /* SleepWakeTests.swift in Sources */,
@@ -342,6 +349,7 @@
 				E8AD7A3E72888CF983E7C2D0 /* OnboardingView.swift in Sources */,
 				0CD1A5DB0EA24074F67B9166 /* OutputSettingsTab.swift in Sources */,
 				C795389EB60CB1F564B56C8C /* RecordingSettingsTab.swift in Sources */,
+				4CEFF99965C668AA049CA84A /* RecordingState+Engine.swift in Sources */,
 				8220CFE74494B01F927502CF /* RecordingState+Monitoring.swift in Sources */,
 				5BED7B70DED35CE628E63215 /* RecordingState+Notifications.swift in Sources */,
 				0BA31FB830C5C836F6F77A29 /* RecordingState+OutputDirectory.swift in Sources */,

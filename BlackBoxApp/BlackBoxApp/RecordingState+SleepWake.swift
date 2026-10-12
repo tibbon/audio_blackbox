@@ -7,9 +7,21 @@ extension RecordingState {
 
     func handleWillSleep() {
         let behavior = UserDefaults.standard.string(forKey: SettingsKeys.sleepBehavior) ?? "resume"
-        let action = SleepWakePolicy.sleepAction(isRecording: isRecording, behavior: behavior)
+        // A start in flight counts: left alone, it would finish while the
+        // Mac sleeps and record across the sleep without finalizing. A stop
+        // in flight does not: the user (or an error) ended that session,
+        // and marking it for resume would bring it back on wake.
+        let phase = sessionPhase
+        let action = SleepWakePolicy.sleepAction(
+            isRecording: phase == .recording || phase == .starting,
+            behavior: behavior
+        )
         switch action {
         case .ignore:
+            if phase == .stopping {
+                // Still finalize before the Mac sleeps.
+                stopSynchronously()
+            }
             return
 
         case .pauseForResume:
@@ -27,9 +39,10 @@ extension RecordingState {
                 identifier: "recording-stopped"
             )
         }
-        // .pauseForResume just set wasSleepInterrupted; stop() must not
-        // clear it or handleDidWake never resumes (DOLL-442).
-        stop(reason: action == .pauseForResume ? .sleepInterruption : .user)
+        // .pauseForResume just set wasSleepInterrupted; the stop must not
+        // clear it or handleDidWake never resumes (DOLL-442). Synchronous:
+        // the Mac can sleep as soon as this returns (DOLL-659).
+        stopSynchronously(reason: action == .pauseForResume ? .sleepInterruption : .user)
         Self.log.info("Sleep: stopped recording (behavior=\(behavior))")
     }
 
@@ -45,10 +58,15 @@ extension RecordingState {
     }
 
     func handleSessionDidResignActive() {
-        let action = SleepWakePolicy.sessionResignAction(isRecording: isRecording)
-        guard action == .pauseForResume else { return }
+        // As in handleWillSleep: a stop in flight is not resumed.
+        let phase = sessionPhase
+        let action = SleepWakePolicy.sessionResignAction(isRecording: phase == .recording || phase == .starting)
+        guard action == .pauseForResume else {
+            if phase == .stopping { stopSynchronously() }
+            return
+        }
         wasSleepInterrupted = true
-        stop(reason: .sleepInterruption)
+        stopSynchronously(reason: .sleepInterruption)
         Self.log.info("Fast User Switch: stopped recording for resume on return")
         postNotification(
             title: String(localized: "Recording Paused"),
