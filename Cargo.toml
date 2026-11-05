@@ -20,7 +20,7 @@ tempfile = "3"
 # `termination` also routes SIGTERM and SIGHUP to the handler, so `kill` or a
 # closed terminal finalizes the recording like Ctrl-C does.
 ctrlc = { version = "3", features = ["termination"] }
-sysinfo = { version = "0.39", optional = true }
+sysinfo = { version = "0.40", optional = true }
 rtrb = "0.4"
 thiserror = "2"
 toml = "1"
